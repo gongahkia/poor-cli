@@ -1,6 +1,6 @@
 # Dude MCP
 
-Dude MCP is the backend/runtime for Dude's bounded Singapore public-data and due-diligence workflows. It exposes stable `sg_*` tools and `sg://...` resources for official public datasets, registry checks, maps, live signals, and agent-ready brief workflows.
+Dude MCP is the backend/runtime for Dude's Singapore counterparty due diligence workflows. It exposes stable `sg_*` tools and `sg://...` resources for company/UEN CDD reports, retained sector registry checks, supplemental analyst-review evidence, and runtime operations.
 
 ## Install
 
@@ -26,13 +26,13 @@ node packages/mcp-server/dist/index.js
 
 ## Credentials
 
-Most public-data families run without credentials. These optional upstreams need keys:
+Core CDD registry tools run without credentials. These optional CDD providers need keys when enabled:
 
-- `SG_API_ONEMAP_EMAIL` and `SG_API_ONEMAP_PASSWORD` for OneMap.
-- `SG_API_URA_KEY` for URA.
-- `SG_API_LTA_KEY` for LTA DataMall.
+- `TINYFISH_API_KEY` for web presence and people-discovery hints.
+- `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY` for server-side analyst memo generation.
+- `OPENSANCTIONS_API_KEY` and `OPENCORPORATES_API_TOKEN` for supplemental external diligence checks.
 
-Use `sg_key_set` or `sg-data init` for local credential setup when you do not want to export environment variables.
+Use `sg_key_set` for local credential setup when you do not want to export environment variables.
 
 ## Release Readiness
 

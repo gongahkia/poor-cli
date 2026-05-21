@@ -68,6 +68,8 @@ For CDD answers:
 
 CDD tools:
 
+- `sg_resolve_counterparty`
+- `sg_cdd_report`
 - `sg_query`
 - `sg_business_dossier`
 - `sg_acra_entities`

@@ -10,19 +10,14 @@ const glamaMetadata = JSON.parse(read("glama.json"));
 const smitheryMetadata = read("smithery.yaml");
 const readme = read("README.md");
 
-const expectedToolCount = 109;
-const expectedFamilyCount = 39;
 const expectedInstall = "npm install && npm run build && node packages/mcp-server/dist/index.js";
+const expectedDescription = "Dude MCP backend for Singapore company/UEN CDD reports";
 
-if (!serverMetadata.description.includes(`${expectedToolCount} sg_* tools`)) {
-  throw new Error(`server.json description must mention ${expectedToolCount} sg_* tools.`);
+if (!serverMetadata.description.includes(expectedDescription)) {
+  throw new Error("server.json description must describe the CDD report runtime.");
 }
 
-if (!serverMetadata.description.includes(`${expectedFamilyCount} catalog families`)) {
-  throw new Error(`server.json description must mention ${expectedFamilyCount} catalog families.`);
-}
-
-if (!readme.includes(`${expectedToolCount} \`sg_*\` tools total across ${expectedFamilyCount} catalog families`)) {
+if (!readme.includes("Current runtime surface: 28 `sg_*` tools total across 11 CDD catalog families")) {
   throw new Error("README surface snapshot is out of sync with registry metadata counts.");
 }
 

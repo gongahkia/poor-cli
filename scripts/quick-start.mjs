@@ -35,7 +35,7 @@ try {
   if (PUBLIC_ONLY) {
     console.error("public smoke failed; run npm run diagnostics to inspect runtime and catalog parity.");
   } else {
-    console.error("configure OneMap, URA, and LTA credentials via env vars or the local keystore, then retry.");
+    console.error("configure optional CDD provider credentials via env vars when your smoke target requires them, then retry.");
     console.error("for no-credential onboarding, run: npm run quick-start -- --public");
   }
   console.error("if the failure response includes traceId/requestId, use sg_trace_lookup or sg_request_lookup to inspect local audit context.");

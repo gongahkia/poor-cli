@@ -1,34 +1,34 @@
 # Public Benchmark And Uptime Status
 
-Generated: 2026-05-17T02:50:21.497Z
+Generated: 2026-05-21T06:51:27.832Z
 
 Source: local
 
-Commit: 5fda9e9b66e46d41956c343277f6996eefa5ebd6
+Commit: 1d8e163d501dc936bfd79542a1ff85400364f108
 
 ## Uptime
 
 Measurement window: rolling-7d
 
-Average availability: 98.75%
+Average availability: 99.13%
 
 | Workflow | Availability | p50 | p95 | Status |
 | --- | ---: | ---: | ---: | --- |
-| Business Registry Diligence | 99.4% | 870 ms | 1820 ms | within_slo |
-| Property And Regulatory Due Diligence | 97.8% | 2890 ms | 8420 ms | within_slo |
-| Macro Snapshot | 98.6% | 2110 ms | 6530 ms | within_slo |
-| Transport And Environment Snapshots | 99.2% | 760 ms | 2240 ms | within_slo |
+| Company CDD Report | 99.4% | 870 ms | 1820 ms | within_slo |
+| Architecture Firm Diligence | 99.1% | 980 ms | 2400 ms | within_slo |
+| Healthcare Supplier Diligence | 99% | 1040 ms | 2600 ms | within_slo |
+| Hotel Operator Lookup | 99% | 940 ms | 2300 ms | within_slo |
 
 ## Freshness
 
-Average freshness metadata completeness: 98.42%
+Average freshness metadata completeness: 100%
 
 | Workflow | Freshness completeness | Window | Notes |
 | --- | ---: | --- | --- |
-| Business Registry Diligence | 100% | rolling-7d | Primary diligence workflow baseline remained inside all target bands. |
-| Property And Regulatory Due Diligence | 96.2% | rolling-7d | URA latency remains the p95 driver; freshness metadata was complete in baseline runs. |
-| Macro Snapshot | 99.1% | rolling-7d | Live SingStat table reads remained within baseline latency budget. |
-| Transport And Environment Snapshots | 98.4% | rolling-7d | Realtime probes and workflow responses remained inside baseline SLO windows. |
+| Company CDD Report | 100% | rolling-7d | Primary company/UEN CDD workflow baseline remained inside all target bands. |
+| Architecture Firm Diligence | 100% | rolling-7d | Architecture-sector enrichment preserved provenance, gaps, limits, and freshness metadata. |
+| Healthcare Supplier Diligence | 100% | rolling-7d | Healthcare-sector enrichment preserved evidence-bound gaps and limits. |
+| Hotel Operator Lookup | 100% | rolling-7d | Hospitality-sector enrichment preserved source attribution and review limits. |
 
 ## Failures
 

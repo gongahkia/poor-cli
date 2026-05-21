@@ -62,7 +62,7 @@ Confirm:
 - `docs/ownership-matrix.json` covers every API family and workflow in the built catalog.
 - `docs/governance-checklist.md` and `docs/deprecation-policy.md` are current.
 - `docs/schema-versioning.md` and `CHANGELOG.md` are current for public schema changes.
-- quarterly reporting template and known-issues notes are current for the release window.
+- quarterly reporting template and troubleshooting notes are current for the release window.
 - hosted paid releases do not enable ACRA-derived commercial enrichment unless [docs/acra-licensing-track.md](./acra-licensing-track.md) records an approved API Marketplace, authorised ISP, partner, or sub-licence path.
 
 Generate release-window evidence artifacts manually (if not using `release:preflight`):

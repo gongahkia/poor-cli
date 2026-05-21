@@ -124,7 +124,7 @@
     },
     "/api/v1/sg_adverse_media_lite": {
       "post": {
-        "summary": "Search bounded official Singapore public feeds for keyword evidence without open-web crawling or unsupported NLP claims.",
+        "summary": "Search bounded official Singapore public feeds for keyword evidence and source-backed triage labels without open-web crawling or unsupported NLP claims.",
         "tags": [
           "canonical"
         ],
@@ -1423,7 +1423,7 @@
     },
     "/api/v1/sg_relationship_graph": {
       "post": {
-        "summary": "Build a shallow relationship graph from supplied public dossier records with strict limits against ownership or control claims.",
+        "summary": "Build a shallow relationship graph from supplied public dossier records, including explicit source-declared relationships when present and strict limits against inference.",
         "tags": [
           "canonical"
         ],

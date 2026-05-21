@@ -61,7 +61,7 @@ sg_trace_lookup {"traceId":"<trace-id>"}
 sg_request_lookup {"requestId":"<request-id>"}
 ```
 
-4. Confirm auth presence (`SG_API_ONEMAP_*`, `SG_API_URA_KEY`, `SG_API_LTA_KEY`) when source is authenticated.
+4. Confirm optional CDD provider credentials when the failing step depends on them (`TINYFISH_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENSANCTIONS_API_KEY`, or `OPENCORPORATES_API_TOKEN`).
 5. Re-run the direct tool with exact parameters to isolate planner vs source behavior.
 6. Clear stale cache if needed:
 

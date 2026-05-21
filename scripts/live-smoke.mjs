@@ -216,7 +216,7 @@ main().catch((error) => {
   if (PUBLIC_ONLY) {
     process.stderr.write("See docs/troubleshooting.md for public smoke and diagnostics guidance.\n");
   } else {
-    process.stderr.write("See docs/api-auth-guide.md for credential setup and live health-check behavior.\n");
+    process.stderr.write("See README.md and .env.example for credential setup, then use docs/troubleshooting.md for live health-check behavior.\n");
     process.stderr.write("For no-credential onboarding, run: npm run test:smoke:public\n");
   }
   process.exit(1);

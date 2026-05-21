@@ -42,11 +42,11 @@ Limits: public-data workflow only; no legal, tax, credit, investment, AML, sanct
 | 1 | The UEN intake check that prevents stale client files | Corp-secretarial ops | `sg_business_dossier` or `sg_query` with entity name/UEN | ACRA/data.gov evidence, observed timestamp, dossier gaps | Ask readers to compare their onboarding form against the evidence ledger. |
 | 2 | Why every vendor dossier needs a gaps section | DPOs | `sg_business_dossier` plus compliance-use clauses | Dossier evidence, `gaps`, `limits`, privacy notice/DPA links | Offer the checklist format, not a vendor verdict. |
 | 3 | A public tender screen that stays source-bound | CFOs | `sg_gebiz_tenders` and procurement monitor outcome | GeBIZ records, query terms, no-match behavior | Invite finance teams to test tender-monitor keywords. |
-| 4 | When public location data is useful, and when it stops | Ops leaders | `sg_property_brief` with OneMap/URA/HDB/LTA/NEA limits | Location provenance, OneMap/URA warnings, freshness | Ask teams to mark location checks as context, not recommendation. |
+| 4 | Supplemental evidence without overclaiming | Ops leaders | CDD orchestrator with web presence, people discovery, and external diligence enabled | Supplemental source provenance, confidence blockers, freshness, limits | Ask teams to label supplemental evidence as review material, not a clearance signal. |
 | 5 | PDPA vendor diligence without pretending to be counsel | DPOs | PDPA readiness pack plus dossier gaps | PDPA checklist, dossier evidence, retained limits | Invite readers to separate data-protection questions from legal advice. |
 | 6 | Bulk CDD is a workflow problem before it is an AI problem | Corp-services managers | Bulk diligence flow and export posture | Bulk row count, partial failures, per-row provenance | Ask teams to define acceptable partial-failure handling. |
 | 7 | Source freshness is a control, not a footnote | CFOs and auditors | `sg://runtime`, release evidence, brief freshness | Freshness fields, release evidence, stale-source example | Offer a freshness-review checklist for monthly files. |
-| 8 | The honest stop sign: when public data is not enough | DPOs, CFOs, partners | Commercial data use review, ACRA licensing track | ACRA/OneMap/URA source-use warnings and blockers | Invite readers to document escalation to licensed data or human review. |
+| 8 | The honest stop sign: when public data is not enough | DPOs, CFOs, partners | Commercial data use review, ACRA licensing track | ACRA and supplemental-source warnings and blockers | Invite readers to document escalation to licensed data or human review. |
 
 ## Review Guardrails
 
