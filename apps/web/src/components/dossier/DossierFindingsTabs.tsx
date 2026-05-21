@@ -37,12 +37,15 @@ import {
 } from "@/components/ui/dialog";
 import {
   DEFAULT_REPORT_TEMPLATE,
+  REPORT_SECTION_PRESETS,
   REPORT_SECTION_DESCRIPTIONS,
   REPORT_SECTION_LABELS,
   REPORT_WRITING_STYLE_DESCRIPTIONS,
   REPORT_WRITING_STYLE_LABELS,
+  applyReportSectionPreset,
   moveReportSection,
   toggleReportSection,
+  updateReportReviewerMetadata,
   type ReportExportFormat,
   type ReportTemplate,
   type ReportWritingStyle,
@@ -1049,7 +1052,7 @@ function ReportBuilder({
           <p className="text-sm font-medium text-muted-foreground">Report Builder</p>
           <h2 className="mt-1 text-xl font-semibold text-foreground">Choose report pages and writing style</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-            Build the review artifact from the same cited dossier evidence. The executive summary is always included.
+            Build the review artifact from the same cited dossier evidence, reviewer metadata, readiness warnings, and export manifest.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1066,6 +1069,26 @@ function ReportBuilder({
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)]">
         <div className="space-y-4">
+          <div className="rounded-md border border-border bg-background p-4">
+            <h3 className="text-sm font-semibold text-foreground">Section presets</h3>
+            <div className="mt-3 grid gap-2">
+              {REPORT_SECTION_PRESETS.map((preset) => (
+                <button
+                  className={cn(
+                    "rounded-md border border-border p-3 text-left text-sm transition hover:bg-muted",
+                    template.id === preset.id ? "bg-muted text-foreground" : "bg-card text-muted-foreground",
+                  )}
+                  key={preset.id}
+                  onClick={() => setTemplate((current) => applyReportSectionPreset(current, preset.id))}
+                  type="button"
+                >
+                  <span className="block font-semibold text-foreground">{preset.name}</span>
+                  <span className="mt-1 block text-xs leading-5">{preset.description}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <label className="block rounded-md border border-border bg-background p-4">
             <span className="text-sm font-semibold text-foreground">Writing preset</span>
             <select
@@ -1085,6 +1108,36 @@ function ReportBuilder({
               {REPORT_WRITING_STYLE_DESCRIPTIONS[template.writingStyle]}
             </span>
           </label>
+
+          <div className="rounded-md border border-border bg-background p-4">
+            <h3 className="text-sm font-semibold text-foreground">Reviewer metadata</h3>
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Metadata appears in the report front matter and export manifest. Empty fields are shown as not provided.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              {[
+                ["preparedBy", "Prepared by"],
+                ["reviewedBy", "Reviewed by"],
+                ["reviewDate", "Review date"],
+                ["caseStatus", "Case status"],
+                ["internalReference", "Internal reference"],
+                ["reportPurpose", "Report purpose"],
+              ].map(([field, label]) => (
+                <label className="block text-xs font-medium text-muted-foreground" key={field}>
+                  {label}
+                  <input
+                    className="mt-1 h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                    onChange={(event) => setTemplate((current) =>
+                      updateReportReviewerMetadata(current, { [field]: event.target.value }),
+                    )}
+                    type={field === "reviewDate" ? "date" : "text"}
+                    value={template.metadata[field as keyof typeof template.metadata]}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+
           <ReportPreview
             dossier={dossier}
             memoState={memoState}

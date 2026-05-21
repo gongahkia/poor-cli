@@ -14,10 +14,14 @@ import {
 } from "@/lib/dossier";
 import {
   REPORT_SECTION_LABELS,
+  REPORT_WRITING_STYLE_DESCRIPTIONS,
   REPORT_WRITING_STYLE_LABELS,
+  getReportReviewerMetadata,
+  reviewerMetadataRows,
   type ReportSectionId,
   type ReportTemplate,
 } from "@/lib/report-template";
+import { buildReportReadinessChecklist, reportReadinessSummary } from "@/lib/report-readiness";
 import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
 import {
   buildSupplementalEvidenceReviewItems,
@@ -240,9 +244,28 @@ function supplementalRows(
   return rows;
 }
 
+function reviewMetadataRows(template: ReportTemplate): PreviewLine[] {
+  return reviewerMetadataRows(getReportReviewerMetadata(template));
+}
+
+function readinessRows(dossier: BusinessDossier, memoState: AnalystMemoState): PreviewLine[] {
+  const rows = buildReportReadinessChecklist({
+    dossier,
+    ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
+  });
+  return [
+    { label: "Readiness summary", value: reportReadinessSummary(rows) },
+    ...rows.map((row) => ({
+      label: `${row.status === "warning" ? "Warning" : "Checked"} - ${row.label}`,
+      value: `${row.detail}${row.sourceRefs.length === 0 ? "" : ` Source refs: ${row.sourceRefs.join(", ")}`}`,
+    })),
+  ];
+}
+
 function manifestRows(template: ReportTemplate): PreviewLine[] {
   return [
     { label: "Report style", value: REPORT_WRITING_STYLE_LABELS[template.writingStyle] },
+    { label: "Style intent", value: REPORT_WRITING_STYLE_DESCRIPTIONS[template.writingStyle] },
     { label: "Sections", value: template.sections.map((section) => REPORT_SECTION_LABELS[section]).join(", ") },
     { label: "Manifest", value: "Hash, schema version, signature, and source-use warnings are generated at export time." },
   ];
@@ -257,6 +280,10 @@ function sectionRows({
   webPresenceState,
 }: ReportPreviewProps & { section: ReportSectionId }): PreviewLine[] {
   switch (section) {
+    case "review_metadata":
+      return reviewMetadataRows(template);
+    case "readiness_checklist":
+      return readinessRows(dossier, memoState);
     case "executive_summary":
       return executiveSummaryRows(dossier, memoState);
     case "coverage_matrix":
@@ -325,7 +352,7 @@ export function ReportPreview({
             <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Dude CDD review report</p>
             <h4 className="mt-1 break-words text-lg font-bold leading-6 text-slate-950">{dossier.title}</h4>
             <p className="mt-2 text-[11px] leading-5 text-slate-600">
-              Style: {REPORT_WRITING_STYLE_LABELS[template.writingStyle]}. Generated timestamp and export manifest are added when the file is created.
+              Style: {REPORT_WRITING_STYLE_LABELS[template.writingStyle]}. {REPORT_WRITING_STYLE_DESCRIPTIONS[template.writingStyle]} Generated timestamp and export manifest are added when the file is created.
             </p>
           </header>
 

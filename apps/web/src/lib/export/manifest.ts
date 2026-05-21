@@ -2,6 +2,15 @@ import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
 import type { PeopleDiscovery, WebPresence } from "@/lib/api/client";
 import { getAnalystFollowUps } from "@/lib/next-checks";
+import { buildReportReadinessChecklist, type ReportReadinessItem } from "@/lib/report-readiness";
+import {
+  DEFAULT_REPORT_TEMPLATE,
+  getReportReviewerMetadata,
+  type ReportReviewerMetadata,
+  type ReportSectionId,
+  type ReportTemplate,
+  type ReportWritingStyle,
+} from "@/lib/report-template";
 import { buildSourceUseWarnings, type SourceUseWarning } from "@/lib/source-use-warnings";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
 
@@ -29,6 +38,14 @@ export type DossierExportManifest = {
     reason: string;
   }[];
   sourceUseWarnings: SourceUseWarning[];
+  reviewerMetadata: ReportReviewerMetadata;
+  reportTemplate: {
+    id: string;
+    name: string;
+    writingStyle: ReportWritingStyle;
+    sections: ReportSectionId[];
+  };
+  reportReadiness: ReportReadinessItem[];
   analystFollowUps: {
     id: string;
     priority: string;
@@ -85,9 +102,12 @@ export async function buildDossierExportManifest(params: {
   generatedAt?: string;
   orchestration?: CddOrchestrationTrace;
   peopleDiscovery?: PeopleDiscovery;
+  reportTemplate?: ReportTemplate;
   webPresence?: WebPresence;
 }): Promise<DossierExportManifest> {
   const generatedAt = params.generatedAt ?? new Date().toISOString();
+  const reportTemplate = params.reportTemplate ?? DEFAULT_REPORT_TEMPLATE;
+  const reviewerMetadata = getReportReviewerMetadata(reportTemplate);
   const dossierHash = await sha256Hex(stableStringify(params.dossier));
   const sourceUseWarnings = buildSourceUseWarnings({
     dossier: params.dossier,
@@ -95,14 +115,26 @@ export async function buildDossierExportManifest(params: {
     ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
   });
   const analystFollowUps = getAnalystFollowUps(params.dossier);
+  const reportReadiness = buildReportReadinessChecklist({
+    dossier: params.dossier,
+    ...(params.analystMemo === undefined ? {} : { analystMemo: params.analystMemo }),
+  });
   const signaturePayload = stableStringify({
     analystFollowUps,
     dossierHash,
-      generatedAt,
-      orchestration: params.orchestration,
-      peopleDiscovery: params.peopleDiscovery,
-      provenance: params.dossier.provenance,
-      sourceCoverage: params.dossier.sourceCoverage ?? [],
+    generatedAt,
+    orchestration: params.orchestration,
+    peopleDiscovery: params.peopleDiscovery,
+    provenance: params.dossier.provenance,
+    reportReadiness,
+    reportTemplate: {
+      id: reportTemplate.id,
+      name: reportTemplate.name,
+      sections: reportTemplate.sections,
+      writingStyle: reportTemplate.writingStyle,
+    },
+    reviewerMetadata,
+    sourceCoverage: params.dossier.sourceCoverage ?? [],
     sourceUseWarnings,
     sourceFreshness: params.dossier.freshness,
   });
@@ -132,6 +164,14 @@ export async function buildDossierExportManifest(params: {
       reason: item.reason,
     })),
     sourceUseWarnings,
+    reviewerMetadata,
+    reportTemplate: {
+      id: reportTemplate.id,
+      name: reportTemplate.name,
+      sections: [...reportTemplate.sections],
+      writingStyle: reportTemplate.writingStyle,
+    },
+    reportReadiness,
     analystFollowUps: analystFollowUps.map((followUp) => ({
       id: followUp.id,
       priority: followUp.priority,
