@@ -140,7 +140,7 @@ export function NextChecksSection({ dossier }: { dossier: BusinessDossier }) {
                     <ul className={cn("mt-2 list-disc space-y-1 pl-4 text-sm leading-6", reviewedMutedTextClassName)}>
                       {followUp.evidenceBasis.map((basis) => (
                         <li key={`${followUp.id}-${basis.ref}`}>
-                          {followUpCategoryLabel(basis.kind)}: {basis.ref}
+                          {formatNextCheckInputLabel(basis.kind)}: {basis.ref}
                         </li>
                       ))}
                     </ul>

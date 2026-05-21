@@ -22,7 +22,7 @@ import {
   sourceCoverageStatusLabel,
 } from "@/lib/dossier";
 import { buildDossierExportManifest } from "@/lib/export/manifest";
-import { formatNextCheckInputSummary } from "@/lib/next-checks";
+import { followUpCategoryLabel, followUpPriorityLabel, formatAnalystFollowUpInputSummary, getAnalystFollowUps } from "@/lib/next-checks";
 import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
 import {
   DEFAULT_REPORT_TEMPLATE,
@@ -241,12 +241,12 @@ export async function exportDossierDocx(
 
   if (includes("action_plan")) {
     children.push(heading(REPORT_SECTION_LABELS.action_plan));
-    const nextChecks = dossier.nextChecks ?? [];
-    if (nextChecks.length === 0) {
-      children.push(paragraph("No follow-up checks returned."));
+    const analystFollowUps = getAnalystFollowUps(dossier);
+    if (analystFollowUps.length === 0) {
+      children.push(paragraph("No prioritized analyst follow-ups returned."));
     } else {
-      nextChecks.forEach((check) => {
-        children.push(paragraph(`${check.tool}: ${check.reason}; suggested input: ${formatNextCheckInputSummary(check.input)}`));
+      analystFollowUps.forEach((followUp) => {
+        children.push(paragraph(`${followUpPriorityLabel(followUp.priority)} - ${followUpCategoryLabel(followUp.category)}: ${followUp.action}; evidence gap: ${followUp.reason}; why this matters: ${followUp.whyThisMatters}; suggested input: ${formatAnalystFollowUpInputSummary(followUp)}`));
       });
     }
   }
@@ -283,6 +283,7 @@ export async function exportDossierDocx(
       paragraph(`Orchestration stages: ${manifest.orchestration?.stages.map((stage) => `${stage.label}: ${stage.status}`).join("; ") ?? "Not included"}`),
       paragraph(`Source-use warnings: ${manifest.sourceUseWarnings.length === 0 ? "None triggered" : manifest.sourceUseWarnings.map((warning) => `${warning.title}: ${warning.triggeredBy.join(", ")}`).join("; ")}`),
       paragraph(`Source coverage: ${manifest.sourceCoverage.length === 0 ? "Not included" : manifest.sourceCoverage.map((item) => `${item.label}: ${item.status}/${item.coverageLevel}`).join("; ")}`),
+      paragraph(`Analyst follow-ups: ${manifest.analystFollowUps.length === 0 ? "None included" : manifest.analystFollowUps.map((item) => `${item.priority}/${item.category}: ${item.action}`).join("; ")}`),
       paragraph(`Signature note: ${manifest.signature.note}`),
     );
   }

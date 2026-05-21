@@ -6,6 +6,7 @@ import type {
   PeopleDiscovery,
   WebPresence,
 } from "@/lib/api/client";
+import { getAnalystFollowUps, formatAnalystFollowUpInputSummary, followUpPriorityLabel } from "@/lib/next-checks";
 import type { ReportExportFormat, ReportWritingStyle } from "@/lib/report-template";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
 import {
@@ -63,7 +64,7 @@ export type CddCaseFollowUpTask = {
   id: string;
   title: string;
   description: string | null;
-  source: "analyst" | "dossier_next_check" | "memo_next_step";
+  source: "analyst" | "dossier_analyst_follow_up" | "dossier_next_check" | "memo_next_step";
   sourceRef: string | null;
   status: "open" | "completed";
   createdAt: string;
@@ -118,6 +119,7 @@ export type CddCaseEvidencePack = {
   gaps: BusinessDossier["gaps"];
   limits: BusinessDossier["limits"];
   sourceCoverage: NonNullable<BusinessDossier["sourceCoverage"]>;
+  analystFollowUps: NonNullable<BusinessDossier["analystFollowUps"]>;
   webPresence?: WebPresence;
   peopleDiscovery?: PeopleDiscovery;
   orchestration?: CddOrchestrationTrace;
@@ -374,6 +376,7 @@ const emptyEvidencePack = (): CddCaseEvidencePack => ({
   gaps: [],
   limits: [],
   sourceCoverage: [],
+  analystFollowUps: [],
 });
 
 const candidateIdentifier = (candidate: CounterpartyResolutionCandidate | null): string | null =>
@@ -423,6 +426,7 @@ const buildEvidencePack = (input: {
   gaps: input.dossier.gaps,
   limits: input.dossier.limits,
   sourceCoverage: input.dossier.sourceCoverage ?? [],
+  analystFollowUps: getAnalystFollowUps(input.dossier),
   ...(input.webPresence === undefined ? {} : { webPresence: input.webPresence }),
   ...(input.peopleDiscovery === undefined ? {} : { peopleDiscovery: input.peopleDiscovery }),
   ...(input.orchestration === undefined ? {} : { orchestration: input.orchestration }),
@@ -439,22 +443,33 @@ const generatedFollowUpTasks = (
 ): CddCaseFollowUpTask[] => {
   const tasks: CddCaseFollowUpTask[] = [];
 
-  input.dossier?.nextChecks?.forEach((check, index) => {
-    const sourceRef = `dossier.nextChecks.${index}`;
-    tasks.push({
-      id: hashValue({ caseId, sourceRef, tool: check.tool, reason: check.reason }),
-      title: `${check.tool}: ${check.reason}`,
-      description: JSON.stringify(check.input),
-      source: "dossier_next_check",
-      sourceRef,
-      status: "open",
-      createdAt: input.now,
-      updatedAt: input.now,
-      completedAt: null,
-      createdBy: session.actorId,
-      updatedBy: session.actorId,
+  if (input.dossier !== undefined) {
+    const analystFollowUps = getAnalystFollowUps(input.dossier);
+    analystFollowUps.forEach((followUp, index) => {
+      const sourceRef = input.dossier?.analystFollowUps?.some((item) => item.id === followUp.id) === true
+        ? `dossier.analystFollowUps.${index}`
+        : `dossier.nextChecks.${index}`;
+      tasks.push({
+        id: hashValue({ caseId, sourceRef, followUpId: followUp.id, action: followUp.action }),
+        title: `${followUpPriorityLabel(followUp.priority)}: ${followUp.action}`,
+        description: [
+          `Evidence gap: ${followUp.reason}`,
+          `Why this matters: ${followUp.whyThisMatters}`,
+          `Suggested input: ${formatAnalystFollowUpInputSummary(followUp)}`,
+        ].join("\n"),
+        source: input.dossier?.analystFollowUps?.some((item) => item.id === followUp.id) === true
+          ? "dossier_analyst_follow_up"
+          : "dossier_next_check",
+        sourceRef,
+        status: "open",
+        createdAt: input.now,
+        updatedAt: input.now,
+        completedAt: null,
+        createdBy: session.actorId,
+        updatedBy: session.actorId,
+      });
     });
-  });
+  }
 
   if (input.memoState?.status === "ready") {
     input.memoState.decisionAid.nextSteps.forEach((step, index) => {
@@ -919,7 +934,11 @@ export const importCddCaseJsonPackage = (
     version: 1,
     workspaceId: session.workspaceId,
     storageScope: "browser_local",
-    evidencePack: incoming.evidencePack ?? emptyEvidencePack(),
+    evidencePack: {
+      ...emptyEvidencePack(),
+      ...(incoming.evidencePack ?? {}),
+      analystFollowUps: incoming.evidencePack?.analystFollowUps ?? [],
+    },
     analystNotes: Array.isArray(incoming.analystNotes) ? incoming.analystNotes : [],
     followUpTasks: Array.isArray(incoming.followUpTasks) ? incoming.followUpTasks : [],
     exports: Array.isArray(incoming.exports) ? incoming.exports : [],

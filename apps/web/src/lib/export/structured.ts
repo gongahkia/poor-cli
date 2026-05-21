@@ -24,6 +24,7 @@ import {
   buildSourceUseWarningsFromSources,
   formatSourceUseWarnings,
 } from "@/lib/source-use-warnings";
+import { followUpPriorityLabel, getAnalystFollowUps } from "@/lib/next-checks";
 
 const downloadText = (filename: string, mimeType: string, text: string): void => {
   const blob = new Blob([text], { type: mimeType });
@@ -93,7 +94,11 @@ export const buildSingleDossierCsvRow = (
 ): Record<string, unknown> => {
   const summary = buildDossierExportSummary(dossier);
   const sourceUseWarnings = buildSourceUseWarnings({ dossier });
+  const analystFollowUps = getAnalystFollowUps(dossier);
   return {
+    analystFollowUps: analystFollowUps
+      .map((followUp) => `${followUpPriorityLabel(followUp.priority)}:${followUp.category}:${followUp.action}:${followUp.reason}`)
+      .join(";"),
     complianceUseNotice: buildComplianceUseSummary(),
     confidence: summary.confidence,
     entity: summary.entity,
@@ -134,6 +139,7 @@ export async function buildSingleDossierJsonPayload(params: {
     complianceUse: buildComplianceUseLimitations(),
     dossier: params.dossier,
     generatedAt,
+    analystFollowUps: getAnalystFollowUps(params.dossier),
     limits: params.dossier.limits,
     manifest,
     orchestration: params.orchestration ?? null,

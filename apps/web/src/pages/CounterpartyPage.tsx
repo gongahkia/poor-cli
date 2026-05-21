@@ -22,6 +22,7 @@ import {
   type ReportTemplate,
   type ReportWritingStyle,
 } from "@/lib/report-template";
+import { followUpPriorityLabel, getAnalystFollowUps } from "@/lib/next-checks";
 import { resolveActiveSession } from "@/lib/workspace";
 import {
   addCddCaseNote,
@@ -488,8 +489,10 @@ function DossierView({
     ...(memo.status === "ready" ? memo.decisionAid.confidenceBlockers : []),
   ]);
   const analystFollowUps = uniqueStrings([
+    ...getAnalystFollowUps(dossier).map((followUp) =>
+      `[${followUpPriorityLabel(followUp.priority)}] ${followUp.action} Evidence gap: ${followUp.reason} Why this matters: ${followUp.whyThisMatters}`,
+    ),
     ...(memo.status === "ready" ? memo.decisionAid.nextSteps : []),
-    ...(dossier.nextChecks ?? []).map((check) => `${check.tool}: ${check.reason}`),
   ]);
 
   const commitCaseStore = (update: (store: ReturnType<typeof loadWorkspaceStore>) => ReturnType<typeof loadWorkspaceStore>) => {
@@ -642,7 +645,7 @@ function DossierView({
         />
         {dossier.nextChecks === undefined || dossier.nextChecks.length === 0 ? null : (
           <details>
-            <summary>Raw next-check inputs</summary>
+            <summary>Legacy next-check inputs</summary>
             <pre>{stringifyJson(dossier.nextChecks)}</pre>
           </details>
         )}

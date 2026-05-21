@@ -14,7 +14,7 @@ import {
 } from "@/lib/dossier";
 import { complianceUseLimitations } from "@/lib/compliance";
 import { buildDossierExportManifest } from "@/lib/export/manifest";
-import { formatNextCheckInputSummary } from "@/lib/next-checks";
+import { followUpCategoryLabel, followUpPriorityLabel, formatAnalystFollowUpInputSummary, getAnalystFollowUps } from "@/lib/next-checks";
 import { DEFAULT_REPORT_TEMPLATE, REPORT_SECTION_LABELS, REPORT_WRITING_STYLE_LABELS, type ReportSectionId, type ReportTemplate } from "@/lib/report-template";
 import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
 import type { WebPresence } from "@/lib/api/client";
@@ -377,13 +377,14 @@ export async function exportDossierPdf(
   if (includes("action_plan")) {
     y = ensurePage(doc, y);
     y = addSectionTitle(doc, REPORT_SECTION_LABELS.action_plan, y);
+    const analystFollowUps = getAnalystFollowUps(brief);
     y = addSummaryRows(
       doc,
-      (brief.nextChecks ?? []).length === 0
-        ? [{ label: "Next checks", value: "No follow-up checks returned." }]
-        : (brief.nextChecks ?? []).map((check) => ({
-            label: check.tool,
-            value: `${check.reason}; suggested input: ${formatNextCheckInputSummary(check.input)}`,
+      analystFollowUps.length === 0
+        ? [{ label: "Analyst follow-ups", value: "No prioritized analyst follow-ups returned." }]
+        : analystFollowUps.map((followUp) => ({
+            label: `${followUpPriorityLabel(followUp.priority)} - ${followUpCategoryLabel(followUp.category)}`,
+            value: `${followUp.action}; evidence gap: ${followUp.reason}; why this matters: ${followUp.whyThisMatters}; suggested input: ${formatAnalystFollowUpInputSummary(followUp)}`,
           })),
       y,
       maxWidth,
@@ -471,6 +472,12 @@ export async function exportDossierPdf(
           value: manifest.sourceCoverage.length === 0
             ? "Not included"
             : manifest.sourceCoverage.map((item) => `${item.label}: ${item.status}/${item.coverageLevel}`).join("; "),
+        },
+        {
+          label: "Analyst follow-ups",
+          value: manifest.analystFollowUps.length === 0
+            ? "None included"
+            : manifest.analystFollowUps.map((item) => `${item.priority}/${item.category}: ${item.action}`).join("; "),
         },
         { label: "Signature note", value: manifest.signature.note },
       ],

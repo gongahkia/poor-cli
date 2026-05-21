@@ -1,6 +1,7 @@
 import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
 import type { WebPresence } from "@/lib/api/client";
+import { getAnalystFollowUps } from "@/lib/next-checks";
 import { buildSourceUseWarnings, type SourceUseWarning } from "@/lib/source-use-warnings";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
 
@@ -28,6 +29,13 @@ export type DossierExportManifest = {
     reason: string;
   }[];
   sourceUseWarnings: SourceUseWarning[];
+  analystFollowUps: {
+    id: string;
+    priority: string;
+    category: string;
+    action: string;
+    evidenceRefs: string[];
+  }[];
   includedArtifacts: {
     analystMemo: boolean;
     orchestrationTrace: boolean;
@@ -83,7 +91,9 @@ export async function buildDossierExportManifest(params: {
     dossier: params.dossier,
     ...(params.webPresence === undefined ? {} : { webPresence: params.webPresence }),
   });
+  const analystFollowUps = getAnalystFollowUps(params.dossier);
   const signaturePayload = stableStringify({
+    analystFollowUps,
     dossierHash,
     generatedAt,
     orchestration: params.orchestration,
@@ -118,6 +128,13 @@ export async function buildDossierExportManifest(params: {
       reason: item.reason,
     })),
     sourceUseWarnings,
+    analystFollowUps: analystFollowUps.map((followUp) => ({
+      id: followUp.id,
+      priority: followUp.priority,
+      category: followUp.category,
+      action: followUp.action,
+      evidenceRefs: followUp.evidenceBasis.map((basis) => basis.ref),
+    })),
     includedArtifacts: {
       analystMemo: params.analystMemo !== undefined,
       orchestrationTrace: params.orchestration !== undefined,

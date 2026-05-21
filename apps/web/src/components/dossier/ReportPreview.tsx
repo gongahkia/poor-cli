@@ -19,6 +19,7 @@ import {
   type ReportTemplate,
 } from "@/lib/report-template";
 import { buildSourceUseWarnings } from "@/lib/source-use-warnings";
+import { followUpPriorityLabel, getAnalystFollowUps } from "@/lib/next-checks";
 import type { BusinessDossier, BriefSummaryItem } from "@/types/dossier";
 import type { AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
 import type { PeopleDiscoveryState } from "@/components/dossier/PeopleDiscoverySection";
@@ -118,6 +119,11 @@ function riskRows(dossier: BusinessDossier, memoState: AnalystMemoState): Previe
 
 function actionRows(dossier: BusinessDossier, memoState: AnalystMemoState): PreviewLine[] {
   const rows: PreviewLine[] = [];
+  const analystFollowUps = getAnalystFollowUps(dossier);
+  rows.push(...analystFollowUps.slice(0, 5).map((followUp, index) => ({
+    label: `Follow-up ${index + 1} (${followUpPriorityLabel(followUp.priority)})`,
+    value: `${followUp.action} Evidence gap: ${followUp.reason}`,
+  })));
   if (memoState.status === "ready") {
     rows.push(...memoState.memo.decisionAid.nextSteps.slice(0, 5).map((step, index) => ({
       label: `Next action ${index + 1}`,
@@ -128,10 +134,6 @@ function actionRows(dossier: BusinessDossier, memoState: AnalystMemoState): Prev
       value: blocker,
     })));
   }
-  rows.push(...(dossier.nextChecks ?? []).slice(0, 4).map((check) => ({
-    label: check.tool,
-    value: check.reason,
-  })));
   return rows;
 }
 
