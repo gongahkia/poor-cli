@@ -54,6 +54,9 @@ type BusinessDossierParams = Readonly<{
   grade?: string | undefined;
   modules?: readonly BusinessDossierModule[] | undefined;
   sectorHints?: readonly BusinessSectorHint[] | undefined;
+  explicitSectorHints?: readonly BusinessSectorHint[] | undefined;
+  webSectorHints?: readonly BusinessSectorHint[] | undefined;
+  analystRerun?: boolean | undefined;
   includeExternalDiligence?: boolean | undefined;
 }>;
 
@@ -176,6 +179,144 @@ const OFFICIAL_COVERAGE_FAMILIES = {
     tools: ["sg_hsa_licensed_pharmacies", "sg_hsa_health_product_licensees"],
   },
 } as const satisfies Record<BusinessDossierModule, CoverageFamilyDefinition>;
+
+type SectorWorkflowGuideItem = Readonly<{
+  sector: BusinessSectorHint;
+  label: string;
+  retainedModules: readonly BusinessDossierModule[];
+  retainedTools: readonly string[];
+  whyRelevant: string;
+  requiredIdentifiers: readonly string[];
+  followUpPrompts: readonly string[];
+  sourceBoundUse: string;
+}>;
+
+const SECTOR_WORKFLOW_GUIDE = [
+  {
+    sector: "construction",
+    label: "Construction and builders",
+    retainedModules: ["bca"],
+    retainedTools: ["sg_bca_licensed_builders", "sg_bca_registered_contractors"],
+    whyRelevant: "BCA licensed-builder and registered-contractor rows can support construction-sector diligence when the counterparty appears to carry out building or contractor activity.",
+    requiredIdentifiers: [
+      "Company name or UEN",
+      "BCA licensed-builder class code, for example GB1",
+      "BCA registered-contractor workhead and grade, for example CW01 / B2",
+    ],
+    followUpPrompts: [
+      "Rerun with the exact UEN or registered construction company name.",
+      "If the BCA class code, workhead, or grade is known, rerun the BCA module with that identifier.",
+    ],
+    sourceBoundUse: "Use BCA rows only as public registry evidence for the matching source record; no licensing opinion is inferred from no-match or skipped coverage.",
+  },
+  {
+    sector: "architecture",
+    label: "Architecture firms and architects",
+    retainedModules: ["boa"],
+    retainedTools: ["sg_boa_architecture_firms", "sg_boa_architects"],
+    whyRelevant: "BOA firm and architect registries can support architecture-firm diligence where the counterparty or named professional appears in the retained BOA datasets.",
+    requiredIdentifiers: [
+      "Architecture firm name",
+      "Architect name or BOA registration number",
+    ],
+    followUpPrompts: [
+      "Rerun with the exact architecture-firm name shown in source material.",
+      "If an individual architect is in scope, rerun with the BOA registration number or architect name.",
+    ],
+    sourceBoundUse: "Use BOA rows only for source-backed firm or architect matches; absence of a BOA row is not a conclusion about all architectural activity.",
+  },
+  {
+    sector: "real_estate",
+    label: "Real estate agencies and salespersons",
+    retainedModules: ["cea"],
+    retainedTools: ["sg_cea_salespersons"],
+    whyRelevant: "CEA salesperson and estate-agent records can support real-estate diligence when an agency, salesperson, registration number, or licence number is in scope.",
+    requiredIdentifiers: [
+      "CEA salesperson registration number, for example R123456A",
+      "Estate-agent licence number, for example L3000001A",
+      "Salesperson name or estate-agent name",
+    ],
+    followUpPrompts: [
+      "Rerun with the CEA registration number when reviewing an individual salesperson.",
+      "Rerun with the estate-agent licence number or estate-agent name when reviewing an agency.",
+    ],
+    sourceBoundUse: "Use CEA rows as official registry evidence for matched salespersons or estate agents; no-match coverage is a source gap, not a clearance.",
+  },
+  {
+    sector: "healthcare",
+    label: "Healthcare suppliers and pharmacies",
+    retainedModules: ["hsa"],
+    retainedTools: ["sg_hsa_health_product_licensees", "sg_hsa_licensed_pharmacies"],
+    whyRelevant: "HSA health-product licensee and licensed-pharmacy rows can support healthcare-sector diligence for suppliers, importers, wholesalers, manufacturers, or pharmacies.",
+    requiredIdentifiers: [
+      "Company or pharmacy name",
+      "HSA licence type or licence reference if available",
+      "Pharmacist-in-charge, address, or postal code for pharmacy checks if available",
+    ],
+    followUpPrompts: [
+      "Rerun with the exact company name used on the HSA health-product licence.",
+      "For pharmacy checks, rerun with the pharmacy name or a tighter pharmacy identifier.",
+    ],
+    sourceBoundUse: "Use HSA rows only for matched licence or pharmacy evidence; a match does not imply every product or site is covered.",
+  },
+  {
+    sector: "hospitality",
+    label: "Hotels and keepers",
+    retainedModules: ["hlb"],
+    retainedTools: ["sg_hlb_hotels"],
+    whyRelevant: "HLB hotel and keeper rows can support hospitality diligence where a hotel name, keeper, or operator appears in the retained hotels dataset.",
+    requiredIdentifiers: [
+      "Hotel name",
+      "Hotel keeper or operator name",
+      "Hotel address or postal code if available",
+    ],
+    followUpPrompts: [
+      "Rerun with the exact hotel name if the operator name did not match.",
+      "Rerun with the keeper or operator name shown in source material.",
+    ],
+    sourceBoundUse: "Use HLB rows as hotel or keeper evidence only; a keeper match is not a full hospitality licensing opinion.",
+  },
+  {
+    sector: "procurement",
+    label: "Public procurement suppliers",
+    retainedModules: ["gebiz"],
+    retainedTools: ["sg_gebiz_tenders"],
+    whyRelevant: "GeBIZ award rows can support procurement diligence where the counterparty may have supplied goods or services to Singapore public-sector buyers.",
+    requiredIdentifiers: [
+      "Supplier or entity name used in GeBIZ awards",
+      "Tender agency, category, or procurement terms if narrowing is needed",
+    ],
+    followUpPrompts: [
+      "Rerun with the exact supplier name used in award notices.",
+      "If the supplier name is broad, follow up with agency, category, or tender terms in a direct GeBIZ check.",
+    ],
+    sourceBoundUse: "Use GeBIZ rows only as public procurement award evidence; no-match coverage does not rule out subcontracting or differently named supplier records.",
+  },
+] as const satisfies readonly SectorWorkflowGuideItem[];
+
+const sectorGuideForModule = (
+  module: BusinessDossierModule,
+): SectorWorkflowGuideItem | undefined =>
+  SECTOR_WORKFLOW_GUIDE.find((item) => item.retainedModules.includes(module));
+
+const moduleRequiredIdentifierText = (
+  module: BusinessDossierModule,
+): string => {
+  if (module === "acra") {
+    return "company name or UEN";
+  }
+  return sectorGuideForModule(module)?.requiredIdentifiers.join("; ") ?? "a source-specific identifier";
+};
+
+const needsIdentifierGapCode = (module: BusinessDossierModule): string =>
+  `${module.toUpperCase()}_NEEDS_IDENTIFIER`;
+
+const buildNeedsIdentifierGap = (
+  module: BusinessDossierModule,
+): EvidenceGap => toGap(
+  needsIdentifierGapCode(module),
+  `${OFFICIAL_COVERAGE_FAMILIES[module].label} was selected but not searched because the dossier needs ${moduleRequiredIdentifierText(module)}. Rerun with an explicit sector hint and the source-specific identifier before treating this sector as reviewed.`,
+);
 
 const SUPPLEMENTAL_COVERAGE_FAMILIES = [
   {
@@ -773,13 +914,16 @@ const buildBusinessLimits = (
 
 type ModuleReason = Readonly<{
   module: BusinessDossierModule;
-  status: "matched" | "unmatched" | "unsearched" | "skipped";
-  selectedBy: readonly ("default" | "explicit_module" | "sector_hint" | "inferred_sector")[];
+  status: "matched" | "unmatched" | "needs_identifier" | "unsearched" | "skipped";
+  selectedBy: readonly ("default" | "explicit_module" | "sector_hint" | "inferred_sector" | "web_hint" | "analyst_rerun")[];
   searched: boolean;
   matched: boolean;
   reason: string;
   sectorHints?: readonly BusinessSectorHint[];
   inferredSectors?: readonly BusinessSectorHint[];
+  webSectorHints?: readonly BusinessSectorHint[];
+  requiredIdentifiers?: readonly string[];
+  followUpPrompts?: readonly string[];
 }>;
 
 const gapCodesForModule = (
@@ -835,6 +979,9 @@ const buildOfficialCoverageReason = (
   coverageLevel: SourceCoverageItem["coverageLevel"],
   unavailableCount: number,
 ): string => {
+  if (reason.status === "needs_identifier") {
+    return `${reason.reason} Treat this as an unchecked sector gap, not a clean result.`;
+  }
   if (status === "not_applicable") {
     return `${reason.reason} No conclusion is drawn from this unchecked source family.`;
   }
@@ -897,14 +1044,19 @@ const formatModuleTriggers = (triggers: readonly ModuleReason["selectedBy"][numb
   return triggers.map((trigger) => {
     if (trigger === "default") return "default identity lookup";
     if (trigger === "explicit_module") return "explicit modules input";
-    if (trigger === "sector_hint") return "supplied sector hint";
-    return "ACRA SSIC inference";
+    if (trigger === "sector_hint") return "explicit sector hint";
+    if (trigger === "inferred_sector") return "ACRA SSIC inference";
+    if (trigger === "web_hint") return "supplemental web hint";
+    return "analyst rerun";
   }).join(", ");
 };
 
 const buildModuleReasons = (params: Readonly<{
   requestedModules: readonly BusinessDossierModule[] | undefined;
   suppliedSectorHints: readonly BusinessSectorHint[];
+  explicitSectorHints: readonly BusinessSectorHint[];
+  webSectorHints: readonly BusinessSectorHint[];
+  analystRerun: boolean;
   inferredSectors: readonly InferredBusinessSector[];
   selectedModules: readonly BusinessDossierModule[];
   searchedModules: readonly BusinessDossierModule[];
@@ -923,15 +1075,24 @@ const buildModuleReasons = (params: Readonly<{
     const suppliedSectorHints = params.suppliedSectorHints.filter((sectorHint) =>
       getBusinessModulesForSector(sectorHint).includes(module),
     );
+    const explicitSectorHints = params.explicitSectorHints.filter((sectorHint) =>
+      getBusinessModulesForSector(sectorHint).includes(module),
+    );
+    const webSectorHints = params.webSectorHints.filter((sectorHint) =>
+      getBusinessModulesForSector(sectorHint).includes(module),
+    );
     const inferredSectors = params.inferredSectors
       .filter((sector) => sector.modules.includes(module))
       .map((sector) => sector.sector);
     const selectedBy: ModuleReason["selectedBy"][number][] = [];
+    const guide = sectorGuideForModule(module);
 
     if (module === "acra" && params.requestedModules === undefined) selectedBy.push("default");
     if (requestedModuleSet?.has(module) === true) selectedBy.push("explicit_module");
-    if (suppliedSectorHints.length > 0) selectedBy.push("sector_hint");
+    if (explicitSectorHints.length > 0) selectedBy.push("sector_hint");
     if (params.requestedModules === undefined && inferredSectors.length > 0) selectedBy.push("inferred_sector");
+    if (webSectorHints.length > 0) selectedBy.push("web_hint");
+    if (params.analystRerun && selectedModuleSet.has(module) && module !== "acra") selectedBy.push("analyst_rerun");
 
     const selected = selectedModuleSet.has(module);
     const searched = searchedModuleSet.has(module);
@@ -940,8 +1101,8 @@ const buildModuleReasons = (params: Readonly<{
       ? "matched"
       : unmatchedModuleSet.has(module)
         ? "unmatched"
-        : unsearchedModuleSet.has(module)
-          ? "unsearched"
+        : selected && unsearchedModuleSet.has(module)
+          ? "needs_identifier"
           : "skipped";
     const triggerText = formatModuleTriggers(selectedBy);
     const explicitScopeNote = params.requestedModules === undefined || inferredSectors.length === 0 || selected
@@ -952,8 +1113,8 @@ const buildModuleReasons = (params: Readonly<{
         ? matched
           ? `Selected by ${triggerText}; lookup ran and returned public records.`
           : `Selected by ${triggerText}; lookup ran but returned no matching public records.`
-        : `Selected by ${triggerText}; lookup was not run because the supplied identifiers do not satisfy this module's search inputs.`
-      : `Skipped because it was not selected by the default identity path, explicit modules, supplied sector hints, or active inferred-sector scope.${explicitScopeNote}`;
+        : `Selected by ${triggerText}; lookup needs ${moduleRequiredIdentifierText(module)} before it can run. Rerun with an explicit sector hint and source-specific identifier.`
+      : `Skipped because it was not selected by the default identity path, explicit modules, explicit sector hints, supplemental web hints, analyst reruns, or active inferred-sector scope.${explicitScopeNote} Rerun with an explicit sector hint if this sector applies.`;
 
     return {
       module,
@@ -964,6 +1125,11 @@ const buildModuleReasons = (params: Readonly<{
       reason,
       ...(suppliedSectorHints.length === 0 ? {} : { sectorHints: suppliedSectorHints }),
       ...(inferredSectors.length === 0 ? {} : { inferredSectors }),
+      ...(webSectorHints.length === 0 ? {} : { webSectorHints }),
+      ...(guide === undefined ? {} : {
+        followUpPrompts: guide.followUpPrompts,
+        requiredIdentifiers: guide.requiredIdentifiers,
+      }),
     };
   });
 };
