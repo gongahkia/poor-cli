@@ -334,6 +334,14 @@ export function getSourceCoverage(dossier: BusinessDossier): SourceCoverageItem[
   return dossier.sourceCoverage ?? [];
 }
 
+export function getActionableSourceCoverageGaps(dossier: BusinessDossier): SourceCoverageItem[] {
+  return getSourceCoverage(dossier).filter((item) =>
+    item.status === "credential_blocked"
+    || item.status === "unavailable"
+    || item.status === "skipped"
+    || item.coverageLevel === "partial");
+}
+
 export function sourceCoverageStatusLabel(status: SourceCoverageItem["status"]): string {
   if (status === "credential_blocked") return "Credential blocked";
   if (status === "not_applicable") return "Not applicable";

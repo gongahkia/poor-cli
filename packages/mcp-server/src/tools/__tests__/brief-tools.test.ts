@@ -23,6 +23,10 @@ vi.mock("../../apis/gebiz/client.js", () => ({
   getGeBIZTenders: vi.fn(),
 }));
 
+vi.mock("../../apis/govfeeds/client.js", () => ({
+  getGovFeedItems: vi.fn(),
+}));
+
 vi.mock("../../apis/hdb/client.js", () => ({
   getHdbResalePrices: vi.fn(),
 }));
@@ -76,6 +80,7 @@ import {
 import { getBoaArchitects, getBoaArchitectureFirms } from "../../apis/boa/client.js";
 import { getCeaSalespersons } from "../../apis/cea/client.js";
 import { getGeBIZTenders } from "../../apis/gebiz/client.js";
+import { getGovFeedItems } from "../../apis/govfeeds/client.js";
 import { getHdbResalePrices } from "../../apis/hdb/client.js";
 import { getHlbHotels } from "../../apis/hlb/client.js";
 import { getHsaHealthProductLicensees, getHsaLicensedPharmacies } from "../../apis/hsa/client.js";
@@ -146,6 +151,7 @@ describe("brief tools", () => {
     vi.mocked(getBoaArchitectureFirms).mockReset();
     vi.mocked(getCeaSalespersons).mockReset();
     vi.mocked(getGeBIZTenders).mockReset();
+    vi.mocked(getGovFeedItems).mockReset();
     vi.mocked(getHdbResalePrices).mockReset();
     vi.mocked(getHlbHotels).mockReset();
     vi.mocked(getHsaHealthProductLicensees).mockReset();
@@ -160,6 +166,21 @@ describe("brief tools", () => {
     vi.mocked(getPropertyTransactions).mockReset();
     vi.mocked(fetchNormalizedMasRecords).mockReset();
     vi.mocked(lookupPlanningArea).mockReset();
+    vi.mocked(getGovFeedItems).mockResolvedValue({
+      cached: false,
+      channelTitle: "Mock feed",
+      feed: {
+        family: "mock",
+        id: "mock_feed",
+        sourceAgency: "Mock agency",
+        sourceUrl: "https://example.test/feed",
+        title: "Mock feed",
+      },
+      observedAt: "2026-05-17T00:00:00.000Z",
+      records: [],
+    } as never);
+    delete process.env["OPENSANCTIONS_API_KEY"];
+    delete process.env["OPENCORPORATES_API_TOKEN"];
   });
 
   it("returns the expanded business dossier envelope", async () => {
@@ -363,6 +384,114 @@ describe("brief tools", () => {
         expect.objectContaining({ code: "PARTIAL_MODULE_COVERAGE", severity: "medium", source: "Resolver" }),
       ]),
     );
+  });
+
+  it("adds a source coverage matrix for fully checked official families", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getBcaLicensedBuilders).mockResolvedValue([
+      { companyName: "ABC CONSTRUCTION PTE LTD", classCode: "GB1" },
+    ] as never);
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([
+      { companyName: "ABC CONSTRUCTION PTE LTD", workhead: "CW01" },
+    ] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      entityName: "ABC CONSTRUCTION PTE LTD",
+      modules: ["acra", "bca"],
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+
+    expect(payload.sourceCoverage).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        coverageLevel: "full",
+        family: "acra",
+        recordCount: 1,
+        status: "checked",
+      }),
+      expect.objectContaining({
+        coverageLevel: "full",
+        family: "bca",
+        recordCount: 2,
+        status: "checked",
+      }),
+    ]));
+  });
+
+  it("represents partial family coverage when one source in a checked family is unavailable", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+    vi.mocked(getBcaLicensedBuilders).mockRejectedValue(new Error("BCA builder feed timeout"));
+    vi.mocked(getBcaRegisteredContractors).mockResolvedValue([
+      { companyName: "ABC CONSTRUCTION PTE LTD", workhead: "CW01" },
+    ] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      entityName: "ABC CONSTRUCTION PTE LTD",
+      modules: ["acra", "bca"],
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+
+    expect(payload.sourceCoverage).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        coverageLevel: "partial",
+        family: "bca",
+        gapCodes: expect.arrayContaining(["BCA_BUILDERS_UNAVAILABLE"]),
+        recordCount: 1,
+        status: "checked",
+        reason: expect.stringContaining("Partial coverage is not clearance"),
+      }),
+    ]));
+  });
+
+  it("keeps skipped and credential-blocked sources as gaps instead of clean results", async () => {
+    vi.mocked(getAcraEntities).mockResolvedValue([
+      {
+        entityName: "ABC CONSTRUCTION PTE LTD",
+        uen: "201912345K",
+        entityStatusDescription: "Live Company",
+      },
+    ] as never);
+
+    const jsonResult = await handleBusinessDossier({
+      entityName: "ABC CONSTRUCTION PTE LTD",
+      includeExternalDiligence: true,
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+
+    expect(payload.sourceCoverage).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        family: "opensanctions",
+        status: "credential_blocked",
+        reason: expect.stringContaining("confidence blocker"),
+      }),
+      expect.objectContaining({
+        family: "opencorporates",
+        status: "credential_blocked",
+        reason: expect.stringContaining("confidence blocker"),
+      }),
+      expect.objectContaining({
+        family: "web_presence",
+        status: "skipped",
+        reason: expect.stringContaining("was not run"),
+      }),
+    ]));
+    const coverageText = JSON.stringify(payload.sourceCoverage);
+    expect(coverageText).not.toMatch(/clean result|clearance claim|sanctioned-free/i);
+    expect(coverageText).toMatch(/not .*clearance|not proof|No conclusion is drawn/i);
   });
 
   it("infers sector modules from ACRA SSIC evidence and explains module reasons", async () => {

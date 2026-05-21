@@ -19,6 +19,14 @@ export type DossierExportManifest = {
     tool: string;
     recordCount: number;
   }[];
+  sourceCoverage: {
+    family: string;
+    label: string;
+    status: string;
+    coverageLevel: string;
+    recordCount: number;
+    reason: string;
+  }[];
   sourceUseWarnings: SourceUseWarning[];
   includedArtifacts: {
     analystMemo: boolean;
@@ -80,6 +88,7 @@ export async function buildDossierExportManifest(params: {
     generatedAt,
     orchestration: params.orchestration,
     provenance: params.dossier.provenance,
+    sourceCoverage: params.dossier.sourceCoverage ?? [],
     sourceUseWarnings,
     sourceFreshness: params.dossier.freshness,
   });
@@ -99,6 +108,14 @@ export async function buildDossierExportManifest(params: {
       source: item.source,
       tool: item.tool,
       recordCount: item.recordCount,
+    })),
+    sourceCoverage: (params.dossier.sourceCoverage ?? []).map((item) => ({
+      family: item.family,
+      label: item.label,
+      status: item.status,
+      coverageLevel: item.coverageLevel,
+      recordCount: item.recordCount,
+      reason: item.reason,
     })),
     sourceUseWarnings,
     includedArtifacts: {

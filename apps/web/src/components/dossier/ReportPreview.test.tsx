@@ -26,6 +26,28 @@ const dossier = {
     resolution: { matchedModules: ["acra"], searchedModules: ["acra"] },
   },
   riskFlags: [{ code: "ENTITY_NOT_ACTIVE", message: "Entity is not active.", severity: "high", source: "ACRA" }],
+  sourceCoverage: [
+    {
+      authRequired: false,
+      coverageLevel: "full",
+      family: "acra",
+      label: "ACRA entity identity",
+      reason: "ACRA lookup ran and returned one public record.",
+      recordCount: 1,
+      status: "checked",
+      tools: ["sg_acra_entities"],
+    },
+    {
+      authRequired: true,
+      coverageLevel: "none",
+      family: "opencorporates",
+      label: "OpenCorporates cross-links",
+      reason: "OpenCorporates credentials are not configured.",
+      recordCount: 0,
+      status: "credential_blocked",
+      tools: ["sg_opencorporates_links"],
+    },
+  ],
   summary: [
     { label: "Entity", source: "ACRA", value: "DBS PTE. LTD." },
     { label: "UEN", source: "ACRA", value: "197700546G" },
@@ -95,8 +117,25 @@ describe("ReportPreview", () => {
     expect(html).toContain("Dude CDD review report");
     expect(html).toContain("DBS PTE. LTD.");
     expect(html).toContain("Executive summary");
+    expect(html).toContain("Source coverage");
+    expect(html).toContain("OpenCorporates cross-links");
     expect(html).toContain("Risk and confidence");
     expect(html).toContain("Export manifest");
     expect(html).toContain("Hash, schema version, signature");
+  });
+
+  it("does not render missing coverage as a clean gap state", () => {
+    const html = renderToStaticMarkup(
+      <ReportPreview
+        dossier={{ ...dossier, gaps: [] }}
+        memoState={{ status: "error", message: "AI memo unavailable." }}
+        peopleDiscoveryState={{ status: "error", message: "People discovery not run." }}
+        template={DEFAULT_REPORT_TEMPLATE}
+        webPresenceState={{ status: "error", message: "Web presence not run." }}
+      />,
+    );
+
+    expect(html).toContain("OpenCorporates credentials are not configured.");
+    expect(html).not.toContain("No gaps returned.");
   });
 });

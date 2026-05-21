@@ -4,6 +4,10 @@ import type {
   BriefLimit,
   BriefProvenanceItem,
   EvidenceGap,
+  AnalystFollowUp,
+  AnalystFollowUpEvidenceBasis,
+  AnalystFollowUpPriority,
+  AnalystFollowUpReasonCategory,
   HsaNormalizedHealthProductLicenseeRecord,
   MatchConfidence,
   NextCheck,
@@ -460,6 +464,302 @@ const buildBusinessNextChecks = (
   return checks;
 };
 
+type AnalystFollowUpDraft = Omit<AnalystFollowUp, "id">;
+
+const MAX_ANALYST_FOLLOW_UPS = 6;
+
+const PRIORITY_RANK: Record<AnalystFollowUpPriority, number> = {
+  critical: 0,
+  recommended: 1,
+  optional: 2,
+};
+
+const CATEGORY_RANK: Record<AnalystFollowUpReasonCategory, number> = {
+  identity_confidence: 0,
+  source_unavailable: 1,
+  credential_required: 2,
+  sector_gap: 3,
+  supplemental_review: 4,
+  manual_confirmation: 5,
+  report_quality: 6,
+};
+
+const slugId = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48) || "follow-up";
+
+const followUpId = (index: number, followUp: AnalystFollowUpDraft): string =>
+  `follow-up-${String(index + 1).padStart(2, "0")}-${followUp.priority}-${slugId(followUp.category)}-${slugId(followUp.evidenceBasis[0]?.ref ?? followUp.action)}`;
+
+const buildCoverageFollowUp = (
+  item: SourceCoverageItem,
+  nextCheckByTool: ReadonlyMap<string, NextCheck>,
+): AnalystFollowUpDraft | null => {
+  if (item.status === "not_applicable") {
+    return null;
+  }
+
+  const nextCheck = item.tools.map((tool) => nextCheckByTool.get(tool)).find((check) => check !== undefined);
+  const hasOfficialGap = item.evidenceType !== "web_discovery";
+  const basisKind: AnalystFollowUpEvidenceBasis["kind"] = item.status === "skipped"
+    ? "skipped_module"
+    : "source_gap";
+  const basis: AnalystFollowUpEvidenceBasis = {
+    detail: item.reason,
+    kind: basisKind,
+    ref: `sourceCoverage.${item.family}`,
+    source: item.label,
+  };
+
+  if (item.status === "credential_blocked") {
+    return {
+      action: `Configure access for ${item.label} or record that the source was unavailable in this review.`,
+      category: "credential_required",
+      evidenceBasis: [basis],
+      input: nextCheck?.input,
+      priority: item.family === "web_presence" || item.family === "people_discovery" ? "recommended" : "critical",
+      reason: item.requiredCredentials === undefined || item.requiredCredentials.length === 0
+        ? `${item.label} was blocked by missing source access.`
+        : `${item.label} was blocked by missing credential(s): ${item.requiredCredentials.join(", ")}.`,
+      tool: nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)),
+      whyThisMatters: "The dossier is missing a configured source family, so reviewers should not treat the absent provider output as reviewed evidence.",
+    };
+  }
+
+  if (item.status === "unavailable" || item.coverageLevel === "partial") {
+    return {
+      action: `Retry ${item.label} source lookup or record the unresolved provider gap in the analyst file.`,
+      category: "source_unavailable",
+      evidenceBasis: [basis],
+      input: nextCheck?.input,
+      priority: item.family === "acra" ? "critical" : "recommended",
+      reason: item.gapCodes === undefined || item.gapCodes.length === 0
+        ? item.reason
+        : `${item.reason} Gap code(s): ${item.gapCodes.join(", ")}.`,
+      tool: nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)),
+      whyThisMatters: "A failed or partial source read limits the evidence base behind the current CDD summary.",
+    };
+  }
+
+  if (item.status === "skipped") {
+    const supplemental = item.evidenceType === "web_discovery";
+    return {
+      action: supplemental
+        ? `Decide whether ${item.label} supplemental review is needed, then run it or document why it stayed out of scope.`
+        : `Run ${item.label} with a source-specific identifier or document why this source family stayed out of scope.`,
+      category: supplemental ? "supplemental_review" : "sector_gap",
+      evidenceBasis: [basis],
+      input: nextCheck?.input,
+      priority: supplemental ? "optional" : "recommended",
+      reason: item.reason,
+      tool: nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)),
+      whyThisMatters: supplemental
+        ? "Supplemental sources are analyst-review evidence only, but skipped coverage should remain visible in the review trail."
+        : "A selected official source family did not run, so the report should show that the sector evidence is incomplete.",
+    };
+  }
+
+  if (item.status === "checked" && item.recordCount === 0) {
+    if (item.family === "acra") {
+      return {
+        action: "Confirm the counterparty name or UEN against ACRA source rows before using this dossier.",
+        category: "identity_confidence",
+        evidenceBasis: [basis],
+        input: nextCheck?.input,
+        priority: "critical",
+        reason: item.reason,
+        tool: nextCheck?.tool ?? "sg_acra_entities",
+        whyThisMatters: "ACRA identity evidence is the gate for the rest of the CDD workflow.",
+      };
+    }
+    if (hasOfficialGap) {
+      return {
+        action: `Review whether ${item.label} needs a more specific identifier for this counterparty.`,
+        category: "sector_gap",
+        evidenceBasis: [basis],
+        input: nextCheck?.input,
+        priority: "recommended",
+        reason: item.reason,
+        tool: nextCheck?.tool ?? item.tools[0],
+        whyThisMatters: "A zero-record official source result is missing public evidence, not a positive finding.",
+      };
+    }
+    return {
+      action: `Review ${item.label} results and note the source limitation in the analyst file.`,
+      category: "supplemental_review",
+      evidenceBasis: [basis],
+      input: nextCheck?.input,
+      priority: "optional",
+      reason: item.reason,
+      tool: nextCheck?.tool ?? item.tools.find((tool) => !/tinyfish/i.test(tool)),
+      whyThisMatters: "Supplemental search results can be incomplete, so absent snippets should not be overstated.",
+    };
+  }
+
+  return null;
+};
+
+const buildGapFollowUp = (
+  gap: EvidenceGap,
+  nextCheckByTool: ReadonlyMap<string, NextCheck>,
+): AnalystFollowUpDraft | null => {
+  const basis: AnalystFollowUpEvidenceBasis = {
+    detail: gap.message,
+    kind: /RESOLUTION|ACRA|NO_MATCH/i.test(gap.code) ? "confidence_blocker" : "source_gap",
+    ref: `gap.${gap.code}`,
+    source: gap.code,
+  };
+  const acraCheck = nextCheckByTool.get("sg_acra_entities");
+
+  if (/RESOLUTION_CONFIRMATION_REQUIRED|RESOLUTION_FUZZY_MATCH/i.test(gap.code)) {
+    return {
+      action: "Confirm the selected registry candidate against source rows before relying on this dossier.",
+      category: "manual_confirmation",
+      evidenceBasis: [basis],
+      input: acraCheck?.input,
+      priority: "critical",
+      reason: gap.message,
+      tool: acraCheck?.tool ?? "sg_acra_entities",
+      whyThisMatters: "Ambiguous entity resolution can attach evidence to the wrong counterparty record.",
+    };
+  }
+
+  if (/RESOLUTION_NO_MATCH|NO_ACRA_MATCH|ACRA/i.test(gap.code)) {
+    return {
+      action: "Re-run ACRA identity lookup with the exact UEN or normalized company name.",
+      category: "identity_confidence",
+      evidenceBasis: [basis],
+      input: acraCheck?.input,
+      priority: "critical",
+      reason: gap.message,
+      tool: acraCheck?.tool ?? "sg_acra_entities",
+      whyThisMatters: "The CDD summary depends on a source-backed counterparty identity before sector evidence is useful.",
+    };
+  }
+
+  if (/UNAVAILABLE|FAILED|TIMEOUT|RATE_LIMIT|HTTP/i.test(gap.code)) {
+    return {
+      action: "Retry the failed source module or record the provider gap in the analyst file.",
+      category: "source_unavailable",
+      evidenceBasis: [basis],
+      priority: "recommended",
+      reason: gap.message,
+      whyThisMatters: "Provider failures leave source coverage incomplete and should remain visible to report reviewers.",
+    };
+  }
+
+  return null;
+};
+
+const buildMatchConfidenceFollowUp = (
+  match: MatchConfidence,
+  nextCheckByTool: ReadonlyMap<string, NextCheck>,
+): AnalystFollowUpDraft | null => {
+  if (match.confidence === "exact" || match.confidence === "name-exact") {
+    return null;
+  }
+  const basis: AnalystFollowUpEvidenceBasis = {
+    detail: match.confidence === "name-fuzzy"
+      ? `Bounded fuzzy match from ${match.source}${match.matchedOn === null ? "" : ` on ${match.matchedOn}`}.`
+      : `No matching source row from ${match.source}.`,
+    kind: "confidence_blocker",
+    ref: `matchConfidence.${match.source}.${match.confidence}`,
+    source: match.source,
+  };
+  const acraCheck = nextCheckByTool.get("sg_acra_entities");
+
+  return {
+    action: match.confidence === "name-fuzzy"
+      ? `Manually confirm the ${match.source} matched row against the counterparty identifier.`
+      : `Provide a more exact identifier for ${match.source} lookup.`,
+    category: match.confidence === "name-fuzzy" ? "manual_confirmation" : "identity_confidence",
+    evidenceBasis: [basis],
+    input: match.source === "ACRA" ? acraCheck?.input : undefined,
+    priority: match.confidence === "name-fuzzy" ? "recommended" : "critical",
+    reason: basis.detail,
+    tool: match.source === "ACRA" ? acraCheck?.tool ?? "sg_acra_entities" : undefined,
+    whyThisMatters: "Identity confidence affects how much weight the reviewer can place on the attached evidence.",
+  };
+};
+
+const buildReportQualityFollowUp = (limit: BriefLimit): AnalystFollowUpDraft => ({
+  action: "Carry this dossier limitation into the report notes before export.",
+  category: "report_quality",
+  evidenceBasis: [{
+    detail: limit.message,
+    kind: "evidence_limitation",
+    ref: `limit.${limit.code}`,
+    source: "Dossier limit",
+  }],
+  priority: "optional",
+  reason: `${limit.code}: ${limit.message}`,
+  whyThisMatters: "Report readers need the same evidence boundaries that constrained the generated CDD summary.",
+});
+
+const compareFollowUps = (left: AnalystFollowUpDraft, right: AnalystFollowUpDraft): number => {
+  const priority = PRIORITY_RANK[left.priority] - PRIORITY_RANK[right.priority];
+  if (priority !== 0) return priority;
+  const category = CATEGORY_RANK[left.category] - CATEGORY_RANK[right.category];
+  if (category !== 0) return category;
+  const leftRef = left.evidenceBasis[0]?.ref ?? "";
+  const rightRef = right.evidenceBasis[0]?.ref ?? "";
+  const ref = leftRef.localeCompare(rightRef);
+  if (ref !== 0) return ref;
+  return left.action.localeCompare(right.action);
+};
+
+export const buildDossierAnalystFollowUps = (
+  dossier: Pick<BriefArtifact, "gaps" | "limits" | "matchConfidence" | "nextChecks" | "sourceCoverage">,
+): readonly AnalystFollowUp[] => {
+  const nextCheckByTool = new Map((dossier.nextChecks ?? []).map((check) => [check.tool, check]));
+  const drafts: AnalystFollowUpDraft[] = [
+    ...(dossier.sourceCoverage ?? []).flatMap((item) => {
+      const followUp = buildCoverageFollowUp(item, nextCheckByTool);
+      return followUp === null ? [] : [followUp];
+    }),
+    ...dossier.gaps.flatMap((gap) => {
+      const followUp = buildGapFollowUp(gap, nextCheckByTool);
+      return followUp === null ? [] : [followUp];
+    }),
+    ...(dossier.matchConfidence ?? []).flatMap((match) => {
+      const followUp = buildMatchConfidenceFollowUp(match, nextCheckByTool);
+      return followUp === null ? [] : [followUp];
+    }),
+  ];
+  const limit = dossier.limits.find((item) => item.code === "PUBLIC_DATA_ONLY")
+    ?? dossier.limits.find((item) => item.code === "NO_CORPORATE_GRAPH")
+    ?? dossier.limits[0];
+  if (limit !== undefined) {
+    drafts.push(buildReportQualityFollowUp(limit));
+  }
+
+  const deduped = new Map<string, AnalystFollowUpDraft>();
+  for (const draft of drafts) {
+    const key = `${draft.priority}:${draft.category}:${draft.tool ?? ""}:${draft.evidenceBasis.map((basis) => basis.ref).join("|")}`;
+    if (!deduped.has(key)) {
+      deduped.set(key, draft);
+    }
+  }
+
+  return Array.from(deduped.values())
+    .sort(compareFollowUps)
+    .slice(0, MAX_ANALYST_FOLLOW_UPS)
+    .map((followUp, index) => ({
+      ...followUp,
+      id: followUpId(index, followUp),
+    }));
+};
+
+export const withDossierAnalystFollowUps = <
+  T extends Pick<BriefArtifact, "gaps" | "limits" | "matchConfidence" | "nextChecks" | "sourceCoverage">,
+>(dossier: T): T & { readonly analystFollowUps: readonly AnalystFollowUp[] } => ({
+  ...dossier,
+  analystFollowUps: buildDossierAnalystFollowUps(dossier),
+});
+
 const buildBusinessLimits = (
   selectedModules: readonly BusinessDossierModule[],
 ): readonly BriefLimit[] => [
@@ -905,7 +1205,7 @@ const buildSupplementalCoverageItems = (params: Readonly<{
   });
 };
 
-const buildOrchestratorOnlyCoverageItems = (observedAt: string): readonly SourceCoverageItem[] =>
+const buildOrchestratorOnlyCoverageItems = (): readonly SourceCoverageItem[] =>
   ORCHESTRATOR_ONLY_COVERAGE_FAMILIES.map((definition) =>
     buildSourceCoverageItem(definition, {
       checkedAt: null,
@@ -922,7 +1222,7 @@ const buildDossierHandoffMarkdown = (params: BusinessDossierParams, data: {
   readonly matchedModules: readonly BusinessDossierModule[];
   readonly unmatchedModules: readonly BusinessDossierModule[];
   readonly riskFlags: readonly RiskFlag[];
-  readonly nextChecks: readonly NextCheck[];
+  readonly analystFollowUps: readonly AnalystFollowUp[];
 }): string => {
   const lines = [
     "## Due Diligence Handoff",
@@ -945,12 +1245,14 @@ const buildDossierHandoffMarkdown = (params: BusinessDossierParams, data: {
   }
 
   lines.push("");
-  lines.push("### Recommended Next Checks");
-  if (data.nextChecks.length === 0) {
+  lines.push("### Prioritized Analyst Follow-ups");
+  if (data.analystFollowUps.length === 0) {
     lines.push("- none");
   } else {
-    data.nextChecks.forEach((check, index) => {
-      lines.push(`${index + 1}. ${check.tool}: ${check.reason}`);
+    data.analystFollowUps.forEach((followUp, index) => {
+      lines.push(`${index + 1}. [${followUp.priority}/${followUp.category}] ${followUp.action}`);
+      lines.push(`   - Evidence gap: ${followUp.reason}`);
+      lines.push(`   - Why this matters: ${followUp.whyThisMatters}`);
     });
   }
 
@@ -1299,14 +1601,6 @@ export const buildBusinessDossierArtifact = async (
     unsearchedModules,
   });
   const nextChecks = buildBusinessNextChecks(searchParams, selectedModules);
-  const handoffMarkdown = buildDossierHandoffMarkdown(params, {
-    selectedModules,
-    searchedModules: searchedModuleList,
-    matchedModules: matchedModuleList,
-    unmatchedModules,
-    riskFlags,
-    nextChecks,
-  });
   const externalQueryName = primaryAcra?.entityName ?? searchParams.entityName;
   const externalUen = primaryAcra?.uen ?? params.uen;
   const externalName = externalQueryName ?? externalUen;
@@ -1378,10 +1672,37 @@ export const buildBusinessDossierArtifact = async (
       includeExternalDiligence: params.includeExternalDiligence,
       observedAt,
     }),
-    ...buildOrchestratorOnlyCoverageItems(observedAt),
+    ...buildOrchestratorOnlyCoverageItems(),
   ];
+  const finalGaps = [
+    ...gaps,
+    ...externalArtifacts.flatMap((artifact) => artifact.gaps),
+  ];
+  const finalLimits = [
+    ...buildBusinessLimits(selectedModules),
+    ...externalArtifacts.flatMap((artifact) => artifact.limits),
+  ];
+  const finalRiskFlags = [
+    ...riskFlags,
+    ...externalArtifacts.flatMap((artifact) => artifact.riskFlags ?? []),
+  ];
+  const analystFollowUps = buildDossierAnalystFollowUps({
+    gaps: finalGaps,
+    limits: finalLimits,
+    matchConfidence,
+    nextChecks,
+    sourceCoverage,
+  });
+  const handoffMarkdown = buildDossierHandoffMarkdown(params, {
+    selectedModules,
+    searchedModules: searchedModuleList,
+    matchedModules: matchedModuleList,
+    unmatchedModules,
+    riskFlags: finalRiskFlags,
+    analystFollowUps,
+  });
 
-  return {
+  const artifact: BriefArtifact = {
     title: "Business Dossier",
     summary: [
       { label: "Entity", value: primaryAcra?.entityName ?? primaryArchitectureFirm?.firmName ?? primaryLicensee?.companyName ?? params.entityName ?? null, source: primaryAcra !== undefined ? "ACRA" : primaryArchitectureFirm !== undefined ? "BOA" : primaryLicensee !== undefined ? "HSA" : "Requested" },
@@ -1458,10 +1779,7 @@ export const buildBusinessDossierArtifact = async (
       hlbHotels: hotels,
       externalDiligence: externalRecords,
     },
-    gaps: [
-      ...gaps,
-      ...externalArtifacts.flatMap((artifact) => artifact.gaps),
-    ],
+    gaps: finalGaps,
     provenance: [
       ...(searchedModules.has("acra")
         ? [toProvenance("ACRA", "sg_acra_entities", "Exact-match company and UEN registry evidence.", false, acra.length)]
@@ -1528,16 +1846,12 @@ export const buildBusinessDossierArtifact = async (
         : []),
       ...externalArtifacts.flatMap((artifact) => artifact.freshness),
     ],
-    limits: [
-      ...buildBusinessLimits(selectedModules),
-      ...externalArtifacts.flatMap((artifact) => artifact.limits),
-    ],
+    limits: finalLimits,
     sourceCoverage,
-    riskFlags: [
-      ...riskFlags,
-      ...externalArtifacts.flatMap((artifact) => artifact.riskFlags ?? []),
-    ],
+    riskFlags: finalRiskFlags,
     matchConfidence,
+    analystFollowUps,
     nextChecks,
   };
+  return withDossierAnalystFollowUps(artifact);
 };

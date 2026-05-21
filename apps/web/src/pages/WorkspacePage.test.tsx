@@ -1,20 +1,15 @@
-import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { ToastProvider } from "@/components/notifications/ToastProvider";
-import { WorkspacePanel } from "@/pages/WorkspacePage";
+const appSource = readFileSync(new URL("../App.tsx", import.meta.url), "utf8");
 
-describe("WorkspacePanel", () => {
-  it("keeps the audit log in an internal scroll region", () => {
-    const html = renderToStaticMarkup(
-      <ToastProvider>
-        <WorkspacePanel />
-      </ToastProvider>,
-    );
-
-    expect(html).toContain("Audit log");
-    expect(html).toContain("Actions");
-    expect(html).toContain("max-h-[60vh] overflow-auto");
-    expect(html).toContain("sticky top-0");
+describe("App CDD-only shell", () => {
+  it("routes to the search form, counterparty CDD run, and browser-local case view", () => {
+    expect(appSource).toContain('path="/"');
+    expect(appSource).toContain('path="/c/:identifier"');
+    expect(appSource).toContain('path="/case/:caseId"');
+    expect(appSource).not.toContain("WorkspacePage");
+    expect(appSource).not.toContain("ToastProvider");
+    expect(appSource).not.toContain("lazy(");
   });
 });

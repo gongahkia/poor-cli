@@ -1,19 +1,7 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
-import { AlertCircle, Braces, Copy, Loader2, Table2 } from "lucide-react";
 
-import type { AnalystMemoState } from "@/components/dossier/AnalystMemoSection";
-import { DossierHeaderLogo } from "@/components/dossier/DossierHeaderLogo";
-import { DossierFindingsTabs } from "@/components/dossier/DossierFindingsTabs";
-import type { ModuleFollowUpRequest, RunningBusinessModule } from "@/components/dossier/EvidenceSection";
-import { GapsSection } from "@/components/dossier/GapsSection";
-import type { PeopleDiscoveryState } from "@/components/dossier/PeopleDiscoverySection";
-import { ProvenanceSection } from "@/components/dossier/ProvenanceSection";
-import type { WebPresenceState } from "@/components/dossier/WebPresenceSection";
-import { useToast } from "@/components/notifications/ToastProvider";
-import { Button } from "@/components/ui/button";
 import {
-  getGatewayJson,
   postGatewayJson,
   type CounterpartyResolutionCandidate,
   type CounterpartyResolutionResult,
@@ -21,25 +9,45 @@ import {
   type WebPresence,
 } from "@/lib/api/client";
 import {
-  buildBusinessDossierExpandedInput,
-  buildBusinessDossierFollowUpInput,
-  buildSummaryLine,
+  formatRecordValue,
+  getDossierRecordGroups,
   getSummaryString,
   isNotFoundDossier,
   sanitizeFilenamePart,
-  UEN_PATTERN,
 } from "@/lib/dossier";
-import { persistAuditEvent, persistDossierRecord } from "@/lib/workspace-store";
+import {
+  DEFAULT_REPORT_TEMPLATE,
+  REPORT_WRITING_STYLE_LABELS,
+  type ReportExportFormat,
+  type ReportTemplate,
+  type ReportWritingStyle,
+} from "@/lib/report-template";
+import { resolveActiveSession } from "@/lib/workspace";
+import {
+  addCddCaseNote,
+  addCddCaseTask,
+  attachDossierToCddCase,
+  buildCddCaseId,
+  buildCddCaseJsonPackage,
+  getCddCase,
+  loadWorkspaceStore,
+  recordCddCaseExport,
+  saveWorkspaceStore,
+  setCddCaseTaskCompleted,
+  updateCddCaseStatus,
+  upsertCddCase,
+  type CddCaseRecord,
+  type CddCaseStatus,
+} from "@/lib/workspace-store";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
-import type { BusinessDossier } from "@/types/dossier";
+import type { BusinessDossier, BriefSummaryItem, SourceCoverageItem } from "@/types/dossier";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
-import type { ReportExportFormat, ReportTemplate } from "@/lib/report-template";
 
 type DossierState =
   | { status: "loading" }
   | { status: "needs-confirmation"; resolution: CounterpartyResolutionResult }
-  | { status: "success"; dossier: BusinessDossier; orchestration: CddOrchestratorResponse }
-  | { status: "not-found"; dossier: BusinessDossier; orchestration: CddOrchestratorResponse }
+  | { status: "success"; dossier: BusinessDossier; response: CddOrchestratorResponse }
+  | { status: "not-found"; dossier: BusinessDossier; response: CddOrchestratorResponse }
   | { status: "error"; message: string };
 
 type CddOrchestratorResponse = {
@@ -56,168 +64,342 @@ type CounterpartyLocationState = {
   resolution?: CounterpartyResolutionResult;
 };
 
-const toWebPresenceState = (presence: WebPresence | undefined): WebPresenceState =>
-  presence === undefined ? { status: "loading" } : { status: "success", presence };
+const writingStyles = Object.keys(REPORT_WRITING_STYLE_LABELS) as ReportWritingStyle[];
+const exportFormats: ReportExportFormat[] = ["pdf", "docx"];
+const caseStatuses: CddCaseStatus[] = ["draft", "in_review", "needs_follow_up", "ready_for_export", "archived"];
 
-const toPeopleDiscoveryState = (discovery: PeopleDiscovery | undefined): PeopleDiscoveryState =>
-  discovery === undefined ? { status: "loading" } : { status: "success", discovery };
-
-const toAnalystMemoState = (memo: AnalystMemoResponse | undefined): AnalystMemoState => {
-  if (memo === undefined) {
-    return { status: "loading" };
-  }
-  if (memo.status === "ready") {
-    return { status: "ready", memo };
-  }
-  if (memo.status === "unavailable") {
-    return { status: "unavailable", memo };
-  }
-  return { status: "error", message: memo.reason.message, memo };
+const caseStatusLabels: Record<CddCaseStatus, string> = {
+  draft: "Draft",
+  in_review: "In review",
+  needs_follow_up: "Needs follow-up",
+  ready_for_export: "Ready for export",
+  archived: "Archived",
 };
 
-function DossierActionButton({
-  children,
-  disabled,
-  label,
-  onClick,
-  variant = "outline",
-}: {
-  children: ReactNode;
-  disabled?: boolean;
-  label: string;
-  onClick: () => void;
-  variant?: "default" | "outline";
-}) {
+function candidateIdentifier(candidate: CounterpartyResolutionCandidate): string {
+  return candidate.uen ?? candidate.officialIdentifier ?? candidate.entityName;
+}
+
+function uniqueStrings(values: readonly (string | null | undefined)[]): string[] {
+  return Array.from(new Set(values.filter((value): value is string =>
+    typeof value === "string" && value.trim() !== "",
+  ).map((value) => value.trim())));
+}
+
+function stringifyJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}
+
+function downloadText(filename: string, mimeType: string, text: string): void {
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function valueForDisplay(value: unknown): ReactNode {
+  if (value === null || value === undefined || value === "") {
+    return <span className="muted">Not returned</span>;
+  }
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return <pre>{stringifyJson(value)}</pre>;
+}
+
+function SummaryTable({ rows }: { rows: readonly BriefSummaryItem[] }) {
+  if (rows.length === 0) {
+    return <p className="muted">No rows returned.</p>;
+  }
+
   return (
-    <Button
-      aria-label={label}
-      className="group h-10 w-10 justify-start gap-2 overflow-hidden px-0 transition-[width,padding] duration-200 ease-out hover:w-36 hover:px-3 focus-visible:w-36 focus-visible:px-3"
-      disabled={disabled}
-      onClick={onClick}
-      title={label}
-      type="button"
-      variant={variant}
-    >
-      <span className="flex h-10 w-10 shrink-0 items-center justify-center transition-[height,width] duration-200 group-hover:h-auto group-hover:w-5 group-focus-visible:h-auto group-focus-visible:w-5">
-        {children}
-      </span>
-      <span className="max-w-0 overflow-hidden whitespace-nowrap text-sm opacity-0 transition-[max-width,opacity] duration-200 group-hover:max-w-24 group-hover:opacity-100 group-focus-visible:max-w-24 group-focus-visible:opacity-100">
-        {label}
-      </span>
-    </Button>
+    <table>
+      <thead>
+        <tr>
+          <th scope="col">Field</th>
+          <th scope="col">Value</th>
+          <th scope="col">Source</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((row, index) => (
+          <tr key={`${row.label}-${index}`}>
+            <th scope="row">{row.label}</th>
+            <td>{valueForDisplay(row.value)}</td>
+            <td>{row.source ?? "Not returned"}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
+function RecordTable({ records }: { records: readonly object[] }) {
+  if (records.length === 0) {
+    return <p className="muted">No records returned.</p>;
+  }
+
+  const normalizedRecords = records.map((record) => record as Record<string, unknown>);
+  const keys = Array.from(new Set(normalizedRecords.flatMap((record) => Object.keys(record))));
+
+  return (
+    <table>
+      <thead>
+        <tr>
+          {keys.map((key) => (
+            <th key={key} scope="col">
+              {key}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {normalizedRecords.map((record, rowIndex) => (
+          <tr key={rowIndex}>
+            {keys.map((key) => (
+              <td key={key}>{valueForDisplay(record[key])}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function PlainList({ emptyText, items }: { emptyText: string; items: readonly string[] }) {
+  if (items.length === 0) {
+    return <p className="muted">{emptyText}</p>;
+  }
+
+  return (
+    <ul>
+      {items.map((item, index) => (
+        <li key={`${item}-${index}`}>{item}</li>
+      ))}
+    </ul>
+  );
+}
+
+function responseFromCaseRecord(record: CddCaseRecord): CddOrchestratorResponse | null {
+  if (
+    record.dossier === undefined ||
+    record.memoState === undefined ||
+    record.evidencePack.webPresence === undefined ||
+    record.evidencePack.peopleDiscovery === undefined ||
+    record.evidencePack.orchestration === undefined
+  ) {
+    return null;
+  }
+
+  return {
+    dossier: record.dossier,
+    generatedAt: record.evidencePack.generatedAt ?? record.updatedAt,
+    memo: record.memoState,
+    orchestration: record.evidencePack.orchestration,
+    peopleDiscovery: record.evidencePack.peopleDiscovery,
+    webPresence: record.evidencePack.webPresence,
+    ...(record.selectedCandidate === null ? {} : {
+      resolution: {
+        status: "resolved",
+        originalInput: record.counterpartyIdentifier,
+        normalizedInput: record.counterpartyIdentifier.toLowerCase(),
+        selectedCandidate: record.selectedCandidate,
+        candidates: [record.selectedCandidate],
+        confidenceBlockers: [],
+        sourcesSearched: [record.selectedCandidate.sourceRegistry],
+        limits: [],
+      } satisfies CounterpartyResolutionResult,
+    }),
+  };
+}
+
 export function CounterpartyPage() {
-  const { identifier = "" } = useParams<{ identifier: string }>();
+  const { caseId: routeCaseId, identifier = "" } = useParams<{ caseId?: string; identifier?: string }>();
   const decodedIdentifier = useMemo(() => identifier.trim(), [identifier]);
+  const [caseRecord, setCaseRecord] = useState<CddCaseRecord | null>(null);
   const [state, setState] = useState<DossierState>({ status: "loading" });
   const location = useLocation();
-  const { notify } = useToast();
 
   useEffect(() => {
     const controller = new AbortController();
     const routeState = location.state as CounterpartyLocationState | null;
     const stateResolution = routeState?.resolution;
+    const session = resolveActiveSession();
+    let store = loadWorkspaceStore();
+    let activeCaseId = routeCaseId;
+    let activeCase = routeCaseId === undefined ? null : getCddCase(store, session, routeCaseId);
+    const activeIdentifier = activeCase?.counterpartyIdentifier ?? decodedIdentifier;
 
-    if (!decodedIdentifier) {
+    if (activeIdentifier === "") {
       setState({ status: "error", message: "No counterparty identifier was provided." });
-      notify({ title: "Dossier request missing identifier", tone: "error" });
+      return () => controller.abort();
+    }
+
+    if (routeCaseId !== undefined && activeCase === null) {
+      setState({ status: "error", message: `CDD case ${routeCaseId} was not found in browser-local storage.` });
+      return () => controller.abort();
+    }
+
+    if (activeCaseId === undefined) {
+      store = upsertCddCase(store, session, { counterpartyIdentifier: activeIdentifier });
+      activeCaseId = buildCddCaseId(session, { counterpartyIdentifier: activeIdentifier });
+      saveWorkspaceStore(store);
+      activeCase = getCddCase(store, session, activeCaseId);
+    }
+
+    setCaseRecord(activeCase);
+
+    const storedResponse = activeCase === null ? null : responseFromCaseRecord(activeCase);
+    if (routeCaseId !== undefined && storedResponse !== null) {
+      setState(isNotFoundDossier(storedResponse.dossier)
+        ? { status: "not-found", dossier: storedResponse.dossier, response: storedResponse }
+        : { status: "success", dossier: storedResponse.dossier, response: storedResponse });
       return () => controller.abort();
     }
 
     setState({ status: "loading" });
 
     const loadDossier = async () => {
-      const resolution = stateResolution?.selectedCandidate === null || stateResolution === undefined
-        ? await postGatewayJson<CounterpartyResolutionResult>(
+      const resolution = stateResolution?.status === "resolved" && stateResolution.selectedCandidate !== null
+        ? stateResolution
+        : await postGatewayJson<CounterpartyResolutionResult>(
             "/api/v1/dude/resolve-counterparty",
-            { identifier: decodedIdentifier },
+            { identifier: activeIdentifier },
             { signal: controller.signal },
-          )
-        : stateResolution;
+          );
 
-      if (controller.signal.aborted) {
-        return;
-      }
+      if (controller.signal.aborted) return;
 
       if (resolution.status === "needs_confirmation") {
         setState({ status: "needs-confirmation", resolution });
         return;
       }
+
       if (resolution.status === "no_match" || resolution.selectedCandidate === null) {
         setState({
           status: "error",
-          message: `No retained CDD registry match was found for ${decodedIdentifier}.`,
+          message: `No retained CDD registry match was found for "${activeIdentifier}".`,
         });
         return;
       }
 
-      const orchestration = await postGatewayJson<CddOrchestratorResponse>(
+      if (activeCaseId !== undefined && routeCaseId === undefined) {
+        const withCandidate = upsertCddCase(loadWorkspaceStore(), session, {
+          counterpartyIdentifier: activeIdentifier,
+          selectedCandidate: resolution.selectedCandidate,
+        });
+        saveWorkspaceStore(withCandidate);
+        setCaseRecord(getCddCase(withCandidate, session, activeCaseId));
+      }
+
+      const response = await postGatewayJson<CddOrchestratorResponse>(
         "/api/v1/dude/cdd-orchestrator",
         {
-          identifier: resolution.originalInput || decodedIdentifier,
           confirmedCandidate: resolution.selectedCandidate,
+          identifier: resolution.originalInput || activeIdentifier,
         },
         { signal: controller.signal },
       );
-      if (controller.signal.aborted) {
-        return;
+
+      if (controller.signal.aborted) return;
+
+      if (activeCaseId !== undefined) {
+        const withDossier = attachDossierToCddCase(loadWorkspaceStore(), session, activeCaseId, {
+          counterpartyIdentifier: activeIdentifier,
+          dossier: response.dossier,
+          generatedAt: response.generatedAt,
+          memoState: response.memo,
+          orchestration: response.orchestration,
+          peopleDiscovery: response.peopleDiscovery,
+          selectedCandidate: resolution.selectedCandidate,
+          webPresence: response.webPresence,
+        });
+        saveWorkspaceStore(withDossier);
+        setCaseRecord(getCddCase(withDossier, session, activeCaseId));
       }
-      setState(isNotFoundDossier(orchestration.dossier)
-        ? { status: "not-found", dossier: orchestration.dossier, orchestration }
-        : { status: "success", dossier: orchestration.dossier, orchestration });
+
+      setState(isNotFoundDossier(response.dossier)
+        ? { status: "not-found", dossier: response.dossier, response }
+        : { status: "success", dossier: response.dossier, response });
     };
 
-    void loadDossier()
-      .then((orchestration) => {
-        void orchestration;
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        setState({
-          status: "error",
-          message: error instanceof Error ? error.message : "The diligence request failed.",
-        });
-        notify({
-          title: "Dossier request failed",
-          description: error instanceof Error ? error.message : "The diligence request failed.",
-          tone: "error",
-        });
+    void loadDossier().catch((error: unknown) => {
+      if (controller.signal.aborted) return;
+      setState({
+        status: "error",
+        message: error instanceof Error ? error.message : "The CDD orchestrator request failed.",
       });
+    });
 
     return () => controller.abort();
-  }, [decodedIdentifier, location.state, notify]);
+  }, [decodedIdentifier, location.state, routeCaseId]);
 
   return (
-    <main className="min-h-screen overflow-x-hidden bg-background px-4 py-8 sm:px-6 sm:py-12">
-      <section className="mx-auto w-full max-w-6xl min-w-0 space-y-5">
-        {state.status === "loading" ? (
-          <DossierLoading identifier={decodedIdentifier} />
-        ) : state.status === "needs-confirmation" ? (
-          <ResolutionConfirmationPanel identifier={decodedIdentifier} resolution={state.resolution} />
-        ) : state.status === "error" ? (
-          <DossierProblem
-            identifier={decodedIdentifier}
-            message={`We couldn't load a Singapore diligence brief for ${decodedIdentifier}. ${state.message}`}
-          />
-        ) : state.status === "not-found" ? (
-          <DossierProblem
-            dossier={state.dossier}
-            identifier={decodedIdentifier}
-            message={`We didn't find a Singapore registry record for ${decodedIdentifier}.`}
-          />
-        ) : (
-          <DossierSuccess identifier={decodedIdentifier} dossier={state.dossier} orchestration={state.orchestration} />
-        )}
-      </section>
+    <main>
+      <p>
+        <Link to="/">New search</Link>
+      </p>
+      {state.status === "loading" ? (
+        <LoadingView identifier={caseRecord?.counterpartyIdentifier ?? decodedIdentifier} />
+      ) : state.status === "needs-confirmation" ? (
+        <ResolutionConfirmation identifier={caseRecord?.counterpartyIdentifier ?? decodedIdentifier} resolution={state.resolution} />
+      ) : state.status === "error" ? (
+        <ProblemView identifier={caseRecord?.counterpartyIdentifier ?? decodedIdentifier} message={state.message} />
+      ) : state.status === "not-found" ? (
+        <DossierView
+          caseRecord={caseRecord}
+          dossier={state.dossier}
+          identifier={caseRecord?.counterpartyIdentifier ?? decodedIdentifier}
+          notFound
+          onCaseRecordChange={setCaseRecord}
+          response={state.response}
+        />
+      ) : (
+        <DossierView
+          caseRecord={caseRecord}
+          dossier={state.dossier}
+          identifier={caseRecord?.counterpartyIdentifier ?? decodedIdentifier}
+          onCaseRecordChange={setCaseRecord}
+          response={state.response}
+        />
+      )}
     </main>
   );
 }
 
-function ResolutionConfirmationPanel({
+function LoadingView({ identifier }: { identifier: string }) {
+  return (
+    <section aria-busy="true">
+      <h1>Running CDD orchestrator</h1>
+      <p>{identifier}</p>
+      <p className="muted">
+        Resolving the counterparty, then requesting one CDD orchestrator response from the REST gateway.
+      </p>
+    </section>
+  );
+}
+
+function ProblemView({ identifier, message }: { identifier: string; message: string }) {
+  return (
+    <section>
+      <h1>CDD request failed</h1>
+      <p>
+        <strong>Identifier:</strong> {identifier}
+      </p>
+      <p className="error">{message}</p>
+      <SafetyNotice />
+    </section>
+  );
+}
+
+function ResolutionConfirmation({
   identifier,
   resolution,
 }: {
@@ -225,661 +407,794 @@ function ResolutionConfirmationPanel({
   resolution: CounterpartyResolutionResult;
 }) {
   const navigate = useNavigate();
-  const candidateIdentifier = (candidate: CounterpartyResolutionCandidate): string =>
-    candidate.uen ?? candidate.entityName;
 
   const handleCandidateClick = (candidate: CounterpartyResolutionCandidate) => {
     navigate(`/c/${encodeURIComponent(candidateIdentifier(candidate))}`, {
+      replace: true,
       state: {
         resolution: {
           ...resolution,
-          status: "resolved",
-          selectedCandidate: candidate,
           candidates: [candidate],
           confidenceBlockers: candidate.matchMethod === "typo"
             ? ["The selected candidate relied on bounded typo matching; verify source rows before final decisions."]
             : [],
+          selectedCandidate: candidate,
+          status: "resolved",
         } satisfies CounterpartyResolutionResult,
       },
-      replace: true,
     });
   };
 
   return (
-    <section className="rounded-lg border border-border bg-card p-6 shadow-sm">
-      <div className="flex min-w-0 items-start gap-3">
-        <AlertCircle aria-hidden="true" className="mt-1 h-5 w-5 shrink-0 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
-          <h1 className="mt-2 break-words text-3xl font-semibold tracking-normal text-foreground">Confirm official match</h1>
-          <p className="mt-3 text-sm leading-6 text-muted-foreground">
-            Multiple retained CDD registry candidates matched "{identifier}". Choose one before Dude runs the report.
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-5 grid gap-2">
-        {resolution.candidates.map((candidate) => (
-          <button
-            className="rounded-lg border border-border bg-background px-4 py-3 text-left transition hover:bg-muted/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            key={candidate.id}
-            onClick={() => handleCandidateClick(candidate)}
-            type="button"
-          >
-            <span className="block text-sm font-medium text-foreground">{candidate.label}</span>
-            <span className="mt-1 block text-xs text-muted-foreground">
-              {candidate.sourceRegistry} · {candidate.uen ?? candidate.officialIdentifier ?? "no official identifier"} · score {candidate.score}
-            </span>
-            <span className="mt-1 block text-xs text-muted-foreground">{candidate.matchReason}</span>
-          </button>
-        ))}
-      </div>
-
-      <Button asChild className="mt-6" variant="outline">
-        <Link to="/">Try another search</Link>
-      </Button>
+    <section>
+      <h1>Confirm official match</h1>
+      <p>Multiple retained CDD registry candidates matched "{identifier}". Choose one to run the orchestrator.</p>
+      <table>
+        <thead>
+          <tr>
+            <th scope="col">Candidate</th>
+            <th scope="col">Source</th>
+            <th scope="col">Identifier</th>
+            <th scope="col">Reason</th>
+            <th scope="col">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {resolution.candidates.map((candidate) => (
+            <tr key={candidate.id}>
+              <td>{candidate.label}</td>
+              <td>{candidate.sourceRegistry}</td>
+              <td>{candidate.uen ?? candidate.officialIdentifier ?? "Not returned"}</td>
+              <td>{candidate.matchReason}</td>
+              <td>
+                <button onClick={() => handleCandidateClick(candidate)} type="button">
+                  Use this match
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <SafetyNotice />
     </section>
   );
 }
 
-function DossierLoading({ identifier }: { identifier: string }) {
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const isSlow = elapsedSeconds >= 4;
-
-  useEffect(() => {
-    const startedAt = Date.now();
-    const interval = window.setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
-    }, 1000);
-
-    return () => window.clearInterval(interval);
-  }, []);
-
-  return (
-    <>
-      <div className="space-y-3">
-        <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
-        <h1 className="text-3xl font-semibold tracking-normal text-foreground">Business Dossier</h1>
-        <p className="font-mono text-sm text-muted-foreground">{identifier}</p>
-      </div>
-
-      <section className="min-w-0 rounded-lg border border-border bg-card p-5 shadow-sm sm:p-6">
-        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0">
-            <h2 className="text-base font-semibold tracking-normal text-foreground">Loading dossier</h2>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
-              Running the CDD orchestrator: ACRA identity, inferred sector modules, supplemental evidence, and memo
-              generation will return together before the report opens.
-            </p>
-          </div>
-          <span className="w-fit shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground">
-            {elapsedSeconds}s
-          </span>
-        </div>
-
-        <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-muted">
-          <div className="h-full w-1/3 rounded-full bg-foreground/60 motion-safe:animate-[loading-bar_1.2s_ease-in-out_infinite]" />
-        </div>
-
-        {isSlow ? (
-          <p className="mt-4 text-sm leading-6 text-muted-foreground">
-            This is taking longer than usual. The gateway may be waiting on upstream Singapore data sources, TinyFish
-            discovery, or the configured memo provider.
-          </p>
-        ) : (
-          <p className="mt-4 text-xs leading-5 text-muted-foreground">
-            This loading state reflects one live orchestrator request, not simulated per-module progress.
-          </p>
-        )}
-      </section>
-    </>
-  );
-}
-
-function DossierProblem({
+function DossierView({
+  caseRecord,
   dossier,
   identifier,
-  message,
+  notFound = false,
+  onCaseRecordChange,
+  response,
 }: {
-  dossier?: BusinessDossier;
-  identifier: string;
-  message: string;
-}) {
-  return (
-    <>
-      <div className="rounded-lg border border-border bg-card p-8 shadow-sm">
-        <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
-        <h1 className="mt-2 break-words text-3xl font-semibold tracking-normal text-foreground">{identifier}</h1>
-        <p className="mt-4 text-base leading-7 text-muted-foreground">{message}</p>
-        <Button asChild className="mt-6">
-          <Link to="/">Try another search</Link>
-        </Button>
-      </div>
-      {dossier === undefined ? null : (
-        <>
-          <GapsSection dossier={dossier} />
-          <ProvenanceSection dossier={dossier} />
-        </>
-      )}
-    </>
-  );
-}
-
-function DossierSuccess({
-  dossier: initialDossier,
-  identifier,
-  orchestration,
-}: {
+  caseRecord: CddCaseRecord | null;
   dossier: BusinessDossier;
   identifier: string;
-  orchestration: CddOrchestratorResponse;
+  notFound?: boolean;
+  onCaseRecordChange: (record: CddCaseRecord | null) => void;
+  response: CddOrchestratorResponse;
 }) {
-  const [dossier, setDossier] = useState(initialDossier);
-  const [currentOrchestration, setCurrentOrchestration] = useState(orchestration);
-  const resolution = dossier.records.resolution;
-  const resolutionMetadata = resolution as (typeof resolution & {
-    originalInput?: string;
-    selectedCandidate?: { label?: string; sourceRegistry?: string; matchReason?: string };
-    matchMethod?: string | null;
-    matchScore?: number | null;
-  }) | undefined;
-  const navigate = useNavigate();
-  const location = useLocation();
+  const [writingStyle, setWritingStyle] = useState<ReportWritingStyle>("concise_analyst");
+  const [exportFormat, setExportFormat] = useState<ReportExportFormat>("pdf");
   const [isExporting, setIsExporting] = useState(false);
-  const [isPdpaExporting, setIsPdpaExporting] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "error">("idle");
-  const [rerunningModule, setRerunningModule] = useState<RunningBusinessModule>(null);
-  const [webPresenceState, setWebPresenceState] = useState<WebPresenceState>(() =>
-    toWebPresenceState(orchestration.webPresence));
-  const [peopleDiscoveryState, setPeopleDiscoveryState] = useState<PeopleDiscoveryState>(() =>
-    toPeopleDiscoveryState(orchestration.peopleDiscovery));
-  const [memoState, setMemoState] = useState<AnalystMemoState>(() => toAnalystMemoState(orchestration.memo));
-  const { notify } = useToast();
-  const copiedTimer = useRef<number | null>(null);
-  const sharedMemoState = useMemo(() => new URLSearchParams(location.search).get("memo"), [location.search]);
-  const canonicalUen = getSummaryString(dossier, "UEN");
-  const entityName = getSummaryString(dossier, "Entity");
-  const webPresenceQuery = [entityName, canonicalUen].filter(Boolean).join(" ");
-  const isUsingOrchestratedDossier = dossier === currentOrchestration.dossier;
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const memo = response.memo;
+  const entityName = getSummaryString(dossier, "Entity") ?? dossier.title;
+  const uen = getSummaryString(dossier, "UEN");
+  const confidenceBlockers = uniqueStrings([
+    ...(response.resolution?.confidenceBlockers ?? []),
+    ...(memo.status === "ready" ? memo.riskRating.confidenceBlockers : []),
+    ...(memo.status === "ready" ? memo.decisionAid.confidenceBlockers : []),
+  ]);
+  const analystFollowUps = uniqueStrings([
+    ...(memo.status === "ready" ? memo.decisionAid.nextSteps : []),
+    ...(dossier.nextChecks ?? []).map((check) => `${check.tool}: ${check.reason}`),
+  ]);
 
-  useEffect(() => {
-    setDossier(initialDossier);
-    setCurrentOrchestration(orchestration);
-    setWebPresenceState(toWebPresenceState(orchestration.webPresence));
-    setPeopleDiscoveryState(toPeopleDiscoveryState(orchestration.peopleDiscovery));
-    setMemoState(toAnalystMemoState(orchestration.memo));
-  }, [initialDossier, orchestration]);
+  const commitCaseStore = (update: (store: ReturnType<typeof loadWorkspaceStore>) => ReturnType<typeof loadWorkspaceStore>) => {
+    if (caseRecord === null) return;
+    const nextStore = update(loadWorkspaceStore());
+    saveWorkspaceStore(nextStore);
+    onCaseRecordChange(getCddCase(nextStore, resolveActiveSession(), caseRecord.id));
+  };
 
-  useEffect(() => {
-    persistDossierRecord({ identifier, dossier });
-    persistAuditEvent({
-      eventType: "dossier_generation",
-      input: { identifier },
-      output: dossier,
-      provenance: dossier.provenance,
-      freshness: dossier.freshness,
-      metadata: {
-        matchedModules: dossier.records.resolution?.matchedModules ?? [],
-        gapCount: dossier.gaps.length,
-        orchestration: currentOrchestration.orchestration,
-      },
-    });
-  }, [dossier, identifier, currentOrchestration.orchestration]);
-
-  useEffect(() => {
-    return () => {
-      if (copiedTimer.current !== null) {
-        window.clearTimeout(copiedTimer.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (
-      canonicalUen !== null
-      && UEN_PATTERN.test(canonicalUen)
-      && canonicalUen.toUpperCase() !== identifier.trim().toUpperCase()
-    ) {
-      navigate(`/c/${encodeURIComponent(canonicalUen)}`, { replace: true });
-    }
-  }, [canonicalUen, identifier, navigate]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    if (isUsingOrchestratedDossier) {
-      return () => controller.abort();
-    }
-    if (webPresenceQuery === "") {
-      setWebPresenceState({ status: "error", message: "No entity name or UEN was available for web discovery." });
-      return () => controller.abort();
-    }
-
-    setWebPresenceState({ status: "loading" });
-    void getGatewayJson<WebPresence>(
-      "/api/v1/dude/web-presence",
-      { query: webPresenceQuery },
-      { signal: controller.signal },
-    )
-      .then((presence) => {
-        if (!controller.signal.aborted) {
-          setWebPresenceState({ status: "success", presence });
-        }
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          setWebPresenceState({
-            status: "error",
-            message: error instanceof Error ? error.message : "Web discovery is temporarily unavailable.",
-          });
-        }
-      });
-
-    return () => controller.abort();
-  }, [isUsingOrchestratedDossier, webPresenceQuery]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    if (isUsingOrchestratedDossier) {
-      return () => controller.abort();
-    }
-    if (entityName === null) {
-      setPeopleDiscoveryState({ status: "error", message: "No entity name was available for people follow-up." });
-      return () => controller.abort();
-    }
-
-    setPeopleDiscoveryState({ status: "loading" });
-    void getGatewayJson<PeopleDiscovery>(
-      "/api/v1/dude/people-discovery",
-      {
-        entityName,
-        ...(canonicalUen === null ? {} : { uen: canonicalUen }),
-      },
-      { signal: controller.signal },
-    )
-      .then((discovery) => {
-        if (!controller.signal.aborted) {
-          setPeopleDiscoveryState({ status: "success", discovery });
-        }
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          setPeopleDiscoveryState({
-            status: "error",
-            message: error instanceof Error ? error.message : "People follow-up is temporarily unavailable.",
-          });
-        }
-      });
-
-    return () => controller.abort();
-  }, [canonicalUen, entityName, isUsingOrchestratedDossier]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    if (isUsingOrchestratedDossier) {
-      return () => controller.abort();
-    }
-    if (webPresenceState.status === "loading") {
-      setMemoState({ status: "loading" });
-      return () => controller.abort();
-    }
-    if (peopleDiscoveryState.status === "loading") {
-      setMemoState({ status: "loading" });
-      return () => controller.abort();
-    }
-
-    setMemoState({ status: "loading" });
-    const peopleDiscovery = peopleDiscoveryState.status === "success" ? peopleDiscoveryState.discovery : undefined;
-    const webPresence = webPresenceState.status === "success" ? webPresenceState.presence : undefined;
-    void postGatewayJson<AnalystMemoResponse>(
-      "/api/v1/dude/memo",
-      {
-        dossier,
-        ...(peopleDiscovery === undefined ? {} : { peopleDiscovery }),
-        ...(webPresence === undefined ? {} : { webPresence }),
-      },
-      { signal: controller.signal },
-    )
-      .then((memo) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        if (memo.status === "ready") {
-          setMemoState({ status: "ready", memo });
-        } else if (memo.status === "unavailable") {
-          setMemoState({ status: "unavailable", memo });
-        } else {
-          setMemoState({ status: "error", message: memo.reason.message, memo });
-        }
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) {
-          setMemoState({
-            status: "error",
-            message: error instanceof Error ? error.message : "Analyst memo request failed.",
-          });
-        }
-      });
-
-    return () => controller.abort();
-  }, [dossier, isUsingOrchestratedDossier, peopleDiscoveryState, webPresenceState]);
-
-  useEffect(() => {
-    const nextMemoState = memoState.status === "loading" ? "pending" : memoState.status;
-    const params = new URLSearchParams(location.search);
-    if (params.get("memo") === nextMemoState) {
-      return;
-    }
-    params.set("memo", nextMemoState);
-    navigate({
-      pathname: location.pathname,
-      search: `?${params.toString()}`,
-    }, { replace: true });
-  }, [location.pathname, location.search, memoState.status, navigate]);
-
-  useEffect(() => {
-    if (memoState.status === "loading") return;
-    persistDossierRecord({
-      identifier,
-      dossier,
-      analystMemo: memoState.status === "ready" || memoState.status === "unavailable" ? memoState.memo : undefined,
-      webPresence: webPresenceState.status === "success" ? webPresenceState.presence : undefined,
-    });
-    persistAuditEvent({
-      eventType: "memo_generation",
-      input: { identifier, memoState: memoState.status },
-      output: memoState,
-      provenance: dossier.provenance,
-      freshness: dossier.freshness,
-      metadata: {
-        providerStatus: memoState.status,
-        webPresenceStatus: webPresenceState.status,
-        orchestration: currentOrchestration.orchestration,
-      },
-    });
-  }, [dossier, identifier, memoState, currentOrchestration.orchestration, webPresenceState]);
-
-  const handleExportReport = async (reportTemplate: ReportTemplate, format: ReportExportFormat) => {
+  const handleExport = async () => {
     setIsExporting(true);
-    setExportError(null);
+    setExportMessage(null);
+    const today = new Date().toISOString().slice(0, 10);
+    const reportTemplate: ReportTemplate = {
+      ...DEFAULT_REPORT_TEMPLATE,
+      writingStyle,
+    };
+
     try {
-      const today = new Date().toISOString().slice(0, 10);
-      const baseOptions = {
-        ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
-        orchestration: currentOrchestration.orchestration,
-        reportTemplate,
-        ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
-      };
-      if (format === "pdf") {
+      const filename = `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.${exportFormat}`;
+      if (exportFormat === "pdf") {
         const { exportDossierPdf } = await import("@/lib/export/pdf");
         await exportDossierPdf(dossier, {
-          ...baseOptions,
-          filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
+          ...(memo.status === "ready" ? { analystMemo: memo } : {}),
+          filename,
+          orchestration: response.orchestration,
+          reportTemplate,
+          webPresence: response.webPresence,
         });
       } else {
         const { exportDossierDocx } = await import("@/lib/export/docx");
         await exportDossierDocx(dossier, {
-          ...baseOptions,
-          filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.docx`,
+          ...(memo.status === "ready" ? { analystMemo: memo } : {}),
+          filename,
+          orchestration: response.orchestration,
+          reportTemplate,
+          webPresence: response.webPresence,
         });
       }
-      persistAuditEvent({
-        eventType: "export",
-        permission: "export:run",
-        input: {
-          format,
-          identifier,
-          reportSections: reportTemplate.sections,
-          writingStyle: reportTemplate.writingStyle,
-          orchestration: currentOrchestration.orchestration,
-        },
-        output: { filename: `dude-cdd-report-${sanitizeFilenamePart(identifier)}-${today}.${format}` },
-        provenance: dossier.provenance,
-        freshness: dossier.freshness,
-      });
-      notify({ title: `${format.toUpperCase()} report export started`, description: dossier.title, tone: "success" });
+      commitCaseStore((store) => recordCddCaseExport(store, resolveActiveSession(), caseRecord!.id, {
+        filename,
+        format: exportFormat,
+        packageType: "report_package",
+        writingStyle,
+      }));
+      setExportMessage(`${exportFormat.toUpperCase()} export started.`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Report export failed.";
-      setExportError(message);
-      notify({ title: "Report export failed", description: message, tone: "error" });
+      setExportMessage(error instanceof Error ? error.message : "Report export failed.");
     } finally {
       setIsExporting(false);
     }
   };
 
-  const handleExportCsv = async () => {
-    try {
-      const { exportSingleDossierCsv } = await import("@/lib/export/structured");
-      await exportSingleDossierCsv(dossier, { orchestration: currentOrchestration.orchestration });
-      persistAuditEvent({
-        eventType: "export",
-        permission: "export:run",
-        input: { identifier, format: "csv", orchestration: currentOrchestration.orchestration },
-        output: { title: dossier.title },
-        provenance: dossier.provenance,
-        freshness: dossier.freshness,
-      });
-      notify({ title: "CSV export started", description: dossier.title, tone: "success" });
-    } catch (error) {
-      notify({
-        title: "CSV export failed",
-        description: error instanceof Error ? error.message : "Unable to export CSV.",
-        tone: "error",
-      });
-    }
+  return (
+    <>
+      <header>
+        <h1>{dossier.title}</h1>
+        <p>
+          <strong>Requested identifier:</strong> {identifier}
+        </p>
+        <p>
+          <strong>Entity:</strong> {entityName}
+          {uen === null ? null : <> | <strong>UEN:</strong> {uen}</>}
+        </p>
+        {notFound ? (
+          <p className="error">
+            No matched retained registry records were returned. Review gaps, source coverage, and limits before deciding
+            next steps.
+          </p>
+        ) : null}
+        <SafetyNotice />
+      </header>
+
+      {caseRecord === null ? null : (
+        <CaseWorkflowSection
+          caseRecord={caseRecord}
+          onCaseRecordChange={onCaseRecordChange}
+        />
+      )}
+
+      <section>
+        <h2>Entity identity</h2>
+        <SummaryTable rows={dossier.summary} />
+      </section>
+
+      <section>
+        <h2>Source-backed summary</h2>
+        {memo.status === "ready" ? (
+          <>
+            <p>
+              <strong>Memo provider:</strong> {memo.provider} / {memo.model} / generated {formatRecordValue("generatedAt", memo.generatedAt)}
+            </p>
+            <p>
+              <strong>Risk rating:</strong> {memo.riskRating.level} - {memo.riskRating.rationale}
+            </p>
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Finding</th>
+                  <th scope="col">Citation IDs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {memo.evidenceMemo.map((finding, index) => (
+                  <tr key={`${finding.text}-${index}`}>
+                    <td>{finding.text}</td>
+                    <td>{finding.citationIds.join(", ") || "Not returned"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {memo.rejectedClaims.length === 0 ? null : (
+              <details>
+                <summary>Rejected claims</summary>
+                <RecordTable records={memo.rejectedClaims} />
+              </details>
+            )}
+          </>
+        ) : (
+          <>
+            <p className="error">Analyst memo unavailable: {memo.reason.message}</p>
+            <p className="muted">Showing backend summary and evidence rows without generated memo wording.</p>
+            <SummaryTable rows={dossier.evidence} />
+          </>
+        )}
+      </section>
+
+      <section>
+        <h2>Citations</h2>
+        {memo.status === "ready" ? (
+          <RecordTable records={memo.citations} />
+        ) : (
+          <p className="muted">No generated memo citations returned.</p>
+        )}
+      </section>
+
+      <section>
+        <h2>Confidence blockers</h2>
+        <PlainList
+          emptyText="No confidence blockers were returned by the backend. Analysts must still review evidence, gaps, limits, and citations before relying on the report."
+          items={confidenceBlockers}
+        />
+      </section>
+
+      <section>
+        <h2>Analyst follow-ups</h2>
+        <PlainList
+          emptyText="No analyst follow-ups were returned. Review gaps, source coverage, and limits manually."
+          items={analystFollowUps}
+        />
+        {dossier.nextChecks === undefined || dossier.nextChecks.length === 0 ? null : (
+          <details>
+            <summary>Raw next-check inputs</summary>
+            <pre>{stringifyJson(dossier.nextChecks)}</pre>
+          </details>
+        )}
+      </section>
+
+      <EvidenceRecordsSection dossier={dossier} />
+      <SourceCoverageSection coverage={dossier.sourceCoverage ?? []} />
+      <GapsLimitsSection dossier={dossier} memo={memo} response={response} />
+      <ProvenanceFreshnessSection dossier={dossier} />
+      <SupplementalEvidenceSection response={response} />
+      <OrchestrationSection orchestration={response.orchestration} />
+
+      <section>
+        <h2>Export report</h2>
+        <p className="muted">Uses the existing PDF/DOCX export code with the standard CDD report sections.</p>
+        <label htmlFor="writing-style">Writing style</label>
+        <select
+          id="writing-style"
+          onChange={(event) => setWritingStyle(event.target.value as ReportWritingStyle)}
+          value={writingStyle}
+        >
+          {writingStyles.map((style) => (
+            <option key={style} value={style}>
+              {REPORT_WRITING_STYLE_LABELS[style]}
+            </option>
+          ))}
+        </select>
+        <label htmlFor="export-format">Format</label>
+        <select
+          id="export-format"
+          onChange={(event) => setExportFormat(event.target.value as ReportExportFormat)}
+          value={exportFormat}
+        >
+          {exportFormats.map((format) => (
+            <option key={format} value={format}>
+              {format.toUpperCase()}
+            </option>
+          ))}
+        </select>
+        <button disabled={isExporting} onClick={() => void handleExport()} type="button">
+          {isExporting ? "Exporting..." : "Export report"}
+        </button>
+        {exportMessage === null ? null : (
+          <p className={exportMessage.toLowerCase().includes("failed") ? "error" : "notice"}>{exportMessage}</p>
+        )}
+      </section>
+
+      <details>
+        <summary>Raw orchestrator response</summary>
+        <pre>{stringifyJson(response)}</pre>
+      </details>
+    </>
+  );
+}
+
+function CaseWorkflowSection({
+  caseRecord,
+  onCaseRecordChange,
+}: {
+  caseRecord: CddCaseRecord;
+  onCaseRecordChange: (record: CddCaseRecord | null) => void;
+}) {
+  const [noteBody, setNoteBody] = useState("");
+  const [taskTitle, setTaskTitle] = useState("");
+  const [taskDescription, setTaskDescription] = useState("");
+  const openTaskCount = caseRecord.followUpTasks.filter((task) => task.status === "open").length;
+  const completedTaskCount = caseRecord.followUpTasks.length - openTaskCount;
+  const reportReadinessBlockers = [
+    caseRecord.dossier === undefined ? "Run and attach a CDD dossier." : null,
+    openTaskCount > 0 ? `${openTaskCount} follow-up task${openTaskCount === 1 ? "" : "s"} still open.` : null,
+    caseRecord.status !== "ready_for_export" ? "Case status is not marked ready for export." : null,
+  ].filter((item): item is string => item !== null);
+
+  const commitCaseStore = (
+    update: (store: ReturnType<typeof loadWorkspaceStore>, session: ReturnType<typeof resolveActiveSession>) => ReturnType<typeof loadWorkspaceStore>,
+  ) => {
+    const session = resolveActiveSession();
+    const nextStore = update(loadWorkspaceStore(), session);
+    saveWorkspaceStore(nextStore);
+    onCaseRecordChange(getCddCase(nextStore, session, caseRecord.id));
   };
 
-  const handleExportJson = async () => {
-    try {
-      const { exportSingleDossierJson } = await import("@/lib/export/structured");
-      await exportSingleDossierJson({
-        dossier,
-        ...(memoState.status === "ready" ? { analystMemo: memoState.memo } : {}),
-        orchestration: currentOrchestration.orchestration,
-        ...(webPresenceState.status === "success" ? { webPresence: webPresenceState.presence } : {}),
-      });
-      persistAuditEvent({
-        eventType: "export",
-        permission: "export:run",
-        input: { identifier, format: "json", orchestration: currentOrchestration.orchestration },
-        output: { title: dossier.title },
-        provenance: dossier.provenance,
-        freshness: dossier.freshness,
-      });
-      notify({ title: "JSON export started", description: dossier.title, tone: "success" });
-    } catch (error) {
-      notify({
-        title: "JSON export failed",
-        description: error instanceof Error ? error.message : "Unable to export JSON.",
-        tone: "error",
-      });
-    }
+  const handleStatusChange = (status: CddCaseStatus) => {
+    commitCaseStore((store, session) => updateCddCaseStatus(store, session, caseRecord.id, status));
   };
 
-  const handleExportPdpaReport = async (reviewedItemIds: readonly string[]) => {
-    setIsPdpaExporting(true);
-    try {
-      const today = new Date().toISOString().slice(0, 10);
-      const { exportPdpaReportPdf } = await import("@/lib/export/pdpa");
-      await exportPdpaReportPdf(dossier, {
-        filename: `dude-pdpa-checklist-${sanitizeFilenamePart(identifier)}-${today}.pdf`,
-        reviewedItemIds,
-      });
-      persistAuditEvent({
-        eventType: "export",
-        permission: "export:run",
-        input: { identifier, format: "pdpa_pdf", reviewedItemIds, orchestration: currentOrchestration.orchestration },
-        output: { filename: `dude-pdpa-checklist-${sanitizeFilenamePart(identifier)}-${today}.pdf` },
-        provenance: dossier.provenance,
-        freshness: dossier.freshness,
-      });
-      notify({ title: "PDPA report export started", description: dossier.title, tone: "success" });
-    } catch (error) {
-      notify({
-        title: "PDPA report export failed",
-        description: error instanceof Error ? error.message : "Unable to export PDPA report.",
-        tone: "error",
-      });
-    } finally {
-      setIsPdpaExporting(false);
-    }
+  const handleAddNote = () => {
+    commitCaseStore((store, session) => addCddCaseNote(store, session, caseRecord.id, noteBody));
+    setNoteBody("");
   };
 
-  const handleCopyLink = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setCopyStatus("copied");
-      notify({ title: "Link copied", description: "Dossier URL copied to clipboard.", tone: "success" });
-      if (copiedTimer.current !== null) {
-        window.clearTimeout(copiedTimer.current);
-      }
-      copiedTimer.current = window.setTimeout(() => setCopyStatus("idle"), 2000);
-    } catch {
-      setCopyStatus("error");
-      notify({ title: "Copy failed", description: "The browser could not copy the dossier URL.", tone: "error" });
-    }
+  const handleAddTask = () => {
+    commitCaseStore((store, session) => addCddCaseTask(store, session, caseRecord.id, {
+      description: taskDescription,
+      title: taskTitle,
+    }));
+    setTaskTitle("");
+    setTaskDescription("");
   };
 
-  const handleModuleFollowUp = async (request: ModuleFollowUpRequest) => {
-    setRerunningModule(request.kind === "all" ? "all" : request.module);
-    try {
-      const followUpInput = request.kind === "all"
-        ? buildBusinessDossierExpandedInput({
-            dossier,
-            identifier,
-            modules: request.modules,
-            value: request.value,
-          })
-        : buildBusinessDossierFollowUpInput({
-            dossier,
-            identifier,
-            module: request.module,
-            value: request.value,
-          });
-      const nextOrchestration = await postGatewayJson<CddOrchestratorResponse>("/api/v1/dude/cdd-orchestrator", followUpInput);
-      setCurrentOrchestration(nextOrchestration);
-      setDossier(nextOrchestration.dossier);
-      setWebPresenceState(toWebPresenceState(nextOrchestration.webPresence));
-      setPeopleDiscoveryState(toPeopleDiscoveryState(nextOrchestration.peopleDiscovery));
-      setMemoState(toAnalystMemoState(nextOrchestration.memo));
-      persistAuditEvent({
-        eventType: "search",
-        input: {
-          ...followUpInput,
-          analystHint: request.kind === "all" ? "run_all_relevant_sector_modules" : `rerun_with_${request.module}_sector_hint`,
-        },
-        output: nextOrchestration.dossier,
-        provenance: nextOrchestration.dossier.provenance,
-        freshness: nextOrchestration.dossier.freshness,
-        metadata: {
-          module: request.kind === "all" ? "all" : request.module,
-          orchestration: nextOrchestration.orchestration,
-        },
-      });
-      notify({
-        title: request.kind === "all" ? "Orchestrated module refresh complete" : `${request.module.toUpperCase()} orchestrated follow-up complete`,
-        description: "The CDD orchestrator refreshed dossier evidence, supplemental review, memo state, provenance, freshness, gaps, and limits.",
-        tone: "success",
-      });
-    } catch (error) {
-      notify({
-        title: request.kind === "all" ? "All module checks failed" : `${request.module.toUpperCase()} follow-up failed`,
-        description: error instanceof Error ? error.message : "Unable to rerun the orchestrator with this hint.",
-        tone: "error",
-      });
-    } finally {
-      setRerunningModule(null);
-    }
+  const handleTaskToggle = (taskId: string, completed: boolean) => {
+    commitCaseStore((store, session) =>
+      setCddCaseTaskCompleted(store, session, caseRecord.id, taskId, completed),
+    );
+  };
+
+  const handleExportCaseJson = () => {
+    const exportedAt = new Date().toISOString();
+    const filename = `dude-cdd-case-${sanitizeFilenamePart(caseRecord.candidateIdentifier ?? caseRecord.counterpartyIdentifier)}-${exportedAt.slice(0, 10)}.json`;
+    const session = resolveActiveSession();
+    const nextStore = recordCddCaseExport(loadWorkspaceStore(), session, caseRecord.id, {
+      filename,
+      format: "json",
+      packageType: "case_json",
+      now: exportedAt,
+    });
+    saveWorkspaceStore(nextStore);
+    const updatedCase = getCddCase(nextStore, session, caseRecord.id) ?? caseRecord;
+    onCaseRecordChange(updatedCase);
+    downloadText(
+      filename,
+      "application/json",
+      JSON.stringify(buildCddCaseJsonPackage(updatedCase, exportedAt), null, 2),
+    );
   };
 
   return (
-    <>
-      <header className="space-y-4">
-        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start">
-          <DossierHeaderLogo dossier={dossier} />
-          <div className="min-w-0 space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">Counterparty</p>
-            <h1 className="break-words text-3xl font-semibold tracking-normal text-foreground">{dossier.title}</h1>
-            <p className="text-lg leading-8 text-muted-foreground">{buildSummaryLine(dossier)}</p>
-          </div>
-        </div>
-        <div className="flex min-w-0 flex-wrap gap-2 text-sm text-muted-foreground">
-          <span className="max-w-full break-all rounded-md bg-muted px-2.5 py-1 font-mono text-foreground">{identifier}</span>
-          {resolution?.searchedModules !== undefined ? (
-            <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1">
-              Searched: {resolution.searchedModules.join(", ") || "none"}
-            </span>
-          ) : resolution?.selectedModules !== undefined ? (
-            <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1">
-              Selected: {resolution.selectedModules.join(", ")}
-            </span>
-          ) : null}
-          {resolution?.unsearchedModules !== undefined && resolution.unsearchedModules.length > 0 ? (
-            <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1">
-              Not searched: {resolution.unsearchedModules.join(", ")}
-            </span>
-          ) : null}
-          {resolution?.matchedModules !== undefined ? (
-            <span className="max-w-full break-words rounded-md bg-muted px-2.5 py-1">
-              Matched: {resolution.matchedModules.join(", ") || "none"}
-            </span>
-          ) : null}
-        </div>
-        {resolutionMetadata?.originalInput !== undefined && resolutionMetadata.selectedCandidate?.label !== undefined ? (
-          <div className="rounded-md border border-border bg-muted/35 px-3 py-2 text-sm text-muted-foreground">
-            Resolved "{resolutionMetadata.originalInput}" to {resolutionMetadata.selectedCandidate.label}
-            {resolutionMetadata.matchScore === null || resolutionMetadata.matchScore === undefined
-              ? "."
-              : ` (${resolutionMetadata.matchMethod ?? "match"}, score ${resolutionMetadata.matchScore}).`}
-          </div>
-        ) : null}
-        <div className="flex flex-wrap items-center gap-3">
-          <DossierActionButton label="Copy link" onClick={handleCopyLink}>
-            <Copy aria-hidden="true" className="h-5 w-5" />
-          </DossierActionButton>
-          {copyStatus === "copied" ? (
-            <p className="text-sm text-muted-foreground">Copied</p>
-          ) : copyStatus === "error" ? (
-            <p className="text-sm text-destructive">Copy failed</p>
-          ) : null}
-          {isExporting ? (
-            <p className="inline-flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
-              Exporting report
-            </p>
-          ) : null}
-          {exportError !== null ? (
-            <p className="text-sm text-destructive">{exportError}</p>
-          ) : null}
-        </div>
-        <details className="w-fit rounded-md border border-border bg-card px-3 py-2 text-sm text-muted-foreground">
-          <summary className="cursor-pointer font-medium text-foreground">Advanced data exports</summary>
-          <div className="mt-3 flex gap-2">
-            <Button onClick={() => void handleExportCsv()} size="sm" type="button" variant="outline">
-              <Table2 aria-hidden="true" className="mr-2 h-4 w-4" />
-              CSV
-            </Button>
-            <Button onClick={() => void handleExportJson()} size="sm" type="button" variant="outline">
-              <Braces aria-hidden="true" className="mr-2 h-4 w-4" />
-              JSON
-            </Button>
-          </div>
-        </details>
-      </header>
+    <section>
+      <h2>Case workflow</h2>
+      <p className="muted">
+        Workspace storage is browser-local. Case status, notes, tasks, exports, and audit events are workflow metadata;
+        they do not modify source facts or imply approval, rejection, compliance clearance, or licensed advice.
+      </p>
 
-      <DossierFindingsTabs
-        dossier={dossier}
-        isPdpaExporting={isPdpaExporting}
-        memoState={memoState}
-        onExportPdpaReport={(reviewedItemIds) => void handleExportPdpaReport(reviewedItemIds)}
-        onExportReport={(template, format) => void handleExportReport(template, format)}
-        onModuleFollowUp={handleModuleFollowUp}
-        orchestration={currentOrchestration.orchestration}
-        peopleDiscoveryState={peopleDiscoveryState}
-        rerunningModule={rerunningModule}
-        sharedMemoState={sharedMemoState}
-        webPresenceState={webPresenceState}
-      />
-    </>
+      <div className="case-grid">
+        <div>
+          <label htmlFor="case-status">Case status</label>
+          <select
+            id="case-status"
+            onChange={(event) => handleStatusChange(event.target.value as CddCaseStatus)}
+            value={caseRecord.status}
+          >
+            {caseStatuses.map((status) => (
+              <option key={status} value={status}>
+                {caseStatusLabels[status]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <h3>Report readiness</h3>
+          {reportReadinessBlockers.length === 0 ? (
+            <p className="notice">Ready for export package handoff. This is not a clearance decision.</p>
+          ) : (
+            <PlainList emptyText="No readiness blockers." items={reportReadinessBlockers} />
+          )}
+        </div>
+        <div>
+          <h3>Case identifiers</h3>
+          <p>
+            <strong>Case ID:</strong> {caseRecord.id}
+          </p>
+          <p>
+            <strong>Counterparty:</strong> {caseRecord.counterpartyIdentifier}
+          </p>
+          <p>
+            <strong>Selected candidate:</strong> {caseRecord.candidateIdentifier ?? "Not selected"}
+          </p>
+          <p>
+            <strong>Storage:</strong> browser-local workspace
+          </p>
+        </div>
+      </div>
+
+      <div className="case-subsection">
+        <h3>Review notes</h3>
+        <p className="muted">Analyst notes are stored separately from registry, supplemental, and memo evidence.</p>
+        <label htmlFor="case-note">Add note</label>
+        <textarea
+          id="case-note"
+          onChange={(event) => setNoteBody(event.target.value)}
+          rows={3}
+          value={noteBody}
+        />
+        <button disabled={noteBody.trim() === ""} onClick={handleAddNote} type="button">
+          Add note
+        </button>
+        {caseRecord.analystNotes.length === 0 ? (
+          <p className="muted">No analyst notes yet.</p>
+        ) : (
+          <ul>
+            {caseRecord.analystNotes.map((note) => (
+              <li key={note.id}>
+                <strong>{formatRecordValue("createdAt", note.createdAt)}:</strong> {note.body}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div className="case-subsection">
+        <h3>Follow-up tasks</h3>
+        <p className="muted">
+          Tasks can reference dossier or memo follow-ups, but completion is analyst workflow state only.
+        </p>
+        <p>
+          <strong>{completedTaskCount}</strong> complete / <strong>{openTaskCount}</strong> open
+        </p>
+        {caseRecord.followUpTasks.length === 0 ? (
+          <p className="muted">No follow-up tasks have been created.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Done</th>
+                <th scope="col">Task</th>
+                <th scope="col">Source</th>
+                <th scope="col">Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {caseRecord.followUpTasks.map((task) => (
+                <tr key={task.id}>
+                  <td>
+                    <input
+                      aria-label={`Mark ${task.title} complete`}
+                      checked={task.status === "completed"}
+                      onChange={(event) => handleTaskToggle(task.id, event.target.checked)}
+                      type="checkbox"
+                    />
+                  </td>
+                  <td>{task.title}</td>
+                  <td>{task.source}</td>
+                  <td>{task.description ?? task.sourceRef ?? "No details"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <label htmlFor="case-task-title">Add task</label>
+        <input
+          id="case-task-title"
+          onChange={(event) => setTaskTitle(event.target.value)}
+          placeholder="Follow up with corporate secretary"
+          value={taskTitle}
+        />
+        <label htmlFor="case-task-description">Task details</label>
+        <textarea
+          id="case-task-description"
+          onChange={(event) => setTaskDescription(event.target.value)}
+          rows={2}
+          value={taskDescription}
+        />
+        <button disabled={taskTitle.trim() === ""} onClick={handleAddTask} type="button">
+          Add follow-up task
+        </button>
+      </div>
+
+      <div className="case-subsection">
+        <h3>Export and audit handoff</h3>
+        <p className="muted">
+          Export the case JSON to move browser-local workflow state between analysts or preserve an audit handoff package.
+        </p>
+        <button onClick={handleExportCaseJson} type="button">
+          Export case JSON
+        </button>
+        {caseRecord.exports.length === 0 ? (
+          <p className="muted">No exports recorded yet.</p>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Exported</th>
+                <th scope="col">Format</th>
+                <th scope="col">File</th>
+                <th scope="col">Status at export</th>
+              </tr>
+            </thead>
+            <tbody>
+              {caseRecord.exports.map((item) => (
+                <tr key={item.id}>
+                  <td>{formatRecordValue("exportedAt", item.exportedAt)}</td>
+                  <td>{item.format.toUpperCase()}</td>
+                  <td>{item.filename}</td>
+                  <td>{caseStatusLabels[item.statusAtExport]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <details>
+          <summary>Case audit events</summary>
+          <RecordTable records={caseRecord.auditEvents} />
+        </details>
+      </div>
+    </section>
+  );
+}
+
+function SafetyNotice() {
+  return (
+    <p className="notice">
+      No clearance is implied. Dude does not provide legal, tax, AML, sanctions, credit,
+      investment, or licensed-advisor advice. Absence of public evidence is not a positive
+      clearance finding.
+    </p>
+  );
+}
+
+function EvidenceRecordsSection({ dossier }: { dossier: BusinessDossier }) {
+  const groups = getDossierRecordGroups(dossier);
+
+  return (
+    <section>
+      <h2>Evidence records</h2>
+      <SummaryTable rows={dossier.evidence} />
+      {groups.map((group) => (
+        <details key={group.module} open={group.module === "acra"}>
+          <summary>{group.label}</summary>
+          {group.tables.map((table) => (
+            <section key={table.label}>
+              <h3>{table.label}</h3>
+              <RecordTable records={table.records} />
+            </section>
+          ))}
+        </details>
+      ))}
+      <details>
+        <summary>Raw dossier records</summary>
+        <pre>{stringifyJson(dossier.records)}</pre>
+      </details>
+    </section>
+  );
+}
+
+function SourceCoverageSection({ coverage }: { coverage: readonly SourceCoverageItem[] }) {
+  return (
+    <section>
+      <h2>Source coverage</h2>
+      {coverage.length === 0 ? (
+        <p className="muted">No source coverage matrix returned.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Source family</th>
+              <th scope="col">Status</th>
+              <th scope="col">Coverage</th>
+              <th scope="col">Records</th>
+              <th scope="col">Freshness</th>
+              <th scope="col">Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {coverage.map((item, index) => (
+              <tr key={`${item.family}-${index}`}>
+                <th scope="row">{item.label}</th>
+                <td>{item.status}</td>
+                <td>{item.coverageLevel}</td>
+                <td>{item.recordCount}</td>
+                <td>{item.sourceFreshness ?? item.checkedAt ?? "Not returned"}</td>
+                <td>{item.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+function GapsLimitsSection({
+  dossier,
+  memo,
+  response,
+}: {
+  dossier: BusinessDossier;
+  memo: AnalystMemoResponse;
+  response: CddOrchestratorResponse;
+}) {
+  return (
+    <section>
+      <h2>Gaps and limits</h2>
+      <h3>Gaps</h3>
+      {dossier.gaps.length === 0 ? (
+        <p className="muted">No dossier gaps returned.</p>
+      ) : (
+        <RecordTable records={dossier.gaps} />
+      )}
+      {memo.gaps.length === 0 ? null : (
+        <details open>
+          <summary>Memo gaps</summary>
+          <RecordTable records={memo.gaps} />
+        </details>
+      )}
+      <h3>Limits</h3>
+      {dossier.limits.length === 0 ? (
+        <p className="muted">No dossier limits returned.</p>
+      ) : (
+        <RecordTable records={dossier.limits} />
+      )}
+      {memo.limits.length === 0 ? null : (
+        <details>
+          <summary>Memo limits</summary>
+          <RecordTable records={memo.limits} />
+        </details>
+      )}
+      {response.orchestration.limits.length === 0 ? null : (
+        <details>
+          <summary>Orchestrator limits</summary>
+          <PlainList emptyText="No orchestrator limits returned." items={response.orchestration.limits} />
+        </details>
+      )}
+    </section>
+  );
+}
+
+function ProvenanceFreshnessSection({ dossier }: { dossier: BusinessDossier }) {
+  return (
+    <section>
+      <h2>Provenance and freshness</h2>
+      <h3>Provenance</h3>
+      {dossier.provenance.length === 0 ? (
+        <p className="muted">No provenance returned.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Source</th>
+              <th scope="col">Tool</th>
+              <th scope="col">Coverage</th>
+              <th scope="col">Records</th>
+              <th scope="col">Auth required</th>
+              <th scope="col">URL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dossier.provenance.map((item, index) => (
+              <tr key={`${item.source}-${index}`}>
+                <th scope="row">{item.source}</th>
+                <td>{item.tool}</td>
+                <td>{item.coverage}</td>
+                <td>{item.recordCount}</td>
+                <td>{item.authRequired ? "yes" : "no"}</td>
+                <td>{item.sourceUrl ?? "Not returned"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <h3>Freshness</h3>
+      {dossier.freshness.length === 0 ? (
+        <p className="muted">No freshness timestamps returned.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Source</th>
+              <th scope="col">Observed at</th>
+              <th scope="col">Upstream timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            {dossier.freshness.map((item, index) => (
+              <tr key={`${item.source}-${index}`}>
+                <th scope="row">{item.source}</th>
+                <td>{formatRecordValue("observedAt", item.observedAt)}</td>
+                <td>{formatRecordValue("upstreamTimestamp", item.upstreamTimestamp ?? null)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+
+function SupplementalEvidenceSection({ response }: { response: CddOrchestratorResponse }) {
+  return (
+    <section>
+      <h2>Supplemental evidence</h2>
+      <p className="muted">
+        Web presence and people-discovery results are supplemental analyst-review evidence, not official registry
+        clearance.
+      </p>
+      <details open>
+        <summary>Web presence</summary>
+        <p>
+          <strong>Query:</strong> {response.webPresence.query}
+        </p>
+        <p>
+          <strong>Configured:</strong> {response.webPresence.configured ? "yes" : "no"}
+        </p>
+        <p>
+          <strong>Possible official website:</strong>{" "}
+          {response.webPresence.possibleOfficialWebsite ?? "Not returned"}
+        </p>
+        <RecordTable records={response.webPresence.results} />
+        <PlainList emptyText="No web-presence limits returned." items={response.webPresence.limits} />
+      </details>
+      <details>
+        <summary>People discovery</summary>
+        <p>
+          <strong>Query:</strong> {response.peopleDiscovery.query}
+        </p>
+        <p>
+          <strong>Configured:</strong> {response.peopleDiscovery.configured ? "yes" : "no"}
+        </p>
+        <RecordTable records={response.peopleDiscovery.results} />
+        <h3>Suggested actions</h3>
+        <PlainList emptyText="No people-discovery actions returned." items={response.peopleDiscovery.suggestedActions} />
+        <h3>Limits</h3>
+        <PlainList emptyText="No people-discovery limits returned." items={response.peopleDiscovery.limits} />
+      </details>
+    </section>
+  );
+}
+
+function OrchestrationSection({ orchestration }: { orchestration: CddOrchestrationTrace }) {
+  return (
+    <section>
+      <h2>Orchestrator trace</h2>
+      <table>
+        <tbody>
+          <tr>
+            <th scope="row">Status</th>
+            <td>{orchestration.status}</td>
+          </tr>
+          <tr>
+            <th scope="row">Strategy</th>
+            <td>{orchestration.strategy}</td>
+          </tr>
+          <tr>
+            <th scope="row">Official modules</th>
+            <td>{orchestration.officialModules.join(", ") || "None"}</td>
+          </tr>
+          <tr>
+            <th scope="row">Supplemental tools</th>
+            <td>{orchestration.supplementalTools.join(", ") || "None"}</td>
+          </tr>
+          <tr>
+            <th scope="row">Effective sector hints</th>
+            <td>{orchestration.effectiveSectorHints.join(", ") || "None"}</td>
+          </tr>
+        </tbody>
+      </table>
+      {orchestration.stages === undefined || orchestration.stages.length === 0 ? null : (
+        <details>
+          <summary>Stages</summary>
+          <RecordTable records={orchestration.stages} />
+        </details>
+      )}
+    </section>
   );
 }

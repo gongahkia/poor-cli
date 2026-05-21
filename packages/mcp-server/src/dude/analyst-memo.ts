@@ -61,6 +61,30 @@ type NextCheck = {
   readonly input: Record<string, unknown>;
 };
 
+type AnalystFollowUp = {
+  readonly id: string;
+  readonly priority: "critical" | "recommended" | "optional";
+  readonly category:
+    | "identity_confidence"
+    | "source_unavailable"
+    | "sector_gap"
+    | "supplemental_review"
+    | "credential_required"
+    | "manual_confirmation"
+    | "report_quality";
+  readonly action: string;
+  readonly reason: string;
+  readonly whyThisMatters: string;
+  readonly evidenceBasis: readonly {
+    readonly kind: "source_gap" | "confidence_blocker" | "skipped_module" | "evidence_limitation";
+    readonly ref: string;
+    readonly detail: string;
+    readonly source?: string | null;
+  }[];
+  readonly tool?: string;
+  readonly input?: Record<string, unknown>;
+};
+
 export type AnalystMemoDossier = {
   readonly title: string;
   readonly summary: readonly SummaryItem[];
@@ -72,6 +96,7 @@ export type AnalystMemoDossier = {
   readonly limits: readonly BriefLimit[];
   readonly sourceCoverage?: readonly SourceCoverageItem[];
   readonly riskFlags?: readonly RiskFlag[];
+  readonly analystFollowUps?: readonly AnalystFollowUp[];
   readonly nextChecks?: readonly NextCheck[];
 };
 
@@ -413,6 +438,14 @@ const buildCitations = (
       `${item.status}/${item.coverageLevel}; records ${item.recordCount}; ${item.reason}`,
     ));
   });
+  (dossier.analystFollowUps ?? []).forEach((followUp, index) => {
+    citations.push(citation(
+      `follow-up-${index + 1}`,
+      followUp.action,
+      "analyst follow-up",
+      `${followUp.priority}/${followUp.category}; ${followUp.reason}; why this matters: ${followUp.whyThisMatters}; evidence: ${followUp.evidenceBasis.map((basis) => `${basis.kind}:${basis.ref}`).join(", ")}`,
+    ));
+  });
   (dossier.nextChecks ?? []).forEach((check, index) => {
     citations.push(citation(
       `next-${index + 1}`,
@@ -528,6 +561,7 @@ const buildPrompt = (
     freshness: dossier.freshness,
     gaps: dossier.gaps,
     limits: dossier.limits,
+    analystFollowUps: dossier.analystFollowUps ?? [],
     nextChecks: dossier.nextChecks ?? [],
     provenance: dossier.provenance,
     recordDigests: buildRecordDigests(dossier.records),
@@ -587,6 +621,21 @@ const filterCitationIds = (
   citationById: ReadonlyMap<string, Citation>,
 ): readonly string[] => citationIds.filter((id) => citationById.has(id));
 
+const prohibitedFollowUpPattern = /\b(approve|approval|reject|rejection|clear|clearance|safe|safety)\b/i;
+
+const filterOperationalFollowUps = (items: readonly string[]): readonly string[] =>
+  items.filter((item) => !prohibitedFollowUpPattern.test(item));
+
+const fallbackDecisionNextSteps = (dossier: AnalystMemoDossier): readonly string[] => {
+  const analystFollowUps = dossier.analystFollowUps ?? [];
+  if (analystFollowUps.length > 0) {
+    return analystFollowUps.slice(0, 4).map((followUp) =>
+      `[${followUp.priority}] ${followUp.action} Evidence gap: ${followUp.reason}`,
+    );
+  }
+  return (dossier.nextChecks ?? []).slice(0, 4).map((check) => `${check.tool}: ${check.reason}`);
+};
+
 const buildFallbackRiskRating = (
   dossier: AnalystMemoDossier,
   citationById: ReadonlyMap<string, Citation>,
@@ -645,14 +694,14 @@ const groundModelMemo = (
   const decisionRecord = modelMemo.decisionAid !== null && typeof modelMemo.decisionAid === "object" && !Array.isArray(modelMemo.decisionAid)
     ? modelMemo.decisionAid as Record<string, unknown>
     : {};
-  const nextSteps = asStringArray(decisionRecord["nextSteps"]);
+  const nextSteps = filterOperationalFollowUps(asStringArray(decisionRecord["nextSteps"]));
   const confidenceBlockers = asStringArray(decisionRecord["confidenceBlockers"]);
   const decisionAid: DecisionAid = {
     confidenceBlockers: confidenceBlockers.length === 0
       ? riskRating.confidenceBlockers
       : confidenceBlockers,
     nextSteps: nextSteps.length === 0
-      ? (dossier.nextChecks ?? []).slice(0, 4).map((check) => `${check.tool}: ${check.reason}`)
+      ? fallbackDecisionNextSteps(dossier)
       : nextSteps,
     nonAdvisoryReminder: "Operational follow-up only; this is not legal, tax, credit, investment, or licensed-advisor advice.",
   };

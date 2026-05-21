@@ -315,10 +315,65 @@ const createMockGateway = () => createServer(async (request, response) => {
     return;
   }
 
+  if (request.method === "POST" && requestUrl.pathname === "/api/v1/dude/resolve-counterparty") {
+    const rawBody = await readRequestBody(request);
+    const body = rawBody.trim() === "" ? {} : JSON.parse(rawBody);
+    const identifier = String(body.identifier ?? "").trim().toUpperCase();
+    if (identifier !== "DBS BANK" && identifier !== "DBS BANK LTD" && identifier !== "03591300B") {
+      jsonResponse(response, 200, {
+        status: "no_match",
+        originalInput: body.identifier ?? "",
+        normalizedInput: identifier.toLowerCase(),
+        selectedCandidate: null,
+        candidates: [],
+        confidenceBlockers: ["Browser smoke fixture only serves DBS BANK / 03591300B."],
+        sourcesSearched: ["ACRA"],
+        limits: ["Fixture resolver does not perform live registry lookup."],
+      });
+      return;
+    }
+    jsonResponse(response, 200, {
+      status: "resolved",
+      originalInput: body.identifier ?? "DBS BANK",
+      normalizedInput: identifier.toLowerCase(),
+      selectedCandidate: {
+        id: "03591300B",
+        label: "DBS BANK LTD",
+        sourceRegistry: "ACRA",
+        sourceTool: "sg_acra_entities",
+        entityName: "DBS BANK LTD",
+        uen: "03591300B",
+        officialIdentifier: "03591300B",
+        description: "03591300B - Live - Local Company",
+        score: 1,
+        matchMethod: "fixture",
+        matchReason: "Browser smoke fixture resolves DBS BANK to UEN 03591300B.",
+        normalizedName: "dbs bank ltd",
+        dossierInput: { uen: "03591300B", entityName: "DBS BANK LTD" },
+      },
+      candidates: [],
+      confidenceBlockers: [],
+      sourcesSearched: ["ACRA"],
+      limits: ["Fixture resolver does not perform live registry lookup."],
+    });
+    return;
+  }
+
   if (request.method === "POST" && requestUrl.pathname === "/api/v1/dude/cdd-orchestrator") {
     const rawBody = await readRequestBody(request);
     const body = rawBody.trim() === "" ? {} : JSON.parse(rawBody);
-    if (body.uen !== "03591300B" && body.entityName !== "DBS BANK LTD" && body.entityName !== "DBS BANK") {
+    const requestedIdentifier = String(body.identifier ?? "").trim().toUpperCase();
+    const confirmedUen = body.confirmedCandidate?.uen;
+    const confirmedName = body.confirmedCandidate?.entityName;
+    if (
+      body.uen !== "03591300B"
+      && body.entityName !== "DBS BANK LTD"
+      && body.entityName !== "DBS BANK"
+      && confirmedUen !== "03591300B"
+      && confirmedName !== "DBS BANK LTD"
+      && requestedIdentifier !== "DBS BANK"
+      && requestedIdentifier !== "03591300B"
+    ) {
       jsonResponse(response, 404, {
         error: {
           code: "FIXTURE_NOT_FOUND",
@@ -603,36 +658,31 @@ try {
   page.on("pageerror", (error) => consoleMessages.push(`[pageerror] ${error.stack ?? error.message}`));
 
   await page.goto("/", { waitUntil: "networkidle" });
-  await page.getByRole("heading", { name: /Search a Singapore company or UEN/i }).waitFor({ state: "visible" });
-  await page.getByLabel("Client or counterparty company name or UEN").fill("DBS BANK");
-  const dbsSuggestion = page.getByRole("option", { name: /DBS BANK LTD/i });
-  await dbsSuggestion.waitFor({ state: "visible" });
-  await dbsSuggestion.click();
-  await page.waitForURL(/\/c\/03591300B(?:\?memo=[a-z]+)?$/);
+  await page.getByRole("heading", { name: "Dude CDD" }).waitFor({ state: "visible" });
+  await page.getByLabel("Company name or UEN").fill("DBS BANK");
+  await page.getByRole("button", { name: "Run CDD orchestrator" }).click();
+  await page.waitForURL(/\/c\/DBS%20BANK$/);
   await page.getByRole("heading", { name: "DBS BANK LTD" }).waitFor({ state: "visible" });
-  await page.getByRole("heading", { name: "Cited executive summary" }).waitFor({ state: "visible" });
-  await page.getByText("Report Builder").waitFor({ state: "visible" });
-  await page.getByRole("tab", { name: /Evidence Pack/i }).click();
-  await page.getByRole("heading", { name: "Evidence Pack" }).waitFor({ state: "visible" });
-  await page.getByRole("heading", { name: "Analyst Memo" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Entity identity" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Source-backed summary" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Confidence blockers" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Analyst follow-ups" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Evidence records" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Gaps and limits" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Provenance and freshness" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Supplemental evidence" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Export report" }).waitFor({ state: "visible" });
   await page.getByText("DBS BANK LTD is present in the ACRA fixture summary.").first().waitFor({ state: "visible" });
-  await page.getByRole("heading", { name: "Provenance" }).waitFor({ state: "visible" });
   await page.getByText("ACRA public search fixture").first().waitFor({ state: "visible" });
+  await page.getByText("GeBIZ did not return a matching fixture record.").first().waitFor({ state: "visible" });
+  await page.getByText("Absence of public evidence is not a positive clearance finding").first().waitFor({ state: "visible" });
   await assertNoDocumentOverflow(page, "Dossier desktop layout");
   await page.setViewportSize({ width: 390, height: 844 });
   await assertNoDocumentOverflow(page, "Dossier mobile layout");
   await page.setViewportSize({ width: 1280, height: 900 });
 
-  await page.getByRole("button", { name: "Copy link" }).click();
-  await page.locator("header").getByText("Copied", { exact: true }).waitFor({ state: "visible" });
-  const copiedText = await page.evaluate(() => navigator.clipboard.readText());
-  if (!/\/c\/03591300B\?memo=ready$/.test(copiedText)) {
-    throw new Error(`Copy link wrote unexpected clipboard text: ${copiedText}`);
-  }
-
   const downloadPromise = page.waitForEvent("download", { timeout: 20000 });
-  await page.getByRole("tab", { name: /Report Builder/i }).click();
-  await page.getByRole("button", { name: "Export PDF" }).click();
+  await page.getByRole("button", { name: "Export report" }).click();
   const download = await downloadPromise;
   const suggestedFilename = download.suggestedFilename();
   if (!suggestedFilename.endsWith(".pdf")) {
@@ -640,24 +690,15 @@ try {
   }
   await download.saveAs(resolve(artifactDir, suggestedFilename));
 
-  const jsonDownloadPromise = page.waitForEvent("download", { timeout: 20000 });
-  await page.getByText("Advanced data exports").click();
-  await page.getByRole("button", { name: "JSON" }).click();
-  const jsonDownload = await jsonDownloadPromise;
-  const jsonFilename = jsonDownload.suggestedFilename();
-  if (!jsonFilename.endsWith(".json")) {
-    throw new Error(`JSON export used unexpected filename: ${jsonFilename}`);
-  }
-  await jsonDownload.saveAs(resolve(artifactDir, jsonFilename));
-
   await writeDiagnostics(page, "web-smoke-success");
+  const resolvedPath = new URL(page.url()).pathname;
   const artifactManifest = {
     schemaVersion: "dude-first-run-artifact-pack/v1",
     observedAt: new Date().toISOString(),
     command: "npm run test:smoke:web",
     entrypoint: {
       userInput: "DBS BANK",
-      resolvedUrl: "/c/03591300B?memo=ready",
+      resolvedUrl: resolvedPath,
       orchestratorRoute: "POST /api/v1/dude/cdd-orchestrator",
     },
     boundary: {
@@ -670,7 +711,6 @@ try {
     },
     artifacts: [
       { path: suggestedFilename, role: "first-class PDF CDD report export" },
-      { path: jsonFilename, role: "structured dossier export with manifest, provenance, freshness, gaps, limits, source-use warnings, and orchestration trace" },
       { path: "web-smoke-success.png", role: "browser screenshot of the successful smoke flow" },
     ],
     sourceFreshness: dossierFixture.freshness,
@@ -679,8 +719,8 @@ try {
     limits: dossierFixture.limits,
     orchestration: orchestrationFixture,
     reportManifest: {
-      location: `${jsonFilename} -> manifest`,
-      note: "The PDF also includes the report manifest section generated by the web export path.",
+      location: `${suggestedFilename} -> report manifest section`,
+      note: "The PDF includes the report manifest section generated by the web export path.",
     },
   };
   writeFileSync(resolve(artifactDir, "first-run-artifact-manifest.json"), `${JSON.stringify(artifactManifest, null, 2)}\n`);
@@ -689,7 +729,6 @@ try {
     webBaseUrl,
     gatewayBaseUrl: `http://127.0.0.1:${gatewayPort}`,
     pdf: suggestedFilename,
-    json: jsonFilename,
     manifest: "first-run-artifact-manifest.json",
     artifacts: "output/playwright",
   }, null, 2));

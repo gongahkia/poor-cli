@@ -3,6 +3,7 @@ import type { BusinessDossier } from "@/types/dossier";
 
 export type ReportSectionId =
   | "executive_summary"
+  | "coverage_matrix"
   | "risk_assessment"
   | "action_plan"
   | "identity_snapshot"
@@ -38,6 +39,7 @@ export type ReportDocumentModel = {
 
 export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
   action_plan: "Action plan",
+  coverage_matrix: "Source coverage",
   evidence_records: "Evidence records",
   executive_summary: "Executive summary",
   freshness: "Freshness",
@@ -52,6 +54,7 @@ export const REPORT_SECTION_LABELS: Record<ReportSectionId, string> = {
 
 export const REPORT_SECTION_DESCRIPTIONS: Record<ReportSectionId, string> = {
   action_plan: "Operational next checks and confidence blockers.",
+  coverage_matrix: "Source families checked, skipped, blocked, unavailable, or not applicable.",
   evidence_records: "Matched registry and sector-module records.",
   executive_summary: "CDD findings written from cited evidence.",
   freshness: "When Dude observed the evidence and upstream timestamps.",
@@ -80,6 +83,7 @@ export const REPORT_WRITING_STYLE_DESCRIPTIONS: Record<ReportWritingStyle, strin
 
 export const DEFAULT_REPORT_SECTIONS: ReportSectionId[] = [
   "executive_summary",
+  "coverage_matrix",
   "risk_assessment",
   "action_plan",
   "identity_snapshot",

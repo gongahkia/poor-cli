@@ -131,6 +131,10 @@ describe("CDD orchestrator", () => {
 
     expect(response).toMatchObject({
       dossier: expect.objectContaining({
+        sourceCoverage: expect.arrayContaining([
+          expect.objectContaining({ family: "web_presence", status: "checked", recordCount: 1 }),
+          expect.objectContaining({ family: "people_discovery", status: "credential_blocked" }),
+        ]),
         records: expect.objectContaining({
           resolution: expect.objectContaining({
             selectedModules: expect.arrayContaining(["acra", "bca", "boa"]),
@@ -175,6 +179,18 @@ describe("CDD orchestrator", () => {
     ]));
     expect(response.webPresence.limits).toEqual(expect.arrayContaining([
       expect.stringContaining("ACRA did not return a canonical entity record"),
+    ]));
+    expect(response.dossier.sourceCoverage).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        family: "web_presence",
+        status: "skipped",
+        reason: expect.stringContaining("ACRA did not return a canonical entity record"),
+      }),
+      expect.objectContaining({
+        family: "people_discovery",
+        status: "skipped",
+        reason: expect.stringContaining("People discovery was not checked"),
+      }),
     ]));
     expect(vi.mocked(getWebPresence)).not.toHaveBeenCalled();
     expect(vi.mocked(getPeopleDiscovery)).not.toHaveBeenCalled();

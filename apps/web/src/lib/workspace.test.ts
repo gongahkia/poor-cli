@@ -3,16 +3,31 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_AUTH_POLICY, evaluateLoginAttempt } from "@/lib/auth-policy";
 import { createDefaultWorkspaceState, WorkspaceAccessError, assertWorkspaceAccess } from "@/lib/workspace";
 import {
+  addCddCaseNote,
+  addCddCaseTask,
   addWatchlistItem,
   appendAuditEvent,
   appendBulkJob,
+  attachDossierToCddCase,
+  buildCddCaseId,
+  buildCddCaseJsonPackage,
   createWorkspaceStore,
+  getCddCase,
+  importCddCaseJsonPackage,
   listAuditEvents,
+  listCddCases,
   listDossierRecords,
+  loadWorkspaceStore,
   recordWatchlistCheck,
+  recordCddCaseExport,
+  saveWorkspaceStore,
+  setCddCaseTaskCompleted,
   summarizeBulkRisk,
+  updateCddCaseStatus,
+  upsertCddCase,
   upsertDossierRecord,
 } from "@/lib/workspace-store";
+import type { AnalystMemoReady } from "@/types/analyst-memo";
 import type { BusinessDossier } from "@/types/dossier";
 
 const fixtureDossier: BusinessDossier = {
@@ -33,6 +48,48 @@ const fixtureDossier: BusinessDossier = {
   }],
   freshness: [{ source: "ACRA", observedAt: "2026-05-17T00:00:00.000Z" }],
   limits: [{ code: "PUBLIC_DATA_ONLY", message: "Public data only." }],
+};
+
+const fixtureMemo: AnalystMemoReady = {
+  status: "ready",
+  configured: true,
+  provider: "openai",
+  model: "gpt-test",
+  generatedAt: "2026-05-17T00:05:00.000Z",
+  evidenceMemo: [{ text: "ACRA identity was returned.", citationIds: ["C1"] }],
+  riskRating: {
+    level: "unknown",
+    rationale: "Insufficient workflow review.",
+    citationIds: ["C1"],
+    confidenceBlockers: ["Analyst follow-up remains required."],
+  },
+  decisionAid: {
+    nextSteps: ["Verify ownership and control documents."],
+    confidenceBlockers: ["Beneficial ownership is not established from public data."],
+    nonAdvisoryReminder: "No clearance is implied.",
+  },
+  citations: [{ id: "C1", label: "ACRA row", source: "ACRA", text: "DBS BANK LTD" }],
+  gaps: [],
+  limits: fixtureDossier.limits,
+  rejectedClaims: [],
+};
+
+const createMemoryStorage = (): Storage => {
+  const data = new Map<string, string>();
+  return {
+    get length() {
+      return data.size;
+    },
+    clear: () => data.clear(),
+    getItem: (key: string) => data.get(key) ?? null,
+    key: (index: number) => Array.from(data.keys())[index] ?? null,
+    removeItem: (key: string) => {
+      data.delete(key);
+    },
+    setItem: (key: string, value: string) => {
+      data.set(key, value);
+    },
+  };
 };
 
 describe("workspace access control", () => {
@@ -70,6 +127,152 @@ describe("workspace access control", () => {
     });
     expect(listDossierRecords(audited, otherSession)).toHaveLength(0);
     expect(listAuditEvents(audited, otherSession)).toHaveLength(0);
+  });
+});
+
+describe("CDD case workflow store", () => {
+  it("creates cases, attaches dossier evidence, and keeps analyst work separate from source facts", () => {
+    const state = createDefaultWorkspaceState("2026-05-17T00:00:00.000Z");
+    const session = state.activeSession;
+    const caseId = buildCddCaseId(session, { counterpartyIdentifier: "03591300B" });
+    const dossierWithNextCheck: BusinessDossier = {
+      ...fixtureDossier,
+      nextChecks: [{ tool: "sg_sanctions_screen", reason: "Screen aliases before handoff.", input: { name: "DBS BANK LTD" } }],
+    };
+
+    const created = upsertCddCase(createWorkspaceStore(session.workspaceId), session, {
+      counterpartyIdentifier: "03591300B",
+      now: "2026-05-17T00:00:00.000Z",
+    });
+    expect(getCddCase(created, session, caseId)).toMatchObject({
+      status: "draft",
+      storageScope: "browser_local",
+      counterpartyIdentifier: "03591300B",
+    });
+
+    const withDossier = attachDossierToCddCase(created, session, caseId, {
+      dossier: dossierWithNextCheck,
+      memoState: fixtureMemo,
+      generatedAt: "2026-05-17T00:05:00.000Z",
+      now: "2026-05-17T00:06:00.000Z",
+    });
+    const withNote = addCddCaseNote(
+      withDossier,
+      session,
+      caseId,
+      "Analyst requested private ownership documents.",
+      "2026-05-17T00:07:00.000Z",
+    );
+    const record = getCddCase(withNote, session, caseId);
+
+    expect(record).toMatchObject({
+      status: "in_review",
+      dossier: { title: "Business Dossier" },
+      memoState: { status: "ready" },
+      evidencePack: { dossierTitle: "Business Dossier" },
+    });
+    expect(record?.followUpTasks).toHaveLength(2);
+    expect(record?.analystNotes[0]?.body).toContain("private ownership");
+    expect(JSON.stringify(record?.evidencePack)).not.toContain("private ownership");
+  });
+
+  it("supports status transitions, task completion, persistence, and export records", () => {
+    const state = createDefaultWorkspaceState("2026-05-17T00:00:00.000Z");
+    const session = state.activeSession;
+    const storage = createMemoryStorage();
+    const caseId = buildCddCaseId(session, { counterpartyIdentifier: "03591300B" });
+    const created = upsertCddCase(createWorkspaceStore(session.workspaceId), session, {
+      counterpartyIdentifier: "03591300B",
+      now: "2026-05-17T00:00:00.000Z",
+    });
+    const withTask = addCddCaseTask(created, session, caseId, {
+      title: "Confirm signatory authority.",
+      now: "2026-05-17T00:01:00.000Z",
+    });
+    const taskId = getCddCase(withTask, session, caseId)?.followUpTasks[0]?.id;
+    expect(taskId).toBeDefined();
+
+    const completed = setCddCaseTaskCompleted(
+      withTask,
+      session,
+      caseId,
+      taskId!,
+      true,
+      "2026-05-17T00:02:00.000Z",
+    );
+    const ready = updateCddCaseStatus(
+      completed,
+      session,
+      caseId,
+      "ready_for_export",
+      "2026-05-17T00:03:00.000Z",
+    );
+    const exported = recordCddCaseExport(ready, session, caseId, {
+      filename: "dude-cdd-report-03591300B.pdf",
+      format: "pdf",
+      packageType: "report_package",
+      writingStyle: "audit_ready_formal",
+      now: "2026-05-17T00:04:00.000Z",
+    });
+
+    saveWorkspaceStore(exported, storage);
+    const restored = loadWorkspaceStore(storage);
+    const record = getCddCase(restored, session, caseId);
+    expect(record?.status).toBe("ready_for_export");
+    expect(record?.followUpTasks[0]).toMatchObject({ status: "completed" });
+    expect(record?.exports[0]).toMatchObject({
+      filename: "dude-cdd-report-03591300B.pdf",
+      statusAtExport: "ready_for_export",
+    });
+  });
+
+  it("exports and imports case JSON as browser-local workflow state", () => {
+    const state = createDefaultWorkspaceState("2026-05-17T00:00:00.000Z");
+    const sourceSession = state.activeSession;
+    const targetSession = { ...sourceSession, workspaceId: "target-workspace" };
+    const caseId = buildCddCaseId(sourceSession, { counterpartyIdentifier: "03591300B" });
+    const sourceStore = upsertCddCase(createWorkspaceStore(sourceSession.workspaceId), sourceSession, {
+      counterpartyIdentifier: "03591300B",
+      now: "2026-05-17T00:00:00.000Z",
+    });
+    const sourceCase = getCddCase(sourceStore, sourceSession, caseId);
+    expect(sourceCase).not.toBeNull();
+
+    const cddCasePackage = buildCddCaseJsonPackage(sourceCase!, "2026-05-17T00:01:00.000Z");
+    expect(cddCasePackage).toMatchObject({
+      schemaVersion: "dude-cdd-case/v1",
+      storageScope: "browser_local",
+    });
+    expect(cddCasePackage.limits.join(" ")).toContain("does not imply approval");
+
+    const imported = importCddCaseJsonPackage(createWorkspaceStore(targetSession.workspaceId), targetSession, {
+      package: cddCasePackage,
+      now: "2026-05-17T00:02:00.000Z",
+    });
+    expect(listCddCases(imported, targetSession)).toHaveLength(1);
+    expect(listCddCases(imported, targetSession)[0]).toMatchObject({
+      workspaceId: "target-workspace",
+      counterpartyIdentifier: "03591300B",
+    });
+    expect(listCddCases(imported, targetSession)[0]?.auditEvents[0]).toMatchObject({
+      eventType: "case_imported",
+    });
+  });
+
+  it("applies case access checks", () => {
+    const state = createDefaultWorkspaceState("2026-05-17T00:00:00.000Z");
+    const viewer = { ...state.activeSession, role: "viewer" as const };
+    const created = upsertCddCase(createWorkspaceStore(state.activeSession.workspaceId), state.activeSession, {
+      counterpartyIdentifier: "03591300B",
+      now: "2026-05-17T00:00:00.000Z",
+    });
+    const caseId = buildCddCaseId(state.activeSession, { counterpartyIdentifier: "03591300B" });
+
+    expect(listCddCases(created, viewer)).toHaveLength(1);
+    expect(() => upsertCddCase(created, viewer, { counterpartyIdentifier: "NEWCO" }))
+      .toThrow(WorkspaceAccessError);
+    expect(() => updateCddCaseStatus(created, viewer, caseId, "archived"))
+      .toThrow(WorkspaceAccessError);
   });
 });
 

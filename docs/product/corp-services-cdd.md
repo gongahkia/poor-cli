@@ -25,13 +25,14 @@ Vendor onboarding and procurement intelligence are documented as secondary lanes
    - Construction or real-estate services: BCA, CEA, or BOA where identifiers and sector evidence support the lookup.
 
 4. **Analyst review**
-   - Review evidence, confidence, gaps, freshness, and limits before relying on the dossier.
+   - Review the source coverage matrix, evidence, confidence, gaps, freshness, and limits before relying on the dossier.
+   - Confirm which source families were checked, skipped, unavailable, credential-blocked, or not applicable. Unchecked sources remain gaps or scope limits; they are never positive clearance.
    - Escalate ambiguous name matches, missing licence evidence, stale source timestamps, and unsupported ownership/control questions.
    - Record the review state and any next checks needed outside Dude.
 
 5. **Audit-ready export**
    - Export the report as PDF or DOCX with the source envelope intact. Use JSON or CSV only as advanced data exports.
-   - Include generated-at time, source provenance, source freshness, unresolved gaps, and non-advice limitations.
+   - Include generated-at time, source coverage matrix, source provenance, source freshness, unresolved gaps, and non-advice limitations.
    - Store the dossier and export manifest in the workspace client folder when workspace storage is enabled. In the current web build, that storage is browser-local `localStorage`; hosted retention requires a configured workspace backend.
 
 ## Current Modules That Support The Workflow
@@ -40,6 +41,7 @@ Vendor onboarding and procurement intelligence are documented as secondary lanes
 | --- | --- | --- |
 | Company or UEN identity resolution | CDD orchestrator with ACRA as the identity gate | ACRA is the first module for client onboarding because UEN is the durable public identifier. |
 | Cross-registry dossier | CDD orchestrator; `sg_business_dossier` remains a low-level compatibility API | Returns evidence, records, confidence, gaps, provenance, freshness, and limits. |
+| Source coverage matrix | CDD orchestrator and business dossier envelope | Shows ACRA, BCA, BOA, CEA, GeBIZ, HSA, HLB, OpenSanctions, OpenCorporates, adverse-media lite, relationship graph, web presence, and people discovery as checked, skipped, unavailable, credential-blocked, or not applicable. |
 | Sector-scoped checks | Orchestrated BCA, BOA, CEA, HSA, HLB, and GeBIZ modules from sector hints | Modules should be selected from ACRA/web signals or analyst context, not guessed from marketing copy. |
 | Analyst memo | CDD orchestrator memo stage | Memo generation is part of the report flow and must retain source gaps and limits. |
 | Exports | Web PDF and DOCX report helpers with signed manifests | Exports keep dossier fields and include local integrity manifests for downstream checks. |

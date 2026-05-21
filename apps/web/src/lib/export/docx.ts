@@ -12,10 +12,14 @@ import {
   confidenceLabel,
   formatRecordValue,
   formatTimestamp,
+  getActionableSourceCoverageGaps,
   getDossierRecordGroups,
+  getSourceCoverage,
   riskCodeLabel,
   riskSeverityLabel,
   sanitizeFilenamePart,
+  sourceCoverageLevelLabel,
+  sourceCoverageStatusLabel,
 } from "@/lib/dossier";
 import { buildDossierExportManifest } from "@/lib/export/manifest";
 import { formatNextCheckInputSummary } from "@/lib/next-checks";
@@ -120,6 +124,18 @@ export async function exportDossierDocx(
     children.push(heading(REPORT_SECTION_LABELS.executive_summary), ...rowsToParagraphs(dossier.summary));
   }
 
+  if (includes("coverage_matrix")) {
+    children.push(heading(REPORT_SECTION_LABELS.coverage_matrix));
+    const coverage = getSourceCoverage(dossier);
+    if (coverage.length === 0) {
+      children.push(paragraph("No source coverage matrix was included in this dossier."));
+    } else {
+      coverage.forEach((item) => {
+        children.push(paragraph(`${item.label}: ${sourceCoverageStatusLabel(item.status)}; ${sourceCoverageLevelLabel(item.coverageLevel)}; records: ${item.recordCount}; ${item.reason}; tools: ${item.tools.join(", ")}${item.gapCodes === undefined || item.gapCodes.length === 0 ? "" : `; gaps: ${item.gapCodes.join(", ")}`}`));
+      });
+    }
+  }
+
   if ((includes("executive_summary") || includes("action_plan")) && options.analystMemo !== undefined) {
     const memo = options.analystMemo;
     children.push(
@@ -213,8 +229,11 @@ export async function exportDossierDocx(
 
   if (includes("gaps")) {
     children.push(heading(REPORT_SECTION_LABELS.gaps));
-    if (dossier.gaps.length === 0) {
+    const coverageGaps = getActionableSourceCoverageGaps(dossier);
+    if (dossier.gaps.length === 0 && coverageGaps.length === 0) {
       children.push(paragraph("No gaps returned."));
+    } else if (dossier.gaps.length === 0) {
+      coverageGaps.forEach((item) => children.push(paragraph(`${item.label}: ${item.reason}`)));
     } else {
       dossier.gaps.forEach((gap) => children.push(paragraph(`${gap.code}: ${gap.message}`)));
     }
@@ -263,6 +282,7 @@ export async function exportDossierDocx(
       paragraph(`Orchestration strategy: ${manifest.orchestration?.strategy ?? "Not included"}`),
       paragraph(`Orchestration stages: ${manifest.orchestration?.stages.map((stage) => `${stage.label}: ${stage.status}`).join("; ") ?? "Not included"}`),
       paragraph(`Source-use warnings: ${manifest.sourceUseWarnings.length === 0 ? "None triggered" : manifest.sourceUseWarnings.map((warning) => `${warning.title}: ${warning.triggeredBy.join(", ")}`).join("; ")}`),
+      paragraph(`Source coverage: ${manifest.sourceCoverage.length === 0 ? "Not included" : manifest.sourceCoverage.map((item) => `${item.label}: ${item.status}/${item.coverageLevel}`).join("; ")}`),
       paragraph(`Signature note: ${manifest.signature.note}`),
     );
   }

@@ -4,9 +4,13 @@ import {
   buildDiligenceSnapshot,
   confidenceLabel,
   formatRecordValue,
+  getActionableSourceCoverageGaps,
   getDossierRecordGroups,
+  getSourceCoverage,
   riskCodeLabel,
   riskSeverityLabel,
+  sourceCoverageLevelLabel,
+  sourceCoverageStatusLabel,
 } from "@/lib/dossier";
 import {
   REPORT_SECTION_LABELS,
@@ -155,6 +159,27 @@ function evidenceRows(dossier: BusinessDossier): PreviewLine[] {
   return [...summaryLines(dossier.evidence, 5), ...groupRows].slice(0, 10);
 }
 
+function coverageRows(dossier: BusinessDossier): PreviewLine[] {
+  return getSourceCoverage(dossier).map((item) => ({
+    label: item.label,
+    value: `${sourceCoverageStatusLabel(item.status)}; ${sourceCoverageLevelLabel(item.coverageLevel)}; ${item.recordCount} record(s). ${item.reason}`,
+  }));
+}
+
+function gapRows(dossier: BusinessDossier): PreviewLine[] {
+  if (dossier.gaps.length > 0) {
+    return dossier.gaps.slice(0, 6).map((gap) => ({ label: gap.code, value: gap.message }));
+  }
+  const coverageGaps = getActionableSourceCoverageGaps(dossier);
+  if (coverageGaps.length > 0) {
+    return coverageGaps.slice(0, 6).map((item) => ({
+      label: item.label,
+      value: item.reason,
+    }));
+  }
+  return [{ label: "Gaps", value: "No gaps returned." }];
+}
+
 function supplementalRows(
   peopleDiscoveryState: PeopleDiscoveryState,
   webPresenceState: WebPresenceState,
@@ -199,6 +224,8 @@ function sectionRows({
   switch (section) {
     case "executive_summary":
       return executiveSummaryRows(dossier, memoState);
+    case "coverage_matrix":
+      return coverageRows(dossier);
     case "risk_assessment":
       return riskRows(dossier, memoState);
     case "action_plan":
@@ -210,9 +237,7 @@ function sectionRows({
     case "supplemental_discovery":
       return supplementalRows(peopleDiscoveryState, webPresenceState);
     case "gaps":
-      return dossier.gaps.length === 0
-        ? [{ label: "Gaps", value: "No gaps returned." }]
-        : dossier.gaps.slice(0, 6).map((gap) => ({ label: gap.code, value: gap.message }));
+      return gapRows(dossier);
     case "provenance":
       return dossier.provenance.slice(0, 6).map((item) => ({
         label: item.source,

@@ -21,7 +21,7 @@ Removed from the product/runtime surface: housing, property, macro, transport, t
 ### Works today
 
 - Web search for a Singapore company name or UEN through the CDD orchestrator.
-- ACRA-gated identity lookup, sector inference, official module enrichment where source evidence supports it, cited summary, Evidence Pack, and report builder.
+- ACRA-gated identity lookup, sector inference, official module enrichment where source evidence supports it, cited summary, source coverage matrix, Evidence Pack, and report builder.
 - Local browser workspace tools for saved dossiers, watchlists, bulk runs, audit events, JSON/CSV data exports, and PDF/DOCX report exports.
 - Self-hosted MCP/REST runtime with the retained CDD `sg_*` tools listed below.
 
@@ -86,7 +86,7 @@ The web app is report-first:
 - Home page: one company/UEN search bar.
 - Counterparty page: identity, risk/confidence summary, cited findings, next actions, and confidence blockers.
 - Citations: click to open the supporting evidence.
-- Evidence Pack: raw registry records, provenance, freshness, gaps, limits, supplemental web/person evidence, PDPA checklist, and audit handoff.
+- Evidence Pack: source coverage matrix, raw registry records, provenance, freshness, gaps, limits, supplemental web/person evidence, PDPA checklist, and audit handoff.
 - Report Builder: include/exclude sections, reorder sections, choose a controlled writing style, then export PDF or DOCX.
 - Workspace: saved dossiers, watchlists, bulk runs, and audit logs remain subordinate CDD workflow tools. In the current web build, this workspace data is browser-local `localStorage`, not durable hosted storage.
 
@@ -172,6 +172,7 @@ Dude is an analyst-review system, not an automated compliance decision engine.
 
 - Do not claim a counterparty is cleared, sanctioned-free, PDPA-compliant, financially sound, or legally safe.
 - Treat missing public records as a coverage gap, not proof of absence.
+- Read the source coverage matrix before relying on a report; skipped, unavailable, credential-blocked, and not-applicable sources are explicit confidence blockers or scope limits.
 - Keep supplemental web presence, people discovery, adverse media, OpenCorporates, sanctions, and relationship graph signals clearly labeled as analyst-review evidence.
 - Preserve source attribution, observed freshness, gaps, limits, and report manifest data in exports.
 

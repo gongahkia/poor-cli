@@ -12,7 +12,10 @@ import {
   formatLabel,
   formatRecordValue,
   getDossierRecordGroups,
+  getSourceCoverage,
   getSummaryString,
+  sourceCoverageLevelLabel,
+  sourceCoverageStatusLabel,
   type FollowUpBusinessModule,
 } from "@/lib/dossier";
 import type {
@@ -54,6 +57,13 @@ function isUnavailableGap(gap: EvidenceGap): boolean {
 
 function moduleGaps(module: BusinessDossierModule, gaps: EvidenceGap[]): EvidenceGap[] {
   return gaps.filter((gap) => getGapModule(gap) === module);
+}
+
+function coverageStatusClassName(status: string): string {
+  if (status === "checked") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (status === "credential_blocked") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (status === "unavailable") return "border-destructive/30 bg-destructive/5 text-destructive";
+  return "border-border bg-muted/50 text-muted-foreground";
 }
 
 function moduleStatus(
@@ -241,6 +251,7 @@ export function EvidenceSection({
   runningModule?: RunningBusinessModule;
 }) {
   const groups = getDossierRecordGroups(dossier);
+  const sourceCoverage = getSourceCoverage(dossier);
   const moduleReasons = dossier.records.resolution?.moduleReasons ?? [];
   const defaultFollowUpValue = getSummaryString(dossier, "Entity")
     ?? getSummaryString(dossier, "UEN")
@@ -268,6 +279,47 @@ export function EvidenceSection({
       <div>
         <h2 className="text-xl font-semibold tracking-normal text-foreground">Evidence</h2>
       </div>
+
+      {sourceCoverage.length > 0 ? (
+        <div
+          className="scroll-mt-6 space-y-3 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+          id="dossier-source-coverage"
+          tabIndex={-1}
+        >
+          <div>
+            <h3 className="text-base font-semibold text-foreground">Source coverage</h3>
+          </div>
+          <div className="grid gap-3 md:grid-cols-[repeat(2,minmax(0,1fr))]">
+            {sourceCoverage.map((item) => (
+              <article className="min-w-0 rounded-lg border border-border bg-card p-3 shadow-sm sm:p-4" key={item.family}>
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <h4 className="min-w-0 break-words font-semibold text-foreground">{item.label}</h4>
+                  <span className={`w-fit shrink-0 rounded-md border px-2 py-0.5 text-xs font-medium uppercase ${coverageStatusClassName(item.status)}`}>
+                    {sourceCoverageStatusLabel(item.status)}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <span className="rounded-md bg-muted px-2 py-1 text-muted-foreground">
+                    {sourceCoverageLevelLabel(item.coverageLevel)} coverage
+                  </span>
+                  <span className="rounded-md bg-muted px-2 py-1 text-muted-foreground">
+                    {item.recordCount} record{item.recordCount === 1 ? "" : "s"}
+                  </span>
+                  <span className="max-w-full break-all rounded-md bg-muted px-2 py-1 text-muted-foreground">
+                    {item.tools.join(", ")}
+                  </span>
+                </div>
+                <p className="mt-2 break-words text-sm leading-6 text-muted-foreground">{item.reason}</p>
+                {item.gapCodes === undefined || item.gapCodes.length === 0 ? null : (
+                  <p className="mt-2 break-words rounded-md bg-background/70 p-2 font-mono text-xs leading-5 text-muted-foreground">
+                    {item.gapCodes.join(", ")}
+                  </p>
+                )}
+              </article>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <dl
         className="grid scroll-mt-6 gap-3 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70 sm:grid-cols-[repeat(3,minmax(0,1fr))]"

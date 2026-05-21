@@ -3,6 +3,8 @@ export type WorkspaceRole = "admin" | "analyst" | "viewer";
 export type WorkspacePermission =
   | "workspace:manage"
   | "member:manage"
+  | "case:read"
+  | "case:write"
   | "search:run"
   | "dossier:read"
   | "dossier:write"
@@ -50,6 +52,8 @@ const WORKSPACE_PERMISSIONS: Record<WorkspaceRole, readonly WorkspacePermission[
   admin: [
     "workspace:manage",
     "member:manage",
+    "case:read",
+    "case:write",
     "search:run",
     "dossier:read",
     "dossier:write",
@@ -61,6 +65,8 @@ const WORKSPACE_PERMISSIONS: Record<WorkspaceRole, readonly WorkspacePermission[
     "debug:read",
   ],
   analyst: [
+    "case:read",
+    "case:write",
     "search:run",
     "dossier:read",
     "dossier:write",
@@ -71,6 +77,7 @@ const WORKSPACE_PERMISSIONS: Record<WorkspaceRole, readonly WorkspacePermission[
     "audit:read",
   ],
   viewer: [
+    "case:read",
     "dossier:read",
     "export:run",
     "audit:read",

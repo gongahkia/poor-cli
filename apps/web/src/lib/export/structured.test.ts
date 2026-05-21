@@ -13,6 +13,16 @@ const dossier: BusinessDossier = {
   limits: [{ code: "PUBLIC_DATA_ONLY", message: "Public data only." }],
   provenance: [{ authRequired: false, coverage: "Entity identity", recordCount: 1, source: "ACRA", tool: "sg_acra_entities" }],
   records: { acra: [{ entityName: "Example Pte Ltd" }] },
+  sourceCoverage: [{
+    authRequired: false,
+    coverageLevel: "full",
+    family: "acra",
+    label: "ACRA entity identity",
+    reason: "ACRA lookup ran and returned one public record.",
+    recordCount: 1,
+    status: "checked",
+    tools: ["sg_acra_entities"],
+  }],
   summary: [{ label: "Entity", value: "Example Pte Ltd" }],
   title: "Business Dossier",
 };
@@ -38,6 +48,7 @@ describe("structured dossier exports", () => {
           value: expect.any(String),
         },
       },
+      sourceCoverage: dossier.sourceCoverage,
       sourceUseWarnings: [expect.objectContaining({
         id: "acra_source_use",
         message: expect.stringContaining("hosted paid redistribution"),
@@ -52,6 +63,7 @@ describe("structured dossier exports", () => {
       complianceUseNotice: expect.stringContaining("licensed compliance advice"),
       generatedAt: "2026-05-16T00:00:00.000Z",
       limits: "PUBLIC_DATA_ONLY: Public data only.",
+      sourceCoverage: expect.stringContaining("ACRA entity identity:Checked/Full"),
       sourceUseWarnings: expect.stringContaining("ACRA source-use review required"),
     });
   });

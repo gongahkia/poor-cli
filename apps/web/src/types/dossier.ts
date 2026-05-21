@@ -67,6 +67,7 @@ export type BriefArtifact = {
   sourceCoverage?: SourceCoverageItem[];
   riskFlags?: RiskFlag[];
   matchConfidence?: MatchConfidence[];
+  analystFollowUps?: AnalystFollowUp[];
   nextChecks?: NextCheck[];
 };
 
@@ -114,6 +115,36 @@ export type NextCheck = {
   tool: string;
   reason: string;
   input: Record<string, unknown>;
+};
+
+export type AnalystFollowUpPriority = "critical" | "recommended" | "optional";
+
+export type AnalystFollowUpReasonCategory =
+  | "identity_confidence"
+  | "source_unavailable"
+  | "sector_gap"
+  | "supplemental_review"
+  | "credential_required"
+  | "manual_confirmation"
+  | "report_quality";
+
+export type AnalystFollowUpEvidenceBasis = {
+  kind: "source_gap" | "confidence_blocker" | "skipped_module" | "evidence_limitation";
+  ref: string;
+  detail: string;
+  source?: string | null;
+};
+
+export type AnalystFollowUp = {
+  id: string;
+  priority: AnalystFollowUpPriority;
+  category: AnalystFollowUpReasonCategory;
+  action: string;
+  reason: string;
+  whyThisMatters: string;
+  evidenceBasis: AnalystFollowUpEvidenceBasis[];
+  tool?: string;
+  input?: Record<string, unknown>;
 };
 
 export type BusinessDossierResolution = {

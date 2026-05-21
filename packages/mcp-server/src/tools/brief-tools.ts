@@ -142,7 +142,19 @@ const renderBriefMarkdown = (payload: BriefArtifact): string => {
     }))));
   }
 
-  if (payload.nextChecks !== undefined && payload.nextChecks.length > 0) {
+  if (payload.analystFollowUps !== undefined && payload.analystFollowUps.length > 0) {
+    sections.push("");
+    sections.push("### Prioritized Analyst Follow-ups");
+    sections.push(renderSectionRows(payload.analystFollowUps.map((followUp) => ({
+      priority: followUp.priority,
+      category: followUp.category,
+      action: followUp.action,
+      reason: followUp.reason,
+      whyThisMatters: followUp.whyThisMatters,
+      evidenceBasis: followUp.evidenceBasis.map((basis) => `${basis.kind}:${basis.ref}`).join(", "),
+      tool: followUp.tool ?? "",
+    }))));
+  } else if (payload.nextChecks !== undefined && payload.nextChecks.length > 0) {
     sections.push("");
     sections.push("### Next Checks");
     sections.push(renderSectionRows(payload.nextChecks.map((c) => ({

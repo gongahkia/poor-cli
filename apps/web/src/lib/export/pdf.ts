@@ -4,9 +4,13 @@ import {
   confidenceLabel,
   formatTimestamp,
   formatRecordValue,
+  getActionableSourceCoverageGaps,
   getDossierRecordGroups,
+  getSourceCoverage,
   riskCodeLabel,
   riskSeverityLabel,
+  sourceCoverageLevelLabel,
+  sourceCoverageStatusLabel,
 } from "@/lib/dossier";
 import { complianceUseLimitations } from "@/lib/compliance";
 import { buildDossierExportManifest } from "@/lib/export/manifest";
@@ -176,6 +180,27 @@ export async function exportDossierPdf(
     y = addSummaryRows(doc, brief.summary, y, maxWidth) + 4;
   }
 
+  if (includes("coverage_matrix")) {
+    y = ensurePage(doc, y);
+    y = addSectionTitle(doc, REPORT_SECTION_LABELS.coverage_matrix, y);
+    y = addSummaryRows(
+      doc,
+      getSourceCoverage(brief).map((item) => ({
+        label: item.label,
+        value: [
+          `status: ${sourceCoverageStatusLabel(item.status)}`,
+          `coverage: ${sourceCoverageLevelLabel(item.coverageLevel)}`,
+          `records: ${item.recordCount}`,
+          `reason: ${item.reason}`,
+          `tools: ${item.tools.join(", ")}`,
+          item.gapCodes === undefined || item.gapCodes.length === 0 ? null : `gaps: ${item.gapCodes.join(", ")}`,
+        ].filter(Boolean).join("; "),
+      })),
+      y,
+      maxWidth,
+    ) + 4;
+  }
+
   const snapshot = buildDiligenceSnapshot(brief);
   if (includes("identity_snapshot")) {
     y = ensurePage(doc, y);
@@ -336,11 +361,14 @@ export async function exportDossierPdf(
   if (includes("gaps")) {
     y = ensurePage(doc, y);
     y = addSectionTitle(doc, REPORT_SECTION_LABELS.gaps, y);
+    const coverageGaps = getActionableSourceCoverageGaps(brief);
     y = addSummaryRows(
       doc,
-      brief.gaps.length === 0
-        ? [{ label: "Gaps", value: "No gaps returned.", source: "Gap" }]
-        : brief.gaps.map((gap) => ({ label: gap.code, value: gap.message, source: "Gap" })),
+      brief.gaps.length > 0
+        ? brief.gaps.map((gap) => ({ label: gap.code, value: gap.message, source: "Gap" }))
+        : coverageGaps.length > 0
+          ? coverageGaps.map((item) => ({ label: item.label, value: item.reason, source: "Source coverage" }))
+          : [{ label: "Gaps", value: "No gaps returned.", source: "Gap" }],
       y,
       maxWidth,
     ) + 4;
@@ -437,6 +465,12 @@ export async function exportDossierPdf(
           value: manifest.sourceUseWarnings.length === 0
             ? "None triggered"
             : manifest.sourceUseWarnings.map((warning) => `${warning.title}: ${warning.triggeredBy.join(", ")}`).join("; "),
+        },
+        {
+          label: "Source coverage",
+          value: manifest.sourceCoverage.length === 0
+            ? "Not included"
+            : manifest.sourceCoverage.map((item) => `${item.label}: ${item.status}/${item.coverageLevel}`).join("; "),
         },
         { label: "Signature note", value: manifest.signature.note },
       ],

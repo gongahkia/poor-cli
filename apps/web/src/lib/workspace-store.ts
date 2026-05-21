@@ -1,7 +1,13 @@
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
 import type { BulkDossierResponse } from "@/types/bulk";
 import type { BusinessDossier } from "@/types/dossier";
-import type { WebPresence } from "@/lib/api/client";
+import type {
+  CounterpartyResolutionCandidate,
+  PeopleDiscovery,
+  WebPresence,
+} from "@/lib/api/client";
+import type { ReportExportFormat, ReportWritingStyle } from "@/lib/report-template";
+import type { CddOrchestrationTrace } from "@/types/orchestration";
 import {
   assertWorkspaceAccess,
   resolveActiveSession,
@@ -35,6 +41,116 @@ export type WorkspaceDossierRecord = {
   updatedAt: string;
   createdBy: string;
   updatedBy: string;
+};
+
+export type CddCaseStatus =
+  | "draft"
+  | "in_review"
+  | "needs_follow_up"
+  | "ready_for_export"
+  | "archived";
+
+export type CddCaseNote = {
+  id: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+};
+
+export type CddCaseFollowUpTask = {
+  id: string;
+  title: string;
+  description: string | null;
+  source: "analyst" | "dossier_next_check" | "memo_next_step";
+  sourceRef: string | null;
+  status: "open" | "completed";
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  createdBy: string;
+  updatedBy: string;
+};
+
+export type CddCaseExportRecord = {
+  id: string;
+  format: ReportExportFormat | "json";
+  packageType: "report_package" | "case_json";
+  filename: string;
+  exportedAt: string;
+  exportedBy: string;
+  writingStyle?: ReportWritingStyle;
+  statusAtExport: CddCaseStatus;
+};
+
+export type CddCaseAuditEventType =
+  | "case_created"
+  | "candidate_selected"
+  | "dossier_attached"
+  | "status_changed"
+  | "note_added"
+  | "task_added"
+  | "task_completed"
+  | "task_reopened"
+  | "export_recorded"
+  | "case_imported";
+
+export type CddCaseAuditEvent = {
+  id: string;
+  version: 1;
+  eventType: CddCaseAuditEventType;
+  occurredAt: string;
+  actorId: string;
+  actorRole: WorkspaceSession["role"];
+  summary: string;
+  metadata: Record<string, unknown>;
+};
+
+export type CddCaseEvidencePack = {
+  generatedAt: string | null;
+  dossierTitle: string | null;
+  summary: BusinessDossier["summary"];
+  evidence: BusinessDossier["evidence"];
+  records: BusinessDossier["records"] | null;
+  provenance: BusinessDossier["provenance"];
+  freshness: BusinessDossier["freshness"];
+  gaps: BusinessDossier["gaps"];
+  limits: BusinessDossier["limits"];
+  sourceCoverage: NonNullable<BusinessDossier["sourceCoverage"]>;
+  webPresence?: WebPresence;
+  peopleDiscovery?: PeopleDiscovery;
+  orchestration?: CddOrchestrationTrace;
+};
+
+export type CddCaseRecord = {
+  id: string;
+  version: 1;
+  workspaceId: string;
+  storageScope: "browser_local";
+  status: CddCaseStatus;
+  counterpartyIdentifier: string;
+  selectedCandidate: CounterpartyResolutionCandidate | null;
+  candidateIdentifier: string | null;
+  dossier?: BusinessDossier;
+  memoState?: AnalystMemoResponse;
+  evidencePack: CddCaseEvidencePack;
+  analystNotes: CddCaseNote[];
+  followUpTasks: CddCaseFollowUpTask[];
+  exports: CddCaseExportRecord[];
+  auditEvents: CddCaseAuditEvent[];
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  updatedBy: string;
+};
+
+export type CddCaseJsonPackage = {
+  schemaVersion: "dude-cdd-case/v1";
+  exportedAt: string;
+  storageScope: "browser_local";
+  limits: string[];
+  case: CddCaseRecord;
 };
 
 export type WorkspaceAuditEventType =
@@ -111,6 +227,7 @@ export type BulkRiskSummary = {
 
 export type WorkspaceStore = {
   folders: WorkspaceFolder[];
+  cases: CddCaseRecord[];
   dossiers: WorkspaceDossierRecord[];
   auditEvents: WorkspaceAuditEvent[];
   watchlistItems: WorkspaceWatchlistItem[];
@@ -199,6 +316,7 @@ export const createWorkspaceStore = (workspaceId: string, createdAt = nowIso()):
     name: "Inbox",
     createdAt,
   }],
+  cases: [],
   dossiers: [],
   auditEvents: [],
   watchlistItems: [],
@@ -219,6 +337,7 @@ export const loadWorkspaceStore = (storage: Storage | null = getBrowserStorage()
     const parsed = JSON.parse(raw) as WorkspaceStore;
     return {
       folders: Array.isArray(parsed.folders) ? parsed.folders : [],
+      cases: Array.isArray(parsed.cases) ? parsed.cases : [],
       dossiers: Array.isArray(parsed.dossiers) ? parsed.dossiers : [],
       auditEvents: Array.isArray(parsed.auditEvents) ? parsed.auditEvents : [],
       watchlistItems: Array.isArray(parsed.watchlistItems) ? parsed.watchlistItems : [],
@@ -242,6 +361,584 @@ export const saveWorkspaceStore = (
 const summaryString = (dossier: BusinessDossier, label: string): string | null => {
   const value = dossier.summary.find((item) => item.label.toLowerCase() === label.toLowerCase())?.value;
   return typeof value === "string" && value.trim() !== "" ? value.trim() : null;
+};
+
+const emptyEvidencePack = (): CddCaseEvidencePack => ({
+  generatedAt: null,
+  dossierTitle: null,
+  summary: [],
+  evidence: [],
+  records: null,
+  provenance: [],
+  freshness: [],
+  gaps: [],
+  limits: [],
+  sourceCoverage: [],
+});
+
+const candidateIdentifier = (candidate: CounterpartyResolutionCandidate | null): string | null =>
+  candidate === null ? null : candidate.uen ?? candidate.officialIdentifier ?? candidate.entityName;
+
+export const buildCddCaseId = (
+  session: Pick<WorkspaceSession, "workspaceId">,
+  input: { counterpartyIdentifier: string },
+): string => hashValue({
+  counterpartyIdentifier: input.counterpartyIdentifier.trim().toLowerCase(),
+  workspaceId: session.workspaceId,
+});
+
+const caseAuditEvent = (
+  session: WorkspaceSession,
+  input: {
+    eventType: CddCaseAuditEventType;
+    summary: string;
+    metadata?: Record<string, unknown>;
+    now?: string;
+  },
+): CddCaseAuditEvent => ({
+  id: makeId("caseevt", input),
+  version: 1,
+  eventType: input.eventType,
+  occurredAt: input.now ?? nowIso(),
+  actorId: session.actorId,
+  actorRole: session.role,
+  summary: input.summary,
+  metadata: input.metadata ?? {},
+});
+
+const buildEvidencePack = (input: {
+  dossier: BusinessDossier;
+  generatedAt?: string;
+  orchestration?: CddOrchestrationTrace;
+  peopleDiscovery?: PeopleDiscovery;
+  webPresence?: WebPresence;
+}): CddCaseEvidencePack => ({
+  generatedAt: input.generatedAt ?? null,
+  dossierTitle: input.dossier.title,
+  summary: input.dossier.summary,
+  evidence: input.dossier.evidence,
+  records: input.dossier.records,
+  provenance: input.dossier.provenance,
+  freshness: input.dossier.freshness,
+  gaps: input.dossier.gaps,
+  limits: input.dossier.limits,
+  sourceCoverage: input.dossier.sourceCoverage ?? [],
+  ...(input.webPresence === undefined ? {} : { webPresence: input.webPresence }),
+  ...(input.peopleDiscovery === undefined ? {} : { peopleDiscovery: input.peopleDiscovery }),
+  ...(input.orchestration === undefined ? {} : { orchestration: input.orchestration }),
+});
+
+const generatedFollowUpTasks = (
+  caseId: string,
+  session: WorkspaceSession,
+  input: {
+    dossier?: BusinessDossier;
+    memoState?: AnalystMemoResponse;
+    now: string;
+  },
+): CddCaseFollowUpTask[] => {
+  const tasks: CddCaseFollowUpTask[] = [];
+
+  input.dossier?.nextChecks?.forEach((check, index) => {
+    const sourceRef = `dossier.nextChecks.${index}`;
+    tasks.push({
+      id: hashValue({ caseId, sourceRef, tool: check.tool, reason: check.reason }),
+      title: `${check.tool}: ${check.reason}`,
+      description: JSON.stringify(check.input),
+      source: "dossier_next_check",
+      sourceRef,
+      status: "open",
+      createdAt: input.now,
+      updatedAt: input.now,
+      completedAt: null,
+      createdBy: session.actorId,
+      updatedBy: session.actorId,
+    });
+  });
+
+  if (input.memoState?.status === "ready") {
+    input.memoState.decisionAid.nextSteps.forEach((step, index) => {
+      const sourceRef = `memo.decisionAid.nextSteps.${index}`;
+      tasks.push({
+        id: hashValue({ caseId, sourceRef, step }),
+        title: step,
+        description: null,
+        source: "memo_next_step",
+        sourceRef,
+        status: "open",
+        createdAt: input.now,
+        updatedAt: input.now,
+        completedAt: null,
+        createdBy: session.actorId,
+        updatedBy: session.actorId,
+      });
+    });
+  }
+
+  return tasks;
+};
+
+const mergeFollowUpTasks = (
+  existing: readonly CddCaseFollowUpTask[],
+  incoming: readonly CddCaseFollowUpTask[],
+): CddCaseFollowUpTask[] => {
+  const existingById = new Map(existing.map((task) => [task.id, task]));
+  const generated = incoming.map((task) => {
+    const current = existingById.get(task.id);
+    return current === undefined
+      ? task
+      : {
+          ...task,
+          status: current.status,
+          completedAt: current.completedAt,
+          createdAt: current.createdAt,
+          createdBy: current.createdBy,
+          updatedAt: current.updatedAt,
+          updatedBy: current.updatedBy,
+        };
+  });
+  const manual = existing.filter((task) => task.source === "analyst");
+  return [...generated, ...manual].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+};
+
+const replaceCase = (store: WorkspaceStore, nextCase: CddCaseRecord): WorkspaceStore => ({
+  ...store,
+  cases: [
+    nextCase,
+    ...store.cases.filter((record) => !(record.id === nextCase.id && record.workspaceId === nextCase.workspaceId)),
+  ],
+});
+
+export const getCddCase = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  caseId: string,
+): CddCaseRecord | null => {
+  assertWorkspaceAccess(session, "case:read");
+  return store.cases.find((record) => record.id === caseId && record.workspaceId === session.workspaceId) ?? null;
+};
+
+export const listCddCases = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  options: { query?: string; status?: CddCaseStatus } = {},
+): readonly CddCaseRecord[] => {
+  assertWorkspaceAccess(session, "case:read");
+  const query = options.query?.trim().toLowerCase() ?? "";
+  return store.cases
+    .filter((record) => record.workspaceId === session.workspaceId)
+    .filter((record) => options.status === undefined || record.status === options.status)
+    .filter((record) => {
+      if (query === "") return true;
+      return [
+        record.counterpartyIdentifier,
+        record.candidateIdentifier,
+        record.selectedCandidate?.entityName,
+        record.dossier?.title,
+      ].filter((item): item is string => typeof item === "string")
+        .some((item) => item.toLowerCase().includes(query));
+    })
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+};
+
+export const upsertCddCase = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  input: {
+    counterpartyIdentifier: string;
+    selectedCandidate?: CounterpartyResolutionCandidate | null;
+    status?: CddCaseStatus;
+    now?: string;
+  },
+): WorkspaceStore => {
+  assertWorkspaceAccess(session, "case:write");
+  const identifier = input.counterpartyIdentifier.trim();
+  if (identifier === "") {
+    throw new Error("Counterparty identifier is required.");
+  }
+
+  const at = input.now ?? nowIso();
+  const caseId = buildCddCaseId(session, { counterpartyIdentifier: identifier });
+  const existing = getCddCase(store, session, caseId);
+  if (existing !== null) {
+    const selectedCandidate = input.selectedCandidate === undefined ? existing.selectedCandidate : input.selectedCandidate;
+    const selectedIdentifier = candidateIdentifier(selectedCandidate);
+    const candidateChanged = selectedIdentifier !== existing.candidateIdentifier;
+    return replaceCase(store, {
+      ...existing,
+      status: input.status ?? existing.status,
+      counterpartyIdentifier: identifier,
+      selectedCandidate,
+      candidateIdentifier: selectedIdentifier,
+      updatedAt: at,
+      updatedBy: session.actorId,
+      auditEvents: candidateChanged
+        ? [
+            caseAuditEvent(session, {
+              eventType: "candidate_selected",
+              summary: "Counterparty candidate selected for this CDD case.",
+              metadata: { candidateIdentifier: selectedIdentifier },
+              now: at,
+            }),
+            ...existing.auditEvents,
+          ]
+        : existing.auditEvents,
+    });
+  }
+
+  const selectedCandidate = input.selectedCandidate ?? null;
+  const record: CddCaseRecord = {
+    id: caseId,
+    version: 1,
+    workspaceId: session.workspaceId,
+    storageScope: "browser_local",
+    status: input.status ?? "draft",
+    counterpartyIdentifier: identifier,
+    selectedCandidate,
+    candidateIdentifier: candidateIdentifier(selectedCandidate),
+    evidencePack: emptyEvidencePack(),
+    analystNotes: [],
+    followUpTasks: [],
+    exports: [],
+    auditEvents: [caseAuditEvent(session, {
+      eventType: "case_created",
+      summary: "CDD case created in browser-local workspace storage.",
+      metadata: { counterpartyIdentifier: identifier, storageScope: "browser_local" },
+      now: at,
+    })],
+    createdAt: at,
+    updatedAt: at,
+    createdBy: session.actorId,
+    updatedBy: session.actorId,
+  };
+
+  return replaceCase(store, record);
+};
+
+export const attachDossierToCddCase = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  caseId: string,
+  input: {
+    dossier: BusinessDossier;
+    memoState: AnalystMemoResponse;
+    counterpartyIdentifier?: string;
+    generatedAt?: string;
+    orchestration?: CddOrchestrationTrace;
+    peopleDiscovery?: PeopleDiscovery;
+    selectedCandidate?: CounterpartyResolutionCandidate | null;
+    webPresence?: WebPresence;
+    now?: string;
+  },
+): WorkspaceStore => {
+  assertWorkspaceAccess(session, "case:write");
+  const existing = getCddCase(store, session, caseId);
+  if (existing === null) {
+    throw new Error(`CDD case ${caseId} was not found.`);
+  }
+
+  const at = input.now ?? nowIso();
+  const selectedCandidate = input.selectedCandidate === undefined ? existing.selectedCandidate : input.selectedCandidate;
+  const incomingTasks = generatedFollowUpTasks(caseId, session, {
+    dossier: input.dossier,
+    memoState: input.memoState,
+    now: at,
+  });
+  const nextStatus = existing.status === "draft" ? "in_review" : existing.status;
+  const nextCase: CddCaseRecord = {
+    ...existing,
+    status: nextStatus,
+    counterpartyIdentifier: input.counterpartyIdentifier?.trim() || existing.counterpartyIdentifier,
+    selectedCandidate,
+    candidateIdentifier: candidateIdentifier(selectedCandidate),
+    dossier: input.dossier,
+    memoState: input.memoState,
+    evidencePack: buildEvidencePack({
+      dossier: input.dossier,
+      ...(input.generatedAt === undefined ? {} : { generatedAt: input.generatedAt }),
+      ...(input.orchestration === undefined ? {} : { orchestration: input.orchestration }),
+      ...(input.peopleDiscovery === undefined ? {} : { peopleDiscovery: input.peopleDiscovery }),
+      ...(input.webPresence === undefined ? {} : { webPresence: input.webPresence }),
+    }),
+    followUpTasks: mergeFollowUpTasks(existing.followUpTasks, incomingTasks),
+    updatedAt: at,
+    updatedBy: session.actorId,
+    auditEvents: [
+      caseAuditEvent(session, {
+        eventType: "dossier_attached",
+        summary: "CDD dossier and evidence pack attached to this case.",
+        metadata: {
+          dossierTitle: input.dossier.title,
+          generatedAt: input.generatedAt ?? null,
+          status: nextStatus,
+        },
+        now: at,
+      }),
+      ...existing.auditEvents,
+    ],
+  };
+  return replaceCase(store, nextCase);
+};
+
+export const updateCddCaseStatus = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  caseId: string,
+  status: CddCaseStatus,
+  now = nowIso(),
+): WorkspaceStore => {
+  assertWorkspaceAccess(session, "case:write");
+  const existing = getCddCase(store, session, caseId);
+  if (existing === null || existing.status === status) return store;
+  return replaceCase(store, {
+    ...existing,
+    status,
+    updatedAt: now,
+    updatedBy: session.actorId,
+    auditEvents: [
+      caseAuditEvent(session, {
+        eventType: "status_changed",
+        summary: "CDD case status changed.",
+        metadata: { from: existing.status, to: status },
+        now,
+      }),
+      ...existing.auditEvents,
+    ],
+  });
+};
+
+export const addCddCaseNote = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  caseId: string,
+  body: string,
+  now = nowIso(),
+): WorkspaceStore => {
+  assertWorkspaceAccess(session, "case:write");
+  const existing = getCddCase(store, session, caseId);
+  const trimmed = body.trim();
+  if (existing === null || trimmed === "") return store;
+  const note: CddCaseNote = {
+    id: makeId("note", { caseId, body: trimmed, now }),
+    body: trimmed,
+    createdAt: now,
+    updatedAt: now,
+    createdBy: session.actorId,
+    updatedBy: session.actorId,
+  };
+  return replaceCase(store, {
+    ...existing,
+    analystNotes: [note, ...existing.analystNotes],
+    updatedAt: now,
+    updatedBy: session.actorId,
+    auditEvents: [
+      caseAuditEvent(session, {
+        eventType: "note_added",
+        summary: "Analyst note added separately from source facts.",
+        metadata: { noteId: note.id },
+        now,
+      }),
+      ...existing.auditEvents,
+    ],
+  });
+};
+
+export const addCddCaseTask = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  caseId: string,
+  input: { title: string; description?: string | null; now?: string },
+): WorkspaceStore => {
+  assertWorkspaceAccess(session, "case:write");
+  const existing = getCddCase(store, session, caseId);
+  const title = input.title.trim();
+  if (existing === null || title === "") return store;
+  const at = input.now ?? nowIso();
+  const task: CddCaseFollowUpTask = {
+    id: makeId("task", { caseId, title, at }),
+    title,
+    description: input.description?.trim() || null,
+    source: "analyst",
+    sourceRef: null,
+    status: "open",
+    createdAt: at,
+    updatedAt: at,
+    completedAt: null,
+    createdBy: session.actorId,
+    updatedBy: session.actorId,
+  };
+  return replaceCase(store, {
+    ...existing,
+    followUpTasks: [...existing.followUpTasks, task],
+    updatedAt: at,
+    updatedBy: session.actorId,
+    auditEvents: [
+      caseAuditEvent(session, {
+        eventType: "task_added",
+        summary: "Analyst follow-up task added.",
+        metadata: { taskId: task.id },
+        now: at,
+      }),
+      ...existing.auditEvents,
+    ],
+  });
+};
+
+export const setCddCaseTaskCompleted = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  caseId: string,
+  taskId: string,
+  completed: boolean,
+  now = nowIso(),
+): WorkspaceStore => {
+  assertWorkspaceAccess(session, "case:write");
+  const existing = getCddCase(store, session, caseId);
+  if (existing === null) return store;
+
+  let changed = false;
+  const tasks = existing.followUpTasks.map((task) => {
+    if (task.id !== taskId || task.status === (completed ? "completed" : "open")) {
+      return task;
+    }
+    changed = true;
+    return {
+      ...task,
+      status: completed ? "completed" as const : "open" as const,
+      completedAt: completed ? now : null,
+      updatedAt: now,
+      updatedBy: session.actorId,
+    };
+  });
+  if (!changed) return store;
+
+  return replaceCase(store, {
+    ...existing,
+    followUpTasks: tasks,
+    updatedAt: now,
+    updatedBy: session.actorId,
+    auditEvents: [
+      caseAuditEvent(session, {
+        eventType: completed ? "task_completed" : "task_reopened",
+        summary: completed ? "CDD follow-up task completed." : "CDD follow-up task reopened.",
+        metadata: { taskId },
+        now,
+      }),
+      ...existing.auditEvents,
+    ],
+  });
+};
+
+export const recordCddCaseExport = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  caseId: string,
+  input: {
+    filename: string;
+    format: CddCaseExportRecord["format"];
+    packageType: CddCaseExportRecord["packageType"];
+    writingStyle?: ReportWritingStyle;
+    now?: string;
+  },
+): WorkspaceStore => {
+  assertWorkspaceAccess(session, "export:run");
+  const existing = getCddCase(store, session, caseId);
+  if (existing === null) return store;
+  const at = input.now ?? nowIso();
+  const exportRecord: CddCaseExportRecord = {
+    id: makeId("export", { caseId, filename: input.filename, at }),
+    format: input.format,
+    packageType: input.packageType,
+    filename: input.filename,
+    exportedAt: at,
+    exportedBy: session.actorId,
+    ...(input.writingStyle === undefined ? {} : { writingStyle: input.writingStyle }),
+    statusAtExport: existing.status,
+  };
+  return replaceCase(store, {
+    ...existing,
+    exports: [exportRecord, ...existing.exports],
+    updatedAt: at,
+    updatedBy: session.actorId,
+    auditEvents: [
+      caseAuditEvent(session, {
+        eventType: "export_recorded",
+        summary: "Case export recorded for audit handoff.",
+        metadata: {
+          filename: input.filename,
+          format: input.format,
+          packageType: input.packageType,
+          statusAtExport: existing.status,
+        },
+        now: at,
+      }),
+      ...existing.auditEvents,
+    ],
+  });
+};
+
+export const buildCddCaseJsonPackage = (
+  record: CddCaseRecord,
+  exportedAt = nowIso(),
+): CddCaseJsonPackage => ({
+  schemaVersion: "dude-cdd-case/v1",
+  exportedAt,
+  storageScope: "browser_local",
+  limits: [
+    "Case JSON is browser-local workflow state for analyst review.",
+    "Analyst notes and follow-up tasks are user-authored workflow items, not source facts.",
+    "Case status is workflow readiness only and does not imply approval, rejection, compliance clearance, or licensed advice.",
+  ],
+  case: record,
+});
+
+export const parseCddCaseJsonPackage = (text: string): CddCaseJsonPackage => {
+  const parsed = JSON.parse(text) as Partial<CddCaseJsonPackage>;
+  if (
+    parsed.schemaVersion !== "dude-cdd-case/v1" ||
+    parsed.storageScope !== "browser_local" ||
+    parsed.case === undefined ||
+    typeof parsed.case.id !== "string" ||
+    typeof parsed.case.counterpartyIdentifier !== "string"
+  ) {
+    throw new Error("The selected file is not a Dude CDD case JSON package.");
+  }
+  return parsed as CddCaseJsonPackage;
+};
+
+export const importCddCaseJsonPackage = (
+  store: WorkspaceStore,
+  session: WorkspaceSession,
+  input: { package: CddCaseJsonPackage; now?: string },
+): WorkspaceStore => {
+  assertWorkspaceAccess(session, "case:write");
+  const at = input.now ?? nowIso();
+  const incoming = input.package.case;
+  const importedCase: CddCaseRecord = {
+    ...incoming,
+    version: 1,
+    workspaceId: session.workspaceId,
+    storageScope: "browser_local",
+    evidencePack: incoming.evidencePack ?? emptyEvidencePack(),
+    analystNotes: Array.isArray(incoming.analystNotes) ? incoming.analystNotes : [],
+    followUpTasks: Array.isArray(incoming.followUpTasks) ? incoming.followUpTasks : [],
+    exports: Array.isArray(incoming.exports) ? incoming.exports : [],
+    auditEvents: [
+      caseAuditEvent(session, {
+        eventType: "case_imported",
+        summary: "CDD case imported from browser-local JSON package.",
+        metadata: {
+          originalWorkspaceId: incoming.workspaceId,
+          importedPackageExportedAt: input.package.exportedAt,
+        },
+        now: at,
+      }),
+      ...(Array.isArray(incoming.auditEvents) ? incoming.auditEvents : []),
+    ],
+    updatedAt: at,
+    updatedBy: session.actorId,
+  };
+  return replaceCase(store, importedCase);
 };
 
 export const upsertDossierRecord = (

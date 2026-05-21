@@ -13,6 +13,16 @@ const dossier: BusinessDossier = {
   limits: [{ code: "PUBLIC_DATA_ONLY", message: "Public records only." }],
   provenance: [{ authRequired: false, coverage: "Registry", recordCount: 1, source: "ACRA", tool: "sg_acra_entities" }],
   records: { acra: [{ entityName: "DBS BANK LTD", uen: "03591300B" }] },
+  sourceCoverage: [{
+    authRequired: false,
+    coverageLevel: "full",
+    family: "acra",
+    label: "ACRA entity identity",
+    reason: "ACRA lookup ran and returned one public record.",
+    recordCount: 1,
+    status: "checked",
+    tools: ["sg_acra_entities"],
+  }],
   summary: [{ label: "UEN", value: "03591300B" }],
   title: "Business Dossier",
 };
@@ -32,6 +42,9 @@ describe("export manifest", () => {
         message: expect.stringContaining("hosted paid redistribution"),
       }),
     ]));
+    expect(first.sourceCoverage).toEqual([
+      expect.objectContaining({ family: "acra", status: "checked", coverageLevel: "full" }),
+    ]);
     await expect(verifyDossierExportManifest({ dossier, manifest: first })).resolves.toBe(true);
   });
 

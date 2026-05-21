@@ -1,7 +1,10 @@
 import {
   getDossierConfidence,
+  getSourceCoverage,
   getSummaryString,
   sanitizeFilenamePart,
+  sourceCoverageLevelLabel,
+  sourceCoverageStatusLabel,
 } from "@/lib/dossier";
 import {
   buildComplianceUseLimitations,
@@ -103,6 +106,9 @@ export const buildSingleDossierCsvRow = (
     provenance: summary.provenanceSources.join(";"),
     risk: summary.risk,
     riskFlags: summary.riskFlags.join(";"),
+    sourceCoverage: getSourceCoverage(dossier)
+      .map((item) => `${item.label}:${sourceCoverageStatusLabel(item.status)}/${sourceCoverageLevelLabel(item.coverageLevel)}:${item.reason}`)
+      .join(";"),
     sourceUseWarnings: formatSourceUseWarnings(sourceUseWarnings),
     uen: summary.uen,
   };
@@ -131,6 +137,7 @@ export async function buildSingleDossierJsonPayload(params: {
     limits: params.dossier.limits,
     manifest,
     orchestration: params.orchestration ?? null,
+    sourceCoverage: params.dossier.sourceCoverage ?? [],
     sourceUseWarnings: manifest.sourceUseWarnings,
     webPresence: params.webPresence ?? null,
   };
@@ -196,6 +203,11 @@ const bulkRowsForExport = (rows: readonly BulkDossierRow[]): Record<string, unkn
       provenance: row.provenanceSources.join(";"),
       risk: row.risk,
       riskFlags: row.riskFlags.join(";"),
+      sourceCoverage: row.dossier === undefined
+        ? ""
+        : getSourceCoverage(row.dossier)
+            .map((item) => `${item.label}:${sourceCoverageStatusLabel(item.status)}/${sourceCoverageLevelLabel(item.coverageLevel)}:${item.reason}`)
+            .join(";"),
       sourceUseWarnings: formatSourceUseWarnings(warnings),
       status: row.status,
       uen: row.uen,

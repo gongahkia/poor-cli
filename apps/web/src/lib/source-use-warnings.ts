@@ -42,6 +42,7 @@ const collectSupplementalTriggers = ({
   webPresence,
 }: SourceUseWarningParams): string[] => {
   const signals = [
+    ...(dossier.sourceCoverage ?? []).flatMap((item) => [item.family, item.label, item.status, item.reason, ...item.tools]),
     ...dossier.provenance.flatMap((item) => [item.source, item.tool, item.coverage, item.evidenceType ?? ""]),
     ...dossier.evidence.map((item) => item.source ?? ""),
     ...dossier.freshness.map((item) => item.source),

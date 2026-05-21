@@ -1,6 +1,7 @@
 import type { SourceCoverageItem } from "@dude/shared";
 import { getPeopleDiscovery, getWebPresence, type PeopleDiscovery, type WebPresence } from "../apis/tinyfish/client.js";
 import type { BusinessDossierModule, BusinessSectorHint } from "../diligence/entity-resolution.js";
+import { withDossierAnalystFollowUps } from "../diligence/business-dossier.js";
 import { generateAnalystMemo, type AnalystMemoDossier } from "./analyst-memo.js";
 import { handleBusinessDossier } from "../tools/brief-tools.js";
 import type { CounterpartyResolutionResult } from "./counterparty-resolver.js";
@@ -672,7 +673,9 @@ export const runCddOrchestrator = async (
     ...input,
     includeExternalDiligence: true,
   };
-  const firstDossier = withResolutionMetadata(await resolveBusinessDossierRecord(baseInput), options.resolution);
+  const firstDossier = withDossierAnalystFollowUps(
+    withResolutionMetadata(await resolveBusinessDossierRecord(baseInput), options.resolution),
+  );
   const webPresenceQuery = buildWebPresenceQuery(firstDossier, baseInput);
   const entityName = getDossierSummaryString(firstDossier, "Entity") ?? baseInput.entityName ?? webPresenceQuery;
   const uen = getDossierSummaryString(firstDossier, "UEN") ?? baseInput.uen ?? null;
@@ -683,10 +686,10 @@ export const runCddOrchestrator = async (
     const reason = "ACRA did not return a canonical entity record, so automated sector, web, people, and memo orchestration stopped at the identity check.";
     const webPresence = buildSkippedWebPresence(webPresenceQuery, reason);
     const peopleDiscovery = buildSkippedPeopleDiscovery({ entityName, uen, reason });
-    const stoppedDossier = withCoverageItems(firstDossier, [
+    const stoppedDossier = withDossierAnalystFollowUps(withCoverageItems(firstDossier, [
       buildWebPresenceCoverage(webPresence, generatedAt, reason),
       buildPeopleDiscoveryCoverage(peopleDiscovery, generatedAt, reason),
-    ]);
+    ]));
     const memo = await generateAnalystMemo({ dossier: stoppedDossier });
     return {
       dossier: stoppedDossier,
@@ -722,10 +725,10 @@ export const runCddOrchestrator = async (
   ]);
   const hasNewWebSectorHint = webSectorHints.some((hint) => !acraSectorHints.includes(hint));
   const finalDossier = hasNewWebSectorHint
-    ? withResolutionMetadata(await resolveBusinessDossierRecord({
+    ? withDossierAnalystFollowUps(withResolutionMetadata(await resolveBusinessDossierRecord({
         ...baseInput,
         sectorHints: mergedSectorHints,
-      }), options.resolution)
+      }), options.resolution))
     : firstDossier;
   const finalEntityName = getDossierSummaryString(finalDossier, "Entity") ?? entityName;
   const finalUen = getDossierSummaryString(finalDossier, "UEN") ?? uen;
@@ -733,10 +736,10 @@ export const runCddOrchestrator = async (
     entityName: finalEntityName,
     ...(finalUen === null ? {} : { uen: finalUen }),
   });
-  const dossierWithCoverage = withCoverageItems(finalDossier, [
+  const dossierWithCoverage = withDossierAnalystFollowUps(withCoverageItems(finalDossier, [
     buildWebPresenceCoverage(webPresence, generatedAt),
     buildPeopleDiscoveryCoverage(peopleDiscovery, generatedAt),
-  ]);
+  ]));
   const memo = await generateAnalystMemo({
     dossier: dossierWithCoverage,
     peopleDiscovery,

@@ -256,6 +256,16 @@ describe("query and HDB schema contracts", () => {
           upstreamTimestamp: "2026-03-26",
         }],
         limits: [{ code: "SNAPSHOT_ONLY", message: "Starter brief only." }],
+        sourceCoverage: [{
+          authRequired: false,
+          coverageLevel: "full",
+          family: "mas",
+          label: "MAS exchange rates",
+          recordCount: 1,
+          reason: "Checked MAS exchange-rate rows.",
+          status: "checked",
+          tools: ["sg_mas_exchange_rates"],
+        }],
       }).success,
     ).toBe(true);
   });

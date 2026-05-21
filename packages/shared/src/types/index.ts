@@ -200,6 +200,36 @@ export type NextCheck = {
   readonly input: Readonly<Record<string, unknown>>;
 };
 
+export type AnalystFollowUpPriority = "critical" | "recommended" | "optional";
+
+export type AnalystFollowUpReasonCategory =
+  | "identity_confidence"
+  | "source_unavailable"
+  | "sector_gap"
+  | "supplemental_review"
+  | "credential_required"
+  | "manual_confirmation"
+  | "report_quality";
+
+export type AnalystFollowUpEvidenceBasis = {
+  readonly kind: "source_gap" | "confidence_blocker" | "skipped_module" | "evidence_limitation";
+  readonly ref: string;
+  readonly detail: string;
+  readonly source?: string | null;
+};
+
+export type AnalystFollowUp = {
+  readonly id: string;
+  readonly priority: AnalystFollowUpPriority;
+  readonly category: AnalystFollowUpReasonCategory;
+  readonly action: string;
+  readonly reason: string;
+  readonly whyThisMatters: string;
+  readonly evidenceBasis: readonly AnalystFollowUpEvidenceBasis[];
+  readonly tool?: string;
+  readonly input?: Readonly<Record<string, unknown>>;
+};
+
 export type BriefArtifact = {
   readonly title: string;
   readonly summary: readonly BriefSummaryItem[];
@@ -212,6 +242,7 @@ export type BriefArtifact = {
   readonly sourceCoverage?: readonly SourceCoverageItem[];
   readonly riskFlags?: readonly RiskFlag[];
   readonly matchConfidence?: readonly MatchConfidence[];
+  readonly analystFollowUps?: readonly AnalystFollowUp[];
   readonly nextChecks?: readonly NextCheck[];
 };
 

@@ -639,6 +639,31 @@ export const NextCheckSchema = z.object({
   reason: z.string().min(1),
   input: z.record(z.unknown()),
 }).strict();
+const AnalystFollowUpEvidenceBasisSchema = z.object({
+  kind: z.enum(["source_gap", "confidence_blocker", "skipped_module", "evidence_limitation"]),
+  ref: z.string().min(1),
+  detail: z.string().min(1),
+  source: z.string().min(1).nullable().optional(),
+}).strict();
+const AnalystFollowUpSchema = z.object({
+  id: z.string().min(1),
+  priority: z.enum(["critical", "recommended", "optional"]),
+  category: z.enum([
+    "identity_confidence",
+    "source_unavailable",
+    "sector_gap",
+    "supplemental_review",
+    "credential_required",
+    "manual_confirmation",
+    "report_quality",
+  ]),
+  action: z.string().min(1),
+  reason: z.string().min(1),
+  whyThisMatters: z.string().min(1),
+  evidenceBasis: z.array(AnalystFollowUpEvidenceBasisSchema).min(1),
+  tool: z.string().min(1).optional(),
+  input: z.record(z.unknown()).optional(),
+}).strict();
 
 export const ContextIdsSchema = z.object({
   traceId: z.string().uuid(),
@@ -699,6 +724,7 @@ export const BriefArtifactSchema = z.object({
   sourceCoverage: z.array(SourceCoverageItemSchema).optional(),
   riskFlags: z.array(RiskFlagSchema).optional(),
   matchConfidence: z.array(MatchConfidenceSchema).optional(),
+  analystFollowUps: z.array(AnalystFollowUpSchema).optional(),
   nextChecks: z.array(NextCheckSchema).optional(),
 }).strict();
 

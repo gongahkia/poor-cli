@@ -10,6 +10,7 @@ Dude attaches a local export manifest to dossier JSON, CSV, bulk JSON, bulk CSV,
 - `dossierHash`: deterministic SHA-256 hash of the dossier payload.
 - `sourceFreshness`: source-level observed timestamps copied from the dossier.
 - `provenance`: source, tool, and record counts copied from the dossier.
+- `sourceCoverage`: the dossier coverage matrix showing each source family status, coverage level, record count, and reason.
 - `sourceUseWarnings`: triggered ACRA and supplemental-provider source-use warnings that must stay with saved/exported CDD evidence.
 - `includedArtifacts`: whether analyst memo or web-presence context was included.
 - `signature`: deterministic SHA-256 signature over the manifest integrity payload.
@@ -31,4 +32,4 @@ CSV and PDF exports include the manifest hash and signature for audit records. K
 
 ## Limits
 
-The manifest confirms that an exported payload has not changed relative to the local hash calculation. It does not prove upstream truth, legal admissibility, analyst approval, or third-party attestation. Always read the dossier `freshness`, `gaps`, `limits`, and `provenance` fields alongside the manifest.
+The manifest confirms that an exported payload has not changed relative to the local hash calculation. It does not prove upstream truth, legal admissibility, analyst approval, or third-party attestation. Always read the dossier `sourceCoverage`, `freshness`, `gaps`, `limits`, and `provenance` fields alongside the manifest.

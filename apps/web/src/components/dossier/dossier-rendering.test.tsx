@@ -41,6 +41,16 @@ const dossier: BusinessDossier = {
     },
   },
   riskFlags: [],
+  sourceCoverage: [{
+    authRequired: false,
+    coverageLevel: "full",
+    family: "acra",
+    label: "ACRA entity identity",
+    reason: "ACRA lookup ran and returned one public record.",
+    recordCount: 1,
+    status: "checked",
+    tools: ["sg_acra_entities"],
+  }],
   summary: [],
   title: "Business Dossier",
 };
@@ -69,6 +79,8 @@ describe("dossier rendering", () => {
 
   it("renders success evidence rows", () => {
     const html = renderToStaticMarkup(<EvidenceSection dossier={dossier} />);
+    expect(html).toContain("Source coverage");
+    expect(html).toContain("ACRA entity identity");
     expect(html).toContain("DBS BANK LTD");
     expect(html).toContain("Matched");
   });
