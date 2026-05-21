@@ -84,6 +84,17 @@ const renderCddReportMarkdown = (response: CddOrchestratorResponse): string => [
     detail: stage.detail,
   })), "markdown"),
   "",
+  "### Source Coverage",
+  (response.dossier.sourceCoverage ?? []).length === 0
+    ? "_No source coverage matrix reported._"
+    : formatResponse((response.dossier.sourceCoverage ?? []).map((item) => ({
+        sourceFamily: item.label,
+        status: item.status,
+        coverage: item.coverageLevel,
+        recordCount: item.recordCount,
+        reason: item.reason,
+      })), "markdown"),
+  "",
   "### Gaps",
   response.dossier.gaps.length === 0
     ? "_No gaps reported._"

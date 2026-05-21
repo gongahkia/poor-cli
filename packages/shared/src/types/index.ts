@@ -154,6 +154,31 @@ export type BriefFreshnessItem = {
   readonly upstreamTimestamp: string | null;
 };
 
+export type SourceCoverageStatus =
+  | "checked"
+  | "skipped"
+  | "unavailable"
+  | "credential_blocked"
+  | "not_applicable";
+
+export type SourceCoverageLevel = "full" | "partial" | "none";
+
+export type SourceCoverageItem = {
+  readonly family: string;
+  readonly label: string;
+  readonly tools: readonly string[];
+  readonly status: SourceCoverageStatus;
+  readonly coverageLevel: SourceCoverageLevel;
+  readonly recordCount: number;
+  readonly authRequired: boolean;
+  readonly reason: string;
+  readonly checkedAt?: string | null;
+  readonly sourceFreshness?: string | null;
+  readonly requiredCredentials?: readonly string[];
+  readonly gapCodes?: readonly string[];
+  readonly evidenceType?: "official_registry" | "web_discovery" | "operational_metadata";
+};
+
 export type BriefArtifactRecord = Readonly<Record<string, unknown>>;
 
 export type RiskFlag = {
@@ -184,6 +209,7 @@ export type BriefArtifact = {
   readonly provenance: readonly BriefProvenanceItem[];
   readonly freshness: readonly BriefFreshnessItem[];
   readonly limits: readonly BriefLimit[];
+  readonly sourceCoverage?: readonly SourceCoverageItem[];
   readonly riskFlags?: readonly RiskFlag[];
   readonly matchConfidence?: readonly MatchConfidence[];
   readonly nextChecks?: readonly NextCheck[];

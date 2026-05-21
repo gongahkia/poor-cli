@@ -5,6 +5,7 @@ import type {
   BusinessDossierModule,
   MatchConfidence,
   RiskFlag,
+  SourceCoverageItem,
 } from "@/types/dossier";
 
 export type DossierRecordGroup = {
@@ -327,6 +328,20 @@ export function getDossierRecordGroups(dossier: BusinessDossier): DossierRecordG
       ?? dossier.records.resolution?.selectedModules;
     return visibleModules === undefined || visibleModules.includes(group.module);
   });
+}
+
+export function getSourceCoverage(dossier: BusinessDossier): SourceCoverageItem[] {
+  return dossier.sourceCoverage ?? [];
+}
+
+export function sourceCoverageStatusLabel(status: SourceCoverageItem["status"]): string {
+  if (status === "credential_blocked") return "Credential blocked";
+  if (status === "not_applicable") return "Not applicable";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+export function sourceCoverageLevelLabel(level: SourceCoverageItem["coverageLevel"]): string {
+  return level.charAt(0).toUpperCase() + level.slice(1);
 }
 
 export function getFreshnessForSource(

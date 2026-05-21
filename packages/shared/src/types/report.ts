@@ -1,5 +1,6 @@
 export type ReportSectionId =
   | "executive_summary"
+  | "coverage_matrix"
   | "risk_assessment"
   | "action_plan"
   | "identity_snapshot"

@@ -8,6 +8,7 @@ import type {
   MatchConfidence,
   NextCheck,
   RiskFlag,
+  SourceCoverageItem,
 } from "@dude/shared";
 import { getAcraEntities } from "../apis/acra/client.js";
 import { getBcaLicensedBuilders, getBcaRegisteredContractors } from "../apis/bca/client.js";
@@ -110,6 +111,154 @@ const toFreshness = (
   observedAt,
   upstreamTimestamp,
 });
+
+type CoverageFamilyDefinition = Readonly<{
+  family: string;
+  label: string;
+  tools: readonly string[];
+  authRequired: boolean;
+  evidenceType: NonNullable<BriefProvenanceItem["evidenceType"]>;
+  requiredCredentials?: readonly string[];
+}>;
+
+const OFFICIAL_COVERAGE_FAMILIES = {
+  acra: {
+    authRequired: false,
+    evidenceType: "official_registry",
+    family: "acra",
+    label: "ACRA entity identity",
+    tools: ["sg_acra_entities"],
+  },
+  bca: {
+    authRequired: false,
+    evidenceType: "official_registry",
+    family: "bca",
+    label: "BCA construction registries",
+    tools: ["sg_bca_licensed_builders", "sg_bca_registered_contractors"],
+  },
+  boa: {
+    authRequired: false,
+    evidenceType: "official_registry",
+    family: "boa",
+    label: "BOA architecture registries",
+    tools: ["sg_boa_architects", "sg_boa_architecture_firms"],
+  },
+  cea: {
+    authRequired: false,
+    evidenceType: "official_registry",
+    family: "cea",
+    label: "CEA estate-agent registry",
+    tools: ["sg_cea_salespersons"],
+  },
+  gebiz: {
+    authRequired: false,
+    evidenceType: "official_registry",
+    family: "gebiz",
+    label: "GeBIZ procurement awards",
+    tools: ["sg_gebiz_tenders"],
+  },
+  hlb: {
+    authRequired: false,
+    evidenceType: "official_registry",
+    family: "hlb",
+    label: "HLB hotel licensing",
+    tools: ["sg_hlb_hotels"],
+  },
+  hsa: {
+    authRequired: false,
+    evidenceType: "official_registry",
+    family: "hsa",
+    label: "HSA healthcare licensing",
+    tools: ["sg_hsa_licensed_pharmacies", "sg_hsa_health_product_licensees"],
+  },
+} as const satisfies Record<BusinessDossierModule, CoverageFamilyDefinition>;
+
+const SUPPLEMENTAL_COVERAGE_FAMILIES = [
+  {
+    artifactTitle: "Sanctions Screen",
+    definition: {
+      authRequired: true,
+      evidenceType: "web_discovery",
+      family: "opensanctions",
+      label: "OpenSanctions candidate screen",
+      requiredCredentials: ["OPENSANCTIONS_API_KEY"],
+      tools: ["sg_sanctions_screen"],
+    },
+  },
+  {
+    artifactTitle: "OpenCorporates Cross-Links",
+    definition: {
+      authRequired: true,
+      evidenceType: "web_discovery",
+      family: "opencorporates",
+      label: "OpenCorporates cross-links",
+      requiredCredentials: ["OPENCORPORATES_API_TOKEN"],
+      tools: ["sg_opencorporates_links"],
+    },
+  },
+  {
+    artifactTitle: "Adverse Media Lite",
+    definition: {
+      authRequired: false,
+      evidenceType: "web_discovery",
+      family: "adverse_media_lite",
+      label: "Adverse-media lite official feeds",
+      tools: ["sg_adverse_media_lite"],
+    },
+  },
+  {
+    artifactTitle: "Relationship Graph",
+    definition: {
+      authRequired: false,
+      evidenceType: "web_discovery",
+      family: "relationship_graph",
+      label: "Relationship graph",
+      tools: ["sg_relationship_graph"],
+    },
+  },
+] as const;
+
+const ORCHESTRATOR_ONLY_COVERAGE_FAMILIES = [
+  {
+    authRequired: true,
+    evidenceType: "web_discovery",
+    family: "web_presence",
+    label: "Web presence",
+    requiredCredentials: ["TINYFISH_API_KEY"],
+    tools: ["TinyFish Search"],
+  },
+  {
+    authRequired: true,
+    evidenceType: "web_discovery",
+    family: "people_discovery",
+    label: "People discovery",
+    requiredCredentials: ["TINYFISH_API_KEY"],
+    tools: ["TinyFish Search"],
+  },
+] as const satisfies readonly CoverageFamilyDefinition[];
+
+const UNAVAILABLE_GAP_PATTERNS: Readonly<Record<string, RegExp>> = {
+  sg_acra_entities: /^ACRA_UNAVAILABLE$/,
+  sg_bca_licensed_builders: /^BCA_BUILDERS_UNAVAILABLE$/,
+  sg_bca_registered_contractors: /^BCA_CONTRACTORS_UNAVAILABLE$/,
+  sg_boa_architects: /^BOA_ARCHITECTS_UNAVAILABLE$/,
+  sg_boa_architecture_firms: /^BOA_FIRMS_UNAVAILABLE$/,
+  sg_cea_salespersons: /^CEA_UNAVAILABLE$/,
+  sg_gebiz_tenders: /^GEBIZ_UNAVAILABLE$/,
+  sg_hlb_hotels: /^HLB_UNAVAILABLE$/,
+  sg_hsa_licensed_pharmacies: /^HSA_PHARMACIES_UNAVAILABLE$/,
+  sg_hsa_health_product_licensees: /^HSA_LICENSEES_UNAVAILABLE$/,
+};
+
+const GAP_MODULE_PREFIXES: Record<BusinessDossierModule, RegExp> = {
+  acra: /^ACRA_/,
+  bca: /^BCA_/,
+  boa: /^BOA_/,
+  cea: /^CEA_/,
+  gebiz: /^GEBIZ_/,
+  hlb: /^HLB_/,
+  hsa: /^HSA_/,
+};
 
 const getFirstTimestamp = (
   records: readonly Readonly<Record<string, unknown>>[] | null,
@@ -331,6 +480,116 @@ type ModuleReason = Readonly<{
   inferredSectors?: readonly BusinessSectorHint[];
 }>;
 
+const gapCodesForModule = (
+  module: BusinessDossierModule,
+  gaps: readonly EvidenceGap[],
+): readonly string[] => gaps
+  .filter((gap) => GAP_MODULE_PREFIXES[module].test(gap.code))
+  .map((gap) => gap.code);
+
+const unavailableToolCount = (
+  tools: readonly string[],
+  gapCodes: readonly string[],
+): number => tools.filter((tool) => {
+  const pattern = UNAVAILABLE_GAP_PATTERNS[tool];
+  return pattern !== undefined && gapCodes.some((code) => pattern.test(code));
+}).length;
+
+const coverageRecordCount = (
+  records: readonly (readonly unknown[])[],
+): number => records.reduce((count, sourceRecords) => count + sourceRecords.length, 0);
+
+const buildSourceCoverageItem = (
+  definition: CoverageFamilyDefinition,
+  values: Readonly<{
+    status: SourceCoverageItem["status"];
+    coverageLevel: SourceCoverageItem["coverageLevel"];
+    recordCount: number;
+    reason: string;
+    checkedAt?: string | null;
+    sourceFreshness?: string | null;
+    gapCodes?: readonly string[];
+  }>,
+): SourceCoverageItem => ({
+  authRequired: definition.authRequired,
+  coverageLevel: values.coverageLevel,
+  evidenceType: definition.evidenceType,
+  family: definition.family,
+  label: definition.label,
+  recordCount: values.recordCount,
+  reason: values.reason,
+  status: values.status,
+  tools: definition.tools,
+  ...(values.checkedAt === undefined ? {} : { checkedAt: values.checkedAt }),
+  ...(values.sourceFreshness === undefined ? {} : { sourceFreshness: values.sourceFreshness }),
+  ...(definition.requiredCredentials === undefined ? {} : { requiredCredentials: definition.requiredCredentials }),
+  ...(values.gapCodes === undefined || values.gapCodes.length === 0 ? {} : { gapCodes: values.gapCodes }),
+});
+
+const buildOfficialCoverageReason = (
+  reason: ModuleReason,
+  recordCount: number,
+  status: SourceCoverageItem["status"],
+  coverageLevel: SourceCoverageItem["coverageLevel"],
+  unavailableCount: number,
+): string => {
+  if (status === "not_applicable") {
+    return `${reason.reason} No conclusion is drawn from this unchecked source family.`;
+  }
+  if (status === "skipped") {
+    return `${reason.reason} Treat this as an unchecked coverage gap, not a clean result.`;
+  }
+  if (status === "unavailable") {
+    return `Lookup was attempted but every source in this family failed or was unavailable. Treat this as a coverage gap, not a clean result.`;
+  }
+  if (coverageLevel === "partial") {
+    return `Lookup was attempted and returned ${recordCount} public record(s), but ${unavailableCount} source tool(s) in the family failed or were unavailable. Partial coverage is not clearance.`;
+  }
+  if (recordCount === 0) {
+    return `${reason.reason} No matching public records were returned; this is missing public evidence, not a positive clearance claim.`;
+  }
+  return `${reason.reason} Returned ${recordCount} public record(s).`;
+};
+
+const buildOfficialCoverageItems = (params: Readonly<{
+  moduleReasons: readonly ModuleReason[];
+  gaps: readonly EvidenceGap[];
+  observedAt: string;
+  timestamps: Readonly<Record<BusinessDossierModule, string | null>>;
+  recordCounts: Readonly<Record<BusinessDossierModule, number>>;
+}>): readonly SourceCoverageItem[] => params.moduleReasons.map((reason) => {
+  const definition = OFFICIAL_COVERAGE_FAMILIES[reason.module];
+  const gapCodes = gapCodesForModule(reason.module, params.gaps);
+  const failedToolCount = unavailableToolCount(definition.tools, gapCodes);
+  const selected = reason.selectedBy.length > 0 || reason.searched;
+  const status: SourceCoverageItem["status"] = !selected
+    ? "not_applicable"
+    : !reason.searched
+      ? "skipped"
+      : failedToolCount === definition.tools.length
+        ? "unavailable"
+        : "checked";
+  const coverageLevel: SourceCoverageItem["coverageLevel"] = status === "checked"
+    ? failedToolCount > 0 ? "partial" : "full"
+    : "none";
+
+  return buildSourceCoverageItem(definition, {
+    checkedAt: reason.searched ? params.observedAt : null,
+    coverageLevel,
+    gapCodes,
+    recordCount: params.recordCounts[reason.module],
+    reason: buildOfficialCoverageReason(
+      reason,
+      params.recordCounts[reason.module],
+      status,
+      coverageLevel,
+      failedToolCount,
+    ),
+    sourceFreshness: params.timestamps[reason.module],
+    status,
+  });
+});
+
 const formatModuleTriggers = (triggers: readonly ModuleReason["selectedBy"][number][]): string => {
   if (triggers.length === 0) return "no selector";
   return triggers.map((trigger) => {
@@ -536,6 +795,126 @@ const resolveDossierConfidence = (
     },
   };
 };
+
+const hasCredentialGap = (gapCodes: readonly string[]): boolean =>
+  gapCodes.some((code) => /API_KEY_REQUIRED|API_TOKEN_REQUIRED|TOKEN_REQUIRED|CREDENTIAL/i.test(code));
+
+const hasUnavailableGap = (gapCodes: readonly string[]): boolean =>
+  gapCodes.some((code) => /UNAVAILABLE|UPSTREAM_FAILED|FAILED|TIMEOUT|RATE_LIMIT|HTTP/i.test(code));
+
+const supplementalNoRecordReason = (label: string): string => {
+  if (/sanctions/i.test(label)) {
+    return "OpenSanctions screening ran and returned no candidate matches above threshold; this is not a sanctions clearance or AML determination.";
+  }
+  if (/opencorporates/i.test(label)) {
+    return "OpenCorporates search ran and returned no candidate company links; this is a cross-link gap, not an ownership or control conclusion.";
+  }
+  if (/adverse/i.test(label)) {
+    return "Adverse-media lite ran against bounded official feeds and returned no keyword matches; this is not open-web adverse-media clearance.";
+  }
+  if (/relationship/i.test(label)) {
+    return "Relationship graph construction ran on supplied dossier records; absent graph edges are not proof that no relationship exists.";
+  }
+  return "Source check ran and returned no public records; absence of returned evidence is a gap, not a clearance claim.";
+};
+
+const buildSupplementalCoverageReason = (
+  definition: CoverageFamilyDefinition,
+  status: SourceCoverageItem["status"],
+  coverageLevel: SourceCoverageItem["coverageLevel"],
+  recordCount: number,
+  gapCodes: readonly string[],
+): string => {
+  if (status === "credential_blocked") {
+    return `${definition.label} was not checked because required credentials are not configured. Treat this as a confidence blocker.`;
+  }
+  if (status === "unavailable") {
+    return `${definition.label} was attempted but the upstream source was unavailable or failed. Treat this as a coverage gap.`;
+  }
+  if (coverageLevel === "partial") {
+    return `${definition.label} ran with partial provider/feed coverage; returned ${recordCount} record(s), with unresolved gaps: ${gapCodes.join(", ")}.`;
+  }
+  if (recordCount === 0) {
+    return supplementalNoRecordReason(definition.label);
+  }
+  return `${definition.label} ran and returned ${recordCount} analyst-review record(s).`;
+};
+
+const buildSupplementalCoverageItems = (params: Readonly<{
+  includeExternalDiligence: boolean | undefined;
+  externalName: string | undefined;
+  externalArtifacts: readonly BriefArtifact[];
+  observedAt: string;
+}>): readonly SourceCoverageItem[] => {
+  const artifactByTitle = new Map(params.externalArtifacts.map((artifact) => [artifact.title, artifact]));
+
+  return SUPPLEMENTAL_COVERAGE_FAMILIES.map(({ artifactTitle, definition }) => {
+    if (params.includeExternalDiligence !== true) {
+      return buildSourceCoverageItem(definition, {
+        checkedAt: null,
+        coverageLevel: "none",
+        recordCount: 0,
+        reason: "Supplemental CDD was not requested for this compatibility dossier run. Run the CDD orchestrator or set includeExternalDiligence to check this source family.",
+        status: "skipped",
+      });
+    }
+    if (params.externalName === undefined) {
+      return buildSourceCoverageItem(definition, {
+        checkedAt: null,
+        coverageLevel: "none",
+        recordCount: 0,
+        reason: "No resolved entity name or UEN was available for this supplemental source query.",
+        status: "skipped",
+      });
+    }
+
+    const artifact = artifactByTitle.get(artifactTitle);
+    if (artifact === undefined) {
+      return buildSourceCoverageItem(definition, {
+        checkedAt: null,
+        coverageLevel: "none",
+        recordCount: 0,
+        reason: "This supplemental source did not run in the current dossier build.",
+        status: "skipped",
+      });
+    }
+
+    const gapCodes = artifact.gaps.map((gap) => gap.code);
+    const recordCount = artifact.provenance.reduce((count, item) => count + item.recordCount, 0);
+    const credentialBlocked = hasCredentialGap(gapCodes);
+    const unavailable = !credentialBlocked && hasUnavailableGap(gapCodes) && artifact.provenance.length === 0;
+    const partial = !credentialBlocked && !unavailable && hasUnavailableGap(gapCodes) && artifact.provenance.length > 0;
+    const status: SourceCoverageItem["status"] = credentialBlocked
+      ? "credential_blocked"
+      : unavailable
+        ? "unavailable"
+        : "checked";
+    const coverageLevel: SourceCoverageItem["coverageLevel"] = status === "checked"
+      ? partial ? "partial" : "full"
+      : "none";
+
+    return buildSourceCoverageItem(definition, {
+      checkedAt: status === "checked" ? params.observedAt : null,
+      coverageLevel,
+      gapCodes,
+      recordCount,
+      reason: buildSupplementalCoverageReason(definition, status, coverageLevel, recordCount, gapCodes),
+      sourceFreshness: artifact.freshness[0]?.upstreamTimestamp ?? null,
+      status,
+    });
+  });
+};
+
+const buildOrchestratorOnlyCoverageItems = (observedAt: string): readonly SourceCoverageItem[] =>
+  ORCHESTRATOR_ONLY_COVERAGE_FAMILIES.map((definition) =>
+    buildSourceCoverageItem(definition, {
+      checkedAt: null,
+      coverageLevel: "none",
+      recordCount: 0,
+      reason: `${definition.label} is collected by the CDD orchestrator and was not run by the low-level sg_business_dossier compatibility path.`,
+      sourceFreshness: null,
+      status: "skipped",
+    }));
 
 const buildDossierHandoffMarkdown = (params: BusinessDossierParams, data: {
   readonly selectedModules: readonly BusinessDossierModule[];
@@ -968,6 +1347,39 @@ export const buildBusinessDossierArtifact = async (
     limits: artifact.limits,
     riskFlags: artifact.riskFlags ?? [],
   }));
+  const officialCoverage = buildOfficialCoverageItems({
+    gaps,
+    moduleReasons,
+    observedAt,
+    recordCounts: {
+      acra: acra.length,
+      bca: coverageRecordCount([builders, contractors]),
+      boa: coverageRecordCount([architects, architectureFirms]),
+      cea: salespersons.length,
+      gebiz: tenders.length,
+      hlb: hotels.length,
+      hsa: coverageRecordCount([pharmacies, licensees]),
+    },
+    timestamps: {
+      acra: getFirstTimestamp(acra, ["annualReturnDate", "accountDueDate", "registrationIncorporationDate"]),
+      bca: getFirstTimestamp([...builders, ...contractors], ["expiryDate"]),
+      boa: null,
+      cea: getFirstTimestamp(salespersons, ["registrationEndDate", "registrationStartDate"]),
+      gebiz: getFirstTimestamp(tenders as readonly Readonly<Record<string, unknown>>[], ["awardDate"]),
+      hlb: getFirstTimestamp(hotels as readonly Readonly<Record<string, unknown>>[], ["lastUpdatedAt"]),
+      hsa: getFirstTimestamp(licensees as readonly Readonly<Record<string, unknown>>[], ["expiryDate"]),
+    },
+  });
+  const sourceCoverage = [
+    ...officialCoverage,
+    ...buildSupplementalCoverageItems({
+      externalArtifacts,
+      externalName,
+      includeExternalDiligence: params.includeExternalDiligence,
+      observedAt,
+    }),
+    ...buildOrchestratorOnlyCoverageItems(observedAt),
+  ];
 
   return {
     title: "Business Dossier",
@@ -1120,6 +1532,7 @@ export const buildBusinessDossierArtifact = async (
       ...buildBusinessLimits(selectedModules),
       ...externalArtifacts.flatMap((artifact) => artifact.limits),
     ],
+    sourceCoverage,
     riskFlags: [
       ...riskFlags,
       ...externalArtifacts.flatMap((artifact) => artifact.riskFlags ?? []),

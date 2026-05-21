@@ -64,6 +64,7 @@ const renderRecordSection = (label: string, value: unknown): string => {
 };
 
 const renderBriefMarkdown = (payload: BriefArtifact): string => {
+  const sourceCoverage = payload.sourceCoverage ?? [];
   const sections = [
     `## ${payload.title}`,
     "",
@@ -79,6 +80,16 @@ const renderBriefMarkdown = (payload: BriefArtifact): string => {
       label: item.label,
       value: item.value,
       source: item.source,
+    }))),
+    "",
+    "### Source Coverage",
+    renderSectionRows(sourceCoverage.map((item) => ({
+      sourceFamily: item.label,
+      status: item.status,
+      coverage: item.coverageLevel,
+      recordCount: item.recordCount,
+      reason: item.reason,
+      tools: item.tools.join(", "),
     }))),
     "",
     "### Gaps",

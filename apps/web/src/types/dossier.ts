@@ -30,6 +30,31 @@ export type BriefLimit = {
   message: string;
 };
 
+export type SourceCoverageStatus =
+  | "checked"
+  | "skipped"
+  | "unavailable"
+  | "credential_blocked"
+  | "not_applicable";
+
+export type SourceCoverageLevel = "full" | "partial" | "none";
+
+export type SourceCoverageItem = {
+  family: string;
+  label: string;
+  tools: string[];
+  status: SourceCoverageStatus;
+  coverageLevel: SourceCoverageLevel;
+  recordCount: number;
+  authRequired: boolean;
+  reason: string;
+  checkedAt?: string | null;
+  sourceFreshness?: string | null;
+  requiredCredentials?: string[];
+  gapCodes?: string[];
+  evidenceType?: "official_registry" | "web_discovery" | "operational_metadata";
+};
+
 export type BriefArtifact = {
   title: string;
   summary: BriefSummaryItem[];
@@ -39,6 +64,7 @@ export type BriefArtifact = {
   provenance: BriefProvenanceItem[];
   freshness: BriefFreshnessItem[];
   limits: BriefLimit[];
+  sourceCoverage?: SourceCoverageItem[];
   riskFlags?: RiskFlag[];
   matchConfidence?: MatchConfidence[];
   nextChecks?: NextCheck[];

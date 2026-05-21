@@ -41,6 +41,21 @@ const BriefFreshnessItemSchema = z.object({
   observedAt: z.string().min(1),
   upstreamTimestamp: z.string().min(1).nullable(),
 }).strict();
+const SourceCoverageItemSchema = z.object({
+  family: z.string().min(1),
+  label: z.string().min(1),
+  tools: z.array(z.string().min(1)),
+  status: z.enum(["checked", "skipped", "unavailable", "credential_blocked", "not_applicable"]),
+  coverageLevel: z.enum(["full", "partial", "none"]),
+  recordCount: z.number().int().min(0),
+  authRequired: z.boolean(),
+  reason: z.string().min(1),
+  checkedAt: z.string().min(1).nullable().optional(),
+  sourceFreshness: z.string().min(1).nullable().optional(),
+  requiredCredentials: z.array(z.string().min(1)).optional(),
+  gapCodes: z.array(z.string().min(1)).optional(),
+  evidenceType: z.enum(["official_registry", "web_discovery", "operational_metadata"]).optional(),
+}).strict();
 
 export const SingStatSearchSchema = z.object({
   keyword: z.string().min(1),
@@ -681,6 +696,7 @@ export const BriefArtifactSchema = z.object({
   provenance: z.array(BriefProvenanceItemSchema),
   freshness: z.array(BriefFreshnessItemSchema),
   limits: z.array(BriefLimitSchema),
+  sourceCoverage: z.array(SourceCoverageItemSchema).optional(),
   riskFlags: z.array(RiskFlagSchema).optional(),
   matchConfidence: z.array(MatchConfidenceSchema).optional(),
   nextChecks: z.array(NextCheckSchema).optional(),

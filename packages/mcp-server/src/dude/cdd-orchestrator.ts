@@ -1,3 +1,4 @@
+import type { SourceCoverageItem } from "@dude/shared";
 import { getPeopleDiscovery, getWebPresence, type PeopleDiscovery, type WebPresence } from "../apis/tinyfish/client.js";
 import type { BusinessDossierModule, BusinessSectorHint } from "../diligence/entity-resolution.js";
 import { generateAnalystMemo, type AnalystMemoDossier } from "./analyst-memo.js";
@@ -257,6 +258,146 @@ const getDossierSummaryString = (
     return null;
   }
   return typeof match.value === "string" ? match.value.trim() || null : String(match.value);
+};
+
+const buildCoverageItem = (
+  params: Readonly<{
+    family: string;
+    label: string;
+    tools: readonly string[];
+    status: SourceCoverageItem["status"];
+    coverageLevel: SourceCoverageItem["coverageLevel"];
+    recordCount: number;
+    reason: string;
+    checkedAt?: string | null;
+    gapCodes?: readonly string[];
+    requiredCredentials?: readonly string[];
+  }>,
+): SourceCoverageItem => ({
+  authRequired: true,
+  coverageLevel: params.coverageLevel,
+  evidenceType: "web_discovery",
+  family: params.family,
+  label: params.label,
+  recordCount: params.recordCount,
+  reason: params.reason,
+  status: params.status,
+  tools: params.tools,
+  ...(params.checkedAt === undefined ? {} : { checkedAt: params.checkedAt }),
+  sourceFreshness: null,
+  ...(params.requiredCredentials === undefined ? {} : { requiredCredentials: params.requiredCredentials }),
+  ...(params.gapCodes === undefined || params.gapCodes.length === 0 ? {} : { gapCodes: params.gapCodes }),
+});
+
+const buildWebPresenceCoverage = (
+  webPresence: WebPresence,
+  generatedAt: string,
+  skippedReason?: string,
+): SourceCoverageItem => {
+  if (skippedReason !== undefined) {
+    return buildCoverageItem({
+      checkedAt: null,
+      coverageLevel: "none",
+      family: "web_presence",
+      label: "Web presence",
+      reason: `${skippedReason} Web presence was not checked; treat this as a coverage gap, not a clean result.`,
+      recordCount: 0,
+      requiredCredentials: ["TINYFISH_API_KEY"],
+      status: "skipped",
+      tools: ["TinyFish Search"],
+    });
+  }
+  if (!webPresence.configured) {
+    return buildCoverageItem({
+      checkedAt: null,
+      coverageLevel: "none",
+      family: "web_presence",
+      gapCodes: ["TINYFISH_API_KEY_REQUIRED"],
+      label: "Web presence",
+      reason: "TinyFish Search is not configured, so web presence was not checked. This is a confidence blocker, not evidence of no web presence.",
+      recordCount: 0,
+      requiredCredentials: ["TINYFISH_API_KEY"],
+      status: "credential_blocked",
+      tools: ["TinyFish Search"],
+    });
+  }
+  return buildCoverageItem({
+    checkedAt: generatedAt,
+    coverageLevel: "full",
+    family: "web_presence",
+    label: "Web presence",
+    reason: webPresence.results.length === 0
+      ? "TinyFish web discovery ran and returned no result snippets; this is not proof that the counterparty has no web presence."
+      : `TinyFish web discovery ran and returned ${webPresence.results.length} analyst-review result snippet(s).`,
+    recordCount: webPresence.results.length,
+    requiredCredentials: ["TINYFISH_API_KEY"],
+    status: "checked",
+    tools: ["TinyFish Search"],
+  });
+};
+
+const buildPeopleDiscoveryCoverage = (
+  peopleDiscovery: PeopleDiscovery,
+  generatedAt: string,
+  skippedReason?: string,
+): SourceCoverageItem => {
+  if (skippedReason !== undefined) {
+    return buildCoverageItem({
+      checkedAt: null,
+      coverageLevel: "none",
+      family: "people_discovery",
+      label: "People discovery",
+      reason: `${skippedReason} People discovery was not checked; treat this as a coverage gap, not verified absence of people evidence.`,
+      recordCount: 0,
+      requiredCredentials: ["TINYFISH_API_KEY"],
+      status: "skipped",
+      tools: ["TinyFish Search"],
+    });
+  }
+  if (!peopleDiscovery.configured) {
+    return buildCoverageItem({
+      checkedAt: null,
+      coverageLevel: "none",
+      family: "people_discovery",
+      gapCodes: ["TINYFISH_API_KEY_REQUIRED"],
+      label: "People discovery",
+      reason: "TinyFish Search is not configured, so people discovery was not checked. This is a confidence blocker, not evidence that no relevant people exist.",
+      recordCount: 0,
+      requiredCredentials: ["TINYFISH_API_KEY"],
+      status: "credential_blocked",
+      tools: ["TinyFish Search"],
+    });
+  }
+  return buildCoverageItem({
+    checkedAt: generatedAt,
+    coverageLevel: "full",
+    family: "people_discovery",
+    label: "People discovery",
+    reason: peopleDiscovery.results.length === 0
+      ? "TinyFish people discovery ran and returned no result snippets; this does not verify employment, authority, or absence of people links."
+      : `TinyFish people discovery ran and returned ${peopleDiscovery.results.length} candidate snippet(s) for analyst review.`,
+    recordCount: peopleDiscovery.results.length,
+    requiredCredentials: ["TINYFISH_API_KEY"],
+    status: "checked",
+    tools: ["TinyFish Search"],
+  });
+};
+
+const withCoverageItems = (
+  dossier: AnalystMemoDossier,
+  items: readonly SourceCoverageItem[],
+): AnalystMemoDossier => {
+  const coverageByFamily = new Map<string, SourceCoverageItem>();
+  for (const item of dossier.sourceCoverage ?? []) {
+    coverageByFamily.set(item.family, item);
+  }
+  for (const item of items) {
+    coverageByFamily.set(item.family, item);
+  }
+  return {
+    ...dossier,
+    sourceCoverage: Array.from(coverageByFamily.values()),
+  };
 };
 
 const getDossierRecordArray = (
@@ -540,11 +681,17 @@ export const runCddOrchestrator = async (
 
   if (acraRecords.length === 0) {
     const reason = "ACRA did not return a canonical entity record, so automated sector, web, people, and memo orchestration stopped at the identity check.";
-    const memo = await generateAnalystMemo({ dossier: firstDossier });
+    const webPresence = buildSkippedWebPresence(webPresenceQuery, reason);
+    const peopleDiscovery = buildSkippedPeopleDiscovery({ entityName, uen, reason });
+    const stoppedDossier = withCoverageItems(firstDossier, [
+      buildWebPresenceCoverage(webPresence, generatedAt, reason),
+      buildPeopleDiscoveryCoverage(peopleDiscovery, generatedAt, reason),
+    ]);
+    const memo = await generateAnalystMemo({ dossier: stoppedDossier });
     return {
-      dossier: firstDossier,
-      webPresence: buildSkippedWebPresence(webPresenceQuery, reason),
-      peopleDiscovery: buildSkippedPeopleDiscovery({ entityName, uen, reason }),
+      dossier: stoppedDossier,
+      webPresence,
+      peopleDiscovery,
       memo,
       generatedAt,
       ...(options.resolution === undefined ? {} : { resolution: options.resolution }),
@@ -586,14 +733,18 @@ export const runCddOrchestrator = async (
     entityName: finalEntityName,
     ...(finalUen === null ? {} : { uen: finalUen }),
   });
+  const dossierWithCoverage = withCoverageItems(finalDossier, [
+    buildWebPresenceCoverage(webPresence, generatedAt),
+    buildPeopleDiscoveryCoverage(peopleDiscovery, generatedAt),
+  ]);
   const memo = await generateAnalystMemo({
-    dossier: finalDossier,
+    dossier: dossierWithCoverage,
     peopleDiscovery,
     webPresence,
   });
 
   return {
-    dossier: finalDossier,
+    dossier: dossierWithCoverage,
     webPresence,
     peopleDiscovery,
     memo,

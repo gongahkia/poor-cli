@@ -32,6 +32,22 @@ type BriefLimit = {
   readonly message: string;
 };
 
+type SourceCoverageItem = {
+  readonly family: string;
+  readonly label: string;
+  readonly tools: readonly string[];
+  readonly status: "checked" | "skipped" | "unavailable" | "credential_blocked" | "not_applicable";
+  readonly coverageLevel: "full" | "partial" | "none";
+  readonly recordCount: number;
+  readonly authRequired: boolean;
+  readonly reason: string;
+  readonly checkedAt?: string | null;
+  readonly sourceFreshness?: string | null;
+  readonly requiredCredentials?: readonly string[];
+  readonly gapCodes?: readonly string[];
+  readonly evidenceType?: "official_registry" | "web_discovery" | "operational_metadata";
+};
+
 type RiskFlag = {
   readonly code: string;
   readonly severity: "high" | "medium" | "low";
@@ -54,6 +70,7 @@ export type AnalystMemoDossier = {
   readonly provenance: readonly ProvenanceItem[];
   readonly freshness: readonly FreshnessItem[];
   readonly limits: readonly BriefLimit[];
+  readonly sourceCoverage?: readonly SourceCoverageItem[];
   readonly riskFlags?: readonly RiskFlag[];
   readonly nextChecks?: readonly NextCheck[];
 };
@@ -388,6 +405,14 @@ const buildCitations = (
   dossier.limits.forEach((limit, index) => {
     citations.push(citation(`limit-${index + 1}`, limit.code, "limit", limit.message));
   });
+  (dossier.sourceCoverage ?? []).forEach((item, index) => {
+    citations.push(citation(
+      `coverage-${index + 1}`,
+      item.label,
+      "source coverage",
+      `${item.status}/${item.coverageLevel}; records ${item.recordCount}; ${item.reason}`,
+    ));
+  });
   (dossier.nextChecks ?? []).forEach((check, index) => {
     citations.push(citation(
       `next-${index + 1}`,
@@ -510,6 +535,7 @@ const buildPrompt = (
       ...buildMemoRecordsInput(dossier.records),
     },
     riskFlags: dossier.riskFlags ?? [],
+    sourceCoverage: dossier.sourceCoverage ?? [],
     summary: dossier.summary,
     title: dossier.title,
   },
@@ -566,11 +592,14 @@ const buildFallbackRiskRating = (
   citationById: ReadonlyMap<string, Citation>,
 ): MemoRiskRating => {
   const riskCitationIds = Array.from(citationById.keys())
-    .filter((id) => id.startsWith("risk-") || id.startsWith("gap-") || id.startsWith("provenance-"))
+    .filter((id) => id.startsWith("risk-") || id.startsWith("gap-") || id.startsWith("coverage-") || id.startsWith("provenance-"))
     .slice(0, 4);
   return {
     citationIds: riskCitationIds,
     confidenceBlockers: [
+      ...(dossier.sourceCoverage ?? [])
+        .filter((item) => item.status !== "checked" || item.coverageLevel !== "full")
+        .map((item) => `${item.label}: ${item.reason}`),
       ...dossier.gaps.map((gap) => gap.message),
       ...dossier.limits.slice(0, 2).map((limit) => limit.message),
     ].slice(0, 5),
