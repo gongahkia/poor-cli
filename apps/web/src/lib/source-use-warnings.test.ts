@@ -66,6 +66,35 @@ describe("source-use warnings", () => {
     expect(warnings.map((warning) => warning.id)).toEqual([
       "acra_source_use",
       "supplemental_analyst_review",
+      "provider_credentials_license",
     ]);
+  });
+
+  it("flags provider credential and licence limits separately from analyst-review caveats", () => {
+    const warnings = buildSourceUseWarnings({
+      dossier: {
+        ...dossier,
+        sourceCoverage: [{
+          authRequired: true,
+          coverageLevel: "none",
+          family: "opensanctions",
+          gapCodes: ["OPENSANCTIONS_API_KEY_REQUIRED"],
+          label: "OpenSanctions candidate screening",
+          reason: "OpenSanctions API key is required for this provider check.",
+          recordCount: 0,
+          requiredCredentials: ["OPENSANCTIONS_API_KEY"],
+          status: "credential_blocked",
+          tools: ["sg_sanctions_screen"],
+        }],
+      },
+    });
+
+    expect(warnings).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: "provider_credentials_license",
+        message: expect.stringContaining("API credentials"),
+        triggeredBy: ["OpenSanctions candidate screening"],
+      }),
+    ]));
   });
 });
