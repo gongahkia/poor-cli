@@ -41,7 +41,13 @@ import {
   type CddCaseStatus,
 } from "@/lib/workspace-store";
 import type { AnalystMemoResponse } from "@/types/analyst-memo";
-import type { BusinessDossier, BriefSummaryItem, SourceCoverageItem } from "@/types/dossier";
+import type {
+  BusinessDossier,
+  BusinessDossierModuleReason,
+  BriefSummaryItem,
+  SectorWorkflowGuideItem,
+  SourceCoverageItem,
+} from "@/types/dossier";
 import type { CddOrchestrationTrace } from "@/types/orchestration";
 
 type DossierState =
@@ -652,6 +658,7 @@ function DossierView({
       </section>
 
       <EvidenceRecordsSection dossier={dossier} />
+      <SectorWorkflowSection dossier={dossier} />
       <SourceCoverageSection coverage={dossier.sourceCoverage ?? []} />
       <GapsLimitsSection dossier={dossier} memo={memo} response={response} />
       <ProvenanceFreshnessSection dossier={dossier} />
@@ -977,6 +984,95 @@ function EvidenceRecordsSection({ dossier }: { dossier: BusinessDossier }) {
         <summary>Raw dossier records</summary>
         <pre>{stringifyJson(dossier.records)}</pre>
       </details>
+    </section>
+  );
+}
+
+const moduleReasonLabels: Record<BusinessDossierModuleReason["selectedBy"][number], string> = {
+  analyst_rerun: "analyst rerun",
+  default: "default identity lookup",
+  explicit_module: "explicit user choice",
+  inferred_sector: "ACRA/SSIC inference",
+  sector_hint: "explicit sector hint",
+  web_hint: "web hint",
+};
+
+function moduleReasonStatusLabel(status: BusinessDossierModuleReason["status"]): string {
+  if (status === "matched") return "matched";
+  if (status === "unmatched") return "no match";
+  if (status === "needs_identifier") return "needs identifier";
+  if (status === "unsearched") return "not searched";
+  return "skipped";
+}
+
+function moduleReasonSelection(reason: BusinessDossierModuleReason): string {
+  return reason.selectedBy.length === 0
+    ? "not selected"
+    : reason.selectedBy.map((item) => moduleReasonLabels[item]).join(", ");
+}
+
+function SectorWorkflowSection({ dossier }: { dossier: BusinessDossier }) {
+  const guide = dossier.records.resolution?.sectorWorkflowGuide ?? [];
+  const reasons = dossier.records.resolution?.moduleReasons ?? [];
+
+  return (
+    <section>
+      <h2>Sector workflow guide</h2>
+      <p className="muted">
+        Sector inference is bounded and reversible. Rerun with explicit sector hints and source-specific identifiers
+        when a sector check is relevant but missing evidence.
+      </p>
+      {guide.length === 0 ? (
+        <p className="muted">No sector workflow guide returned.</p>
+      ) : (
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Sector</th>
+              <th scope="col">Retained modules</th>
+              <th scope="col">Required identifiers</th>
+              <th scope="col">Source-bound use</th>
+            </tr>
+          </thead>
+          <tbody>
+            {guide.map((item: SectorWorkflowGuideItem) => (
+              <tr key={item.sector}>
+                <th scope="row">{item.label}</th>
+                <td>{item.retainedModules.join(", ")} / {item.retainedTools.join(", ")}</td>
+                <td>{item.requiredIdentifiers.join("; ")}</td>
+                <td>{item.sourceBoundUse}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {reasons.length === 0 ? null : (
+        <>
+          <h3>Sector module status</h3>
+          <table>
+            <thead>
+              <tr>
+                <th scope="col">Module</th>
+                <th scope="col">Status</th>
+                <th scope="col">Selected by</th>
+                <th scope="col">Next step</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reasons.map((reason) => (
+                <tr key={reason.module}>
+                  <th scope="row">{reason.module}</th>
+                  <td>{moduleReasonStatusLabel(reason.status)}</td>
+                  <td>{moduleReasonSelection(reason)}</td>
+                  <td>
+                    {reason.followUpPrompts?.join(" ") || reason.reason}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
     </section>
   );
 }

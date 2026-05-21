@@ -42,42 +42,49 @@ export const BUSINESS_MODULE_FOLLOW_UPS: Record<FollowUpBusinessModule, {
   helperText: string;
   inputLabel: string;
   placeholder: string;
+  requiredIdentifiers: readonly string[];
   sectorHint: string;
 }> = {
   bca: {
-    helperText: "Needs construction context plus a company name, UEN, class code, workhead, or grade.",
-    inputLabel: "Construction company name or UEN",
-    placeholder: "Example Builders Pte Ltd",
+    helperText: "Needs construction context plus company/UEN, licensed-builder class code, or registered-contractor workhead/grade.",
+    inputLabel: "BCA company, UEN, class code, workhead, or grade",
+    placeholder: "201912345K, GB1, or CW01 B2",
+    requiredIdentifiers: ["Company name or UEN", "BCA class code", "BCA workhead and grade"],
     sectorHint: "construction",
   },
   boa: {
     helperText: "Needs architecture context plus a firm, architect name, or registration number.",
     inputLabel: "Architecture firm, architect, or registration no.",
     placeholder: "Example Architects LLP",
+    requiredIdentifiers: ["Architecture firm name", "Architect name", "BOA registration number"],
     sectorHint: "architecture",
   },
   cea: {
     helperText: "Needs real-estate context plus a salesperson registration number, agent licence, or estate-agent name.",
     inputLabel: "CEA registration, licence, or estate-agent name",
     placeholder: "R123456A or Example Realty Pte Ltd",
+    requiredIdentifiers: ["CEA registration number", "Estate-agent licence number", "Salesperson or estate-agent name"],
     sectorHint: "real_estate",
   },
   gebiz: {
-    helperText: "Needs procurement context plus the supplier or entity name used in GeBIZ awards.",
-    inputLabel: "GeBIZ supplier name",
-    placeholder: "Example Supplier Pte Ltd",
+    helperText: "Needs procurement context plus supplier name. Use agency, category, or tender terms when direct GeBIZ narrowing is needed.",
+    inputLabel: "GeBIZ supplier, agency, category, or tender terms",
+    placeholder: "Example Supplier Pte Ltd or construction works",
+    requiredIdentifiers: ["Supplier name", "Agency/category or tender terms when narrowing"],
     sectorHint: "procurement",
   },
   hlb: {
     helperText: "Needs hospitality context plus a hotel, keeper, or entity name.",
     inputLabel: "Hotel or keeper name",
     placeholder: "Example Hotel Pte Ltd",
+    requiredIdentifiers: ["Hotel name", "Keeper or operator name", "Address or postal code if available"],
     sectorHint: "hospitality",
   },
   hsa: {
-    helperText: "Needs healthcare context plus a company or pharmacy name.",
-    inputLabel: "Healthcare company or pharmacy name",
-    placeholder: "Example Health Pte Ltd",
+    helperText: "Needs healthcare context plus company/pharmacy name; capture HSA licence type or pharmacy identifier when available.",
+    inputLabel: "HSA company, pharmacy, licence, or pharmacy identifier",
+    placeholder: "Example Health Pte Ltd or Example Pharmacy",
+    requiredIdentifiers: ["Company or pharmacy name", "HSA licence reference if available", "Pharmacy address/postal code if available"],
     sectorHint: "healthcare",
   },
 };
@@ -103,6 +110,7 @@ export function buildBusinessDossierFollowUpInput(params: {
   const summaryEntity = getSummaryString(params.dossier, "Entity");
   const input: Record<string, unknown> = {
     ...base,
+    analystRerun: true,
     modules: Array.from(new Set<BusinessDossierModule>(["acra", params.module])),
     sectorHints: [BUSINESS_MODULE_FOLLOW_UPS[params.module].sectorHint],
   };
@@ -134,8 +142,30 @@ export function buildBusinessDossierFollowUpInput(params: {
     return input;
   }
 
-  if (params.module === "bca" && UEN_PATTERN.test(value)) {
-    input.uen = value.toUpperCase();
+  if (params.module === "bca") {
+    const workheadGrade = /^([a-z]{1,3}\d{1,2})\s+([a-z]\d|l\d|single\s+grade|multi\s+grade)$/i.exec(value);
+    if (workheadGrade !== null) {
+      input.workhead = workheadGrade[1].toUpperCase();
+      input.grade = workheadGrade[2].toUpperCase();
+      return input;
+    }
+    if (UEN_PATTERN.test(value)) {
+      input.uen = value.toUpperCase();
+      return input;
+    }
+    if (/^(?:gb|sb)\d{0,2}$/i.test(value)) {
+      input.classCode = value.toUpperCase();
+      return input;
+    }
+    if (/^[a-z]{1,3}\d{1,2}$/i.test(value)) {
+      input.workhead = value.toUpperCase();
+      return input;
+    }
+    if (/^(?:[a-z]\d|l\d|single\s+grade|multi\s+grade)$/i.test(value)) {
+      input.grade = value.toUpperCase();
+      return input;
+    }
+    input.entityName = value;
     return input;
   }
 
@@ -159,6 +189,7 @@ export function buildBusinessDossierExpandedInput(params: {
   const entityName = summaryEntity ?? (value !== "" && !UEN_PATTERN.test(value) ? value : null);
   const input: Record<string, unknown> = {
     ...base,
+    analystRerun: true,
     modules: Array.from(new Set<BusinessDossierModule>(["acra", ...modules])),
     sectorHints: Array.from(new Set(modules.map((module) => BUSINESS_MODULE_FOLLOW_UPS[module].sectorHint))),
   };

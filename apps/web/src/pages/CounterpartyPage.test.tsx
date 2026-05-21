@@ -24,6 +24,8 @@ describe("CounterpartyPage CDD case workflow", () => {
     expect(source).toContain("Confidence blockers");
     expect(source).toContain("Analyst follow-ups");
     expect(source).toContain("Evidence records");
+    expect(source).toContain("Sector workflow guide");
+    expect(source).toContain("Sector module status");
     expect(source).toContain("Provenance and freshness");
     expect(source).toContain("Gaps and limits");
     expect(source).toContain("Raw orchestrator response");

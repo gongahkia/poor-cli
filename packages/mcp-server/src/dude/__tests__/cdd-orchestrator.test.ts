@@ -145,6 +145,13 @@ describe("CDD orchestrator", () => {
         records: expect.objectContaining({
           resolution: expect.objectContaining({
             selectedModules: expect.arrayContaining(["acra", "bca", "boa"]),
+            moduleReasons: expect.arrayContaining([
+              expect.objectContaining({
+                module: "boa",
+                selectedBy: expect.arrayContaining(["web_hint"]),
+                webSectorHints: ["architecture"],
+              }),
+            ]),
           }),
         }),
       }),

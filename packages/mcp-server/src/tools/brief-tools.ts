@@ -1183,6 +1183,9 @@ export const handleBusinessDossier = async (
     grade?: string | undefined;
     modules?: readonly ("acra" | "bca" | "cea" | "gebiz" | "boa" | "hsa" | "hlb")[] | undefined;
     sectorHints?: readonly ("construction" | "real_estate" | "architecture" | "healthcare" | "hospitality" | "procurement")[] | undefined;
+    explicitSectorHints?: readonly ("construction" | "real_estate" | "architecture" | "healthcare" | "hospitality" | "procurement")[] | undefined;
+    webSectorHints?: readonly ("construction" | "real_estate" | "architecture" | "healthcare" | "hospitality" | "procurement")[] | undefined;
+    analystRerun?: boolean | undefined;
     includeExternalDiligence?: boolean | undefined;
     includeContextIds?: boolean | undefined;
     format?: "json" | "markdown" | undefined;

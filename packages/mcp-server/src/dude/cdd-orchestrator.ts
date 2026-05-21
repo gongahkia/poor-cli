@@ -237,6 +237,20 @@ export const normalizeCddOrchestratorInput = (input: Record<string, unknown>): B
     output["sectorHints"] = sectorHints;
   }
 
+  const explicitSectorHints = getStringArray(input["explicitSectorHints"], isBusinessSectorHint);
+  if (explicitSectorHints.length > 0) {
+    output["explicitSectorHints"] = explicitSectorHints;
+  }
+
+  const webSectorHints = getStringArray(input["webSectorHints"], isBusinessSectorHint);
+  if (webSectorHints.length > 0) {
+    output["webSectorHints"] = webSectorHints;
+  }
+
+  if (input["analystRerun"] === true) {
+    output["analystRerun"] = true;
+  }
+
   output["includeExternalDiligence"] = true;
 
   const hasIdentifier = BUSINESS_IDENTIFIER_FIELDS.some((field) => typeof output[field] === "string");
@@ -727,7 +741,9 @@ export const runCddOrchestrator = async (
   const finalDossier = hasNewWebSectorHint
     ? withDossierAnalystFollowUps(withResolutionMetadata(await resolveBusinessDossierRecord({
         ...baseInput,
+        explicitSectorHints: getResolutionSectorHints(firstDossier, "sectorHints"),
         sectorHints: mergedSectorHints,
+        webSectorHints,
       }), options.resolution))
     : firstDossier;
   const finalEntityName = getDossierSummaryString(finalDossier, "Entity") ?? entityName;

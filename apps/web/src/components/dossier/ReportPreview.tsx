@@ -162,10 +162,19 @@ function evidenceRows(dossier: BusinessDossier): PreviewLine[] {
 }
 
 function coverageRows(dossier: BusinessDossier): PreviewLine[] {
-  return getSourceCoverage(dossier).map((item) => ({
+  const sourceRows = getSourceCoverage(dossier).map((item) => ({
     label: item.label,
     value: `${sourceCoverageStatusLabel(item.status)}; ${sourceCoverageLevelLabel(item.coverageLevel)}; ${item.recordCount} record(s). ${item.reason}`,
   }));
+  const moduleRows = (dossier.records.resolution?.moduleReasons ?? []).map((reason) => ({
+    label: `Sector module ${reason.module}`,
+    value: `${reason.status}; selected by ${reason.selectedBy.join(", ") || "not selected"}. ${reason.reason}`,
+  }));
+  const guideRows = (dossier.records.resolution?.sectorWorkflowGuide ?? []).slice(0, 3).map((guide) => ({
+    label: `Sector workflow ${guide.label}`,
+    value: `${guide.retainedTools.join(", ")}. Required identifiers: ${guide.requiredIdentifiers.join("; ")}. ${guide.sourceBoundUse}`,
+  }));
+  return [...sourceRows, ...moduleRows, ...guideRows];
 }
 
 function gapRows(dossier: BusinessDossier): PreviewLine[] {

@@ -297,7 +297,7 @@ const SECTOR_WORKFLOW_GUIDE = [
 const sectorGuideForModule = (
   module: BusinessDossierModule,
 ): SectorWorkflowGuideItem | undefined =>
-  SECTOR_WORKFLOW_GUIDE.find((item) => item.retainedModules.includes(module));
+  SECTOR_WORKFLOW_GUIDE.find((item) => (item.retainedModules as readonly BusinessDossierModule[]).includes(module));
 
 const moduleRequiredIdentifierText = (
   module: BusinessDossierModule,
@@ -537,38 +537,38 @@ const buildBusinessNextChecks = (
     if (selectedModules.includes("bca")) {
       checks.push({
         tool: "sg_bca_licensed_builders",
-        reason: "Inspect all licensed-builder records for the entity.",
-        input: { companyName: params.entityName },
+        reason: "Inspect licensed-builder rows by company/UEN or BCA class code; capture class code and expiry evidence if returned.",
+        input: { companyName: params.entityName, ...(params.uen === undefined ? {} : { uenNo: params.uen }), ...(params.classCode === undefined ? {} : { classCode: params.classCode }) },
       });
       checks.push({
         tool: "sg_bca_registered_contractors",
-        reason: "Inspect all registered-contractor records for the entity.",
-        input: { companyName: params.entityName },
+        reason: "Inspect registered-contractor rows by company/UEN, workhead, or grade; capture workhead/grade and expiry evidence if returned.",
+        input: { companyName: params.entityName, ...(params.uen === undefined ? {} : { uenNo: params.uen }), ...(params.workhead === undefined ? {} : { workhead: params.workhead }), ...(params.grade === undefined ? {} : { grade: params.grade }) },
       });
     }
     if (selectedModules.includes("gebiz")) {
       checks.push({
         tool: "sg_gebiz_tenders",
-        reason: "Inspect GeBIZ tender-award history for the named supplier.",
+        reason: "Inspect GeBIZ tender-award history for the named supplier; narrow later with agency, category, or tender terms if the supplier name is broad.",
         input: { supplierName: params.entityName },
       });
     }
     if (selectedModules.includes("boa")) {
       checks.push({
         tool: "sg_boa_architecture_firms",
-        reason: "Inspect architecture-firm records for the named entity.",
+        reason: "Inspect BOA architecture-firm records for the named entity; follow up separately with an architect name or BOA registration number where relevant.",
         input: { firmName: params.entityName },
       });
     }
     if (selectedModules.includes("hsa")) {
       checks.push({
         tool: "sg_hsa_health_product_licensees",
-        reason: "Inspect health-product licensing rows for the named entity.",
+        reason: "Inspect HSA health-product licence rows for the named entity; capture licence type and expiry evidence if returned.",
         input: { companyName: params.entityName },
       });
       checks.push({
         tool: "sg_hsa_licensed_pharmacies",
-        reason: "Check whether the named entity also appears as a licensed pharmacy.",
+        reason: "Check whether the named entity also appears as a licensed pharmacy; rerun with pharmacy name, address, or postal code if needed.",
         input: { pharmacyName: params.entityName },
       });
     }
@@ -579,6 +579,31 @@ const buildBusinessNextChecks = (
         input: { keeperName: params.entityName },
       });
     }
+  }
+  if (selectedModules.includes("cea") && (
+    params.registrationNo !== undefined
+    || params.estateAgentLicenseNo !== undefined
+    || params.salespersonName !== undefined
+    || params.estateAgentName !== undefined
+    || params.entityName !== undefined
+  )) {
+    checks.push({
+      tool: "sg_cea_salespersons",
+      reason: "Inspect CEA salesperson or estate-agent rows by registration number, licence number, salesperson name, or estate-agent name.",
+      input: Object.fromEntries(Object.entries({
+        ...(params.registrationNo === undefined ? {} : { registrationNo: params.registrationNo }),
+        ...(params.estateAgentLicenseNo === undefined ? {} : { estateAgentLicenseNo: params.estateAgentLicenseNo }),
+        ...(params.salespersonName === undefined ? {} : { salespersonName: params.salespersonName }),
+        estateAgentName: params.estateAgentName ?? params.entityName,
+      }).filter(([, value]) => value !== undefined)),
+    });
+  }
+  if (selectedModules.includes("boa") && params.registrationNo !== undefined) {
+    checks.push({
+      tool: "sg_boa_architects",
+      reason: "Inspect BOA architect rows by registration number.",
+      input: { registrationNo: params.registrationNo },
+    });
   }
   if (params.entityName !== undefined || params.uen !== undefined) {
     checks.push({
@@ -653,6 +678,11 @@ const buildCoverageFollowUp = (
 
   const nextCheck = item.tools.map((tool) => nextCheckByTool.get(tool)).find((check) => check !== undefined);
   const hasOfficialGap = item.evidenceType !== "web_discovery";
+  const officialModule = ALL_BUSINESS_DOSSIER_MODULES.find((module) => OFFICIAL_COVERAGE_FAMILIES[module].family === item.family);
+  const sectorGuide = officialModule === undefined ? undefined : sectorGuideForModule(officialModule);
+  const identifierPrompt = sectorGuide === undefined
+    ? "a source-specific identifier"
+    : sectorGuide.requiredIdentifiers.join("; ");
   const basisKind: AnalystFollowUpEvidenceBasis["kind"] = item.status === "skipped"
     ? "skipped_module"
     : "source_gap";
@@ -696,7 +726,7 @@ const buildCoverageFollowUp = (
     return {
       action: supplemental
         ? `Decide whether ${item.label} supplemental review is needed, then run it or document why it stayed out of scope.`
-        : `Run ${item.label} with a source-specific identifier or document why this source family stayed out of scope.`,
+        : `Run ${item.label} with ${identifierPrompt} or document why this source family stayed out of scope.`,
       category: supplemental ? "supplemental_review" : "sector_gap",
       evidenceBasis: [basis],
       priority: supplemental ? "optional" : "recommended",
@@ -722,7 +752,7 @@ const buildCoverageFollowUp = (
     }
     if (hasOfficialGap) {
       return {
-        action: `Review whether ${item.label} needs a more specific identifier for this counterparty.`,
+        action: `Review whether ${item.label} needs ${identifierPrompt} for this counterparty.`,
         category: "sector_gap",
         evidenceBasis: [basis],
         priority: "recommended",
@@ -1433,6 +1463,8 @@ export const buildBusinessDossierArtifact = async (
   const observedAt = new Date().toISOString();
   const gaps: EvidenceGap[] = [];
   const suppliedSectorHints = params.sectorHints ?? [];
+  const explicitSectorHints = params.explicitSectorHints ?? suppliedSectorHints;
+  const webSectorHints = params.webSectorHints ?? [];
   const initialSelectedModules = selectBusinessDossierModules(params.modules, suppliedSectorHints);
   const initialSelectedModuleSet = new Set<BusinessDossierModule>(initialSelectedModules);
   const searchedModules = new Set<BusinessDossierModule>();
@@ -1487,6 +1519,22 @@ export const buildBusinessDossierArtifact = async (
   if (shouldSearchBoa) searchedModules.add("boa");
   if (shouldSearchHsa) searchedModules.add("hsa");
   if (shouldSearchHlb) searchedModules.add("hlb");
+
+  const shouldSearchByModule = {
+    acra: shouldSearchAcra,
+    bca: shouldSearchBca,
+    boa: shouldSearchBoa,
+    cea: shouldSearchCea,
+    gebiz: shouldSearchGebiz,
+    hlb: shouldSearchHlb,
+    hsa: shouldSearchHsa,
+  } satisfies Readonly<Record<BusinessDossierModule, boolean>>;
+
+  for (const module of selectedModules) {
+    if (!shouldSearchByModule[module]) {
+      gaps.push(buildNeedsIdentifierGap(module));
+    }
+  }
 
   const [
     bcaLicensedBuilders,
@@ -1651,8 +1699,11 @@ export const buildBusinessDossierArtifact = async (
   const searchedModuleList = Array.from(searchedModules);
   const matchedModuleList = Array.from(matchedModules);
   const moduleReasons = buildModuleReasons({
+    analystRerun: params.analystRerun === true,
+    explicitSectorHints,
     requestedModules: params.modules,
     suppliedSectorHints,
+    webSectorHints,
     inferredSectors,
     selectedModules,
     searchedModules: searchedModuleList,
@@ -1914,6 +1965,9 @@ export const buildBusinessDossierArtifact = async (
         requestedRegistrationNo: params.registrationNo ?? null,
         selectedModules,
         sectorHints: params.sectorHints ?? [],
+        explicitSectorHints,
+        webSectorHints,
+        analystRerun: params.analystRerun === true,
         effectiveSectorHints,
         inferredSectors,
         searchedModules: searchedModuleList,
@@ -1921,6 +1975,14 @@ export const buildBusinessDossierArtifact = async (
         unmatchedModules,
         unsearchedModules,
         moduleReasons,
+        sectorWorkflowGuide: SECTOR_WORKFLOW_GUIDE,
+        sectorSelectionContext: {
+          explicitSectorHints,
+          acraSsicInferredSectorHints: inferredSectorHints,
+          webSectorHints,
+          analystRerun: params.analystRerun === true,
+          reversible: "Sector inference is bounded; rerun with explicit sectorHints and source-specific identifiers to change the module set.",
+        },
       },
       quality: {
         dossierConfidence,

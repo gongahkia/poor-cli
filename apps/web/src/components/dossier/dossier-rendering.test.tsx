@@ -131,7 +131,7 @@ describe("dossier rendering", () => {
         },
       },
     }} />);
-    expect(noMatchHtml).toContain("No official match");
+    expect(noMatchHtml).toContain("No match");
     expect(noMatchHtml).toContain("No matched registry rows to display.");
 
     const gapHtml = renderToStaticMarkup(<GapsSection dossier={{
@@ -142,6 +142,53 @@ describe("dossier rendering", () => {
 
     const emptyGapHtml = renderToStaticMarkup(<GapsSection dossier={{ ...dossier, gaps: [] }} />);
     expect(emptyGapHtml).toBe("");
+  });
+
+  it("renders sector workflow guides, selection reasons, and needs-identifier cards", () => {
+    const html = renderToStaticMarkup(<EvidenceSection
+      dossier={{
+        ...dossier,
+        gaps: [{
+          code: "BCA_NEEDS_IDENTIFIER",
+          message: "BCA construction registries need company name, UEN, class code, workhead, or grade.",
+        }],
+        records: {
+          resolution: {
+            moduleReasons: [{
+              followUpPrompts: ["Rerun with the exact UEN or registered construction company name."],
+              matched: false,
+              module: "bca",
+              reason: "Selected by ACRA SSIC inference and web hint; lookup needs BCA workhead/grade before it can run.",
+              requiredIdentifiers: ["Company name or UEN", "BCA workhead and grade"],
+              searched: false,
+              selectedBy: ["inferred_sector", "web_hint"],
+              status: "needs_identifier",
+              webSectorHints: ["construction"],
+            }],
+            sectorWorkflowGuide: [{
+              followUpPrompts: ["Rerun with the exact UEN or registered construction company name."],
+              label: "Construction and builders",
+              requiredIdentifiers: ["Company name or UEN", "BCA workhead and grade"],
+              retainedModules: ["bca"],
+              retainedTools: ["sg_bca_licensed_builders", "sg_bca_registered_contractors"],
+              sector: "construction",
+              sourceBoundUse: "Use BCA rows only as public registry evidence.",
+              whyRelevant: "BCA registries support construction-sector diligence.",
+            }],
+            unsearchedModules: ["bca"],
+          },
+        },
+        summary: [{ label: "Entity", value: "ABC CONSTRUCTION PTE LTD" }],
+      }}
+      onModuleFollowUp={() => undefined}
+    />);
+
+    expect(html).toContain("Sector workflow guide");
+    expect(html).toContain("Construction and builders");
+    expect(html).toContain("Needs identifier");
+    expect(html).toContain("Selected by: ACRA/SSIC inference, Web hint");
+    expect(html).toContain("BCA workhead and grade");
+    expect(html).toContain("Run BCA follow-up");
   });
 
   it("renders actionable follow-ups for skipped sector modules", () => {
@@ -177,7 +224,7 @@ describe("dossier rendering", () => {
       onModuleFollowUp={() => undefined}
     />);
 
-    expect(html).toContain("Construction company name or UEN");
+    expect(html).toContain("BCA company, UEN, class code, workhead, or grade");
     expect(html).toContain("Run BCA follow-up");
     expect(html).toContain("Run all available checks");
   });

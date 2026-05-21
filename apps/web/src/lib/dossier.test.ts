@@ -55,6 +55,7 @@ describe("dossier helpers", () => {
       module: "bca",
       value: "Example Builders Pte Ltd",
     })).toMatchObject({
+      analystRerun: true,
       entityName: "Example Builders Pte Ltd",
       modules: ["acra", "bca"],
       sectorHints: ["construction"],
@@ -67,6 +68,7 @@ describe("dossier helpers", () => {
       module: "cea",
       value: "L3000001A",
     })).toMatchObject({
+      analystRerun: true,
       estateAgentLicenseNo: "L3000001A",
       modules: ["acra", "cea"],
       sectorHints: ["real_estate"],
@@ -87,11 +89,39 @@ describe("dossier helpers", () => {
       modules: ["bca", "cea", "gebiz"],
       value: "DBS BANK LTD",
     })).toMatchObject({
+      analystRerun: true,
       entityName: "DBS BANK LTD",
       estateAgentName: "DBS BANK LTD",
       modules: ["acra", "bca", "cea", "gebiz"],
       sectorHints: ["construction", "real_estate", "procurement"],
       uen: "03591300B",
+    });
+  });
+
+  it("maps BCA follow-up identifiers to class code, workhead, and grade inputs", () => {
+    expect(buildBusinessDossierFollowUpInput({
+      dossier,
+      identifier: "DBS BANK LTD",
+      module: "bca",
+      value: "GB1",
+    })).toMatchObject({
+      analystRerun: true,
+      classCode: "GB1",
+      modules: ["acra", "bca"],
+      sectorHints: ["construction"],
+    });
+
+    expect(buildBusinessDossierFollowUpInput({
+      dossier,
+      identifier: "DBS BANK LTD",
+      module: "bca",
+      value: "CW01 B2",
+    })).toMatchObject({
+      analystRerun: true,
+      grade: "B2",
+      modules: ["acra", "bca"],
+      sectorHints: ["construction"],
+      workhead: "CW01",
     });
   });
 

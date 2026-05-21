@@ -661,6 +661,67 @@ describe("brief tools", () => {
         expect.objectContaining({ code: "PARTIAL_MODULE_COVERAGE", severity: "medium", source: "Resolver" }),
       ]),
     );
+    expect(resolution["sectorWorkflowGuide"]).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sector: "architecture",
+          retainedTools: expect.arrayContaining(["sg_boa_architecture_firms", "sg_boa_architects"]),
+          requiredIdentifiers: expect.arrayContaining(["Architecture firm name"]),
+        }),
+        expect.objectContaining({
+          sector: "procurement",
+          followUpPrompts: expect.arrayContaining([
+            expect.stringContaining("supplier name"),
+          ]),
+        }),
+      ]),
+    );
+  });
+
+  it("marks selected sector modules as needs-identifier when required inputs are missing", async () => {
+    const jsonResult = await handleBusinessDossier({
+      modules: ["hsa"],
+      registrationNo: "R123456A",
+      sectorHints: ["healthcare"],
+      format: "json",
+    });
+    const payload = parseBrief(getText(jsonResult));
+    const resolution = payload.records["resolution"] as Record<string, unknown>;
+
+    expect(resolution).toMatchObject({
+      selectedModules: ["hsa"],
+      searchedModules: [],
+      unsearchedModules: ["hsa"],
+      moduleReasons: expect.arrayContaining([
+        expect.objectContaining({
+          module: "hsa",
+          status: "needs_identifier",
+          selectedBy: ["explicit_module", "sector_hint"],
+          searched: false,
+          matched: false,
+          requiredIdentifiers: expect.arrayContaining(["Company or pharmacy name"]),
+        }),
+      ]),
+    });
+    expect(payload.gaps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: "HSA_NEEDS_IDENTIFIER",
+        message: expect.stringContaining("Company or pharmacy name"),
+      }),
+    ]));
+    expect(payload.sourceCoverage).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        family: "hsa",
+        status: "skipped",
+        reason: expect.stringContaining("unchecked sector gap"),
+      }),
+    ]));
+    expect(payload.analystFollowUps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        category: "sector_gap",
+        action: expect.stringContaining("Company or pharmacy name"),
+      }),
+    ]));
   });
 
   it("uses the company name as the CEA estate-agent search input when CEA is selected broadly", async () => {

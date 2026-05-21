@@ -235,11 +235,16 @@ const buildConfirmedDossierInput = (
     ?? confirmedCandidate.label;
   const modules = getStringArrayField(body, "modules");
   const sectorHints = getStringArrayField(body, "sectorHints");
+  const explicitSectorHints = getStringArrayField(body, "explicitSectorHints");
+  const webSectorHints = getStringArrayField(body, "webSectorHints");
   return {
     input: {
       ...buildDossierInputFromResolutionCandidate(confirmedCandidate),
       ...(modules === undefined ? {} : { modules }),
       ...(sectorHints === undefined ? {} : { sectorHints }),
+      ...(explicitSectorHints === undefined ? {} : { explicitSectorHints }),
+      ...(webSectorHints === undefined ? {} : { webSectorHints }),
+      ...(body["analystRerun"] === true ? { analystRerun: true } : {}),
       includeExternalDiligence: true,
     },
     resolution: buildConfirmedResolution(originalInput, confirmedCandidate),
@@ -734,6 +739,9 @@ const server = createServer(async (req, res) => {
           ...buildDossierInputFromResolutionCandidate(resolverResult.selectedCandidate),
           ...(getStringArrayField(input, "modules") === undefined ? {} : { modules: getStringArrayField(input, "modules") }),
           ...(getStringArrayField(input, "sectorHints") === undefined ? {} : { sectorHints: getStringArrayField(input, "sectorHints") }),
+          ...(getStringArrayField(input, "explicitSectorHints") === undefined ? {} : { explicitSectorHints: getStringArrayField(input, "explicitSectorHints") }),
+          ...(getStringArrayField(input, "webSectorHints") === undefined ? {} : { webSectorHints: getStringArrayField(input, "webSectorHints") }),
+          ...(input["analystRerun"] === true ? { analystRerun: true } : {}),
           includeExternalDiligence: true,
         };
       }

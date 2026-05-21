@@ -82,13 +82,16 @@ export type BusinessDossierModule =
 
 export type BusinessDossierModuleReason = {
   module: BusinessDossierModule;
-  status: "matched" | "unmatched" | "unsearched" | "skipped";
-  selectedBy: ("default" | "explicit_module" | "sector_hint" | "inferred_sector")[];
+  status: "matched" | "unmatched" | "needs_identifier" | "unsearched" | "skipped";
+  selectedBy: ("default" | "explicit_module" | "sector_hint" | "inferred_sector" | "web_hint" | "analyst_rerun")[];
   searched: boolean;
   matched: boolean;
   reason: string;
   sectorHints?: string[];
   inferredSectors?: string[];
+  webSectorHints?: string[];
+  requiredIdentifiers?: string[];
+  followUpPrompts?: string[];
 };
 
 export type InferredBusinessSector = {
@@ -96,6 +99,17 @@ export type InferredBusinessSector = {
   source: string;
   evidence: string;
   modules: BusinessDossierModule[];
+};
+
+export type SectorWorkflowGuideItem = {
+  sector: string;
+  label: string;
+  retainedModules: BusinessDossierModule[];
+  retainedTools: string[];
+  whyRelevant: string;
+  requiredIdentifiers: string[];
+  followUpPrompts: string[];
+  sourceBoundUse: string;
 };
 
 export type RiskFlag = {
@@ -154,6 +168,9 @@ export type BusinessDossierResolution = {
   requestedRegistrationNo?: string | null;
   selectedModules?: BusinessDossierModule[];
   sectorHints?: string[];
+  explicitSectorHints?: string[];
+  webSectorHints?: string[];
+  analystRerun?: boolean;
   effectiveSectorHints?: string[];
   inferredSectors?: InferredBusinessSector[];
   searchedModules?: BusinessDossierModule[];
@@ -161,6 +178,8 @@ export type BusinessDossierResolution = {
   unmatchedModules?: BusinessDossierModule[];
   unsearchedModules?: BusinessDossierModule[];
   moduleReasons?: BusinessDossierModuleReason[];
+  sectorWorkflowGuide?: SectorWorkflowGuideItem[];
+  sectorSelectionContext?: Record<string, unknown>;
 };
 
 export type BusinessDossierRecords = {

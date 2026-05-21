@@ -23,6 +23,7 @@ import type {
   BusinessDossierModule,
   BusinessDossierModuleReason,
   EvidenceGap,
+  SectorWorkflowGuideItem,
 } from "@/types/dossier";
 
 export type ModuleFollowUpRequest = {
@@ -72,7 +73,7 @@ function moduleStatus(
 ): { label: string; className: string } {
   if (gaps.some(isUnavailableGap)) {
     return {
-      label: "Source unavailable",
+      label: "Unavailable",
       className: "border-destructive/30 bg-destructive/5 text-destructive",
     };
   }
@@ -84,8 +85,14 @@ function moduleStatus(
   }
   if (reason.status === "unmatched") {
     return {
-      label: "No official match",
+      label: "No match",
       className: "border-border bg-muted/50 text-foreground",
+    };
+  }
+  if (reason.status === "needs_identifier") {
+    return {
+      label: "Needs identifier",
+      className: "border-amber-200 bg-amber-50 text-amber-900",
     };
   }
   return {
@@ -94,24 +101,100 @@ function moduleStatus(
   };
 }
 
+const selectionReasonLabels: Record<BusinessDossierModuleReason["selectedBy"][number], string> = {
+  analyst_rerun: "Analyst rerun",
+  default: "Default identity lookup",
+  explicit_module: "Explicit user choice",
+  inferred_sector: "ACRA/SSIC inference",
+  sector_hint: "Explicit sector hint",
+  web_hint: "Web hint",
+};
+
+function selectionReasonText(reason: BusinessDossierModuleReason): string {
+  return reason.selectedBy.length === 0
+    ? "Not selected"
+    : reason.selectedBy.map((item) => selectionReasonLabels[item]).join(", ");
+}
+
+function guideForModule(
+  guides: readonly SectorWorkflowGuideItem[],
+  module: BusinessDossierModule,
+): SectorWorkflowGuideItem | undefined {
+  return guides.find((guide) => guide.retainedModules.includes(module));
+}
+
+function SectorWorkflowGuide({ guides }: { guides: readonly SectorWorkflowGuideItem[] }) {
+  if (guides.length === 0) return null;
+
+  return (
+    <div
+      className="scroll-mt-6 space-y-3 outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring/70"
+      id="dossier-sector-workflow-guide"
+      tabIndex={-1}
+    >
+      <div>
+        <h3 className="text-base font-semibold text-foreground">Sector workflow guide</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Retained sector modules are bounded checks. Use explicit sector hints and identifiers to rerun them.
+        </p>
+      </div>
+      <div className="grid gap-3 md:grid-cols-[repeat(2,minmax(0,1fr))]">
+        {guides.map((guide) => (
+          <article className="min-w-0 rounded-lg border border-border bg-card p-3 shadow-sm sm:p-4" key={guide.sector}>
+            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <h4 className="min-w-0 break-words font-semibold text-foreground">{guide.label}</h4>
+              <span className="max-w-full break-all rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
+                {guide.retainedModules.map((module) => BUSINESS_MODULE_LABELS[module]).join(", ")}
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{guide.whyRelevant}</p>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Required identifiers</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm leading-6 text-muted-foreground">
+                  {guide.requiredIdentifiers.map((identifier) => <li key={identifier}>{identifier}</li>)}
+                </ul>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase text-muted-foreground">Follow-up prompts</p>
+                <ul className="mt-2 list-disc space-y-1 pl-4 text-sm leading-6 text-muted-foreground">
+                  {guide.followUpPrompts.map((prompt) => <li key={prompt}>{prompt}</li>)}
+                </ul>
+              </div>
+            </div>
+            <p className="mt-3 rounded-md bg-muted/60 p-2 text-xs leading-5 text-muted-foreground">
+              {guide.sourceBoundUse}
+            </p>
+            <p className="mt-2 break-all font-mono text-xs text-muted-foreground">
+              {guide.retainedTools.join(", ")}
+            </p>
+          </article>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ModuleStatusCard({
   defaultFollowUpValue,
   gaps,
   isRunning = false,
   onModuleFollowUp,
   reason,
+  sectorGuide,
 }: {
   defaultFollowUpValue: string;
   gaps: EvidenceGap[];
   isRunning?: boolean;
   onModuleFollowUp?: (request: ModuleFollowUpRequest) => void;
   reason: BusinessDossierModuleReason;
+  sectorGuide?: SectorWorkflowGuideItem;
 }) {
   const status = moduleStatus(reason, gaps);
   const followUpModule = reason.module === "acra" ? null : reason.module;
   const showFollowUp = followUpModule !== null
     && onModuleFollowUp !== undefined
-    && (reason.status === "skipped" || reason.status === "unsearched");
+    && (reason.status === "skipped" || reason.status === "unsearched" || reason.status === "needs_identifier" || reason.status === "unmatched");
 
   return (
     <article className={`min-w-0 rounded-lg border p-3 text-sm shadow-sm sm:p-4 ${status.className}`}>
@@ -121,12 +204,36 @@ function ModuleStatusCard({
           {status.label}
         </span>
       </div>
+      <p className="mt-2 break-words text-xs text-muted-foreground">
+        Selected by: {selectionReasonText(reason)}
+      </p>
       <p className="mt-2 break-words leading-6">{reason.reason}</p>
       {reason.inferredSectors !== undefined && reason.inferredSectors.length > 0 ? (
         <p className="mt-2 break-words text-xs text-muted-foreground">
           Inferred: {reason.inferredSectors.map(formatLabel).join(", ")}
         </p>
       ) : null}
+      {reason.webSectorHints !== undefined && reason.webSectorHints.length > 0 ? (
+        <p className="mt-2 break-words text-xs text-muted-foreground">
+          Web hint: {reason.webSectorHints.map(formatLabel).join(", ")}
+        </p>
+      ) : null}
+      {sectorGuide === undefined ? null : (
+        <div className="mt-3 grid gap-3 rounded-md bg-background/70 p-3 lg:grid-cols-2">
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Required identifiers</p>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-muted-foreground">
+              {sectorGuide.requiredIdentifiers.map((identifier) => <li key={identifier}>{identifier}</li>)}
+            </ul>
+          </div>
+          <div>
+            <p className="text-xs font-semibold uppercase text-muted-foreground">Next prompts</p>
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-xs leading-5 text-muted-foreground">
+              {sectorGuide.followUpPrompts.map((prompt) => <li key={prompt}>{prompt}</li>)}
+            </ul>
+          </div>
+        </div>
+      )}
       {gaps.length > 0 ? (
         <div className="mt-3 space-y-2">
           {gaps.map((gap) => (
@@ -253,6 +360,7 @@ export function EvidenceSection({
   const groups = getDossierRecordGroups(dossier);
   const sourceCoverage = getSourceCoverage(dossier);
   const moduleReasons = dossier.records.resolution?.moduleReasons ?? [];
+  const sectorWorkflowGuide = dossier.records.resolution?.sectorWorkflowGuide ?? [];
   const defaultFollowUpValue = getSummaryString(dossier, "Entity")
     ?? getSummaryString(dossier, "UEN")
     ?? dossier.title;
@@ -279,6 +387,8 @@ export function EvidenceSection({
       <div>
         <h2 className="text-xl font-semibold tracking-normal text-foreground">Evidence</h2>
       </div>
+
+      <SectorWorkflowGuide guides={sectorWorkflowGuide} />
 
       {sourceCoverage.length > 0 ? (
         <div
@@ -358,6 +468,7 @@ export function EvidenceSection({
                 key={item.module}
                 onModuleFollowUp={onModuleFollowUp}
                 reason={item}
+                sectorGuide={guideForModule(sectorWorkflowGuide, item.module)}
               />
             ))}
           </div>
@@ -403,6 +514,7 @@ export function EvidenceSection({
                 key={item.module}
                 onModuleFollowUp={onModuleFollowUp}
                 reason={item}
+                sectorGuide={guideForModule(sectorWorkflowGuide, item.module)}
               />
             ))}
           </div>

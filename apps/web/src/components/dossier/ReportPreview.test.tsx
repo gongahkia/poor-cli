@@ -23,7 +23,28 @@ const dossier = {
       streetName: "Shenton Way",
       uen: "197700546G",
     }],
-    resolution: { matchedModules: ["acra"], searchedModules: ["acra"] },
+    resolution: {
+      matchedModules: ["acra"],
+      moduleReasons: [{
+        matched: false,
+        module: "gebiz",
+        reason: "Selected by explicit sector hint; lookup ran but returned no matching public records.",
+        searched: true,
+        selectedBy: ["sector_hint"],
+        status: "unmatched",
+      }],
+      searchedModules: ["acra", "gebiz"],
+      sectorWorkflowGuide: [{
+        followUpPrompts: ["Rerun with the exact supplier name used in award notices."],
+        label: "Public procurement suppliers",
+        requiredIdentifiers: ["Supplier or entity name used in GeBIZ awards", "Tender agency, category, or procurement terms if narrowing is needed"],
+        retainedModules: ["gebiz"],
+        retainedTools: ["sg_gebiz_tenders"],
+        sector: "procurement",
+        sourceBoundUse: "Use GeBIZ rows only as public procurement award evidence.",
+        whyRelevant: "GeBIZ award rows can support procurement diligence.",
+      }],
+    },
   },
   riskFlags: [{ code: "ENTITY_NOT_ACTIVE", message: "Entity is not active.", severity: "high", source: "ACRA" }],
   sourceCoverage: [
@@ -119,6 +140,9 @@ describe("ReportPreview", () => {
     expect(html).toContain("Executive summary");
     expect(html).toContain("Source coverage");
     expect(html).toContain("OpenCorporates cross-links");
+    expect(html).toContain("Sector module gebiz");
+    expect(html).toContain("Sector workflow Public procurement suppliers");
+    expect(html).toContain("Tender agency, category, or procurement terms");
     expect(html).toContain("Risk and confidence");
     expect(html).toContain("Export manifest");
     expect(html).toContain("Hash, schema version, signature");

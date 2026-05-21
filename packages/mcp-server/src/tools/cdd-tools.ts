@@ -38,6 +38,9 @@ const CddReportSchema = z.object({
   grade: z.string().min(1).optional(),
   modules: z.array(BusinessDossierModuleSchema).min(1).optional(),
   sectorHints: z.array(BusinessSectorHintSchema).min(1).optional(),
+  explicitSectorHints: z.array(BusinessSectorHintSchema).min(1).optional(),
+  webSectorHints: z.array(BusinessSectorHintSchema).min(1).optional(),
+  analystRerun: z.boolean().optional(),
   confirmedCandidate: z.unknown().optional(),
   includeContextIds: z.boolean().optional(),
   format: z.enum(["json", "markdown"]).optional(),
@@ -175,6 +178,9 @@ export const cddToolDefinitions: readonly RegisteredToolDefinition[] = [
             ...buildDossierInputFromResolutionCandidate(confirmedCandidate),
             ...(params.modules === undefined ? {} : { modules: params.modules }),
             ...(params.sectorHints === undefined ? {} : { sectorHints: params.sectorHints }),
+            ...(params.explicitSectorHints === undefined ? {} : { explicitSectorHints: params.explicitSectorHints }),
+            ...(params.webSectorHints === undefined ? {} : { webSectorHints: params.webSectorHints }),
+            ...(params.analystRerun === undefined ? {} : { analystRerun: params.analystRerun }),
             includeExternalDiligence: true,
           };
       const identifier = params.identifier ?? params.entityName;
@@ -206,6 +212,9 @@ export const cddToolDefinitions: readonly RegisteredToolDefinition[] = [
             ...buildDossierInputFromResolutionCandidate(resolution.selectedCandidate),
             ...(params.modules === undefined ? {} : { modules: params.modules }),
             ...(params.sectorHints === undefined ? {} : { sectorHints: params.sectorHints }),
+            ...(params.explicitSectorHints === undefined ? {} : { explicitSectorHints: params.explicitSectorHints }),
+            ...(params.webSectorHints === undefined ? {} : { webSectorHints: params.webSectorHints }),
+            ...(params.analystRerun === undefined ? {} : { analystRerun: params.analystRerun }),
             includeExternalDiligence: true,
           };
       const response = await runCddOrchestrator(effectiveInput, {
