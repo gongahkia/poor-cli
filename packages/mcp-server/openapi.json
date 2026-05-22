@@ -511,7 +511,7 @@
     },
     "/api/v1/sg_config_get": {
       "post": {
-        "summary": "Show current Dude MCP configuration including cache TTLs, rate limits, and timeouts.",
+        "summary": "Show current Swee SG MCP configuration including cache TTLs, rate limits, and timeouts.",
         "tags": [
           "operational"
         ],
@@ -549,7 +549,7 @@
     },
     "/api/v1/sg_config_set": {
       "post": {
-        "summary": "Update Dude MCP configuration. Changes persist in $SG_APIS_STATE_DIR/config.json (default ~/.sg-apis/config.json).",
+        "summary": "Update Swee SG MCP configuration. Changes persist in $SG_APIS_STATE_DIR/config.json (default ~/.sg-apis/config.json).",
         "tags": [
           "operational"
         ],

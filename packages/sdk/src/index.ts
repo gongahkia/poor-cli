@@ -1,47 +1,84 @@
-import {
-  BusinessDossierSchema,
-  QuerySchema,
-} from "@swee-sg/shared";
+import { z } from "zod";
 import type {
-  BriefArtifact,
-  GatewayHealth,
-  QueryOutcome,
-} from "./types.js";
-import type { z } from "zod";
+  PulseSignal,
+  PulseSnapshot,
+  PulseSourceHealth,
+  ShieldAuditRecord,
+  ShieldReplayMetadata,
+  ShieldScannerFinding,
+} from "@swee-sg/shared";
+import type { GatewayHealth } from "./types.js";
 
 export type {
-  BriefArtifact,
-  BriefFreshnessItem,
-  BriefLimit,
-  BriefProvenanceItem,
-  BriefSummaryItem,
   EvidenceGap,
   GatewayHealth,
-  QueryOutcome,
+  PulseFreshness,
+  PulseFreshnessStatus,
+  PulseProvenanceItem,
+  PulseSignal,
+  PulseSignalCategory,
+  PulseSignalSeverity,
+  PulseSnapshot,
+  PulseSourceHealth,
+  ShieldAuditRecord,
+  ShieldAuditStatus,
+  ShieldPolicyDecision,
+  ShieldReplayMetadata,
+  ShieldScannerFinding,
+  ShieldRiskLevel,
   ToolErrorPayload,
 } from "./types.js";
 
-export type BusinessDossierInput = z.input<typeof BusinessDossierSchema>;
-export type QueryInput = z.input<typeof QuerySchema>;
+const PulseInputSchema = z.object({
+  area: z.string().optional(),
+  region: z.string().optional(),
+  stationId: z.string().optional(),
+  focus: z.enum(["mobility", "weather", "all"]).optional(),
+});
 
-export type CddOrchestratorResponse = {
-  readonly dossier: BriefArtifact;
-  readonly generatedAt: string;
-  readonly memo: unknown;
-  readonly orchestration: unknown;
-  readonly peopleDiscovery: unknown;
-  readonly webPresence: unknown;
+const ShieldAuditLookupSchema = z.object({
+  auditId: z.string().optional(),
+  traceId: z.string().optional(),
+  requestId: z.string().optional(),
+  toolName: z.string().optional(),
+  limit: z.number().int().min(1).max(100).optional(),
+});
+
+export type PulseInput = z.input<typeof PulseInputSchema>;
+export type ShieldAuditLookupInput = z.input<typeof ShieldAuditLookupSchema>;
+
+export type PulseSignalSet = {
+  readonly signals: readonly PulseSignal[];
+  readonly sourceHealth: readonly PulseSourceHealth[];
+  readonly gaps: PulseSnapshot["gaps"];
 };
 
-export type DudeClientHeaders =
+export type PulseExplainResponse = {
+  readonly snapshot: PulseSnapshot;
+  readonly explanation: string;
+  readonly aiUsed: boolean;
+};
+
+export type ShieldAuditLookupResponse = {
+  readonly records?: readonly ShieldAuditRecord[];
+  readonly record?: ShieldAuditRecord | null;
+  readonly replay?: ShieldReplayMetadata | null;
+};
+
+export type ShieldScanResponse = {
+  readonly findings: readonly ShieldScannerFinding[];
+  readonly scannedTools: number;
+};
+
+export type SweeClientHeaders =
   | HeadersInit
   | (() => HeadersInit | Promise<HeadersInit>);
 
-export type DudeClientOptions = {
+export type SweeClientOptions = {
   readonly baseUrl?: string;
   readonly fetch?: typeof fetch;
   readonly token?: string;
-  readonly headers?: DudeClientHeaders;
+  readonly headers?: SweeClientHeaders;
   readonly timeoutMs?: number;
 };
 
@@ -51,29 +88,30 @@ export type RequestOptions = {
   readonly timeoutMs?: number;
 };
 
-export type DudeToolSummary = {
+export type SweeToolSummary = {
   readonly name: string;
   readonly description?: string;
   readonly inputSchema?: unknown;
 };
 
-export type DudeGatewayToolEnvelope<T> = {
+export type SweeGatewayToolEnvelope<T> = {
   readonly content?: unknown;
-  readonly data?: {
+  readonly data?: T | {
     readonly record?: T;
     readonly records?: readonly T[];
   };
   readonly structuredContent?: unknown;
+  readonly shield?: unknown;
   readonly _meta?: Readonly<Record<string, unknown>>;
 };
 
-export class DudeApiError extends Error {
+export class SweeApiError extends Error {
   readonly status: number;
   readonly payload: unknown;
 
   constructor(message: string, status: number, payload: unknown) {
     super(message);
-    this.name = "DudeApiError";
+    this.name = "SweeApiError";
     this.status = status;
     this.payload = payload;
   }
@@ -84,13 +122,13 @@ const DEFAULT_BASE_URL = "http://localhost:3000";
 const normalizeBaseUrl = (baseUrl: string | undefined): string => {
   const value = (baseUrl ?? DEFAULT_BASE_URL).trim();
   if (value === "") {
-    throw new Error("DudeClient baseUrl cannot be empty.");
+    throw new Error("SweeClient baseUrl cannot be empty.");
   }
   return value.replace(/\/+$/, "");
 };
 
 const resolveHeaders = async (
-  headers: DudeClientHeaders | undefined,
+  headers: SweeClientHeaders | undefined,
 ): Promise<HeadersInit> => {
   if (headers === undefined) {
     return {};
@@ -154,30 +192,35 @@ const mergeSignals = (
   };
 };
 
-const unwrapToolEnvelope = <T>(payload: DudeGatewayToolEnvelope<T> | T): T => {
+const unwrapToolEnvelope = <T>(payload: SweeGatewayToolEnvelope<T> | T): T => {
   if (
     payload !== null
     && typeof payload === "object"
     && "data" in payload
     && payload.data !== undefined
     && payload.data !== null
-    && typeof payload.data === "object"
-    && "record" in payload.data
   ) {
-    return payload.data.record as T;
+    if (
+      typeof payload.data === "object"
+      && "record" in payload.data
+      && payload.data.record !== undefined
+    ) {
+      return payload.data.record as T;
+    }
+    return payload.data as T;
   }
 
   return payload as T;
 };
 
-export class DudeClient {
+export class SweeClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
   private readonly token: string | undefined;
-  private readonly headers: DudeClientHeaders | undefined;
+  private readonly headers: SweeClientHeaders | undefined;
   private readonly timeoutMs: number | undefined;
 
-  constructor(options: DudeClientOptions = {}) {
+  constructor(options: SweeClientOptions = {}) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.fetchImpl = options.fetch ?? fetch;
     this.token = options.token;
@@ -189,8 +232,8 @@ export class DudeClient {
     return this.get<GatewayHealth>("/api/v1/health", options);
   }
 
-  async listTools(options: RequestOptions = {}): Promise<readonly DudeToolSummary[]> {
-    return this.get<readonly DudeToolSummary[]>("/api/v1/tools", options);
+  async listTools(options: RequestOptions = {}): Promise<readonly SweeToolSummary[]> {
+    return this.get<readonly SweeToolSummary[]>("/api/v1/tools", options);
   }
 
   async callTool<T>(
@@ -203,7 +246,7 @@ export class DudeClient {
       throw new Error("Tool name is required.");
     }
 
-    const payload = await this.post<DudeGatewayToolEnvelope<T> | T>(
+    const payload = await this.post<SweeGatewayToolEnvelope<T> | T>(
       `/api/v1/${encodeURIComponent(normalizedToolName)}`,
       input,
       options,
@@ -211,25 +254,33 @@ export class DudeClient {
     return unwrapToolEnvelope<T>(payload);
   }
 
-  async businessDossier(
-    input: BusinessDossierInput,
-    options: RequestOptions = {},
-  ): Promise<BriefArtifact> {
-    const parsed = BusinessDossierSchema.parse(input);
-    return this.callTool<BriefArtifact>("sg_business_dossier", parsed, options);
+  async pulseSnapshot(input: PulseInput = {}, options: RequestOptions = {}): Promise<PulseSnapshot> {
+    const parsed = PulseInputSchema.parse(input);
+    const payload = await this.callTool<{ readonly snapshot: PulseSnapshot }>("swee_pulse_snapshot", parsed, options);
+    return payload.snapshot;
   }
 
-  async cddReport(
-    input: BusinessDossierInput,
-    options: RequestOptions = {},
-  ): Promise<CddOrchestratorResponse> {
-    const parsed = BusinessDossierSchema.parse(input);
-    return this.post<CddOrchestratorResponse>("/api/v1/dude/cdd-orchestrator", parsed, options);
+  async pulseMobility(options: RequestOptions = {}): Promise<PulseSignalSet> {
+    return this.callTool<PulseSignalSet>("swee_pulse_mobility", {}, options);
   }
 
-  async query(input: QueryInput, options: RequestOptions = {}): Promise<QueryOutcome> {
-    const parsed = QuerySchema.parse(input);
-    return this.callTool<QueryOutcome>("sg_query", parsed, options);
+  async pulseWeather(input: PulseInput = {}, options: RequestOptions = {}): Promise<PulseSignalSet> {
+    const parsed = PulseInputSchema.parse(input);
+    return this.callTool<PulseSignalSet>("swee_pulse_weather", parsed, options);
+  }
+
+  async pulseExplain(input: PulseInput = {}, options: RequestOptions = {}): Promise<PulseExplainResponse> {
+    const parsed = PulseInputSchema.parse(input);
+    return this.callTool<PulseExplainResponse>("swee_pulse_explain", parsed, options);
+  }
+
+  async shieldAudits(input: ShieldAuditLookupInput = {}, options: RequestOptions = {}): Promise<ShieldAuditLookupResponse> {
+    const parsed = ShieldAuditLookupSchema.parse(input);
+    return this.callTool<ShieldAuditLookupResponse>("swee_shield_audit_lookup", parsed, options);
+  }
+
+  async shieldScan(options: RequestOptions = {}): Promise<ShieldScanResponse> {
+    return this.callTool<ShieldScanResponse>("swee_shield_scan_tools", {}, options);
   }
 
   private async get<T>(path: string, options: RequestOptions): Promise<T> {
@@ -295,8 +346,8 @@ export class DudeClient {
       if (!response.ok) {
         const message =
           errorMessageFromPayload(payload)
-          ?? `Dude gateway request failed with status ${response.status}.`;
-        throw new DudeApiError(message, response.status, payload);
+          ?? `Swee SG gateway request failed with status ${response.status}.`;
+        throw new SweeApiError(message, response.status, payload);
       }
 
       return payload as T;
@@ -306,5 +357,5 @@ export class DudeClient {
   }
 }
 
-export const createDudeClient = (options: DudeClientOptions = {}): DudeClient =>
-  new DudeClient(options);
+export const createSweeClient = (options: SweeClientOptions = {}): SweeClient =>
+  new SweeClient(options);

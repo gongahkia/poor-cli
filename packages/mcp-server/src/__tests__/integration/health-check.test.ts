@@ -20,7 +20,6 @@ import {
   healthCheckToolDefinitions,
   probeDatagovDatastoreHealth,
   probeDatagovFileDownloadHealth,
-  probeExternalDiligenceHealth,
 } from "../../tools/health-check.js";
 
 const createLookup = (values: Readonly<Record<string, string>>) => ({
@@ -35,11 +34,11 @@ describe("Health Check", () => {
   it("treats HTTP errors as reachable services", async () => {
     const status = await checkApiHealth(
       {
-        api: "External Diligence",
+        api: "Swee Shield",
         classification: "live_public",
         url: "https://example.test",
         probeMode: "runtime_client",
-        representativeTool: "sg_sanctions_screen",
+        representativeTool: "swee_shield_audit_lookup",
         releaseBlocking: false,
         authRequired: false,
         configured: () => true,
@@ -81,20 +80,20 @@ describe("Health Check", () => {
     expect(status.error).toContain("network down");
   });
 
-  it("returns CDD-only health-check targets", () => {
+  it("returns retained public-data health-check targets", () => {
     expect(getHealthCheckTargets()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ api: "data.gov.sg datastore", representativeTool: "sg_acra_entities" }),
         expect.objectContaining({ api: "data.gov.sg file downloads", representativeTool: "sg_boa_architecture_firms" }),
-        expect.objectContaining({ api: "External Diligence", representativeTool: "sg_sanctions_screen" }),
       ]),
     );
+    expect(getHealthCheckTargets()).toHaveLength(2);
     expect(getHealthCheckTargets().map((target) => target.api)).not.toEqual(
       expect.arrayContaining(["SingStat", "MAS", "OneMap", "URA", "LTA DataMall", "NEA"]),
     );
   });
 
-  it("uses retained CDD runtime clients for health probes", async () => {
+  it("uses retained runtime clients for health probes", async () => {
     await expect(probeDatagovDatastoreHealth()).resolves.toEqual({
       ok: true,
       status: 200,
@@ -105,17 +104,11 @@ describe("Health Check", () => {
       status: 200,
       statusText: "OK",
     });
-    await expect(probeExternalDiligenceHealth()).resolves.toEqual({
-      ok: true,
-      status: 200,
-      statusText: "OK",
-    });
-
     expect(vi.mocked(probeAcraLookupReadiness)).toHaveBeenCalled();
     expect(vi.mocked(getBoaArchitectureFirms)).toHaveBeenCalledWith({ limit: 1 });
   });
 
-  it("returns structured CDD health-check records with dependency coverage notes", async () => {
+  it("returns structured health-check records with dependency coverage notes", async () => {
     const definition = healthCheckToolDefinitions.find((tool) => tool.name === "sg_health_check");
     if (definition === undefined) {
       throw new Error("sg_health_check definition not found");

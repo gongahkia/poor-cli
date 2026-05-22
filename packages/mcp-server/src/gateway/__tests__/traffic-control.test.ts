@@ -23,34 +23,29 @@ afterEach(() => {
 });
 
 describe("traffic control", () => {
-  it("uses route-specific policy buckets for public endpoints", () => {
-    expect(getTrafficPolicy("GET", "/api/v1/dude/search-suggestions")).toMatchObject({
-      key: "search_suggestions",
+  it("uses route-specific policy buckets for Pulse and Shield endpoints", () => {
+    expect(getTrafficPolicy("GET", "/api/v1/pulse/snapshot")).toMatchObject({
+      key: "pulse",
+      label: "Pulse signal",
+      maxRequests: 90,
+    });
+
+    expect(getTrafficPolicy("POST", "/api/v1/tools/swee_pulse_weather")).toMatchObject({
+      key: "pulse",
+      label: "Pulse signal",
+      maxRequests: 90,
+    });
+
+    expect(getTrafficPolicy("GET", "/api/v1/shield/audits")).toMatchObject({
+      key: "shield",
+      label: "Shield audit",
       maxRequests: 120,
     });
-    expect(getTrafficPolicy("GET", "/api/v1/dude/web-presence")).toMatchObject({
-      key: "web_presence",
-      maxRequests: 30,
-    });
-    expect(getTrafficPolicy("GET", "/api/v1/dude/people-discovery")).toMatchObject({
-      key: "people_discovery",
-      maxRequests: 30,
-    });
-    expect(getTrafficPolicy("POST", "/api/v1/sg_business_dossier")).toMatchObject({
-      key: "business_dossier",
-      maxRequests: 40,
-    });
-    expect(getTrafficPolicy("POST", "/api/v1/dude/bulk")).toMatchObject({
-      key: "bulk",
-      maxRequests: 8,
-    });
-    expect(getTrafficPolicy("POST", "/api/v1/dude/memo")).toMatchObject({
-      key: "memo",
-      maxRequests: 20,
-    });
-    expect(getTrafficPolicy("POST", "/api/v1/dude/summary")).toMatchObject({
-      key: "summary",
-      maxRequests: 20,
+
+    expect(getTrafficPolicy("POST", "/api/v1/tools/swee_shield_scan_tools")).toMatchObject({
+      key: "shield",
+      label: "Shield audit",
+      maxRequests: 120,
     });
   });
 

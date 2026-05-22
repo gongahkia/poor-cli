@@ -74,7 +74,7 @@ export const TOOLSET_PROFILE_CATALOG = [
   },
   {
     profile: "cdd_report",
-    intent: "Legacy compatibility profile name mapped to source adapters and health checks while CDD product tools are removed.",
+    intent: "Legacy compatibility profile name mapped to source adapters and health checks while the old product tools are removed.",
     toolsets: TOOLSET_PROFILE_PRESETS.cdd_report,
   },
   {
@@ -84,7 +84,7 @@ export const TOOLSET_PROFILE_CATALOG = [
   },
   {
     profile: "ops",
-    intent: "Operational profile for runtime health, cache, key, config, trace, request lookup, and sg_query diagnostics.",
+    intent: "Operational profile for runtime health, cache, key, config, trace, request lookup, and Swee Shield diagnostics.",
     toolsets: TOOLSET_PROFILE_PRESETS.ops,
   },
 ] as const;

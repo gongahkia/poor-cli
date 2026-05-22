@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { DudeApiError } from "../index.js";
-import { DudeClient } from "../index.js";
+import type { SweeApiError } from "../index.js";
+import { SweeClient } from "../index.js";
 
 const okFetch = (handler: (url: string, init: RequestInit) => unknown): typeof fetch =>
   (async (url, init) => {
@@ -11,47 +11,11 @@ const okFetch = (handler: (url: string, init: RequestInit) => unknown): typeof f
     });
   }) as typeof fetch;
 
-describe("DudeClient", () => {
-  it("calls the CDD orchestrator for product reports", async () => {
-    const seen: { url?: string; body?: unknown } = {};
-    const client = new DudeClient({
-      baseUrl: "https://dude.example",
-      fetch: okFetch((url, init) => {
-        seen.url = url;
-        seen.body = JSON.parse(String(init.body));
-
-        return {
-          dossier: {
-            title: "Business dossier",
-            summary: [],
-            evidence: [],
-            records: {},
-            gaps: [],
-            provenance: [],
-            freshness: [],
-            limits: [],
-          },
-          generatedAt: "2026-05-20T00:00:00.000Z",
-          memo: { status: "unavailable" },
-          orchestration: { status: "ready" },
-          peopleDiscovery: { configured: false },
-          webPresence: { configured: false },
-        };
-      }),
-    });
-
-    const report = await client.cddReport({ uen: "201900001A" });
-
-    expect(seen.url).toBe("https://dude.example/api/v1/dude/cdd-orchestrator");
-    expect(seen.body).toEqual({ uen: "201900001A" });
-    expect(report.dossier.title).toBe("Business dossier");
-    expect(report.orchestration).toEqual({ status: "ready" });
-  });
-
-  it("calls the business dossier tool and unwraps gateway records", async () => {
+describe("SweeClient", () => {
+  it("calls the Pulse snapshot tool and unwraps gateway data", async () => {
     const seen: { url?: string; body?: unknown; authorization?: string | null } = {};
-    const client = new DudeClient({
-      baseUrl: "https://dude.example",
+    const client = new SweeClient({
+      baseUrl: "https://swee.example",
       token: "test-token",
       fetch: okFetch((url, init) => {
         seen.url = url;
@@ -60,49 +24,86 @@ describe("DudeClient", () => {
 
         return {
           data: {
-            record: {
-              title: "Business dossier",
-              summary: [],
-              evidence: [],
-              records: {},
+            snapshot: {
+              generatedAt: "2026-05-22T00:00:00.000Z",
+              focus: "all",
+              signals: [],
+              sourceHealth: [],
               gaps: [],
-              provenance: [],
-              freshness: [],
-              limits: [],
             },
           },
+          shield: { auditId: "audit-1" },
         };
       }),
     });
 
-    const dossier = await client.businessDossier({
-      uen: "201900001A",
-      includeContextIds: true,
-    });
+    const snapshot = await client.pulseSnapshot({ focus: "all" });
 
-    expect(seen.url).toBe("https://dude.example/api/v1/sg_business_dossier");
-    expect(seen.body).toEqual({ uen: "201900001A", includeContextIds: true });
+    expect(seen.url).toBe("https://swee.example/api/v1/swee_pulse_snapshot");
+    expect(seen.body).toEqual({ focus: "all" });
     expect(seen.authorization).toBe("Bearer test-token");
-    expect(dossier.title).toBe("Business dossier");
+    expect(snapshot.generatedAt).toBe("2026-05-22T00:00:00.000Z");
   });
 
-  it("validates business dossier identifiers before calling the gateway", async () => {
-    let called = false;
-    const client = new DudeClient({
-      fetch: okFetch(() => {
-        called = true;
-        return {};
+  it("calls weather and mobility Pulse tools", async () => {
+    const seen: string[] = [];
+    const client = new SweeClient({
+      baseUrl: "https://swee.example",
+      fetch: okFetch((url) => {
+        seen.push(url);
+        return { data: { signals: [], sourceHealth: [], gaps: [] } };
       }),
     });
 
-    await expect(client.businessDossier({ includeContextIds: true })).rejects.toThrow(
-      "Provide at least one business or estate-agent identifier.",
-    );
-    expect(called).toBe(false);
+    await client.pulseWeather({ area: "Bedok" });
+    await client.pulseMobility();
+
+    expect(seen).toEqual([
+      "https://swee.example/api/v1/swee_pulse_weather",
+      "https://swee.example/api/v1/swee_pulse_mobility",
+    ]);
+  });
+
+  it("calls deterministic Pulse explain", async () => {
+    const client = new SweeClient({
+      fetch: okFetch(() => ({
+        data: {
+          snapshot: { generatedAt: "2026-05-22T00:00:00.000Z", focus: null, signals: [], sourceHealth: [], gaps: [] },
+          explanation: "Swee Pulse observed 0 source-backed signals.",
+          aiUsed: false,
+        },
+      })),
+    });
+
+    await expect(client.pulseExplain()).resolves.toMatchObject({
+      aiUsed: false,
+      explanation: expect.stringContaining("Swee Pulse"),
+    });
+  });
+
+  it("calls Shield audit and scanner tools", async () => {
+    const seen: string[] = [];
+    const client = new SweeClient({
+      baseUrl: "https://swee.example",
+      fetch: okFetch((url) => {
+        seen.push(url);
+        if (url.endsWith("swee_shield_scan_tools")) {
+          return { data: { findings: [], scannedTools: 84 } };
+        }
+        return { data: { records: [] } };
+      }),
+    });
+
+    await expect(client.shieldAudits({ limit: 5 })).resolves.toEqual({ records: [] });
+    await expect(client.shieldScan()).resolves.toEqual({ findings: [], scannedTools: 84 });
+    expect(seen).toEqual([
+      "https://swee.example/api/v1/swee_shield_audit_lookup",
+      "https://swee.example/api/v1/swee_shield_scan_tools",
+    ]);
   });
 
   it("raises typed gateway errors", async () => {
-    const client = new DudeClient({
+    const client = new SweeClient({
       fetch: (async () =>
         new Response(JSON.stringify({ error: { message: "No such tool" } }), {
           headers: { "Content-Type": "application/json" },
@@ -111,9 +112,9 @@ describe("DudeClient", () => {
     });
 
     await expect(client.callTool("missing_tool", {})).rejects.toMatchObject({
-      name: "DudeApiError",
+      name: "SweeApiError",
       status: 404,
       message: "No such tool",
-    } satisfies Partial<DudeApiError>);
+    } satisfies Partial<SweeApiError>);
   });
 });

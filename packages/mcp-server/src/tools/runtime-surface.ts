@@ -6,8 +6,8 @@ export type LiveSurfaceClassification =
 
 export type SmokeExpectation =
   | Readonly<{ kind: "records_non_empty"; key?: "records" }>
-  | Readonly<{ kind: "brief_artifact"; title: string; minimumProvenanceCount?: number }>
-  | Readonly<{ kind: "query_completed"; workflow: string }>;
+  | Readonly<{ kind: "pulse_snapshot"; minimumSignalCount?: number }>
+  | Readonly<{ kind: "shield_audit"; minimumRecordCount?: number }>;
 
 export type SmokeCase = Readonly<{
   id: string;
@@ -69,23 +69,23 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
     releaseBlocking: true,
     representativeTool: "sg_acra_entities",
     dependentFamilies: [...DATAGOV_DATASTORE_FAMILIES],
-    notes: ["CDD registry evidence uses bounded data.gov.sg-backed datasets where applicable."],
-    healthNotes: ["Probed through ACRA entity lookup instead of removed public-data families."],
+    notes: ["Retained source adapters use bounded data.gov.sg-backed datasets where applicable."],
+    healthNotes: ["Probed through ACRA entity lookup as a representative data.gov.sg datastore read."],
     latency: {
       timeoutMs: 10000,
       typicalLatency: "1-5s",
       notes: "Cold reads depend on upstream download/cache state.",
     },
     smoke: {
-      id: "api-cdd-datastore",
-      name: "CDD datastore registry read",
+      id: "api-datagov-datastore",
+      name: "data.gov.sg datastore read",
       layer: "api",
       authRequired: false,
       releaseBlocking: true,
       tool: "sg_acra_entities",
       arguments: { entityName: "DP ARCHITECTS PTE LTD", format: "json" },
       expectation: { kind: "records_non_empty" },
-      notes: ["Exercises the core company identity source path."],
+      notes: ["Exercises a retained public-data source path."],
     },
   },
   {
@@ -99,16 +99,16 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
     releaseBlocking: true,
     representativeTool: "sg_boa_architecture_firms",
     dependentFamilies: [...DATAGOV_FILE_DOWNLOAD_FAMILIES],
-    notes: ["CDD sector registries use official file-download sources where applicable."],
+    notes: ["Retained sector registries use official file-download sources where applicable."],
     healthNotes: ["Probed through BOA architecture-firm lookup."],
     latency: {
       timeoutMs: 10000,
       typicalLatency: "1-5s",
-      notes: "Official file downloads are cached and normalized before dossier use.",
+      notes: "Official file downloads are cached and normalized before source-adapter responses.",
     },
     smoke: {
-      id: "api-cdd-file-download",
-      name: "CDD file-download registry read",
+      id: "api-file-download",
+      name: "file-download registry read",
       layer: "api",
       authRequired: false,
       releaseBlocking: true,
@@ -118,69 +118,34 @@ export const LIVE_API_SURFACE: readonly LiveSurfaceDefinition[] = [
       notes: ["Exercises a retained sector registry path."],
     },
   },
-  {
-    api: "External Diligence",
-    classification: "live_public",
-    authRequired: false,
-    envVars: ["OPENSANCTIONS_API_KEY", "OPENCORPORATES_API_TOKEN"],
-    keystoreKeys: [],
-    productionUrl: "provider-dependent",
-    probeMode: "runtime_client",
-    releaseBlocking: false,
-    representativeTool: "sg_sanctions_screen",
-    dependentFamilies: ["External Diligence"],
-    notes: ["Supplemental evidence is analyst-review only and may depend on optional provider credentials."],
-    healthNotes: ["Health check verifies runtime availability; source-specific credentials are optional."],
-    latency: {
-      timeoutMs: 10000,
-      typicalLatency: "0.5-5s",
-      notes: "Latency depends on optional providers and cache state.",
-    },
-    smoke: {
-      id: "api-external-diligence",
-      name: "External diligence runtime readiness",
-      layer: "api",
-      authRequired: false,
-      releaseBlocking: false,
-      tool: "sg_sanctions_screen",
-      arguments: { name: "DP ARCHITECTS PTE LTD", format: "json" },
-      expectation: { kind: "records_non_empty", key: "records" },
-      notes: ["Supplemental provider outputs are not official registry facts."],
-    },
-  },
 ] as const;
 
 export const LIVE_WORKFLOW_SMOKE_CASES: readonly SmokeCase[] = [
   {
-    id: "workflow-company-cdd",
-    name: "Company CDD report",
+    id: "workflow-pulse-snapshot",
+    name: "Swee Pulse Snapshot",
     layer: "workflow",
     authRequired: false,
     releaseBlocking: true,
-    tool: "sg_business_dossier",
+    tool: "swee_pulse_snapshot",
     arguments: {
-      entityName: "DP ARCHITECTS PTE LTD",
-      modules: ["acra", "boa", "gebiz"],
-      sectorHints: ["architecture", "procurement"],
-      format: "json",
+      focus: "all",
     },
-    expectation: { kind: "brief_artifact", title: "Business Dossier", minimumProvenanceCount: 1 },
-    notes: ["Represents the primary search-to-dossier CDD workflow."],
+    expectation: { kind: "pulse_snapshot" },
+    notes: ["Represents the primary city signal workflow."],
   },
   {
-    id: "workflow-cdd-query",
-    name: "CDD query workflow",
+    id: "workflow-shield-audit-review",
+    name: "Swee Shield Audit Review",
     layer: "workflow",
     authRequired: false,
     releaseBlocking: true,
-    tool: "sg_query",
+    tool: "swee_shield_audit_lookup",
     arguments: {
-      query: "Architecture firm diligence for DP Architects",
-      mode: "execute",
-      format: "json",
+      limit: 25,
     },
-    expectation: { kind: "query_completed", workflow: "architecture_firm_diligence" },
-    notes: ["Proves sg_query routes only into retained CDD workflows."],
+    expectation: { kind: "shield_audit" },
+    notes: ["Represents policy audit and replay inspection."],
   },
 ] as const;
 

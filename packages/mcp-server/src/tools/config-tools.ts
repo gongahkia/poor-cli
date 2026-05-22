@@ -17,7 +17,7 @@ import type { RegisteredToolDefinition } from "./tool-definition.js";
 export const configToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_config_get",
-    description: "Show current Dude MCP configuration including cache TTLs, rate limits, and timeouts.",
+    description: "Show current Swee SG MCP configuration including cache TTLs, rate limits, and timeouts.",
     surface: "operational",
     inputSchema: {},
     handler: async (_input: unknown): Promise<ToolResult> => {
@@ -34,7 +34,7 @@ export const configToolDefinitions: readonly RegisteredToolDefinition[] = [
 
   {
     name: "sg_config_set",
-    description: "Update Dude MCP configuration. Changes persist in $SG_APIS_STATE_DIR/config.json (default ~/.sg-apis/config.json).",
+    description: "Update Swee SG MCP configuration. Changes persist in $SG_APIS_STATE_DIR/config.json (default ~/.sg-apis/config.json).",
     surface: "operational",
     inputSchema: ConfigSetSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {

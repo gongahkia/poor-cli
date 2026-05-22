@@ -1,15 +1,15 @@
 import { readFileSync } from "node:fs";
 
-export const SERVER_NAME = "dude";
+export const SERVER_NAME = "swee-sg";
 export const SERVER_VERSION = "0.1.0";
-export const SERVER_TITLE = "Dude MCP";
+export const SERVER_TITLE = "Swee SG MCP";
 export const SERVER_DESCRIPTION =
-  "Dude MCP is Dude's backend runtime for bounded Singapore public-data and due-diligence workflows across official datasets, registries, maps, and realtime signals.";
-export const SERVER_WEBSITE_URL = "https://github.com/gongahkia/dude";
+  "Swee SG MCP is the policy-governed runtime for Singapore public-data source adapters, Swee Pulse city signals, and Swee Shield audit enforcement.";
+export const SERVER_WEBSITE_URL = "https://github.com/gongahkia/swee-sg";
 export const SERVER_INSTRUCTIONS = [
-  "Prefer sg_query for bounded natural-language workflows, then drop to direct sg_* tools when you have exact identifiers.",
+  "Prefer swee_pulse_snapshot for app-level city signals, then drop to direct sg_* source adapters when you have exact structured inputs.",
   "Use sg://recipes, sg://playbooks, and sg://workflows for discovery before inventing new multi-step flows.",
-  "Dude MCP is read-mostly. Ops tools mutate only local cache, config, or keystore state.",
+  "Swee SG is read-mostly. Ops tools mutate only local cache, config, keystore, or Shield audit state.",
 ].join(" ");
 
 let cachedIconDataUri: string | undefined;

@@ -9,23 +9,23 @@ const serverEntry = resolve(root, "packages/mcp-server/dist/index.js");
 const EXPECTATIONS = [
   {
     profile: "public",
-    includes: ["sg_query", "sg_business_dossier", "sg_acra_entities"],
-    excludes: ["sg_key_set", "sg_cache_clear"],
+    includes: ["swee_pulse_snapshot", "swee_pulse_explain", "sg_acra_entities"],
+    excludes: ["swee_shield_audit_lookup", "sg_key_set", "sg_cache_clear"],
   },
   {
     profile: "cdd_report",
-    includes: ["sg_query", "sg_business_dossier", "sg_sanctions_screen"],
-    excludes: ["sg_property_brief", "sg_environment_brief", "sg_cache_clear"],
+    includes: ["swee_pulse_snapshot", "swee_pulse_explain", "sg_acra_entities"],
+    excludes: ["sg_query", "sg_business_dossier", "sg_cache_clear"],
   },
   {
     profile: "diligence",
-    includes: ["sg_query", "sg_business_dossier", "sg_sanctions_screen"],
-    excludes: ["sg_property_brief", "sg_environment_brief", "sg_cache_clear"],
+    includes: ["swee_pulse_snapshot", "sg_acra_entities", "sg_gebiz_tenders"],
+    excludes: ["sg_query", "sg_business_dossier", "sg_cache_clear"],
   },
   {
     profile: "ops",
-    includes: ["sg_query", "sg_cache_stats", "sg_key_set", "sg_config_set"],
-    excludes: ["sg_business_dossier", "sg_property_brief"],
+    includes: ["swee_shield_audit_lookup", "sg_cache_stats", "sg_key_set", "sg_config_set"],
+    excludes: ["swee_pulse_snapshot", "sg_query", "sg_business_dossier"],
   },
 ];
 
@@ -54,7 +54,7 @@ const listToolNamesForProfile = async (profile) => {
   });
 
   const client = new Client(
-    { name: "sg-apis-profile-smoke", version: "0.1.0" },
+    { name: "swee-sg-profile-smoke", version: "0.1.0" },
     { capabilities: {} },
   );
 

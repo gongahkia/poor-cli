@@ -11,15 +11,17 @@ import {
 } from "../debug-log-store.js";
 
 describe("debug log store helpers", () => {
-  it("enables debug storage from Dude, SG, or debug-level flags", () => {
+  it("enables debug storage from Swee, legacy Dude, SG, or debug-level flags", () => {
     expect(isDebugLogFlagEnabled({})).toBe(false);
+    expect(isDebugLogFlagEnabled({ SWEE_DEBUG_LOGS: "1" })).toBe(true);
     expect(isDebugLogFlagEnabled({ DUDE_DEBUG_LOGS: "1" })).toBe(true);
     expect(isDebugLogFlagEnabled({ SG_APIS_DEBUG_LOGS: "true" })).toBe(true);
     expect(isDebugLogFlagEnabled({ SG_APIS_LOG_LEVEL: "debug" })).toBe(true);
-    expect(isDebugLogFlagEnabled({ DUDE_DEBUG_LOGS: "0", SG_APIS_LOG_LEVEL: "info" })).toBe(false);
+    expect(isDebugLogFlagEnabled({ SWEE_DEBUG_LOGS: "0", DUDE_DEBUG_LOGS: "0", SG_APIS_LOG_LEVEL: "info" })).toBe(false);
   });
 
   it("uses the explicit debug log path when configured", () => {
+    expect(resolveDebugLogPath({ SWEE_DEBUG_LOG_PATH: "/tmp/swee-debug.ndjson" })).toBe("/tmp/swee-debug.ndjson");
     expect(resolveDebugLogPath({ DUDE_DEBUG_LOG_PATH: "/tmp/dude-debug.ndjson" })).toBe("/tmp/dude-debug.ndjson");
     expect(resolveDebugLogPath({ SG_APIS_DEBUG_LOG_PATH: "/tmp/sg-debug.ndjson" })).toBe("/tmp/sg-debug.ndjson");
   });

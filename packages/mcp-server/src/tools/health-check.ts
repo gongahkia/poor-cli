@@ -58,7 +58,7 @@ const withHealthTimeout = async <T>(
 export const probeDatagovDatastoreHealth = async (): Promise<HealthProbeResult> => {
   const result = await probeAcraLookupReadiness();
   if (result.recordCount === 0) {
-    throw new Error("CDD datastore probe returned no ACRA rows.");
+    throw new Error("data.gov.sg datastore probe returned no ACRA rows.");
   }
   return OK_HEALTH_RESPONSE;
 };
@@ -71,14 +71,9 @@ export const probeDatagovFileDownloadHealth = async (): Promise<HealthProbeResul
   return OK_HEALTH_RESPONSE;
 };
 
-export const probeExternalDiligenceHealth = async (): Promise<HealthProbeResult> => {
-  return OK_HEALTH_RESPONSE;
-};
-
 const PROBES = {
   "data.gov.sg datastore": probeDatagovDatastoreHealth,
   "data.gov.sg file downloads": probeDatagovFileDownloadHealth,
-  "External Diligence": probeExternalDiligenceHealth,
 } as const;
 
 export const getHealthCheckTargets = (): readonly HealthCheckTarget[] => {

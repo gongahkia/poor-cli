@@ -33,7 +33,6 @@ type Bucket = {
 };
 
 const KiB = 1024;
-const MiB = 1024 * KiB;
 
 export const DEFAULT_TRAFFIC_POLICY: TrafficPolicy = {
   key: "public_default",
@@ -43,60 +42,20 @@ export const DEFAULT_TRAFFIC_POLICY: TrafficPolicy = {
   maxBodyBytes: 64 * KiB,
 };
 
-const SEARCH_SUGGESTIONS_POLICY: TrafficPolicy = {
-  key: "search_suggestions",
-  label: "search suggestions",
+const PULSE_POLICY: TrafficPolicy = {
+  key: "pulse",
+  label: "Pulse signal",
   windowMs: 60_000,
-  maxRequests: 120,
-  maxBodyBytes: 0,
-};
-
-const WEB_PRESENCE_POLICY: TrafficPolicy = {
-  key: "web_presence",
-  label: "web discovery",
-  windowMs: 5 * 60_000,
-  maxRequests: 30,
-  maxBodyBytes: 0,
-};
-
-const PEOPLE_DISCOVERY_POLICY: TrafficPolicy = {
-  key: "people_discovery",
-  label: "people discovery",
-  windowMs: 5 * 60_000,
-  maxRequests: 30,
-  maxBodyBytes: 0,
-};
-
-const DOSSIER_POLICY: TrafficPolicy = {
-  key: "business_dossier",
-  label: "business dossier",
-  windowMs: 5 * 60_000,
-  maxRequests: 40,
+  maxRequests: 90,
   maxBodyBytes: 16 * KiB,
 };
 
-const MEMO_POLICY: TrafficPolicy = {
-  key: "memo",
-  label: "memo generation",
-  windowMs: 10 * 60_000,
-  maxRequests: 20,
-  maxBodyBytes: 128 * KiB,
-};
-
-const SUMMARY_POLICY: TrafficPolicy = {
-  key: "summary",
-  label: "summary generation",
-  windowMs: 10 * 60_000,
-  maxRequests: 20,
-  maxBodyBytes: 128 * KiB,
-};
-
-const BULK_POLICY: TrafficPolicy = {
-  key: "bulk",
-  label: "bulk checks",
-  windowMs: 10 * 60_000,
-  maxRequests: 8,
-  maxBodyBytes: MiB,
+const SHIELD_POLICY: TrafficPolicy = {
+  key: "shield",
+  label: "Shield audit",
+  windowMs: 60_000,
+  maxRequests: 120,
+  maxBodyBytes: 16 * KiB,
 };
 
 const buckets = new Map<string, Bucket>();
@@ -130,29 +89,19 @@ export const getClientId = (req: IncomingMessage): string => {
   return req.socket.remoteAddress ?? "unknown";
 };
 
-export const getTrafficPolicy = (method: string, pathname: string): TrafficPolicy => {
-  if (method === "GET" && pathname === "/api/v1/dude/search-suggestions") {
-    return SEARCH_SUGGESTIONS_POLICY;
-  }
-  if (method === "GET" && pathname === "/api/v1/dude/web-presence") {
-    return WEB_PRESENCE_POLICY;
-  }
-  if (method === "GET" && pathname === "/api/v1/dude/people-discovery") {
-    return PEOPLE_DISCOVERY_POLICY;
-  }
-
+export const getTrafficPolicy = (_method: string, pathname: string): TrafficPolicy => {
   const normalizedPath = pathname.toLowerCase().replace(/-/g, "_");
-  if (method === "POST" && normalizedPath.includes("business_dossier")) {
-    return DOSSIER_POLICY;
+  if (
+    normalizedPath.startsWith("/api/v1/pulse/")
+    || normalizedPath.includes("swee_pulse_")
+  ) {
+    return PULSE_POLICY;
   }
-  if (normalizedPath.includes("memo")) {
-    return MEMO_POLICY;
-  }
-  if (normalizedPath.includes("summary")) {
-    return SUMMARY_POLICY;
-  }
-  if (normalizedPath.includes("bulk")) {
-    return BULK_POLICY;
+  if (
+    normalizedPath.startsWith("/api/v1/shield/")
+    || normalizedPath.includes("swee_shield_")
+  ) {
+    return SHIELD_POLICY;
   }
 
   return DEFAULT_TRAFFIC_POLICY;

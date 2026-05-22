@@ -24,11 +24,11 @@ const DEFAULT_MAX_ENTRIES = 200;
 const MAX_RESPONSE_ENTRIES = 500;
 const DEBUG_LOG_LIMITS = [
   "Debug logs are redacted by key name before storage, but may still contain operational metadata.",
-  "The endpoint is enabled only when DUDE_DEBUG_LOGS=1, SG_APIS_DEBUG_LOGS=1, or SG_APIS_LOG_LEVEL=debug.",
+  "The endpoint is enabled only when SWEE_DEBUG_LOGS=1, SG_APIS_DEBUG_LOGS=1, SG_APIS_LOG_LEVEL=debug, or legacy DUDE_DEBUG_LOGS=1.",
   "In production, /api/v1/debug/logs requires explicit workspace auth and an admin/debug-capable session.",
 ] as const;
 const DEBUG_LOG_DISABLED_MESSAGE =
-  "Debug log storage is disabled. Set DUDE_DEBUG_LOGS=1, SG_APIS_DEBUG_LOGS=1, or SG_APIS_LOG_LEVEL=debug to collect local redacted gateway logs.";
+  "Debug log storage is disabled. Set SWEE_DEBUG_LOGS=1, SG_APIS_DEBUG_LOGS=1, or SG_APIS_LOG_LEVEL=debug to collect local redacted gateway logs.";
 const DEBUG_LOG_ENABLED_MESSAGE =
   "Debug log storage is enabled. Entries are redacted by key name, but may still contain operational metadata.";
 
@@ -40,14 +40,18 @@ const isTruthyEnv = (value: string | undefined): boolean =>
 export const isDebugLogFlagEnabled = (
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): boolean =>
-  isTruthyEnv(env["DUDE_DEBUG_LOGS"])
+  isTruthyEnv(env["SWEE_DEBUG_LOGS"])
+  || isTruthyEnv(env["DUDE_DEBUG_LOGS"])
   || isTruthyEnv(env["SG_APIS_DEBUG_LOGS"])
   || env["SG_APIS_LOG_LEVEL"]?.trim().toLowerCase() === "debug";
 
 export const resolveDebugLogPath = (
   env: Readonly<Record<string, string | undefined>> = process.env,
 ): string => {
-  const configured = env["DUDE_DEBUG_LOG_PATH"]?.trim() || env["SG_APIS_DEBUG_LOG_PATH"]?.trim();
+  const configured =
+    env["SWEE_DEBUG_LOG_PATH"]?.trim()
+    || env["DUDE_DEBUG_LOG_PATH"]?.trim()
+    || env["SG_APIS_DEBUG_LOG_PATH"]?.trim();
   return configured !== undefined && configured !== ""
     ? resolve(configured)
     : resolveStatePath(DEFAULT_LOG_PATH);
