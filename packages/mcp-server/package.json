@@ -1,19 +1,16 @@
 {
-  "name": "@dude/mcp",
+  "name": "@swee-sg/shield",
   "version": "0.1.0",
-  "mcpName": "io.github.gongahkia/dude-mcp",
-  "description": "Dude MCP backend for Singapore company/UEN CDD reports with cited registry evidence, supplemental analyst-review signals, report exports, and runtime ops tools.",
+  "mcpName": "io.github.gongahkia/swee-sg",
+  "description": "Swee SG MCP and REST gateway for policy-governed Singapore public-data tools, Shield audit trails, and Pulse city signals.",
   "keywords": [
-    "CDD Query",
-    "Business Dossier",
-    "ACRA",
-    "BCA",
-    "BOA",
-    "CEA",
-    "GeBIZ",
-    "HSA",
-    "HLB",
-    "External Diligence",
+    "MCP Shield",
+    "Singapore public data",
+    "LTA",
+    "NEA",
+    "OneMap",
+    "Swee Pulse",
+    "City operations",
     "Operations"
   ],
   "license": "MIT",
@@ -27,6 +24,8 @@
     "!dist/**/mock-server/**"
   ],
   "bin": {
+    "swee-sg": "dist/index.js",
+    "swee-shield": "dist/index.js",
     "dude-mcp": "dist/index.js",
     "sg-apis-mcp": "dist/index.js",
     "sg-data": "dist/cli.js"
@@ -41,7 +40,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@dude/shared": "0.1.0",
+    "@swee-sg/shared": "0.1.0",
     "@modelcontextprotocol/ext-apps": "^1.7.2",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "better-sqlite3": "^11.0.0",

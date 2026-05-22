@@ -1,4 +1,4 @@
-import { ApiError } from "@dude/shared";
+import { ApiError } from "@swee-sg/shared";
 import type {
   OneMapSearchResponse,
   GeocodeResult,
@@ -7,7 +7,7 @@ import type {
   RouteResult,
   PopulationData,
   PopulationDataType,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 import { authenticatedFetch } from "./auth.js";
 

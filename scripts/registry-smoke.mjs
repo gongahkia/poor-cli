@@ -47,8 +47,8 @@ const waitForRegistryVersion = async (packageName, version) => {
 };
 
 try {
-  await waitForRegistryVersion("@dude/shared", sharedVersion);
-  await waitForRegistryVersion("@dude/mcp", serverVersion);
+  await waitForRegistryVersion("@swee-sg/shared", sharedVersion);
+  await waitForRegistryVersion("@swee-sg/shield", serverVersion);
 
   writeFileSync(
     join(tempDir, "package.json"),
@@ -67,8 +67,8 @@ try {
     [
       "install",
       "--no-package-lock",
-      `@dude/shared@${sharedVersion}`,
-      `@dude/mcp@${serverVersion}`,
+      `@swee-sg/shared@${sharedVersion}`,
+      `@swee-sg/shield@${serverVersion}`,
     ],
     tempDir,
   );

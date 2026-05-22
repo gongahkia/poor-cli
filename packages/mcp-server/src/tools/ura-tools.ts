@@ -1,6 +1,6 @@
-import { validateInput, UraPropertyTransactionsSchema, UraPlanningAreaBaseSchema, UraPlanningAreaSchema, UraDevChargesSchema, formatResponse, resolveOutputFormat } from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
-import type { UraPlanningResponse } from "@dude/shared";
+import { validateInput, UraPropertyTransactionsSchema, UraPlanningAreaBaseSchema, UraPlanningAreaSchema, UraDevChargesSchema, formatResponse, resolveOutputFormat } from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
+import type { UraPlanningResponse } from "@swee-sg/shared";
 import { geocode } from "../apis/onemap/client.js";
 import { getPropertyTransactions, uraFetch } from "../apis/ura/client.js";
 import { normalizePlanningData, normalizeTransactions } from "../apis/ura/normalizer.js";

@@ -1,4 +1,4 @@
-import type { SourceCoverageItem } from "@dude/shared";
+import type { SourceCoverageItem } from "@swee-sg/shared";
 import { getPeopleDiscovery, getWebPresence, type PeopleDiscovery, type WebPresence } from "../apis/tinyfish/client.js";
 import type { BusinessDossierModule, BusinessSectorHint } from "../diligence/entity-resolution.js";
 import { withDossierAnalystFollowUps } from "../diligence/business-dossier.js";

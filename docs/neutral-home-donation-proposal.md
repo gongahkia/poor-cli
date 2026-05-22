@@ -68,7 +68,7 @@ The existing maintainer governance document is a starting point, but it is not y
 Potentially affected assets:
 
 - product/project marks: `Dude`, `Dude MCP`, logo, domain names;
-- npm packages: `@dude/mcp`, `@dude/shared`, `@dude/sdk`, executable aliases;
+- npm packages: `@swee-sg/shield`, `@swee-sg/shared`, `@swee-sg/sdk`, executable aliases;
 - GitHub repository ownership and issue/PR history;
 - MCP server name and registry/listing metadata;
 - documentation URLs and hosted product marks.

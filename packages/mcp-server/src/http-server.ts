@@ -8,7 +8,7 @@ import {
 } from "node:http";
 import type { AddressInfo } from "node:net";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import type { Logger, LogLevel } from "@dude/shared";
+import type { Logger, LogLevel } from "@swee-sg/shared";
 import { HttpAuthController, type AuthorizedSession } from "./http-auth.js";
 import { createServerInstance, type ServerInstance } from "./server-factory.js";
 

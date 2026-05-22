@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ToolResult } from "@dude/shared";
+import type { ToolResult } from "@swee-sg/shared";
 
 vi.mock("../../apis/nlb/client.js", () => ({ getNlbLibraries: vi.fn() }));
 vi.mock("../../apis/hawker/closures-client.js", () => ({ getHawkerClosures: vi.fn() }));

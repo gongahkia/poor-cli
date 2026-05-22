@@ -1,5 +1,5 @@
-import { formatResponse, Keystore } from "@dude/shared";
-import type { CredentialSource, ToolResult, HealthStatus } from "@dude/shared";
+import { formatResponse, Keystore } from "@swee-sg/shared";
+import type { CredentialSource, ToolResult, HealthStatus } from "@swee-sg/shared";
 import { probeAcraLookupReadiness } from "../apis/acra/client.js";
 import { getBoaArchitectureFirms } from "../apis/boa/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";

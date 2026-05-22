@@ -1,4 +1,4 @@
-import type { ToolErrorPayload } from "@dude/shared";
+import type { ToolErrorPayload } from "@swee-sg/shared";
 
 export type ToolInvocationStatus = "success" | "error";
 

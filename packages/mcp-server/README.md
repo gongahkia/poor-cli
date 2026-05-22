@@ -7,7 +7,7 @@ Dude MCP is the backend/runtime for Dude's Singapore counterparty due diligence 
 After the package is public on npm:
 
 ```bash
-npx -y @dude/mcp
+npx -y @swee-sg/shield
 ```
 
 Local development from the repo:

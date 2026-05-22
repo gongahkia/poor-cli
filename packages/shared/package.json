@@ -1,7 +1,7 @@
 {
-  "name": "@dude/shared",
+  "name": "@swee-sg/shared",
   "version": "0.1.0",
-  "description": "Shared runtime utilities and types for Dude MCP",
+  "description": "Shared runtime utilities and types for Swee SG",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

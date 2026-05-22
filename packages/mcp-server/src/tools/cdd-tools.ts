@@ -1,5 +1,5 @@
-import { formatResponse, validateInput } from "@dude/shared";
-import type { ToolResult } from "@dude/shared";
+import { formatResponse, validateInput } from "@swee-sg/shared";
+import type { ToolResult } from "@swee-sg/shared";
 import { z } from "zod";
 import {
   buildDossierInputFromResolutionCandidate,

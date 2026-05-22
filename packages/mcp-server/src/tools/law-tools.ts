@@ -1,5 +1,5 @@
-import { formatResponse, LawSearchSchema, resolveOutputFormat } from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+import { formatResponse, LawSearchSchema, resolveOutputFormat } from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { searchSingaporeLaw } from "../apis/law/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

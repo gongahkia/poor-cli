@@ -5,8 +5,8 @@ import {
   PaResidentNetworkCentresInputSchema,
   PaResidentNetworkCentresSchema,
   resolveOutputFormat,
-} from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+} from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { getPaCommunityOutlets, getPaResidentNetworkCentres } from "../apis/pa/client.js";
 import { toDirectoryGeoFeatures } from "../apis/civic/utils.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";

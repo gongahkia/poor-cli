@@ -4,8 +4,8 @@
 
 This repo publishes two npm packages:
 
-- `@dude/shared`
-- `@dude/mcp`
+- `@swee-sg/shared`
+- `@swee-sg/shield`
 
 It also publishes:
 
@@ -19,14 +19,14 @@ The publish workflow is tag-driven from `.github/workflows/publish.yml`. It runs
 
 Repository secrets required by `.github/workflows/publish.yml`:
 
-- `NPM_TOKEN` with publish access for `@dude/shared` and `@dude/mcp`
+- `NPM_TOKEN` with publish access for `@swee-sg/shared` and `@swee-sg/shield`
 
 1. Update `CHANGELOG.md`, including `Schema Changes`, `Breaking Changes`, or `Deprecations` when public contracts change.
 2. Bump versions in:
    - `packages/shared/package.json`
    - `packages/mcp-server/package.json`
 3. Keep the dependency edge aligned:
-   - `packages/mcp-server/package.json` should depend on the same published `@dude/shared` version.
+   - `packages/mcp-server/package.json` should depend on the same published `@swee-sg/shared` version.
 4. Keep metadata in sync:
    - `server.json.version` should match `packages/mcp-server/package.json`
    - `packages/mcp-server/package.json#mcpName` should match `server.json.name`
@@ -84,7 +84,7 @@ npm run quarterly:report
 
 ### npm Publish Readiness
 
-Before the first public npm release, review [npm-publish-readiness.md](./npm-publish-readiness.md). It records the `@dude/mcp` definition of success, local dry-run evidence, and the current external blocker.
+Before the first public npm release, review [npm-publish-readiness.md](./npm-publish-readiness.md). It records the `@swee-sg/shield` definition of success, local dry-run evidence, and the current external blocker.
 
 For package-level proof without touching the registry:
 
@@ -130,12 +130,12 @@ Before a hosted paid release or beta:
 
 The publish workflow runs in this order:
 
-1. `@dude/shared`
-2. `@dude/mcp`
+1. `@swee-sg/shared`
+2. `@swee-sg/shield`
 3. `ghcr.io/gongahkia/dude-mcp`
 4. registry smoke against the public npm registry
 
-That order matters because `@dude/mcp` installs `@dude/shared` from npm.
+That order matters because `@swee-sg/shield` installs `@swee-sg/shared` from npm.
 
 ## Tag And Push
 
@@ -154,8 +154,8 @@ The workflow runs:
 
 - `npm ci`
 - `npm run verify`
-- `npm publish` for `@dude/shared`
-- `npm publish` for `@dude/mcp`
+- `npm publish` for `@swee-sg/shared`
+- `npm publish` for `@swee-sg/shield`
 - GHCR container build and push
 - `npm run test:smoke:container` against the published GHCR image
 - `npm run test:smoke:registry`
@@ -187,13 +187,13 @@ CI also publishes KPI dashboard evidence as:
 After the workflow is green, verify:
 
 ```bash
-npm view @dude/shared version
-npm view @dude/mcp version
+npm view @swee-sg/shared version
+npm view @swee-sg/shield version
 ```
 
 You should also sanity-check:
 
-- `npx -y @dude/mcp`
+- `npx -y @swee-sg/shield`
 - `docker run --rm -i ghcr.io/gongahkia/dude-mcp:latest`
 - `SG_APIS_CONTAINER_IMAGE=ghcr.io/gongahkia/dude-mcp:latest npm run test:smoke:container`
 - one MCP client configuration using the published package

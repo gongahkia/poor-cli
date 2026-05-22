@@ -1,5 +1,5 @@
-import { formatResponse, MohFacilitiesSchema, resolveOutputFormat } from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+import { formatResponse, MohFacilitiesSchema, resolveOutputFormat } from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { getHealthcareFacilities, MOH_HEALTHCARE_FACILITIES_RESOURCE_ID } from "../apis/moh/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

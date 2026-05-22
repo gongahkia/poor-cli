@@ -1,4 +1,4 @@
-import { httpGet } from "@dude/shared";
+import { httpGet } from "@swee-sg/shared";
 import { buildCacheKey, withCache } from "../../middleware/cache-middleware.js";
 
 // Singapore Statutes Online public search endpoint.

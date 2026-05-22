@@ -1,5 +1,5 @@
-import { formatResponse, SfaEstablishmentsSchema, resolveOutputFormat } from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+import { formatResponse, SfaEstablishmentsSchema, resolveOutputFormat } from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { getSfaEstablishments } from "../apis/sfa/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

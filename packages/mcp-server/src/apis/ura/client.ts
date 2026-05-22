@@ -1,5 +1,5 @@
-import { httpGet, ApiError, Keystore, createLogger } from "@dude/shared";
-import type { UraTransactionResponse, UraRawTransaction } from "@dude/shared";
+import { httpGet, ApiError, Keystore, createLogger } from "@swee-sg/shared";
+import type { UraTransactionResponse, UraRawTransaction } from "@swee-sg/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const logger = createLogger("ura-client");

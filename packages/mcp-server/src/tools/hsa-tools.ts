@@ -6,8 +6,8 @@ import {
   HsaLicensedPharmaciesSchema,
   resolveOutputFormat,
   validateInput,
-} from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+} from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { getHsaHealthProductLicensees, getHsaLicensedPharmacies } from "../apis/hsa/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

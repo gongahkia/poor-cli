@@ -1,5 +1,5 @@
 {
-  "name": "@gongahkia/dude",
+  "name": "@gongahkia/swee-sg",
   "private": true,
   "engines": {
     "node": ">=20",
@@ -26,7 +26,7 @@
     "browser-extension:check": "node ./scripts/check-browser-extension-prototype.mjs",
     "widget:check": "node ./scripts/check-embeddable-widget.mjs",
     "spreadsheet-addins:check": "node ./scripts/check-spreadsheet-addins.mjs",
-    "sdk:pack:dryrun": "npm pack -w @dude/sdk --dry-run",
+    "sdk:pack:dryrun": "npm pack -w @swee-sg/sdk --dry-run",
     "ecosystem:snapshot": "node ./scripts/generate-ecosystem-snapshot.mjs",
     "benchmarks:snapshot": "node ./scripts/generate-benchmark-snapshot.mjs",
     "status:public": "node ./scripts/generate-public-status.mjs",

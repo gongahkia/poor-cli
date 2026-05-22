@@ -3,8 +3,8 @@ import {
   EcdaChildcareCentresSchema,
   formatResponse,
   resolveOutputFormat,
-} from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+} from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { toDirectoryGeoFeatures } from "../apis/civic/utils.js";
 import { getEcdaChildcareCentres } from "../apis/ecda/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";

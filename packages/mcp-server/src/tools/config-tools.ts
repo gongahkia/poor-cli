@@ -10,8 +10,8 @@ import {
   parseMutableConfigValue,
   resetConfigCache,
   resetRateLimiters,
-} from "@dude/shared";
-import type { ToolResult } from "@dude/shared";
+} from "@swee-sg/shared";
+import type { ToolResult } from "@swee-sg/shared";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
 export const configToolDefinitions: readonly RegisteredToolDefinition[] = [

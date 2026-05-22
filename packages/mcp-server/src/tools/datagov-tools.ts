@@ -8,8 +8,8 @@ import {
   DatagovBrowseSchema,
   formatResponse,
   resolveOutputFormat,
-} from "@dude/shared";
-import type { ToolResult } from "@dude/shared";
+} from "@swee-sg/shared";
+import type { ToolResult } from "@swee-sg/shared";
 import {
   searchDatasets,
   getDataset,

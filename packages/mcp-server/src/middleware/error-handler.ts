@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { createLogger, ApiError, ValidationError } from "@dude/shared";
-import type { ContextIds, ToolErrorPayload, ToolResult } from "@dude/shared";
+import { createLogger, ApiError, ValidationError } from "@swee-sg/shared";
+import type { ContextIds, ToolErrorPayload, ToolResult } from "@swee-sg/shared";
 import { OPS_TAXONOMY_CATALOG } from "../ops-taxonomy.js";
 import { recordToolInvocationAudit } from "./request-audit.js";
 

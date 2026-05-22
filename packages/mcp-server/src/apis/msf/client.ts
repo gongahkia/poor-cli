@@ -2,7 +2,7 @@ import type {
   MsfFamilyServiceRecord,
   MsfSocialServiceOfficeRecord,
   MsfStudentCareServiceRecord,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import { downloadDatasetGeoJson } from "../datagov/client.js";
 import {
   applyDirectoryFilters,

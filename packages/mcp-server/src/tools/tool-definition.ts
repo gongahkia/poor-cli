@@ -3,7 +3,7 @@ import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import type { ToolAnnotations } from "@modelcontextprotocol/sdk/types.js";
 import type { ZodRawShape, ZodTypeAny } from "zod";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
-import type { ToolResult } from "@dude/shared";
+import type { ToolResult } from "@swee-sg/shared";
 import { wrapHandler } from "../middleware/error-handler.js";
 
 export type ToolSurface = "canonical" | "operational" | "experimental";

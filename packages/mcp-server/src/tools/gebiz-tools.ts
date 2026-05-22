@@ -1,5 +1,5 @@
-import { formatResponse, GeBIZTendersSchema, resolveOutputFormat } from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+import { formatResponse, GeBIZTendersSchema, resolveOutputFormat } from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { getGeBIZTenders } from "../apis/gebiz/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

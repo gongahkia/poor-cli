@@ -7,7 +7,7 @@ export type {
   EvidenceGap,
   QueryOutcome,
   ToolErrorPayload,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 
 export type GatewayHealth = {
   readonly status: "ok" | "degraded" | string;

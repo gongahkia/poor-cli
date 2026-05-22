@@ -1,7 +1,7 @@
 import type {
   CeaNormalizedSalespersonRecord,
   CeaSalespersonRecord,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import { queryDatastoreExactMatches } from "../datagov/client.js";
 import { scoreBusinessNameMatch } from "../../diligence/name-matching.js";
 

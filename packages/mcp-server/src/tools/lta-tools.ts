@@ -10,8 +10,8 @@ import {
   formatResponse,
   resolveOutputFormat,
   validateInput,
-} from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+} from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import {
   getBusArrivals,
   getCarparkAvailability,

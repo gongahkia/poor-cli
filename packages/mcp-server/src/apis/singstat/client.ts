@@ -1,5 +1,5 @@
-import { httpGet } from "@dude/shared";
-import type { SingStatSearchResponse, SingStatTableResponse, Dataset, TableData, NormalizedRow, TableMetadata, TimeSeriesRow, TableOptions } from "@dude/shared";
+import { httpGet } from "@swee-sg/shared";
+import type { SingStatSearchResponse, SingStatTableResponse, Dataset, TableData, NormalizedRow, TableMetadata, TimeSeriesRow, TableOptions } from "@swee-sg/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const BASE_URL = "https://tablebuilder.singstat.gov.sg/api/table";
@@ -11,7 +11,7 @@ export const searchDatasets = async (keyword: string, limit = 20): Promise<Datas
     const url = `${BASE_URL}/resourceid?keyword=${encodeURIComponent(keyword)}&searchOption=all&${TEST_API_QUERY}`;
     const response = await httpGet<SingStatSearchResponse>(url, { apiName: "singstat" });
     if (response.StatusCode !== 200) {
-      throw new (await import("@dude/shared")).ApiError({
+      throw new (await import("@swee-sg/shared")).ApiError({
         apiName: "singstat",
         statusCode: response.StatusCode,
         message: response.Message || "SingStat search failed",
@@ -48,7 +48,7 @@ export const getTableData = async (tableId: string, options?: TableOptions): Pro
 
     const response = await httpGet<SingStatTableResponse>(url, { apiName: "singstat" });
     if (response.StatusCode !== 200) {
-      throw new (await import("@dude/shared")).ApiError({
+      throw new (await import("@swee-sg/shared")).ApiError({
         apiName: "singstat",
         statusCode: response.StatusCode,
         message: response.Message || "SingStat table fetch failed",

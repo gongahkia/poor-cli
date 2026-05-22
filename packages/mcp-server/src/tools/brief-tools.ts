@@ -7,7 +7,7 @@ import {
   formatResponse,
   resolveOutputFormat,
   validateInput,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import type {
   BriefArtifact,
   BriefFreshnessItem,
@@ -17,8 +17,8 @@ import type {
   NextCheck,
   RiskFlag,
   ToolResult,
-} from "@dude/shared";
-import { MasDataset } from "@dude/shared";
+} from "@swee-sg/shared";
+import { MasDataset } from "@swee-sg/shared";
 import { getHdbResalePrices } from "../apis/hdb/client.js";
 import {
   getBusArrivals,

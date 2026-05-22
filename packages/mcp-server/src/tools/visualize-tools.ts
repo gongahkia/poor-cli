@@ -1,5 +1,5 @@
-import { formatResponse, VisualizeInputSchema, VisualizeSchema, CrossDatasetSchema, resolveOutputFormat } from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+import { formatResponse, VisualizeInputSchema, VisualizeSchema, CrossDatasetSchema, resolveOutputFormat } from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { getTimeSeries } from "../apis/singstat/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

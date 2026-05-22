@@ -1,4 +1,4 @@
-import { ApiError, getTimeout, httpGetText } from "@dude/shared";
+import { ApiError, getTimeout, httpGetText } from "@swee-sg/shared";
 import { buildCacheKey, withCache } from "../../middleware/cache-middleware.js";
 
 export type GovFeedFamily = "nea" | "weather" | "sfa" | "mpa" | "nhb" | "ura";

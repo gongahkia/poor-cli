@@ -25,7 +25,7 @@ const GITHUB_REPOSITORIES = [
 const NPM_PACKAGES = [
   "@altronis/sgdata-mcp",
   "sg-property-mcp",
-  "@dude/mcp",
+  "@swee-sg/shield",
 ];
 
 const STACKOVERFLOW_TAG = "model-context-protocol";

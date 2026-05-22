@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify, type JWTPayload, errors as joseErrors } from "jose";
 import type { IncomingMessage } from "node:http";
-import type { Logger } from "@dude/shared";
+import type { Logger } from "@swee-sg/shared";
 import type { ToolSet } from "./tools/tool-definition.js";
 
 export type HttpAuthMode = "none" | "mixed" | "all";

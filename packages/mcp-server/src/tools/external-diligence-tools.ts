@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ToolResult } from "@dude/shared";
+import type { ToolResult } from "@swee-sg/shared";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import {
   buildAdverseMediaLiteArtifact,

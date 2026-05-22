@@ -35,7 +35,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 - `Hosted/commercial blocked` [Data Processing Agreement template](./data-processing-agreement-template.md) — draft hosted customer DPA requiring legal review.
 - `Hosted/commercial blocked` [SOC 2 Type I readiness roadmap](./soc2-type1-roadmap.md) — hosted assurance gap analysis, control backlog, cost estimate, and buyer trigger; not an attestation.
 - `Hosted/commercial blocked` [MAS outsourcing readiness pack](./mas-outsourcing-readiness.md) — BCP, incident response, subprocessors, data residency, and FI-adjacent control gaps.
-- `Unpublished` [npm publish readiness](./npm-publish-readiness.md) — `@dude/mcp` package metadata, dry-run evidence, and first-publish blocker.
+- `Unpublished` [npm publish readiness](./npm-publish-readiness.md) — `@swee-sg/shield` package metadata, dry-run evidence, and first-publish blocker.
 - `Hosted/commercial blocked` [PSG application track](./psg-application-track.md) — vendor pre-approval requirements, materials, timeline, and first-application blocker.
 - `Hosted/commercial blocked` [KPI thresholds](./kpi-thresholds.md) — dashboard policy and breach handling for future hosted operations.
 - `Works today` [Quarterly product health template](./quarterly-product-health-template.md) — recurring review format.

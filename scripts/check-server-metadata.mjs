@@ -8,7 +8,7 @@ const serverPkg = JSON.parse(readFileSync(resolve(root, "packages/mcp-server/pac
 const publishReadiness = readFileSync(resolve(root, "docs/npm-publish-readiness.md"), "utf8");
 const unpublishedReadinessMode =
   publishReadiness.includes("no public version exists yet")
-  && publishReadiness.includes("Do not represent `@dude/mcp` as published");
+  && publishReadiness.includes("Do not represent `@swee-sg/shield` as published");
 
 if (serverMetadata.$schema !== "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json") {
   throw new Error("server.json is missing the current MCP registry schema URL.");
