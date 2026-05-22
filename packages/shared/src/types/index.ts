@@ -42,6 +42,7 @@ export type ToolResult = {
 export type ShieldMode = "observe" | "enforce" | "kiasu";
 export type ShieldDecision = "allow" | "warn" | "deny";
 export type ShieldRiskLevel = "low" | "medium" | "high" | "critical";
+
 export type ShieldToolMetadata = {
   readonly toolName: string;
   readonly source: string;
@@ -51,6 +52,7 @@ export type ShieldToolMetadata = {
   readonly authRequired: boolean;
   readonly tags: readonly string[];
 };
+
 export type ShieldPolicyDecision = {
   readonly mode: ShieldMode;
   readonly decision: ShieldDecision;
@@ -58,55 +60,6 @@ export type ShieldPolicyDecision = {
   readonly riskLevel: ShieldRiskLevel;
   readonly reasonCodes: readonly string[];
   readonly message: string;
-};
-export type ShieldAuditStatus = "success" | "error" | "denied";
-export type ShieldAuditRecord = {
-  readonly auditId: string;
-  readonly traceId: string;
-  readonly requestId: string;
-  readonly toolName: string;
-  readonly decision: ShieldPolicyDecision;
-  readonly status: ShieldAuditStatus;
-  readonly startedAt: string;
-  readonly finishedAt: string;
-  readonly durationMs: number;
-  readonly inputHash: string;
-  readonly outputHash: string | null;
-  readonly error?: ToolErrorPayload;
-};
-
-export type PulseSignalCategory = "mobility" | "weather" | "source_health";
-export type PulseSignalSeverity = "info" | "watch" | "disrupted" | "critical";
-export type PulseSignal = {
-  readonly id: string;
-  readonly category: PulseSignalCategory;
-  readonly severity: PulseSignalSeverity;
-  readonly title: string;
-  readonly description: string;
-  readonly source: string;
-  readonly sourceTool: string;
-  readonly observedAt: string;
-  readonly upstreamTimestamp: string | null;
-  readonly location?: LatLng;
-  readonly area?: string;
-  readonly provenance: readonly string[];
-  readonly recommendedAction: string;
-  readonly raw?: Readonly<Record<string, unknown>>;
-};
-export type PulseSourceHealth = {
-  readonly source: string;
-  readonly status: "ready" | "gap";
-  readonly observedAt: string;
-  readonly recordCount: number;
-  readonly gap?: EvidenceGap;
-};
-export type PulseSnapshot = {
-  readonly generatedAt: string;
-  readonly focus: string | null;
-  readonly signals: readonly PulseSignal[];
-  readonly sourceHealth: readonly PulseSourceHealth[];
-  readonly gaps: readonly EvidenceGap[];
-  readonly shieldAuditId?: string;
 };
 
 export type ToolResultContent =
