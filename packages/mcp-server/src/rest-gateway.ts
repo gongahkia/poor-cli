@@ -1,1183 +1,249 @@
-#!/usr/bin/env node
-// REST gateway: exposes sg_* tools as HTTP POST endpoints
-// usage: node packages/mcp-server/dist/rest-gateway.js
-// env: PORT (default 3000), SG_APIS_TOOLSETS, SG_APIS_TOOL_PROFILE (default public profile)
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { createLogger } from "@swee-sg/shared";
-import { searchAcraEntitySuggestions } from "./apis/acra/client.js";
-import {
-  getPeopleDiscovery,
-  getWebPresence,
-  type PeopleDiscovery,
-  type WebPresence,
-  type WebSearchResult,
-} from "./apis/tinyfish/client.js";
-import { buildBulkDossierResponse } from "./dude/bulk-dossiers.js";
-import {
-  CddOrchestratorBadRequestError,
-  normalizeCddOrchestratorInput,
-  runCddOrchestrator,
-} from "./dude/cdd-orchestrator.js";
-import {
-  buildConfirmedResolution,
-  buildDossierInputFromResolutionCandidate,
-  isResolutionCandidate,
-  resolveCounterparty,
-  type CounterpartyResolutionResult,
-} from "./dude/counterparty-resolver.js";
-import { generateAnalystMemo, type AnalystMemoDossier } from "./dude/analyst-memo.js";
-import { generateInteractiveSummary } from "./dude/interactive-summary.js";
-import {
-  getGatewayMetricsSnapshot,
-  recordGatewayRequest,
-  recordUpstreamFailures,
-} from "./gateway/metrics.js";
-import { buildDisabledDebugLogSnapshot, initDebugLogStore } from "./gateway/debug-log-store.js";
-import { getGatewayHealthPayload } from "./gateway/readiness.js";
-import {
-  buildRateLimitResponse,
-  checkTrafficLimit,
-  getClientId,
-  getTrafficPolicy,
-} from "./gateway/traffic-control.js";
+import type { ToolResult } from "@swee-sg/shared";
+import { buildShieldToolMetadata } from "./shield/policy.js";
+import { invokeWithShield } from "./shield/enforcement.js";
+import { loadShieldPolicy } from "./shield/policy.js";
+import { shieldAuditStore } from "./shield/audit-store.js";
 import { ALL_TOOL_DEFINITIONS } from "./tools/tool-set.js";
-import { handleBusinessDossier } from "./tools/brief-tools.js";
 import { isToolEnabled } from "./tools/tool-metadata.js";
-import {
-  WorkspaceApiAccessError,
-  assertWorkspaceApiAccess,
-  parseWorkspaceApiSession,
-  resolveWorkspaceApiAuthPolicy,
-  type WorkspacePermission,
-} from "./workspace/access-control.js";
+import type { RegisteredToolDefinition } from "./tools/tool-definition.js";
+import { resolveEnabledToolsets } from "./tools/toolset-profiles.js";
+
+const logger = createLogger("rest-gateway");
 const PORT = Number(process.env["PORT"] ?? 3000);
-const DEFAULT_DEV_WEB_ORIGIN_ALLOWLIST = [
+const MAX_BODY_BYTES = 1024 * 1024;
+const DEFAULT_ALLOWED_ORIGINS = new Set([
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "http://localhost:5174",
   "http://127.0.0.1:5174",
   "http://localhost:5175",
   "http://127.0.0.1:5175",
-].join(",");
-const gatewayStartedAt = new Date();
-const debugLogStore = initDebugLogStore();
-const logger = createLogger("rest-gateway");
-import { resolveEnabledToolsets } from "./tools/toolset-profiles.js";
+]);
 
-const configuredToolsets = process.env["SG_APIS_TOOLSETS"];
-const configuredProfile = process.env["SG_APIS_TOOL_PROFILE"];
+const configuredOrigins = (process.env["SWEE_WEB_ORIGIN_ALLOWLIST"] ?? process.env["DUDE_WEB_ORIGIN_ALLOWLIST"] ?? "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0);
+const allowedOrigins = configuredOrigins.length === 0 ? DEFAULT_ALLOWED_ORIGINS : new Set(configuredOrigins);
+
 const enabledToolsets = resolveEnabledToolsets({
   transportMode: "http",
-  ...(configuredToolsets === undefined ? {} : { configuredToolsets }),
-  ...(configuredProfile === undefined ? {} : { configuredProfile }),
+  configuredToolsets: process.env["SWEE_TOOLSETS"] ?? process.env["SG_APIS_TOOLSETS"],
+  configuredProfile: process.env["SWEE_TOOL_PROFILE"] ?? process.env["SG_APIS_TOOL_PROFILE"],
 });
-const enabledTools = ALL_TOOL_DEFINITIONS.filter((t) => isToolEnabled(t, enabledToolsets));
-const toolMap = new Map(enabledTools.map((t) => [t.name, t]));
-const configuredCorsOrigins = process.env["DUDE_WEB_ORIGIN_ALLOWLIST"] ?? "";
-const defaultCorsOrigins = process.env["NODE_ENV"] === "production"
-  ? ""
-  : DEFAULT_DEV_WEB_ORIGIN_ALLOWLIST;
-const allowedCorsOrigins = new Set(
-  `${defaultCorsOrigins},${configuredCorsOrigins}`
-    .split(",")
-    .map((origin) => origin.trim())
-    .filter(Boolean),
-);
-const workspaceAuthPolicy = resolveWorkspaceApiAuthPolicy();
-
-logger.info("gateway started", {
-  toolsets: [...enabledToolsets],
-  tools: enabledTools.length,
-  total: ALL_TOOL_DEFINITIONS.length,
-  debugLogsEnabled: debugLogStore.enabled,
-  corsOrigins: [...allowedCorsOrigins],
-  workspaceAuth: workspaceAuthPolicy.details,
-  ...(debugLogStore.logPath === undefined ? {} : { debugLogPath: debugLogStore.logPath }),
-});
-
-const MAX_SEARCH_QUERY_LENGTH = 96;
-const MAX_WEB_PRESENCE_QUERY_LENGTH = 160;
-const MAX_PEOPLE_DISCOVERY_ENTITY_LENGTH = 128;
-const MAX_MEMO_IDENTIFIER_LENGTH = 128;
-const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
-const WORKSPACE_AUTH_REQUIRED = workspaceAuthPolicy.authRequired;
-const DEBUG_LOGS_PRODUCTION_DISABLED_MESSAGE =
-  "Debug log access is disabled in production unless DUDE_WORKSPACE_AUTH_REQUIRED=true and the request has admin/debug permissions.";
-
-class RequestBodyTooLargeError extends Error {
-  readonly statusCode = 413;
-
-  constructor(readonly maxBytes: number) {
-    super(`Request body exceeds ${maxBytes} bytes.`);
-    this.name = "RequestBodyTooLargeError";
-  }
+const enabledTools = ALL_TOOL_DEFINITIONS.filter((tool) => isToolEnabled(tool, enabledToolsets));
+const toolMap = new Map<string, RegisteredToolDefinition>();
+for (const tool of enabledTools) {
+  toolMap.set(tool.name, tool);
 }
 
-class BadRequestError extends Error {
-  readonly statusCode = 400;
+const sendJson = (res: ServerResponse, status: number, payload: unknown): void => {
+  res.writeHead(status, { "Content-Type": "application/json" });
+  res.end(JSON.stringify(payload));
+};
 
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-    this.name = "BadRequestError";
+const readBody = async (req: IncomingMessage): Promise<string> => {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.byteLength;
+    if (size > MAX_BODY_BYTES) {
+      throw new Error(`Request body must be ${MAX_BODY_BYTES} bytes or smaller.`);
+    }
+    chunks.push(buffer);
   }
-}
-
-const requireWorkspaceAccess = (
-  req: IncomingMessage,
-  permission: WorkspacePermission,
-): ReturnType<typeof parseWorkspaceApiSession> => {
-  const session = parseWorkspaceApiSession(req.headers, { authRequired: WORKSPACE_AUTH_REQUIRED });
-  assertWorkspaceApiAccess(session, permission);
-  return session;
-};
-
-const sendWorkspaceAccessError = (res: ServerResponse, error: WorkspaceApiAccessError): void => {
-  sendJson(res, error.statusCode, {
-    error: {
-      code: error.code,
-      message: error.message,
-    },
-  });
-};
-
-const readBody = (req: IncomingMessage, maxBytes: number): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let totalBytes = 0;
-    let rejected = false;
-    req.on("data", (c: Buffer) => {
-      if (rejected) {
-        return;
-      }
-      totalBytes += c.byteLength;
-      if (totalBytes > maxBytes) {
-        rejected = true;
-        reject(new RequestBodyTooLargeError(maxBytes));
-        req.resume();
-        return;
-      }
-      chunks.push(c);
-    });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString()));
-    req.on("error", reject);
-  });
-
-const sendJson = (res: ServerResponse, status: number, body: unknown): void => {
-  res.writeHead(status);
-  res.end(JSON.stringify(body));
-};
-
-const getQueryValue = (url: URL, key: string): string => url.searchParams.get(key)?.trim() ?? "";
-
-const buildLimitMessage = (
-  name: string,
-  limit: number,
-): { readonly error: { readonly code: string; readonly message: string } } => ({
-  error: {
-    code: "INPUT_TOO_LARGE",
-    message: `${name} must be ${limit} characters or fewer.`,
-  },
-});
-
-const summarizeQueryInput = (value: string): Record<string, unknown> => ({
-  queryLength: value.length,
-  queryLooksLikeUen: /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i.test(value),
-});
-
-const summarizeBusinessInput = (input: unknown): Record<string, unknown> => {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return {};
-  }
-  const record = input as Record<string, unknown>;
-  const modules = Array.isArray(record["modules"])
-    ? record["modules"].filter((module): module is string => typeof module === "string")
-    : [];
-  const entityName = typeof record["entityName"] === "string" ? record["entityName"].trim() : "";
-  return {
-    hasUen: typeof record["uen"] === "string" && record["uen"].trim() !== "",
-    ...(typeof record["uen"] === "string" ? { uen: record["uen"].trim().toUpperCase() } : {}),
-    ...(entityName === "" ? {} : { entityNameLength: entityName.length }),
-    ...(modules.length === 0 ? {} : { modules }),
-  };
-};
-
-const getStringField = (record: Record<string, unknown>, field: string): string | undefined => {
-  const value = record[field];
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed === "" ? undefined : trimmed;
-};
-
-const getStringArrayField = (record: Record<string, unknown>, field: string): readonly string[] | undefined => {
-  const value = record[field];
-  if (!Array.isArray(value)) {
-    return undefined;
-  }
-  const strings = value.filter((item): item is string => typeof item === "string" && item.trim() !== "");
-  return strings.length === 0 ? undefined : strings;
-};
-
-const buildConfirmedDossierInput = (
-  body: Record<string, unknown>,
-): { readonly input: Record<string, unknown>; readonly resolution: CounterpartyResolutionResult } | null => {
-  const confirmedCandidate = body["confirmedCandidate"];
-  if (!isResolutionCandidate(confirmedCandidate)) {
-    return null;
-  }
-  const originalInput = getStringField(body, "identifier")
-    ?? getStringField(body, "entityName")
-    ?? confirmedCandidate.label;
-  const modules = getStringArrayField(body, "modules");
-  const sectorHints = getStringArrayField(body, "sectorHints");
-  const explicitSectorHints = getStringArrayField(body, "explicitSectorHints");
-  const webSectorHints = getStringArrayField(body, "webSectorHints");
-  return {
-    input: {
-      ...buildDossierInputFromResolutionCandidate(confirmedCandidate),
-      ...(modules === undefined ? {} : { modules }),
-      ...(sectorHints === undefined ? {} : { sectorHints }),
-      ...(explicitSectorHints === undefined ? {} : { explicitSectorHints }),
-      ...(webSectorHints === undefined ? {} : { webSectorHints }),
-      ...(body["analystRerun"] === true ? { analystRerun: true } : {}),
-      includeExternalDiligence: true,
-    },
-    resolution: buildConfirmedResolution(originalInput, confirmedCandidate),
-  };
-};
-
-const shouldResolveDossierInput = (
-  body: Record<string, unknown>,
-  dossierInput: Record<string, unknown>,
-): string | null => {
-  if (typeof dossierInput["uen"] === "string" && UEN_PATTERN.test(dossierInput["uen"])) {
-    return null;
-  }
-  return getStringField(body, "identifier")
-    ?? getStringField(dossierInput, "entityName")
-    ?? null;
-};
-
-const summarizeMemoInput = (input: unknown): Record<string, unknown> => {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return {};
-  }
-  const record = input as Record<string, unknown>;
-  const identifier = typeof record["identifier"] === "string" ? record["identifier"].trim() : "";
-  const dossier = record["dossier"];
-  const webPresence = record["webPresence"];
-  const peopleDiscovery = record["peopleDiscovery"];
-  return {
-    hasDossier: dossier !== null && typeof dossier === "object" && !Array.isArray(dossier),
-    ...(identifier === "" ? {} : {
-      identifierLength: identifier.length,
-      identifierLooksLikeUen: UEN_PATTERN.test(identifier),
-    }),
-    hasPeopleDiscovery: peopleDiscovery !== null
-      && typeof peopleDiscovery === "object"
-      && !Array.isArray(peopleDiscovery),
-    hasWebPresenceLimits: webPresence !== null
-      && typeof webPresence === "object"
-      && !Array.isArray(webPresence)
-      && Array.isArray((webPresence as Record<string, unknown>)["limits"]),
-    hasWebPresenceResults: webPresence !== null
-      && typeof webPresence === "object"
-      && !Array.isArray(webPresence)
-      && Array.isArray((webPresence as Record<string, unknown>)["results"]),
-  };
-};
-
-const summarizeBulkInput = (input: unknown): Record<string, unknown> => {
-  if (input === null || typeof input !== "object" || Array.isArray(input)) {
-    return {};
-  }
-  const record = input as Record<string, unknown>;
-  const items = record["items"];
-  return {
-    requestedCount: Array.isArray(items) ? items.length : 0,
-  };
-};
-
-const summarizeBusinessDossier = (record: unknown): {
-  readonly matchedModules: readonly string[];
-  readonly unmatchedModules: readonly string[];
-  readonly gapCodes: readonly string[];
-  readonly upstreamFailures: readonly string[];
-} => {
-  if (record === null || typeof record !== "object" || Array.isArray(record)) {
-    return {
-      matchedModules: [],
-      unmatchedModules: [],
-      gapCodes: [],
-      upstreamFailures: [],
-    };
-  }
-  const dossier = record as {
-    readonly gaps?: readonly { readonly code?: string }[];
-    readonly records?: {
-      readonly resolution?: {
-        readonly matchedModules?: readonly string[];
-        readonly unmatchedModules?: readonly string[];
-      };
-    };
-  };
-  const gaps = dossier.gaps ?? [];
-  const gapCodes = gaps
-    .map((gap) => gap.code)
-    .filter((code): code is string => typeof code === "string");
-  return {
-    matchedModules: dossier.records?.resolution?.matchedModules ?? [],
-    unmatchedModules: dossier.records?.resolution?.unmatchedModules ?? [],
-    gapCodes,
-    upstreamFailures: gapCodes.filter((code) => code.includes("UNAVAILABLE")),
-  };
+  return Buffer.concat(chunks).toString("utf8");
 };
 
 const getOrigin = (req: IncomingMessage): string | undefined => {
   const origin = req.headers.origin;
-  return typeof origin === "string" ? origin : undefined;
+  return typeof origin === "string" && origin !== "" ? origin : undefined;
 };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value !== null && typeof value === "object" && !Array.isArray(value);
-
-const isDossier = (value: unknown): value is AnalystMemoDossier =>
-  isRecord(value)
-  && typeof value["title"] === "string"
-  && Array.isArray(value["summary"])
-  && Array.isArray(value["evidence"])
-  && isRecord(value["records"])
-  && Array.isArray(value["gaps"])
-  && Array.isArray(value["provenance"])
-  && Array.isArray(value["freshness"])
-  && Array.isArray(value["limits"]);
-
-const buildBusinessDossierInputFromIdentifier = (
-  identifier: string,
-): ({ readonly uen: string } | { readonly entityName: string }) & { readonly includeExternalDiligence: true } =>
-  UEN_PATTERN.test(identifier)
-    ? { includeExternalDiligence: true, uen: identifier.toUpperCase() }
-    : { entityName: identifier, includeExternalDiligence: true };
-
-const resolveMemoDossier = async (input: Record<string, unknown>): Promise<AnalystMemoDossier> => {
-  if (isDossier(input["dossier"])) {
-    return input["dossier"];
-  }
-
-  const identifier = typeof input["identifier"] === "string" ? input["identifier"].trim() : "";
-  if (identifier === "") {
-    throw new BadRequestError("MEMO_DOSSIER_REQUIRED", "Provide a dossier envelope or an identifier to resolve one.");
-  }
-  if (identifier.length > MAX_MEMO_IDENTIFIER_LENGTH) {
-    throw new BadRequestError("INPUT_TOO_LARGE", `Memo identifier must be ${MAX_MEMO_IDENTIFIER_LENGTH} characters or fewer.`);
-  }
-
-  const result = await handleBusinessDossier(buildBusinessDossierInputFromIdentifier(identifier));
-  const record = result.structuredContent?.["record"];
-  if (!isDossier(record)) {
-    throw new BadRequestError("MEMO_DOSSIER_RESOLUTION_FAILED", "Unable to resolve a business dossier for analyst memo generation.");
-  }
-  return record;
-};
-
-const sanitizeString = (value: unknown): string | null => {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed === "" ? null : trimmed;
-};
-
-const sanitizeStringArray = (value: unknown): readonly string[] =>
-  Array.isArray(value)
-    ? value.map(sanitizeString).filter((item): item is string => item !== null)
-    : [];
-
-const sanitizeSearchResultsForMemo = (value: unknown): readonly WebSearchResult[] => {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item, index): WebSearchResult[] => {
-    if (!isRecord(item)) return [];
-    const url = sanitizeString(item["url"]);
-    if (url === null) return [];
-    const title = sanitizeString(item["title"]) ?? url;
-    return [{
-      position: typeof item["position"] === "number" && Number.isFinite(item["position"])
-        ? item["position"]
-        : index + 1,
-      siteName: sanitizeString(item["siteName"]),
-      snippet: sanitizeString(item["snippet"]) ?? "",
-      title,
-      url,
-    }];
-  });
-};
-
-const sanitizeWebPresenceForMemo = (
-  value: unknown,
-): WebPresence | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-  return {
-    configured: value["configured"] === true,
-    limits: sanitizeStringArray(value["limits"]),
-    possibleOfficialWebsite: sanitizeString(value["possibleOfficialWebsite"]),
-    query: sanitizeString(value["query"]) ?? "",
-    results: sanitizeSearchResultsForMemo(value["results"]),
-  };
-};
-
-const sanitizePeopleDiscoveryForMemo = (
-  value: unknown,
-): PeopleDiscovery | undefined => {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-  const entityName = sanitizeString(value["entityName"]) ?? "";
-  return {
-    configured: value["configured"] === true,
-    entityName,
-    limits: sanitizeStringArray(value["limits"]),
-    query: sanitizeString(value["query"]) ?? entityName,
-    results: sanitizeSearchResultsForMemo(value["results"]),
-    suggestedActions: sanitizeStringArray(value["suggestedActions"]),
-    uen: sanitizeString(value["uen"]),
-  };
-};
-
-const applyCorsHeaders = (req: IncomingMessage, res: ServerResponse): boolean => {
+const applyCors = (req: IncomingMessage, res: ServerResponse): boolean => {
   const origin = getOrigin(req);
-  if (!origin || !allowedCorsOrigins.has(origin)) {
-    return false;
-  }
-
-  const requestedHeaders = req.headers["access-control-request-headers"];
+  if (origin === undefined) return true;
+  if (!allowedOrigins.has(origin)) return false;
   res.setHeader("Access-Control-Allow-Origin", origin);
   res.setHeader("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    typeof requestedHeaders === "string" && requestedHeaders.trim() !== ""
-      ? requestedHeaders
-      : "Content-Type",
-  );
+  res.setHeader("Access-Control-Allow-Headers", req.headers["access-control-request-headers"] ?? "Content-Type");
   res.setHeader("Vary", "Origin");
   return true;
 };
 
-const server = createServer(async (req, res) => {
-  const requestStartedAt = Date.now();
-  const requestId = randomUUID();
-  const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
-  const method = req.method ?? "UNKNOWN";
-  const route = url.pathname;
-  const requestLogger = logger.child({ requestId, method, route });
-  let safeInputSummary: Record<string, unknown> = {};
-  const isApiRoute = url.pathname.startsWith("/api/v1/");
-  const corsAllowed = isApiRoute ? applyCorsHeaders(req, res) : false;
+const parseJsonBody = async (req: IncomingMessage): Promise<Readonly<Record<string, unknown>>> => {
+  const body = await readBody(req);
+  if (body.trim() === "") return {};
+  const parsed = JSON.parse(body) as unknown;
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Request body must be a JSON object.");
+  }
+  return parsed as Readonly<Record<string, unknown>>;
+};
 
-  res.on("finish", () => {
-    const durationMs = Date.now() - requestStartedAt;
-    recordGatewayRequest({
-      method,
-      route,
-      status: res.statusCode,
-      durationMs,
-    });
-    requestLogger.info("request finished", {
-      status: res.statusCode,
-      durationMs,
-      ...(Object.keys(safeInputSummary).length === 0 ? {} : { input: safeInputSummary }),
-    });
+const toolEnvelope = (result: ToolResult): Readonly<Record<string, unknown>> => ({
+  content: result.content,
+  ...(result.structuredContent === undefined ? {} : { data: result.structuredContent }),
+  ...(result._meta === undefined ? {} : { _meta: result._meta }),
+});
+
+const callTool = async (
+  toolName: string,
+  input: Readonly<Record<string, unknown>>,
+  requestId: string,
+): Promise<ToolResult> => {
+  const tool = toolMap.get(toolName) ?? toolMap.get(`sg_${toolName}`) ?? toolMap.get(`swee_${toolName}`);
+  if (tool === undefined) {
+    return {
+      isError: true,
+      content: [{ type: "text", text: `Tool not found or not enabled: ${toolName}` }],
+      structuredContent: {
+        error: {
+          source: "rest-gateway",
+          tool: toolName,
+          code: "TOOL_NOT_FOUND",
+          retryable: false,
+          message: `Tool not found or not enabled: ${toolName}`,
+        },
+      },
+    };
+  }
+  return invokeWithShield({
+    toolName: tool.name,
+    input,
+    requestId,
+    metadata: buildShieldToolMetadata(tool),
+    handler: tool.handler,
   });
+};
 
-  if (req.method === "OPTIONS" && isApiRoute) {
-    if (!corsAllowed && getOrigin(req)) {
-      res.writeHead(403);
-      res.end();
-      return;
-    }
+const getPulseInput = (url: URL): Readonly<Record<string, unknown>> => ({
+  ...(url.searchParams.get("focus") === null ? {} : { focus: url.searchParams.get("focus") ?? undefined }),
+  ...(url.searchParams.get("area") === null ? {} : { area: url.searchParams.get("area") ?? undefined }),
+  ...(url.searchParams.get("region") === null ? {} : { region: url.searchParams.get("region") ?? undefined }),
+  ...(url.searchParams.get("stationId") === null ? {} : { stationId: url.searchParams.get("stationId") ?? undefined }),
+});
 
+const server = createServer(async (req, res) => {
+  const requestId = randomUUID();
+  const started = Date.now();
+  const url = new URL(req.url ?? "/", `http://localhost:${PORT}`);
+
+  if (!applyCors(req, res)) {
+    sendJson(res, 403, { error: { code: "CORS_FORBIDDEN", message: "Origin is not allowed." } });
+    return;
+  }
+  if (req.method === "OPTIONS") {
     res.writeHead(204);
     res.end();
     return;
   }
 
-  res.setHeader("Content-Type", "application/json");
-  requestLogger.debug("incoming request");
+  try {
+    if (req.method === "GET" && url.pathname === "/api/v1/tools") {
+      sendJson(res, 200, enabledTools.map((tool) => ({
+        name: tool.name,
+        title: tool.title,
+        description: tool.description,
+        toolsets: tool.toolsets,
+        shield: buildShieldToolMetadata(tool),
+      })));
+      return;
+    }
 
-  const trafficPolicy = getTrafficPolicy(method, route);
-  const trafficLimit = checkTrafficLimit({
-    clientId: getClientId(req),
-    policy: trafficPolicy,
-  });
-  res.setHeader("X-RateLimit-Limit", String(trafficPolicy.maxRequests));
-  res.setHeader("X-RateLimit-Remaining", String(trafficLimit.remaining));
-  res.setHeader("X-RateLimit-Reset", String(Math.ceil(trafficLimit.resetAt / 1000)));
-  if (!trafficLimit.allowed) {
-    res.setHeader("Retry-After", String(trafficLimit.retryAfterSeconds));
-    sendJson(res, 429, buildRateLimitResponse(trafficPolicy, trafficLimit));
-    return;
-  }
-
-  // GET /api/v1/tools — list enabled tools only
-  if (req.method === "GET" && url.pathname === "/api/v1/tools") {
-    requestLogger.info("listing tools", { toolCount: enabledTools.length });
-    res.end(JSON.stringify(enabledTools.map((t) => ({ name: t.name, description: t.description }))));
-    return;
-  }
-
-  // GET /api/v1/health
-  if (req.method === "GET" && url.pathname === "/api/v1/health") {
-    requestLogger.info("health check");
-    const health = await getGatewayHealthPayload({
-      gateway: {
-        status: workspaceAuthPolicy.productionFailClosed ? "failing" : "ready",
-        message: workspaceAuthPolicy.message,
+    if (req.method === "GET" && url.pathname === "/api/v1/health") {
+      sendJson(res, 200, {
+        status: "ready",
+        product: "Swee SG",
+        toolCount: enabledTools.length,
+        toolsets: [...enabledToolsets],
+        shieldMode: loadShieldPolicy().mode,
         observedAt: new Date().toISOString(),
-        details: workspaceAuthPolicy.details,
+      });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/v1/shield/policy") {
+      sendJson(res, 200, loadShieldPolicy());
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/v1/shield/audit") {
+      const limit = Number(url.searchParams.get("limit") ?? "50");
+      sendJson(res, 200, { records: shieldAuditStore.recent(Number.isFinite(limit) ? limit : 50) });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname.startsWith("/api/v1/shield/audit/")) {
+      const id = decodeURIComponent(url.pathname.slice("/api/v1/shield/audit/".length));
+      const record = shieldAuditStore.get(id);
+      sendJson(res, record === null ? 404 : 200, record === null ? { error: "audit record not found" } : { record });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/v1/shield/evaluate") {
+      const result = await callTool("swee_shield_evaluate", await parseJsonBody(req), requestId);
+      sendJson(res, result.isError === true ? 400 : 200, toolEnvelope(result));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/v1/pulse/snapshot") {
+      const result = await callTool("swee_pulse_snapshot", getPulseInput(url), requestId);
+      sendJson(res, result.isError === true ? 400 : 200, toolEnvelope(result));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/v1/pulse/mobility") {
+      const result = await callTool("swee_pulse_mobility", {}, requestId);
+      sendJson(res, result.isError === true ? 400 : 200, toolEnvelope(result));
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/v1/pulse/weather") {
+      const result = await callTool("swee_pulse_weather", getPulseInput(url), requestId);
+      sendJson(res, result.isError === true ? 400 : 200, toolEnvelope(result));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/v1/pulse/explain") {
+      const result = await callTool("swee_pulse_explain", await parseJsonBody(req), requestId);
+      sendJson(res, result.isError === true ? 400 : 200, toolEnvelope(result));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname.startsWith("/api/v1/")) {
+      const toolName = url.pathname.slice("/api/v1/".length).replace(/-/g, "_");
+      const result = await callTool(toolName, await parseJsonBody(req), requestId);
+      sendJson(res, result.isError === true ? 400 : 200, toolEnvelope(result));
+      return;
+    }
+
+    sendJson(res, 404, {
+      error: "not found",
+      hint: "GET /api/v1/tools, GET /api/v1/pulse/snapshot, or POST /api/v1/<tool-name>",
+    });
+  } catch (error) {
+    logger.error("REST gateway request failed", {
+      requestId,
+      route: url.pathname,
+      durationMs: Date.now() - started,
+      error,
+    });
+    sendJson(res, 500, {
+      error: {
+        code: "REST_GATEWAY_ERROR",
+        message: error instanceof Error ? error.message : String(error),
       },
-      toolCount: enabledTools.length,
-      startedAt: gatewayStartedAt,
     });
-    res.end(JSON.stringify(health));
-    return;
   }
-
-  // GET /api/v1/metrics
-  if (req.method === "GET" && url.pathname === "/api/v1/metrics") {
-    requestLogger.info("metrics snapshot");
-    res.end(JSON.stringify(getGatewayMetricsSnapshot({ startedAt: gatewayStartedAt })));
-    return;
-  }
-
-  // GET /api/v1/debug/logs
-  if (req.method === "GET" && url.pathname === "/api/v1/debug/logs") {
-    try {
-      requireWorkspaceAccess(req, "debug:read");
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      throw err;
-    }
-    const limitParam = Number(url.searchParams.get("limit") ?? "");
-    const level = url.searchParams.get("level")?.trim().toLowerCase();
-    const rawSnapshot = debugLogStore.getSnapshot(Number.isFinite(limitParam) && limitParam > 0 ? limitParam : undefined);
-    const snapshot = workspaceAuthPolicy.production && !workspaceAuthPolicy.explicitWorkspaceAuth
-      ? buildDisabledDebugLogSnapshot(DEBUG_LOGS_PRODUCTION_DISABLED_MESSAGE, rawSnapshot)
-      : rawSnapshot;
-    const entries = level === undefined || level === ""
-      ? snapshot.entries
-      : snapshot.entries.filter((entry) => entry.level === level);
-    requestLogger.info("debug log snapshot", {
-      enabled: snapshot.enabled,
-      returnedEntries: entries.length,
-      totalEntries: snapshot.totalEntries,
-    });
-    sendJson(res, 200, {
-      ...snapshot,
-      entries,
-    });
-    return;
-  }
-
-  if (req.method === "GET" && url.pathname === "/api/v1/dude/search-suggestions") {
-    try {
-      requireWorkspaceAccess(req, "search:run");
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      throw err;
-    }
-    const query = getQueryValue(url, "q");
-    safeInputSummary = summarizeQueryInput(query);
-    if (query.length > MAX_SEARCH_QUERY_LENGTH) {
-      sendJson(res, 400, buildLimitMessage("Search query", MAX_SEARCH_QUERY_LENGTH));
-      return;
-    }
-    if (query.length < 2) {
-      sendJson(res, 200, { query, suggestions: [] });
-      return;
-    }
-    try {
-      const startedAt = Date.now();
-      const suggestions = await searchAcraEntitySuggestions(query, 6);
-      requestLogger.info("search suggestions finished", {
-        ...summarizeQueryInput(query),
-        suggestions: suggestions.length,
-        durationMs: Date.now() - startedAt,
-      });
-      sendJson(res, 200, { query, suggestions });
-    } catch (err) {
-      requestLogger.warn("search suggestions failed", {
-        ...summarizeQueryInput(query),
-        error: err instanceof Error ? err.message : String(err),
-      });
-      sendJson(res, 200, { query, suggestions: [], warning: "Search suggestions are temporarily unavailable." });
-    }
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/v1/dude/resolve-counterparty") {
-    try {
-      requireWorkspaceAccess(req, "search:run");
-      const body = await readBody(req, trafficPolicy.maxBodyBytes);
-      const input = body === "" ? {} : JSON.parse(body);
-      if (!isRecord(input)) {
-        throw new BadRequestError("INVALID_RESOLUTION_INPUT", "Counterparty resolution request body must be a JSON object.");
-      }
-      const identifier = getStringField(input, "identifier");
-      if (identifier === undefined) {
-        throw new BadRequestError("RESOLUTION_IDENTIFIER_REQUIRED", "Provide a company name, UEN, or retained CDD registry name identifier.");
-      }
-      if (identifier.length > MAX_SEARCH_QUERY_LENGTH) {
-        sendJson(res, 400, buildLimitMessage("Counterparty identifier", MAX_SEARCH_QUERY_LENGTH));
-        return;
-      }
-      safeInputSummary = summarizeQueryInput(identifier);
-      const startedAt = Date.now();
-      const resolution = await resolveCounterparty({
-        identifier,
-        ...(getStringArrayField(input, "modules") === undefined ? {} : { modules: getStringArrayField(input, "modules") as never }),
-        ...(getStringArrayField(input, "sectorHints") === undefined ? {} : { sectorHints: getStringArrayField(input, "sectorHints") as never }),
-        ...(typeof input["limit"] === "number" ? { limit: input["limit"] } : {}),
-      });
-      requestLogger.info("counterparty resolution finished", {
-        ...safeInputSummary,
-        status: resolution.status,
-        candidates: resolution.candidates.length,
-        durationMs: Date.now() - startedAt,
-      });
-      sendJson(res, 200, resolution);
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        requestLogger.warn("counterparty resolution workspace access denied", { code: err.code });
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      if (err instanceof RequestBodyTooLargeError) {
-        sendJson(res, err.statusCode, {
-          error: {
-            code: "REQUEST_BODY_TOO_LARGE",
-            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
-          },
-        });
-        return;
-      }
-      if (err instanceof BadRequestError) {
-        sendJson(res, err.statusCode, {
-          error: {
-            code: err.code,
-            message: err.message,
-          },
-        });
-        return;
-      }
-      if (err instanceof SyntaxError) {
-        sendJson(res, 400, {
-          error: {
-            code: "INVALID_JSON",
-            message: "Request body must be valid JSON.",
-          },
-        });
-        return;
-      }
-      requestLogger.error("counterparty resolution failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      sendJson(res, 500, {
-        error: {
-          code: "COUNTERPARTY_RESOLUTION_FAILED",
-          message: "Counterparty resolution failed.",
-        },
-      });
-    }
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/v1/dude/cdd-orchestrator") {
-    try {
-      requireWorkspaceAccess(req, "search:run");
-      requireWorkspaceAccess(req, "memo:generate");
-      const body = await readBody(req, trafficPolicy.maxBodyBytes);
-      const input = body === "" ? {} : JSON.parse(body);
-      if (!isRecord(input)) {
-        throw new BadRequestError("INVALID_CDD_ORCHESTRATOR_INPUT", "CDD orchestrator request body must be a JSON object.");
-      }
-      const confirmed = buildConfirmedDossierInput(input);
-      let resolution: CounterpartyResolutionResult | undefined = confirmed?.resolution;
-      let dossierInput = confirmed?.input ?? normalizeCddOrchestratorInput(input);
-      const resolutionIdentifier = confirmed === null
-        ? shouldResolveDossierInput(input, dossierInput as Record<string, unknown>)
-        : null;
-      if (resolutionIdentifier !== null) {
-        const resolverResult = await resolveCounterparty({
-          identifier: resolutionIdentifier,
-          ...(getStringArrayField(input, "modules") === undefined ? {} : { modules: getStringArrayField(input, "modules") as never }),
-          ...(getStringArrayField(input, "sectorHints") === undefined ? {} : { sectorHints: getStringArrayField(input, "sectorHints") as never }),
-        });
-        if (resolverResult.status !== "resolved" || resolverResult.selectedCandidate === null) {
-          sendJson(res, 409, {
-            error: {
-              code: "COUNTERPARTY_RESOLUTION_REQUIRED",
-              message: resolverResult.status === "needs_confirmation"
-                ? "Multiple plausible registry candidates require confirmation before running CDD."
-                : "No retained CDD registry candidate matched the supplied identifier.",
-            },
-            resolution: resolverResult,
-          });
-          return;
-        }
-        resolution = resolverResult;
-        dossierInput = {
-          ...buildDossierInputFromResolutionCandidate(resolverResult.selectedCandidate),
-          ...(getStringArrayField(input, "modules") === undefined ? {} : { modules: getStringArrayField(input, "modules") }),
-          ...(getStringArrayField(input, "sectorHints") === undefined ? {} : { sectorHints: getStringArrayField(input, "sectorHints") }),
-          ...(getStringArrayField(input, "explicitSectorHints") === undefined ? {} : { explicitSectorHints: getStringArrayField(input, "explicitSectorHints") }),
-          ...(getStringArrayField(input, "webSectorHints") === undefined ? {} : { webSectorHints: getStringArrayField(input, "webSectorHints") }),
-          ...(input["analystRerun"] === true ? { analystRerun: true } : {}),
-          includeExternalDiligence: true,
-        };
-      }
-      safeInputSummary = summarizeBusinessInput(dossierInput);
-      const startedAt = Date.now();
-      const response = await runCddOrchestrator(dossierInput, {
-        ...(resolution === undefined ? {} : { resolution }),
-      });
-      const dossierSummary = summarizeBusinessDossier(response.dossier);
-      recordUpstreamFailures("dude_cdd_orchestrator", dossierSummary.upstreamFailures);
-      requestLogger.info("cdd orchestrator finished", {
-        ...safeInputSummary,
-        orchestrationStatus: response.orchestration.status,
-        acraSectorHints: response.orchestration.acraSectorHints,
-        webSectorHints: response.orchestration.webSectorHints,
-        effectiveSectorHints: response.orchestration.effectiveSectorHints,
-        officialModules: response.orchestration.officialModules,
-        supplementalTools: response.orchestration.supplementalTools,
-        reranDossierForWebSectorHints: response.orchestration.reranDossierForWebSectorHints,
-        memoStatus: response.memo.status,
-        webPresenceConfigured: response.webPresence.configured,
-        webPresenceResults: response.webPresence.results.length,
-        peopleDiscoveryConfigured: response.peopleDiscovery.configured,
-        peopleDiscoveryResults: response.peopleDiscovery.results.length,
-        durationMs: Date.now() - startedAt,
-        ...dossierSummary,
-      });
-      sendJson(res, 200, response);
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        requestLogger.warn("cdd orchestrator workspace access denied", { code: err.code });
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      if (err instanceof RequestBodyTooLargeError) {
-        requestLogger.warn("cdd orchestrator request body too large", { maxBytes: err.maxBytes });
-        sendJson(res, err.statusCode, {
-          error: {
-            code: "REQUEST_BODY_TOO_LARGE",
-            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
-          },
-        });
-        return;
-      }
-      if (err instanceof BadRequestError || err instanceof CddOrchestratorBadRequestError) {
-        requestLogger.warn("invalid cdd orchestrator request", { code: err.code });
-        sendJson(res, err.statusCode, {
-          error: {
-            code: err.code,
-            message: err.message,
-          },
-        });
-        return;
-      }
-      if (err instanceof SyntaxError) {
-        requestLogger.warn("invalid cdd orchestrator json body");
-        sendJson(res, 400, {
-          error: {
-            code: "INVALID_JSON",
-            message: "Request body must be valid JSON.",
-          },
-        });
-        return;
-      }
-      requestLogger.error("cdd orchestrator failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      sendJson(res, 500, {
-        error: {
-          code: "CDD_ORCHESTRATOR_FAILED",
-          message: "CDD orchestration failed.",
-        },
-      });
-    }
-    return;
-  }
-
-  if (req.method === "GET" && url.pathname === "/api/v1/dude/web-presence") {
-    try {
-      requireWorkspaceAccess(req, "dossier:read");
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      throw err;
-    }
-    const query = getQueryValue(url, "query");
-    safeInputSummary = summarizeQueryInput(query);
-    if (query.length > MAX_WEB_PRESENCE_QUERY_LENGTH) {
-      sendJson(res, 400, buildLimitMessage("Web discovery query", MAX_WEB_PRESENCE_QUERY_LENGTH));
-      return;
-    }
-    if (query === "") {
-      sendJson(res, 400, { error: "query is required" });
-      return;
-    }
-    const startedAt = Date.now();
-    const presence = await getWebPresence(query);
-    requestLogger.info("web presence finished", {
-      ...summarizeQueryInput(query),
-      configured: presence.configured,
-      results: presence.results.length,
-      durationMs: Date.now() - startedAt,
-    });
-    sendJson(res, 200, presence);
-    return;
-  }
-
-  if (req.method === "GET" && url.pathname === "/api/v1/dude/people-discovery") {
-    try {
-      requireWorkspaceAccess(req, "dossier:read");
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      throw err;
-    }
-    const entityName = getQueryValue(url, "entityName");
-    const uen = getQueryValue(url, "uen");
-    safeInputSummary = summarizeQueryInput(entityName);
-    if (entityName.length > MAX_PEOPLE_DISCOVERY_ENTITY_LENGTH) {
-      sendJson(res, 400, buildLimitMessage("People discovery entity name", MAX_PEOPLE_DISCOVERY_ENTITY_LENGTH));
-      return;
-    }
-    if (entityName === "") {
-      sendJson(res, 400, { error: "entityName is required" });
-      return;
-    }
-    const startedAt = Date.now();
-    const discovery = await getPeopleDiscovery({
-      entityName,
-      ...(uen === "" ? {} : { uen }),
-    });
-    requestLogger.info("people discovery finished", {
-      ...summarizeQueryInput(entityName),
-      configured: discovery.configured,
-      results: discovery.results.length,
-      durationMs: Date.now() - startedAt,
-    });
-    sendJson(res, 200, discovery);
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/v1/dude/memo") {
-    try {
-      requireWorkspaceAccess(req, "memo:generate");
-      const body = await readBody(req, trafficPolicy.maxBodyBytes);
-      const input = body === "" ? {} : JSON.parse(body);
-      if (!isRecord(input)) {
-        throw new BadRequestError("INVALID_MEMO_INPUT", "Memo request body must be a JSON object.");
-      }
-      safeInputSummary = summarizeMemoInput(input);
-      const startedAt = Date.now();
-      const dossier = await resolveMemoDossier(input);
-      const peopleDiscovery = sanitizePeopleDiscoveryForMemo(input["peopleDiscovery"]);
-      const webPresence = sanitizeWebPresenceForMemo(input["webPresence"]);
-      const memo = await generateAnalystMemo({
-        dossier,
-        ...(peopleDiscovery === undefined ? {} : { peopleDiscovery }),
-        ...(webPresence === undefined ? {} : { webPresence }),
-      });
-      requestLogger.info("analyst memo finished", {
-        ...safeInputSummary,
-        status: memo.status,
-        configured: memo.configured,
-        provider: memo.provider,
-        durationMs: Date.now() - startedAt,
-      });
-      sendJson(res, 200, memo);
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        requestLogger.warn("memo workspace access denied", { code: err.code });
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      if (err instanceof RequestBodyTooLargeError) {
-        requestLogger.warn("memo request body too large", { maxBytes: err.maxBytes });
-        sendJson(res, err.statusCode, {
-          error: {
-            code: "REQUEST_BODY_TOO_LARGE",
-            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
-          },
-        });
-        return;
-      }
-      if (err instanceof BadRequestError) {
-        requestLogger.warn("invalid memo request", { code: err.code });
-        sendJson(res, err.statusCode, {
-          error: {
-            code: err.code,
-            message: err.message,
-          },
-        });
-        return;
-      }
-      if (err instanceof SyntaxError) {
-        requestLogger.warn("invalid memo json body");
-        sendJson(res, 400, {
-          error: {
-            code: "INVALID_JSON",
-            message: "Request body must be valid JSON.",
-          },
-        });
-        return;
-      }
-      requestLogger.error("analyst memo failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      sendJson(res, 500, {
-        error: {
-          code: "MEMO_GENERATION_FAILED",
-          message: "Analyst memo generation failed.",
-        },
-      });
-    }
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/v1/dude/summary") {
-    try {
-      requireWorkspaceAccess(req, "memo:generate");
-      const body = await readBody(req, trafficPolicy.maxBodyBytes);
-      const input = body === "" ? {} : JSON.parse(body);
-      if (!isRecord(input)) {
-        throw new BadRequestError("INVALID_SUMMARY_INPUT", "Summary request body must be a JSON object.");
-      }
-      safeInputSummary = summarizeMemoInput(input);
-      const startedAt = Date.now();
-      const dossier = await resolveMemoDossier(input);
-      const peopleDiscovery = sanitizePeopleDiscoveryForMemo(input["peopleDiscovery"]);
-      const webPresence = sanitizeWebPresenceForMemo(input["webPresence"]);
-      const summary = await generateInteractiveSummary({
-        dossier,
-        ...(peopleDiscovery === undefined ? {} : { peopleDiscovery }),
-        ...(webPresence === undefined ? {} : { webPresence }),
-      });
-      requestLogger.info("interactive summary finished", {
-        ...safeInputSummary,
-        status: summary.status,
-        configured: summary.configured,
-        provider: summary.provider,
-        durationMs: Date.now() - startedAt,
-      });
-      sendJson(res, 200, summary);
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        requestLogger.warn("summary workspace access denied", { code: err.code });
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      if (err instanceof RequestBodyTooLargeError) {
-        requestLogger.warn("summary request body too large", { maxBytes: err.maxBytes });
-        sendJson(res, err.statusCode, {
-          error: {
-            code: "REQUEST_BODY_TOO_LARGE",
-            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
-          },
-        });
-        return;
-      }
-      if (err instanceof BadRequestError) {
-        requestLogger.warn("invalid summary request", { code: err.code });
-        sendJson(res, err.statusCode, {
-          error: {
-            code: err.code,
-            message: err.message,
-          },
-        });
-        return;
-      }
-      if (err instanceof SyntaxError) {
-        requestLogger.warn("invalid summary json body");
-        sendJson(res, 400, {
-          error: {
-            code: "INVALID_JSON",
-            message: "Request body must be valid JSON.",
-          },
-        });
-        return;
-      }
-      requestLogger.error("interactive summary failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      sendJson(res, 500, {
-        error: {
-          code: "SUMMARY_GENERATION_FAILED",
-          message: "Interactive summary generation failed.",
-        },
-      });
-    }
-    return;
-  }
-
-  if (req.method === "POST" && url.pathname === "/api/v1/dude/bulk-dossiers") {
-    try {
-      requireWorkspaceAccess(req, "bulk:run");
-      const body = await readBody(req, trafficPolicy.maxBodyBytes);
-      const input = body === "" ? {} : JSON.parse(body);
-      safeInputSummary = summarizeBulkInput(input);
-      const startedAt = Date.now();
-      const response = await buildBulkDossierResponse(input, runCddOrchestrator);
-      requestLogger.info("bulk dossiers finished", {
-        ...safeInputSummary,
-        executedCount: response.executedCount,
-        parseErrors: response.parseErrors.length,
-        durationMs: Date.now() - startedAt,
-      });
-      sendJson(res, 200, response);
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        requestLogger.warn("bulk workspace access denied", { code: err.code });
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      if (err instanceof RequestBodyTooLargeError) {
-        requestLogger.warn("bulk request body too large", { maxBytes: err.maxBytes });
-        sendJson(res, err.statusCode, {
-          error: {
-            code: "REQUEST_BODY_TOO_LARGE",
-            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
-          },
-        });
-        return;
-      }
-      if (err instanceof SyntaxError) {
-        requestLogger.warn("invalid bulk json body");
-        sendJson(res, 400, {
-          error: {
-            code: "INVALID_JSON",
-            message: "Request body must be valid JSON.",
-          },
-        });
-        return;
-      }
-      requestLogger.error("bulk dossiers failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      sendJson(res, 500, {
-        error: {
-          code: "BULK_DOSSIERS_FAILED",
-          message: "Bulk dossier execution failed.",
-        },
-      });
-    }
-    return;
-  }
-
-  // POST /api/v1/<tool-name>
-  if (req.method === "POST" && url.pathname.startsWith("/api/v1/")) {
-    const toolName = url.pathname.slice(8).replace(/-/g, "_");
-    const tool = toolMap.get(toolName) ?? toolMap.get(`sg_${toolName}`);
-    if (!tool) {
-      requestLogger.warn("tool not found or not enabled", { toolName });
-      res.writeHead(404);
-      res.end(JSON.stringify({ error: `tool not found or not enabled: ${toolName}` }));
-      return;
-    }
-    try {
-      requireWorkspaceAccess(req, tool.name === "sg_business_dossier" ? "search:run" : "dossier:read");
-      const body = await readBody(req, trafficPolicy.maxBodyBytes);
-      const input = body === "" ? {} : JSON.parse(body);
-      const startedAt = Date.now();
-      const inputSummary = tool.name === "sg_business_dossier" ? summarizeBusinessInput(input) : {};
-      safeInputSummary = { tool: tool.name, ...inputSummary };
-      requestLogger.info("invoking tool", {
-        tool: tool.name,
-        ...inputSummary,
-      });
-      const result = await tool.handler(input);
-      const status = result.isError ? 400 : 200;
-      const dossierSummary = tool.name === "sg_business_dossier"
-        ? summarizeBusinessDossier(result.structuredContent?.["record"])
-        : undefined;
-      if (dossierSummary !== undefined) {
-        recordUpstreamFailures(tool.name, dossierSummary.upstreamFailures);
-      }
-      requestLogger.info("tool invocation finished", {
-        tool: tool.name,
-        status,
-        isError: result.isError === true,
-        durationMs: Date.now() - startedAt,
-        ...(dossierSummary ?? {}),
-      });
-      res.writeHead(status);
-      res.end(JSON.stringify({
-        content: result.content,
-        ...(result.structuredContent ? { data: result.structuredContent } : {}),
-      }));
-    } catch (err) {
-      if (err instanceof WorkspaceApiAccessError) {
-        requestLogger.warn("tool workspace access denied", { code: err.code });
-        sendWorkspaceAccessError(res, err);
-        return;
-      }
-      if (err instanceof RequestBodyTooLargeError) {
-        requestLogger.warn("request body too large", { maxBytes: err.maxBytes });
-        sendJson(res, err.statusCode, {
-          error: {
-            code: "REQUEST_BODY_TOO_LARGE",
-            message: `Request body must be ${err.maxBytes} bytes or smaller.`,
-          },
-        });
-        return;
-      }
-      if (err instanceof SyntaxError) {
-        requestLogger.warn("invalid json body");
-        sendJson(res, 400, {
-          error: {
-            code: "INVALID_JSON",
-            message: "Request body must be valid JSON.",
-          },
-        });
-        return;
-      }
-      requestLogger.error("tool invocation failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      res.writeHead(500);
-      res.end(JSON.stringify({ error: err instanceof Error ? err.message : String(err) }));
-    }
-    return;
-  }
-
-  // fallback
-  requestLogger.warn("unknown route");
-  res.writeHead(404);
-  res.end(JSON.stringify({
-    error: "not found",
-    hint: "GET /api/v1/tools for available endpoints, POST /api/v1/<tool-name> to call a tool",
-  }));
 });
 
 server.listen(PORT, () => {
-  console.log(`Dude REST gateway listening on http://localhost:${PORT}`);
+  console.log(`Swee SG REST gateway listening on http://localhost:${PORT}`);
   console.log(`tools: ${enabledTools.length}/${ALL_TOOL_DEFINITIONS.length} (toolsets: ${[...enabledToolsets].join(",")})`);
-  console.log(`try: curl -X POST http://localhost:${PORT}/api/v1/sg_nea_forecast_2hr -d '{"area":"Bedok"}'`);
+  console.log(`try: curl http://localhost:${PORT}/api/v1/pulse/snapshot`);
 });

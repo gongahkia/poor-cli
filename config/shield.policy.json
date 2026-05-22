@@ -1,0 +1,11 @@
+{
+  "mode": "observe",
+  "denyTools": [],
+  "warnTools": [
+    "sg_key_*",
+    "sg_config_*",
+    "sg_cache_clear"
+  ],
+  "denyRiskAtOrAbove": "critical",
+  "warnRiskAtOrAbove": "high"
+}
