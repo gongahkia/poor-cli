@@ -17,6 +17,13 @@ export { Keystore } from "./keystore.js";
 export { createLogger } from "./logger.js";
 export { subscribeLogEntries } from "./logger.js";
 export type { LogEntry, LogLevel, Logger } from "./logger.js";
+export {
+  evaluatePulseFreshness,
+  isPulseSeverityAtLeast,
+  PULSE_SIGNAL_CATEGORIES,
+  PULSE_SIGNAL_SEVERITIES,
+  resolvePulseSourceHealthStatus,
+} from "./pulse.js";
 export { getRateLimiter, RateLimiter } from "./rate-limiter.js";
 export {
   BRIEF_ENVELOPE_SCHEMA_VERSION,
@@ -243,6 +250,14 @@ export type {
   ShieldPolicyDecision,
   ShieldRiskLevel,
   ShieldToolMetadata,
+  PulseFreshness,
+  PulseFreshnessStatus,
+  PulseProvenanceItem,
+  PulseSignal,
+  PulseSignalCategory,
+  PulseSignalSeverity,
+  PulseSnapshot,
+  PulseSourceHealth,
   QueryBlocker,
   QueryPlannedStep,
   QueryExecutedStep,

@@ -62,6 +62,67 @@ export type ShieldPolicyDecision = {
   readonly message: string;
 };
 
+export type PulseSignalCategory = "mobility" | "weather" | "source_health";
+export type PulseSignalSeverity = "info" | "watch" | "disrupted" | "critical";
+export type PulseFreshnessStatus = "fresh" | "stale" | "unknown";
+
+export type PulseFreshness = {
+  readonly observedAt: string;
+  readonly upstreamTimestamp: string | null;
+  readonly maxAgeSeconds: number;
+  readonly status: PulseFreshnessStatus;
+  readonly ageSeconds: number | null;
+};
+
+export type PulseProvenanceItem = {
+  readonly source: string;
+  readonly sourceTool: string;
+  readonly observedAt: string;
+  readonly upstreamTimestamp: string | null;
+  readonly recordCount: number;
+  readonly sourceUrl?: string;
+  readonly license?: string;
+};
+
+export type PulseSignal = {
+  readonly id: string;
+  readonly category: PulseSignalCategory;
+  readonly severity: PulseSignalSeverity;
+  readonly title: string;
+  readonly description: string;
+  readonly source: string;
+  readonly sourceTool: string;
+  readonly observedAt: string;
+  readonly upstreamTimestamp: string | null;
+  readonly location?: LatLng;
+  readonly area?: string;
+  readonly provenance: readonly PulseProvenanceItem[];
+  readonly freshness: PulseFreshness;
+  readonly gaps: readonly EvidenceGap[];
+  readonly recommendedAction: string;
+  readonly raw?: Readonly<Record<string, unknown>>;
+};
+
+export type PulseSourceHealth = {
+  readonly source: string;
+  readonly sourceTool: string;
+  readonly status: "ready" | "stale" | "gap";
+  readonly observedAt: string;
+  readonly recordCount: number;
+  readonly freshness: PulseFreshness;
+  readonly gaps: readonly EvidenceGap[];
+  readonly provenance: readonly PulseProvenanceItem[];
+};
+
+export type PulseSnapshot = {
+  readonly generatedAt: string;
+  readonly focus: string | null;
+  readonly signals: readonly PulseSignal[];
+  readonly sourceHealth: readonly PulseSourceHealth[];
+  readonly gaps: readonly EvidenceGap[];
+  readonly shieldAuditId?: string;
+};
+
 export type ToolResultContent =
   | ToolResultTextContent
   | ToolResultResourceLinkContent;
