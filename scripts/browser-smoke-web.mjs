@@ -271,14 +271,19 @@ try {
 
   await page.goto("/", { waitUntil: "networkidle" });
   await page.getByRole("heading", { name: "Swee SG" }).waitFor({ state: "visible" });
-  await page.getByRole("heading", { name: "Overview" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Watch" }).waitFor({ state: "visible" });
+  await page.getByText("2 signals need review across mobility and weather.").waitFor({ state: "visible" });
+  await page.getByText("1 coverage gap limits confidence").waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Coverage Gaps" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Needs Attention" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Mobility" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Weather" }).waitFor({ state: "visible" });
-  await page.getByRole("heading", { name: "Sources" }).waitFor({ state: "visible" });
-  await page.getByRole("heading", { name: "Shield Audit" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Source Health" }).waitFor({ state: "visible" });
+  await page.getByText("Ops: Shield Audit (1)").waitFor({ state: "visible" });
   await page.getByText("CTE incident").waitFor({ state: "visible" });
   await page.getByText("Rainfall detected").waitFor({ state: "visible" });
-  await page.getByText("swee_pulse_snapshot").first().waitFor({ state: "visible" });
+  await page.getByText("TRAFFIC_IMAGES_NOT_CHECKED").waitFor({ state: "visible" });
+  await page.getByText("swee_pulse_snapshot").first().waitFor({ state: "attached" });
   await assertNoDocumentOverflow(page, "Swee Pulse desktop layout");
   await page.setViewportSize({ width: 390, height: 844 });
   await assertNoDocumentOverflow(page, "Swee Pulse mobile layout");

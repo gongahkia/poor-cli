@@ -53,6 +53,17 @@ const formatTime = (value: string | null): string => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 };
 
+const formatDateTime = (value: string | null): string => {
+  if (value === null) return "No timestamp";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : date.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+};
+
+const plural = (count: number, singular: string, pluralForm = `${singular}s`): string =>
+  `${count} ${count === 1 ? singular : pluralForm}`;
+
 export function DashboardPage() {
   const [snapshot, setSnapshot] = useState<PulseSnapshot | null>(null);
   const [audits, setAudits] = useState<readonly ShieldAuditRow[]>([]);
@@ -91,8 +102,37 @@ export function DashboardPage() {
     () => [...(snapshot?.signals ?? [])].sort((left, right) => severityRank[left.severity] - severityRank[right.severity]),
     [snapshot],
   );
-  const mobilitySignals = sortedSignals.filter((signal) => signal.category === "mobility");
-  const weatherSignals = sortedSignals.filter((signal) => signal.category === "weather");
+  const actionSignals = sortedSignals.filter((signal) => signal.severity !== "info");
+  const mobilitySignals = actionSignals.filter((signal) => signal.category === "mobility");
+  const weatherSignals = actionSignals.filter((signal) => signal.category === "weather");
+  const normalWeatherSignals = sortedSignals.filter((signal) => signal.category === "weather" && signal.severity === "info");
+  const sourceIssues = (snapshot?.sourceHealth ?? []).filter((source) => source.status !== "ready");
+  const coverageGapCount = Math.max(sourceIssues.length, snapshot?.gaps.length ?? 0);
+  const readySources = (snapshot?.sourceHealth ?? []).filter((source) => source.status === "ready");
+  const latestObservedAt = [...(snapshot?.sourceHealth ?? [])]
+    .map((source) => source.observedAt)
+    .sort()
+    .at(-1) ?? snapshot?.generatedAt ?? null;
+  const criticalCount = sortedSignals.filter((signal) => signal.severity === "critical").length;
+  const disruptedCount = sortedSignals.filter((signal) => signal.severity === "disrupted").length;
+  const watchCount = sortedSignals.filter((signal) => signal.severity === "watch").length;
+  const cityState = criticalCount > 0
+    ? "Critical disruption"
+    : disruptedCount > 0
+      ? "Disrupted"
+      : watchCount > 0
+        ? "Watch"
+        : coverageGapCount > 0
+          ? "Normal signals, limited coverage"
+          : "Normal";
+  const cityStateDetail = actionSignals.length > 0
+    ? `${plural(actionSignals.length, "signal")} need review across mobility and weather.`
+    : coverageGapCount > 0
+      ? `No active disruptions detected, but ${plural(coverageGapCount, "coverage gap")} ${coverageGapCount === 1 ? "needs" : "need"} attention before trusting mobility coverage.`
+      : "No active disruptions detected across checked mobility and weather sources.";
+  const confidenceText = coverageGapCount === 0
+    ? "All checked sources ready"
+    : `${plural(coverageGapCount, "coverage gap")} ${coverageGapCount === 1 ? "limits" : "limit"} confidence`;
 
   return (
     <main>
@@ -106,63 +146,78 @@ export function DashboardPage() {
 
       {error === null ? null : <p className="error" role="alert">{error}</p>}
 
-      <section>
-        <h2>Overview</h2>
+      <section className={`status-panel status-${cityState.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
+        <div className="status-copy">
+          <span className="eyebrow">What matters now</span>
+          <h2>{cityState}</h2>
+          <p>{cityStateDetail}</p>
+          <p className="muted">Last refreshed {formatDateTime(latestObservedAt)}.</p>
+        </div>
         <div className="metric-grid">
-          <Metric label="Signals" value={String(snapshot?.signals.length ?? 0)} />
-          <Metric label="Watch+" value={String(sortedSignals.filter((signal) => signal.severity !== "info").length)} />
-          <Metric label="Sources" value={String(snapshot?.sourceHealth.length ?? 0)} />
-          <Metric label="Gaps" value={String(snapshot?.gaps.length ?? 0)} />
+          <Metric label="Needs review" value={String(actionSignals.length)} />
+          <Metric label="Quiet signals" value={String(normalWeatherSignals.length)} />
+          <Metric label="Ready sources" value={`${readySources.length}/${snapshot?.sourceHealth.length ?? 0}`} />
+          <Metric label="Coverage gaps" value={String(coverageGapCount)} />
         </div>
       </section>
 
-      <section>
-        <h2>Mobility</h2>
-        <SignalList emptyText="No mobility signals returned yet." signals={mobilitySignals} />
+      <section className="takeaway-grid" aria-label="Dashboard takeaways">
+        <Takeaway
+          label="City state"
+          value={actionSignals.length === 0 ? "No disruptions detected" : `${plural(actionSignals.length, "active signal")}`}
+        />
+        <Takeaway
+          label="Confidence"
+          value={confidenceText}
+        />
+        <Takeaway
+          label="Weather"
+          value={weatherSignals.length === 0
+            ? `${plural(normalWeatherSignals.length, "normal area")} hidden`
+            : `${plural(weatherSignals.length, "weather signal")} ${weatherSignals.length === 1 ? "needs" : "need"} review`}
+        />
+      </section>
+
+      <section className={coverageGapCount === 0 ? "source-gaps source-gaps-clear" : "source-gaps"}>
+        <div>
+          <h2>Coverage Gaps</h2>
+          <p className="muted">
+            {coverageGapCount === 0
+              ? "No source gaps are currently limiting the Pulse view."
+              : "These source gaps are more important than quiet weather rows because they limit what Swee Pulse can conclude."}
+          </p>
+        </div>
+        <SourceIssueList sources={sourceIssues} gaps={snapshot?.gaps ?? []} />
       </section>
 
       <section>
-        <h2>Weather</h2>
-        <SignalList emptyText="No weather signals returned yet." signals={weatherSignals} />
+        <h2>Needs Attention</h2>
+        <div className="signal-columns">
+          <div>
+            <h3>Mobility</h3>
+            <SignalList emptyText="No mobility disruptions detected from available sources." signals={mobilitySignals} />
+          </div>
+          <div>
+            <h3>Weather</h3>
+            <SignalList emptyText="No watch-level weather signals. Normal area forecasts are collapsed below." signals={weatherSignals} />
+          </div>
+        </div>
       </section>
 
-      <section>
-        <h2>Sources</h2>
-        <table>
-          <thead>
-            <tr><th>Source</th><th>Status</th><th>Rows</th><th>Observed</th></tr>
-          </thead>
-          <tbody>
-            {(snapshot?.sourceHealth ?? []).map((source) => (
-              <tr key={`${source.sourceTool}:${source.observedAt}`}>
-                <td>{source.sourceTool}</td>
-                <td>{source.status}</td>
-                <td>{source.recordCount}</td>
-                <td>{formatTime(source.observedAt)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
+      <details>
+        <summary>Normal Weather Coverage ({normalWeatherSignals.length})</summary>
+        <SignalList emptyText="No normal weather rows returned." signals={normalWeatherSignals} compact />
+      </details>
 
       <section>
-        <h2>Shield Audit</h2>
-        <table>
-          <thead>
-            <tr><th>Tool</th><th>Decision</th><th>Status</th><th>Duration</th></tr>
-          </thead>
-          <tbody>
-            {audits.map((audit) => (
-              <tr key={audit.auditId}>
-                <td>{audit.toolName}</td>
-                <td>{audit.decision.decision} / {audit.decision.riskLevel}</td>
-                <td>{audit.status}</td>
-                <td>{audit.durationMs}ms</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <h2>Source Health</h2>
+        <SourceTable sources={snapshot?.sourceHealth ?? []} />
       </section>
+
+      <details className="ops-details">
+        <summary>Ops: Shield Audit ({audits.length})</summary>
+        <ShieldAuditTable audits={audits} />
+      </details>
     </main>
   );
 }
@@ -176,20 +231,97 @@ function Metric({ label, value }: { readonly label: string; readonly value: stri
   );
 }
 
-function SignalList({ emptyText, signals }: { readonly emptyText: string; readonly signals: readonly PulseSignal[] }) {
+function Takeaway({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <article className="takeaway">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
+function SignalList({ compact = false, emptyText, signals }: { readonly compact?: boolean; readonly emptyText: string; readonly signals: readonly PulseSignal[] }) {
   if (signals.length === 0) return <p className="muted">{emptyText}</p>;
   return (
-    <div className="signal-list">
+    <div className={compact ? "signal-list signal-list-compact" : "signal-list"}>
       {signals.slice(0, 8).map((signal) => (
         <article className={`signal signal-${signal.severity}`} key={signal.id}>
           <div>
             <h3>{signal.title}</h3>
             <p>{signal.description}</p>
+            {compact ? null : <p className="action-text">{signal.recommendedAction}</p>}
             <p className="muted">{signal.sourceTool} · {formatTime(signal.upstreamTimestamp)}</p>
           </div>
           <strong>{signal.severity}</strong>
         </article>
       ))}
+      {signals.length > 8 ? <p className="muted">Showing 8 of {signals.length} quiet rows.</p> : null}
     </div>
+  );
+}
+
+function SourceIssueList({
+  gaps,
+  sources,
+}: {
+  readonly gaps: readonly { readonly code: string; readonly message: string }[];
+  readonly sources: readonly PulseSourceHealth[];
+}) {
+  if (sources.length === 0 && gaps.length === 0) {
+    return <p className="source-ok">Coverage is complete for checked sources.</p>;
+  }
+
+  return (
+    <div className="issue-list">
+      {sources.map((source) => (
+        <article className="issue" key={`${source.sourceTool}:${source.observedAt}`}>
+          <strong>{source.sourceTool}</strong>
+          <span>{source.status} · {source.recordCount} rows · observed {formatTime(source.observedAt)}</span>
+        </article>
+      ))}
+      {gaps.slice(0, 6).map((gap) => (
+        <article className="issue" key={gap.code}>
+          <strong>{gap.code}</strong>
+          <span>{gap.message}</span>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function SourceTable({ sources }: { readonly sources: readonly PulseSourceHealth[] }) {
+  return (
+    <div className="source-health-list">
+      {sources.map((source) => (
+        <article className="source-health-card" key={`${source.sourceTool}:${source.observedAt}`}>
+          <div>
+            <strong>{source.sourceTool}</strong>
+            <span>{source.recordCount} rows · observed {formatTime(source.observedAt)}</span>
+          </div>
+          <span className={`status-pill status-pill-${source.status}`}>{source.status}</span>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function ShieldAuditTable({ audits }: { readonly audits: readonly ShieldAuditRow[] }) {
+  if (audits.length === 0) return <p className="muted">No Shield audit rows returned yet.</p>;
+  return (
+    <table>
+      <thead>
+        <tr><th>Tool</th><th>Decision</th><th>Status</th><th>Duration</th></tr>
+      </thead>
+      <tbody>
+        {audits.map((audit) => (
+          <tr key={audit.auditId}>
+            <td>{audit.toolName}</td>
+            <td>{audit.decision.decision} / {audit.decision.riskLevel}</td>
+            <td>{audit.status}</td>
+            <td>{audit.durationMs}ms</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

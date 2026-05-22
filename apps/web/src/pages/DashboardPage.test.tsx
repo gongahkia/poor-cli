@@ -14,11 +14,14 @@ describe("DashboardPage", () => {
     );
 
     expect(html).toContain("Swee SG");
-    expect(html).toContain("Overview");
+    expect(html).toContain("What matters now");
+    expect(html).toContain("Coverage Gaps");
+    expect(html).toContain("Needs Attention");
     expect(html).toContain("Mobility");
     expect(html).toContain("Weather");
-    expect(html).toContain("Sources");
-    expect(html).toContain("Shield Audit");
+    expect(html).toContain("Source Health");
+    expect(html).toContain("Normal Weather Coverage");
+    expect(html).toContain("Ops: Shield Audit");
     expect(html).not.toContain("Dude CDD");
     expect(html).not.toContain("CDD case");
     expect(html).not.toContain("counterparty");
