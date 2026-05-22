@@ -30,6 +30,6 @@ describe("tool metadata profile subsets", () => {
 
     expect(isToolEnabled({ toolsets: inferToolSets("swee_pulse_snapshot") }, publicOnly)).toBe(true);
     expect(isToolEnabled({ toolsets: inferToolSets("swee_shield_audit_lookup") }, opsOnly)).toBe(true);
-    expect(isToolEnabled({ toolsets: inferToolSets("sg_property_brief") }, publicOnly)).toBe(false);
+    expect(isToolEnabled({ toolsets: inferToolSets("sg_cache_clear") }, publicOnly)).toBe(false);
   });
 });

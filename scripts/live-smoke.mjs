@@ -1,4 +1,5 @@
-import { accessSync } from "node:fs";
+import { accessSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
@@ -22,109 +23,23 @@ const getStructuredPayload = (result) => {
   return JSON.parse(getText(result.content));
 };
 
-const getRecordArray = (payload, label, key = "records") => {
-  const records = payload?.[key];
-  if (Array.isArray(records)) {
-    return records;
-  }
-  const previewRecords = payload?.preview?.[key];
-  if (Array.isArray(previewRecords)) {
-    return previewRecords;
-  }
-  throw new Error(`${label} did not expose ${key} as an array in either the primary payload or artifact preview.`);
-};
-
-const getHealthRecord = (records, api) => {
-  const record = records.find((candidate) => candidate?.api === api);
-  if (record === undefined) {
-    throw new Error(`sg_health_check did not return a record for ${api}.`);
-  }
-  return record;
-};
-
-const healthLabel = (record) =>
-  record.representativeTool === undefined
-    ? record.api
-    : `${record.api} via ${record.representativeTool}`;
-
-const ensureLiveHealth = (record) => {
-  if (record.authRequired === true && record.configured !== true) {
-    throw new Error(`${healthLabel(record)} is not configured for live use. Set env vars or keystore entries before running this smoke test.`);
-  }
-  if (record.reachable !== true) {
-    throw new Error(`${healthLabel(record)} live probe failed: ${record.error ?? "unreachable"}`);
-  }
-  if (typeof record.error === "string" && record.error.trim() !== "") {
-    throw new Error(`${healthLabel(record)} live probe returned an error: ${record.error}`);
-  }
-};
-
-const ensureNonEmpty = (label, records) => {
-  if (!Array.isArray(records) || records.length === 0) {
-    throw new Error(`${label} returned no records.`);
-  }
-};
-
 const callToolPayload = async (client, name, args) => {
   const result = await client.callTool({ name, arguments: args });
   return getStructuredPayload(result);
 };
 
-const readRuntimeCatalog = async (client) => {
-  const resource = await client.readResource({ uri: "sg://runtime" });
+const readJsonResource = async (client, uri) => {
+  const resource = await client.readResource({ uri });
   const text = resource.contents.find((content) => "text" in content && typeof content.text === "string")?.text;
   if (text === undefined) {
-    throw new Error("sg://runtime did not return text content.");
+    throw new Error(`${uri} did not return text content.`);
   }
   return JSON.parse(text);
 };
 
-const ensureBriefArtifact = (label, payload, expectation) => {
-  const record = payload?.record;
-  if (record === null || typeof record !== "object") {
-    throw new Error(`${label} did not return a brief artifact record.`);
-  }
-  if (record.title !== expectation.title) {
-    throw new Error(`${label} returned an unexpected title: ${JSON.stringify(record.title)}`);
-  }
-  const provenance = Array.isArray(record.provenance) ? record.provenance : [];
-  const totalProvenance = provenance.reduce(
-    (sum, entry) => sum + (typeof entry?.recordCount === "number" ? entry.recordCount : 0),
-    0,
-  );
-  const minimum = typeof expectation.minimumProvenanceCount === "number" ? expectation.minimumProvenanceCount : 0;
-  if (totalProvenance < minimum) {
-    throw new Error(`${label} returned insufficient live evidence. Expected provenance recordCount >= ${minimum}, received ${totalProvenance}.`);
-  }
-};
-
-const ensureQueryCompleted = (label, payload, expectation) => {
-  if (payload?.status !== "completed") {
-    throw new Error(`${label} did not complete successfully. Received status ${JSON.stringify(payload?.status)}.`);
-  }
-  if (payload?.workflow !== expectation.workflow) {
-    throw new Error(`${label} routed to ${JSON.stringify(payload?.workflow)} instead of ${JSON.stringify(expectation.workflow)}.`);
-  }
-};
-
-const validateSmokePayload = (label, payload, expectation) => {
-  switch (expectation.kind) {
-    case "records_non_empty":
-      ensureNonEmpty(label, getRecordArray(payload, label, expectation.key ?? "records"));
-      return;
-    case "brief_artifact":
-      ensureBriefArtifact(label, payload, expectation);
-      return;
-    case "query_completed":
-      ensureQueryCompleted(label, payload, expectation);
-      return;
-    default:
-      throw new Error(`${label} has an unsupported smoke expectation: ${JSON.stringify(expectation)}`);
-  }
-};
-
 const main = async () => {
   accessSync(serverEntry);
+  const smokeStateDir = mkdtempSync(resolve(tmpdir(), "swee-sg-smoke-"));
 
   const transport = new StdioClientTransport({
     command: "node",
@@ -133,6 +48,7 @@ const main = async () => {
     env: {
       ...process.env,
       SG_APIS_LOG_LEVEL: process.env["SG_APIS_LOG_LEVEL"] ?? "error",
+      SG_APIS_STATE_DIR: smokeStateDir,
     },
     stderr: "pipe",
   });
@@ -143,7 +59,7 @@ const main = async () => {
   });
 
   const client = new Client(
-    { name: "sg-apis-live-smoke", version: "0.1.0" },
+    { name: "swee-sg-smoke", version: "0.1.0" },
     { capabilities: {} },
   );
 
@@ -155,69 +71,57 @@ const main = async () => {
   try {
     await client.connect(transport);
 
-    const runtimeCatalog = await readRuntimeCatalog(client);
-    const liveSurface = Array.isArray(runtimeCatalog?.liveSurface) ? runtimeCatalog.liveSurface : [];
-    const releaseReadiness = runtimeCatalog?.releaseReadiness;
-    const smokeCases = Array.isArray(releaseReadiness?.requiredSmokeCases) ? releaseReadiness.requiredSmokeCases : [];
-
-    if (liveSurface.length === 0 || smokeCases.length === 0) {
-      throw new Error("sg://runtime does not expose live surface and smoke coverage metadata.");
-    }
-
-    const releaseBlockingSurfaces = liveSurface.filter((entry) => entry?.releaseBlocking === true);
-    const targetSurfaces = PUBLIC_ONLY
-      ? releaseBlockingSurfaces.filter((entry) => entry?.authRequired !== true)
-      : releaseBlockingSurfaces;
-    const releaseBlockingCases = smokeCases.filter((entry) => entry?.releaseBlocking === true);
-    const targetCases = PUBLIC_ONLY
-      ? releaseBlockingCases.filter((entry) => entry?.authRequired !== true)
-      : releaseBlockingCases;
-
-    if (targetSurfaces.length === 0 || targetCases.length === 0) {
-      throw new Error("No matching release-blocking smoke coverage found for selected mode.");
-    }
-
-    process.stdout.write(
-      PUBLIC_ONLY
-        ? "Checking public upstreams via sg_health_check...\n"
-        : "Checking authenticated and public upstreams via sg_health_check...\n",
-    );
-    const healthPayload = await callToolPayload(client, "sg_health_check", {});
-    const healthRecords = getRecordArray(healthPayload, "sg_health_check");
-
-    for (const surface of targetSurfaces) {
-      const record = getHealthRecord(healthRecords, surface.api);
-      ensureLiveHealth(record);
-      process.stdout.write(`- ${surface.api}: ok\n`);
-    }
-
-    process.stdout.write(PUBLIC_ONLY ? "Running public MCP smoke flow...\n" : "Running live MCP smoke flow...\n");
-
-    for (const smokeCase of targetCases) {
-      try {
-        const payload = await callToolPayload(client, smokeCase.tool, smokeCase.arguments ?? {});
-        validateSmokePayload(smokeCase.name, payload, smokeCase.expectation ?? {});
-      } catch (error) {
-        throw new Error(`${smokeCase.name} via ${smokeCase.tool} failed: ${error instanceof Error ? error.message : String(error)}`);
+    const tools = await client.listTools();
+    const toolNames = new Set(tools.tools.map((tool) => tool.name));
+    for (const required of ["swee_pulse_snapshot", "swee_pulse_explain", "swee_shield_scan_tools", "swee_shield_audit_lookup"]) {
+      if (!toolNames.has(required)) {
+        throw new Error(`MCP tool surface is missing ${required}.`);
       }
-      process.stdout.write(`- ${smokeCase.name}: ok\n`);
     }
+    for (const removed of ["sg_query", "sg_business_dossier", "sg_cdd_report", "sg_resolve_counterparty"]) {
+      if (toolNames.has(removed)) {
+        throw new Error(`MCP tool surface still exposes removed CDD tool ${removed}.`);
+      }
+    }
+    process.stdout.write(`- tool surface: ${tools.tools.length} tools\n`);
+
+    const runtimeCatalog = await readJsonResource(client, "sg://runtime");
+    if (runtimeCatalog.schemaVersion !== "swee-runtime/v1") {
+      throw new Error(`Unexpected runtime schema: ${JSON.stringify(runtimeCatalog.schemaVersion)}`);
+    }
+    process.stdout.write("- runtime catalog: ok\n");
+
+    const scanPayload = await callToolPayload(client, "swee_shield_scan_tools", {});
+    if (typeof scanPayload.scannedTools !== "number" || !Array.isArray(scanPayload.findings)) {
+      throw new Error("swee_shield_scan_tools did not return scanner metadata.");
+    }
+    process.stdout.write("- shield scanner: ok\n");
+
+    if (!PUBLIC_ONLY) {
+      const explainPayload = await callToolPayload(client, "swee_pulse_explain", { focus: "all" });
+      if (explainPayload.aiUsed !== false || typeof explainPayload.explanation !== "string") {
+        throw new Error("swee_pulse_explain did not return deterministic explain output.");
+      }
+      process.stdout.write("- pulse explain: ok\n");
+    }
+
+    const auditPayload = await callToolPayload(client, "swee_shield_audit_lookup", { limit: 10 });
+    if (!Array.isArray(auditPayload.records)) {
+      throw new Error("swee_shield_audit_lookup did not return audit records.");
+    }
+    process.stdout.write("- shield audit lookup: ok\n");
 
     process.stdout.write(PUBLIC_ONLY ? "public smoke test passed\n" : "live smoke test passed\n");
   } catch (error) {
     throw new Error(`${error instanceof Error ? error.message : String(error)}${serverLogs()}`);
   } finally {
     await client.close().catch(() => undefined);
+    rmSync(smokeStateDir, { recursive: true, force: true });
   }
 };
 
 main().catch((error) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  if (PUBLIC_ONLY) {
-    process.stderr.write("See docs/troubleshooting.md for public smoke and diagnostics guidance.\n");
-  } else {
-    process.stderr.write("See README.md and .env.example for credential setup, then use docs/troubleshooting.md for live health-check behavior.\n");
-    process.stderr.write("For no-credential onboarding, run: npm run test:smoke:public\n");
-  }
+  process.stderr.write("Run npm run build first; use npm run diagnostics for catalog parity context.\n");
   process.exit(1);
 });

@@ -79,6 +79,61 @@ describe("Swee Pulse aggregators", () => {
     expect(result.sourceHealth.some((source) => source.status === "gap")).toBe(true);
   });
 
+  it("returns mobility signals and source health when LTA sources respond", async () => {
+    mocked(getTrafficIncidents).mockResolvedValue([{
+      type: "Accident",
+      message: "Accident on CTE toward city.",
+      lat: 1.31,
+      lng: 103.84,
+    }]);
+    mocked(getTrainAlerts).mockResolvedValue({
+      alerts: [{ line: "EWL", status: 1, direction: null, stations: [], freePublicBus: [], freeMrtShuttle: [], mrtShuttleDirection: null }],
+      messages: [{ content: "All clear", createdDate: "2026-05-22T06:58:00.000Z" }],
+    });
+    mocked(getRoadWorks).mockResolvedValue([{ id: "rw-1", eventType: "road-work", lat: null, lng: null, roadName: "PIE", message: "Road works", startTime: null, endTime: null }]);
+    mocked(getRoadOpenings).mockResolvedValue([]);
+    mocked(getTrafficImages).mockResolvedValue([{ cameraId: "1701", imageUrl: "https://example.test/traffic.jpg", timestamp: "2026-05-22T06:58:00.000Z", lat: 1.3, lng: 103.8 }]);
+
+    const result = await buildPulseMobilitySnapshot();
+
+    expect(result.signals.map((signal) => signal.sourceTool)).toEqual([
+      "sg_lta_traffic_incidents",
+      "sg_lta_train_alerts",
+    ]);
+    expect(result.sourceHealth).toHaveLength(5);
+    expect(result.gaps).toEqual([]);
+  });
+
+  it("surfaces empty weather source gaps without inventing signals", async () => {
+    mocked(getForecast2Hr).mockResolvedValue([]);
+    mocked(getAirQuality).mockResolvedValue([]);
+    mocked(getRainfall).mockResolvedValue([]);
+
+    const result = await buildPulseWeatherSnapshot();
+
+    expect(result.signals).toEqual([]);
+    expect(result.gaps.map((gap) => gap.code)).toEqual([
+      "NEA_FORECAST_EMPTY",
+      "NEA_AIR_QUALITY_EMPTY",
+      "NEA_RAINFALL_EMPTY",
+    ]);
+  });
+
+  it("surfaces weather upstream failures as source-health gaps", async () => {
+    mocked(getForecast2Hr).mockRejectedValue(new Error("NEA offline"));
+    mocked(getAirQuality).mockResolvedValue([]);
+    mocked(getRainfall).mockResolvedValue([]);
+
+    const result = await buildPulseWeatherSnapshot();
+
+    expect(result.gaps[0]?.code).toBe("SG_NEA_FORECAST_2HR_FAILED");
+    expect(result.sourceHealth[0]).toMatchObject({
+      sourceTool: "sg_nea_forecast_2hr",
+      status: "gap",
+      recordCount: 0,
+    });
+  });
+
   it("explains snapshots without AI", () => {
     expect(explainPulseSnapshot({
       generatedAt: "2026-05-22T07:00:00.000Z",
