@@ -111,10 +111,10 @@ jobs:
           file: ./Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/dude-mcp:${{ steps.tags.outputs.tag }}
-            ghcr.io/${{ github.repository_owner }}/dude-mcp:latest
+            ghcr.io/${{ github.repository_owner }}/swee-sg:${{ steps.tags.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/swee-sg:latest
 
       - name: Container smoke
         run: npm run test:smoke:container
         env:
-          SG_APIS_CONTAINER_IMAGE: ghcr.io/${{ github.repository_owner }}/dude-mcp:${{ steps.tags.outputs.tag }}
+          SG_APIS_CONTAINER_IMAGE: ghcr.io/${{ github.repository_owner }}/swee-sg:${{ steps.tags.outputs.tag }}

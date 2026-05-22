@@ -26,7 +26,6 @@
   "bin": {
     "swee-sg": "dist/index.js",
     "swee-shield": "dist/index.js",
-    "dude-mcp": "dist/index.js",
     "sg-apis-mcp": "dist/index.js",
     "sg-data": "dist/cli.js"
   },
