@@ -68,9 +68,9 @@ export const loadShieldPolicy = (): ShieldPolicyConfig => {
 export const buildShieldToolMetadata = (tool: {
   readonly name: string;
   readonly annotations?: {
-    readonly readOnlyHint?: boolean;
-    readonly destructiveHint?: boolean;
-    readonly openWorldHint?: boolean;
+    readonly readOnlyHint?: boolean | undefined;
+    readonly destructiveHint?: boolean | undefined;
+    readonly openWorldHint?: boolean | undefined;
   };
   readonly toolsets?: readonly string[];
 }): ShieldToolMetadata => {

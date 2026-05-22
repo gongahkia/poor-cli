@@ -9,7 +9,7 @@ const run = (cmd) => {
 const PUBLIC_ONLY = process.argv.includes("--public");
 const AUTO_DIAGNOSTICS = !process.argv.includes("--no-diagnostics-on-fail");
 
-console.log("=== Dude MCP quick start ===\n");
+console.log("=== Swee SG quick start ===\n");
 
 console.log("[1/2] building...");
 try {
@@ -35,10 +35,10 @@ try {
   if (PUBLIC_ONLY) {
     console.error("public smoke failed; run npm run diagnostics to inspect runtime and catalog parity.");
   } else {
-    console.error("configure optional CDD provider credentials via env vars when your smoke target requires them, then retry.");
+    console.error("configure optional source credentials such as SG_API_LTA_KEY when your smoke target requires them, then retry.");
     console.error("for no-credential onboarding, run: npm run quick-start -- --public");
   }
-  console.error("if the failure response includes traceId/requestId, use sg_trace_lookup or sg_request_lookup to inspect local audit context.");
+  console.error("if the failure response includes traceId/requestId, use sg_trace_lookup, sg_request_lookup, or swee_shield_audit_lookup to inspect local audit context.");
   process.exit(1);
 }
 
@@ -48,4 +48,5 @@ console.log(`  npm run ${PUBLIC_ONLY ? "test:smoke:public" : "test:smoke:live"}`
 if (!PUBLIC_ONLY) {
   console.log("  npm run test:smoke:public");
 }
+console.log("  npm run test:smoke:web");
 console.log("  npx tsx examples/integration/basic-client.ts");

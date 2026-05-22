@@ -16,31 +16,31 @@ describe("REST gateway toolset filtering", () => {
     }
   });
 
-  it("includes retained CDD registry tools in default toolsets", () => {
-    const publicTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "sg_acra_entities");
+  it("includes retained source-adapter tools in default toolsets", () => {
+    const publicTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "sg_datagov_search");
     expect(publicTools.length).toBe(1);
     expect(isToolEnabled(publicTools[0]!, publicToolsets)).toBe(true);
   });
 
-  it("includes supplemental CDD follow-up tools in default toolsets", () => {
+  it("includes Pulse tools in default toolsets", () => {
     const followUpTools = [
-      "sg_sanctions_screen",
-      "sg_opencorporates_links",
-      "sg_adverse_media_lite",
-      "sg_relationship_graph",
+      "swee_pulse_snapshot",
+      "swee_pulse_weather",
+      "swee_pulse_mobility",
+      "swee_pulse_explain",
     ];
 
     for (const toolName of followUpTools) {
       const tool = ALL_TOOL_DEFINITIONS.find((definition) => definition.name === toolName);
       expect(tool, `${toolName} definition should exist`).toBeDefined();
-      expect(isToolEnabled(tool!, publicToolsets), `${toolName} should be enabled for web follow-ups`).toBe(true);
+      expect(isToolEnabled(tool!, publicToolsets), `${toolName} should be enabled for web dashboard calls`).toBe(true);
     }
   });
 
-  it("includes brief tools in default toolsets", () => {
-    const briefTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "sg_business_dossier");
-    expect(briefTools.length).toBe(1);
-    expect(isToolEnabled(briefTools[0]!, publicToolsets)).toBe(true);
+  it("excludes Shield tools from default public toolsets", () => {
+    const shieldTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "swee_shield_audit_lookup");
+    expect(shieldTools.length).toBe(1);
+    expect(isToolEnabled(shieldTools[0]!, publicToolsets)).toBe(false);
   });
 
   it("includes ops tools only when ops toolset is enabled", () => {

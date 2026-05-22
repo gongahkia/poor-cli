@@ -552,6 +552,48 @@ const RECIPE_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
     ],
     buildStarterPrompt: (args) => `Search Singapore statutes for ${String(args["query"] ?? "").trim()}`,
   },
+  pulse_overview: {
+    args: [
+      {
+        name: "focus",
+        description: "Optional Pulse focus.",
+        kind: "enum",
+        enumValues: ["mobility", "weather", "all"],
+      },
+      { name: "area", description: "Optional Singapore area filter.", kind: "string" },
+      { name: "region", description: "Optional Singapore region filter.", kind: "string" },
+      { name: "stationId", description: "Optional NEA station identifier.", kind: "string" },
+    ],
+    buildStarterPrompt: (args) => {
+      const focus = typeof args["focus"] === "string" ? args["focus"] : "all";
+      const area = typeof args["area"] === "string" ? ` for ${args["area"]}` : "";
+      return `Show the Swee Pulse ${focus} snapshot${area}`.trim();
+    },
+    buildPreferredEntrypointInput: (args) => ({
+      ...(typeof args["focus"] === "string" ? { focus: args["focus"] } : { focus: "all" }),
+      ...(typeof args["area"] === "string" ? { area: args["area"] } : {}),
+      ...(typeof args["region"] === "string" ? { region: args["region"] } : {}),
+      ...(typeof args["stationId"] === "string" ? { stationId: args["stationId"] } : {}),
+    }),
+  },
+  shield_recent_audit: {
+    args: [
+      { name: "toolName", description: "Optional tool-name filter.", kind: "string" },
+      { name: "traceId", description: "Optional trace identifier filter.", kind: "string" },
+      { name: "requestId", description: "Optional request identifier filter.", kind: "string" },
+      { name: "limit", description: "Maximum audit rows to return.", kind: "number" },
+    ],
+    buildStarterPrompt: (args) => {
+      const toolName = typeof args["toolName"] === "string" ? ` for ${args["toolName"]}` : "";
+      return `Show recent Swee Shield audit rows${toolName}`.trim();
+    },
+    buildPreferredEntrypointInput: (args) => ({
+      ...(typeof args["toolName"] === "string" ? { toolName: args["toolName"] } : {}),
+      ...(typeof args["traceId"] === "string" ? { traceId: args["traceId"] } : {}),
+      ...(typeof args["requestId"] === "string" ? { requestId: args["requestId"] } : {}),
+      ...(typeof args["limit"] === "number" ? { limit: args["limit"] } : { limit: 25 }),
+    }),
+  },
   transit_ops_brief: {
     args: [
       { name: "scopeKey", description: "Optional deterministic scope key used for repeat monitoring runs.", kind: "string" },
@@ -573,6 +615,20 @@ const RECIPE_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
 };
 
 const PLAYBOOK_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
+  city_ops: {
+    args: [
+      {
+        name: "focus",
+        description: "Optional operations focus.",
+        kind: "enum",
+        enumValues: ["mobility", "weather", "all"],
+      },
+    ],
+    buildStarterPrompt: (args) => {
+      const focus = typeof args["focus"] === "string" ? args["focus"] : "city";
+      return `Open the Swee SG ${focus} operations desk`;
+    },
+  },
   business_opportunity_scan: {
     args: [
       { name: "entityName", description: "Optional company or target entity name.", kind: "string" },

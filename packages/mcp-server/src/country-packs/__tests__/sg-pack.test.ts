@@ -16,20 +16,20 @@ describe("Singapore country pack", () => {
     });
   });
 
-  it("keeps all registered tools in the sg_* namespace", () => {
+  it("keeps registered tools in the Swee SG runtime namespaces", () => {
     const names = SINGAPORE_COUNTRY_PACK.toolDefinitions.map((definition) => definition.name);
 
-    expect(names).toHaveLength(28);
-    expect(names.every((name) => name.startsWith("sg_"))).toBe(true);
-    expect(names).toContain("sg_cdd_report");
-    expect(names).toContain("sg_resolve_counterparty");
-    expect(names).toContain("sg_business_dossier");
-    expect(names).toContain("sg_query");
-    expect(names).toContain("sg_sanctions_screen");
-    expect(names).not.toContain("sg_property_brief");
-    expect(names).not.toContain("sg_macro_brief");
-    expect(names).not.toContain("sg_transport_brief");
-    expect(names).not.toContain("sg_datagov_search");
+    expect(names.length).toBeGreaterThan(50);
+    expect(names.every((name) => name.startsWith("sg_") || name.startsWith("swee_"))).toBe(true);
+    expect(names).toContain("swee_pulse_snapshot");
+    expect(names).toContain("swee_shield_audit_lookup");
+    expect(names).toContain("sg_datagov_search");
+    expect(names).toContain("sg_lta_traffic_incidents");
+    expect(names).toContain("sg_nea_forecast_2hr");
+    expect(names).not.toContain("sg_cdd_report");
+    expect(names).not.toContain("sg_resolve_counterparty");
+    expect(names).not.toContain("sg_business_dossier");
+    expect(names).not.toContain("sg_query");
   });
 
   it("feeds the public tool-set registration without changing the hydrated surface", () => {
@@ -41,7 +41,7 @@ describe("Singapore country pack", () => {
 
   it("documents auth, resources, and governance metadata for new pack authors", () => {
     expect(SINGAPORE_COUNTRY_PACK.auth.envVars).toEqual(
-      expect.arrayContaining(["OPENSANCTIONS_API_KEY", "OPENCORPORATES_API_TOKEN"]),
+      expect.arrayContaining(["SG_API_LTA_KEY", "ONEMAP_EMAIL", "ONEMAP_PASSWORD", "URA_ACCESS_KEY"]),
     );
     expect(SINGAPORE_COUNTRY_PACK.resources.map((resource) => resource.uri)).toEqual(
       expect.arrayContaining(["sg://apis", "sg://tools", "sg://runtime"]),

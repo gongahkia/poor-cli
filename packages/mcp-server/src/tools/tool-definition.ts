@@ -5,6 +5,7 @@ import type { ZodRawShape, ZodTypeAny } from "zod";
 import { registerAppTool } from "@modelcontextprotocol/ext-apps/server";
 import type { ToolResult } from "@swee-sg/shared";
 import { wrapHandler } from "../middleware/error-handler.js";
+import { invokeShieldedTool } from "../shield/enforcement.js";
 
 export type ToolSurface = "canonical" | "operational" | "experimental";
 export type ToolSet = "public" | "briefs" | "query" | "health" | "ops" | "diligence" | "property";
@@ -67,7 +68,7 @@ export const registerToolDefinition = (server: McpServer, definition: Registered
   };
 
   const handler = async (params: unknown) => {
-    const result = await wrapHandler(definition.name, definition.handler)(params);
+    const result = await wrapHandler(definition.name, (input) => invokeShieldedTool(definition, input))(params);
     return {
       content: result.content.map((content) => (
         content.type === "text"

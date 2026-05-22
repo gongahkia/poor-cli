@@ -122,67 +122,6 @@
         }
       }
     },
-    "/api/v1/sg_adverse_media_lite": {
-      "post": {
-        "summary": "Search bounded official Singapore public feeds for keyword evidence and source-backed triage labels without open-web crawling or unsupported NLP claims.",
-        "tags": [
-          "canonical"
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "keyword": {
-                    "type": "string"
-                  },
-                  "feedIds": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "limitPerFeed": {
-                    "type": "integer"
-                  },
-                  "format": {
-                    "type": "string",
-                    "enum": [
-                      "json",
-                      "markdown"
-                    ]
-                  }
-                },
-                "required": [
-                  "keyword"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Tool result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Tool error"
-          },
-          "500": {
-            "description": "Server error"
-          }
-        }
-      }
-    },
     "/api/v1/sg_bca_licensed_builders": {
       "post": {
         "summary": "Look up licensed builders by exact company name, UEN, builder class, or class code.",
@@ -427,145 +366,6 @@
         }
       }
     },
-    "/api/v1/sg_business_dossier": {
-      "post": {
-        "summary": "Build a cross-registry business dossier across ACRA, BCA, CEA, and explicit BOA, HSA, HLB, or GeBIZ modules using company, UEN, or estate-agent identifiers.",
-        "tags": [
-          "canonical"
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "entityName": {
-                    "type": "string"
-                  },
-                  "uen": {
-                    "type": "string"
-                  },
-                  "salespersonName": {
-                    "type": "string"
-                  },
-                  "registrationNo": {
-                    "type": "string"
-                  },
-                  "estateAgentName": {
-                    "type": "string"
-                  },
-                  "estateAgentLicenseNo": {
-                    "type": "string"
-                  },
-                  "classCode": {
-                    "type": "string"
-                  },
-                  "workhead": {
-                    "type": "string"
-                  },
-                  "grade": {
-                    "type": "string"
-                  },
-                  "modules": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "acra",
-                        "bca",
-                        "cea",
-                        "gebiz",
-                        "boa",
-                        "hsa",
-                        "hlb"
-                      ]
-                    }
-                  },
-                  "sectorHints": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "construction",
-                        "real_estate",
-                        "architecture",
-                        "healthcare",
-                        "hospitality",
-                        "procurement"
-                      ]
-                    }
-                  },
-                  "explicitSectorHints": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "construction",
-                        "real_estate",
-                        "architecture",
-                        "healthcare",
-                        "hospitality",
-                        "procurement"
-                      ]
-                    }
-                  },
-                  "webSectorHints": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "construction",
-                        "real_estate",
-                        "architecture",
-                        "healthcare",
-                        "hospitality",
-                        "procurement"
-                      ]
-                    }
-                  },
-                  "analystRerun": {
-                    "type": "boolean"
-                  },
-                  "includeExternalDiligence": {
-                    "type": "boolean"
-                  },
-                  "includeContextIds": {
-                    "type": "boolean"
-                  },
-                  "format": {
-                    "type": "string",
-                    "enum": [
-                      "json",
-                      "markdown"
-                    ]
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Tool result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Tool error"
-          },
-          "500": {
-            "description": "Server error"
-          }
-        }
-      }
-    },
     "/api/v1/sg_cache_clear": {
       "post": {
         "summary": "Clear cached data. Specify an API name to clear only that API's cache, or omit to clear all.",
@@ -621,146 +421,6 @@
               "schema": {
                 "type": "object",
                 "properties": {},
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Tool result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Tool error"
-          },
-          "500": {
-            "description": "Server error"
-          }
-        }
-      }
-    },
-    "/api/v1/sg_cdd_report": {
-      "post": {
-        "summary": "Run the CDD orchestrator after safe counterparty resolution, returning dossier, memo, evidence, gaps, provenance, freshness, and limits.",
-        "tags": [
-          "canonical"
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "identifier": {
-                    "type": "string"
-                  },
-                  "entityName": {
-                    "type": "string"
-                  },
-                  "uen": {
-                    "type": "string"
-                  },
-                  "salespersonName": {
-                    "type": "string"
-                  },
-                  "registrationNo": {
-                    "type": "string"
-                  },
-                  "estateAgentName": {
-                    "type": "string"
-                  },
-                  "estateAgentLicenseNo": {
-                    "type": "string"
-                  },
-                  "classCode": {
-                    "type": "string"
-                  },
-                  "workhead": {
-                    "type": "string"
-                  },
-                  "grade": {
-                    "type": "string"
-                  },
-                  "modules": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "acra",
-                        "bca",
-                        "cea",
-                        "gebiz",
-                        "boa",
-                        "hsa",
-                        "hlb"
-                      ]
-                    }
-                  },
-                  "sectorHints": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "construction",
-                        "real_estate",
-                        "architecture",
-                        "healthcare",
-                        "hospitality",
-                        "procurement"
-                      ]
-                    }
-                  },
-                  "explicitSectorHints": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "construction",
-                        "real_estate",
-                        "architecture",
-                        "healthcare",
-                        "hospitality",
-                        "procurement"
-                      ]
-                    }
-                  },
-                  "webSectorHints": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "construction",
-                        "real_estate",
-                        "architecture",
-                        "healthcare",
-                        "hospitality",
-                        "procurement"
-                      ]
-                    }
-                  },
-                  "analystRerun": {
-                    "type": "boolean"
-                  },
-                  "confirmedCandidate": {},
-                  "includeContextIds": {
-                    "type": "boolean"
-                  },
-                  "format": {
-                    "type": "string",
-                    "enum": [
-                      "json",
-                      "markdown"
-                    ]
-                  }
-                },
                 "additionalProperties": false
               }
             }
@@ -936,6 +596,397 @@
         }
       }
     },
+    "/api/v1/sg_datagov_browse": {
+      "post": {
+        "summary": "Browse data.gov.sg collections. Call without arguments to see all collections, or provide a collection name to see its datasets.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "collection": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_datagov_get": {
+      "post": {
+        "summary": "Get metadata for a specific data.gov.sg dataset. Use sg_datagov_search first to find dataset IDs.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "datasetId": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "required": [
+                  "datasetId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_datagov_resources": {
+      "post": {
+        "summary": "Inspect the machine-readable resource metadata for one data.gov.sg dataset, including the current resource ID and column metadata.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "datasetId": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown"
+                    ]
+                  }
+                },
+                "required": [
+                  "datasetId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_datagov_rows": {
+      "post": {
+        "summary": "Read bounded rows from one data.gov.sg datastore resource with explicit filters, pagination, and sort options.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "datasetId": {
+                    "type": "string"
+                  },
+                  "resourceId": {
+                    "type": "string"
+                  },
+                  "filters": {},
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "offset": {
+                    "type": "integer"
+                  },
+                  "sort": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_datagov_search": {
+      "post": {
+        "summary": "Search data.gov.sg for datasets matching a keyword. Covers 2,000+ Singapore government datasets. Use this when no specific API covers the topic.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keyword": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "keyword"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_ecda_childcare_centres": {
+      "post": {
+        "summary": "Search ECDA childcare centres with optional vacancy, operator, postal-code, or proximity filters.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
+                    "type": "number"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  },
+                  "centreType": {
+                    "type": "string"
+                  },
+                  "operatorType": {
+                    "type": "string"
+                  },
+                  "hasVacancy": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_ema_electricity_generation": {
+      "post": {
+        "summary": "Get EMA monthly electricity generation records by energy product type and year via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "energyType": {
+                    "type": "string"
+                  },
+                  "year": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_gebiz_tenders": {
       "post": {
         "summary": "Search government procurement tenders and awards from GeBIZ via data.gov.sg.",
@@ -967,6 +1018,399 @@
                       "json",
                       "markdown",
                       "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_gov_feed_catalog": {
+      "post": {
+        "summary": "List direct non-data.gov.sg official Singapore feeds available in this MCP server (NEA, weather.gov.sg, SFA, MPA, NHB, URA).",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "family": {
+                    "type": "string",
+                    "enum": [
+                      "all",
+                      "nea",
+                      "weather",
+                      "sfa",
+                      "mpa",
+                      "nhb",
+                      "ura"
+                    ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_gov_feed_items": {
+      "post": {
+        "summary": "Read official feed items (RSS and official listing pages) with stream-level rollback controls.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "feedId": {
+                    "type": "string",
+                    "enum": [
+                      "nea_news_updates",
+                      "nea_tender_notices",
+                      "nea_upcoming_events",
+                      "weather_2hr_forecast",
+                      "weather_24hr_forecast",
+                      "weather_4day_forecast",
+                      "weather_heavy_rain",
+                      "weather_cap_alert",
+                      "weather_portal_updates",
+                      "sfa_newsroom",
+                      "sfa_media_releases",
+                      "sfa_food_alerts",
+                      "sfa_circulars",
+                      "mpa_media_releases",
+                      "mpa_press_releases",
+                      "nhb_general",
+                      "nhb_exhibitions",
+                      "nhb_programmes",
+                      "nhb_publications",
+                      "nhb_trails",
+                      "ura_media_releases",
+                      "ura_speeches",
+                      "ura_announcements",
+                      "ura_news",
+                      "ura_publications"
+                    ]
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "keyword": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "required": [
+                  "feedId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_hawker_centres": {
+      "post": {
+        "summary": "Search hawker centres in Singapore with optional proximity filtering by coordinates and radius.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
+                    "type": "number"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_hawker_closures": {
+      "post": {
+        "summary": "Get hawker centre quarterly cleaning and other-works closure windows, optionally filtered to a centre or date range.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "centre": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_hdb_rental_prices": {
+      "post": {
+        "summary": "Get curated HDB rental-price records from data.gov.sg, filtered by town, flat type, and month range.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "town": {
+                    "type": "string"
+                  },
+                  "flatType": {
+                    "type": "string"
+                  },
+                  "startMonth": {
+                    "type": "string"
+                  },
+                  "endMonth": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_hdb_resale_prices": {
+      "post": {
+        "summary": "Get curated HDB resale-price records from data.gov.sg, filtered by town, flat type, and month range.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "town": {
+                    "type": "string"
+                  },
+                  "flatType": {
+                    "type": "string"
+                  },
+                  "startMonth": {
+                    "type": "string"
+                  },
+                  "endMonth": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
                     ]
                   }
                 },
@@ -1226,6 +1670,62 @@
         }
       }
     },
+    "/api/v1/sg_iras_tax_collection": {
+      "post": {
+        "summary": "Get IRAS annual tax collection records by financial year and tax type via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "financialYear": {
+                    "type": "string"
+                  },
+                  "taxType": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/sg_key_delete": {
       "post": {
         "summary": "Delete a stored API key.",
@@ -1358,70 +1858,9 @@
         }
       }
     },
-    "/api/v1/sg_opencorporates_links": {
+    "/api/v1/sg_law_search": {
       "post": {
-        "summary": "Find OpenCorporates company cross-links for a Singapore entity without inferring ownership or control.",
-        "tags": [
-          "canonical"
-        ],
-        "requestBody": {
-          "required": false,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "entityName": {
-                    "type": "string"
-                  },
-                  "uen": {
-                    "type": "string"
-                  },
-                  "jurisdictionCode": {
-                    "type": "string"
-                  },
-                  "limit": {
-                    "type": "integer"
-                  },
-                  "format": {
-                    "type": "string",
-                    "enum": [
-                      "json",
-                      "markdown"
-                    ]
-                  }
-                },
-                "required": [
-                  "entityName"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Tool result",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Tool error"
-          },
-          "500": {
-            "description": "Server error"
-          }
-        }
-      }
-    },
-    "/api/v1/sg_query": {
-      "post": {
-        "summary": "Preferred natural-language interface for Singapore data. Plans or executes bounded workflows over the direct sg_* tools and returns transparent step metadata.",
+        "summary": "Search Singapore Statutes Online (sso.agc.gov.sg) for Acts and subsidiary legislation by keyword. Returns hit titles, URLs, and snippets only; no synthesis or legal advice.",
         "tags": [
           "canonical"
         ],
@@ -1435,24 +1874,15 @@
                   "query": {
                     "type": "string"
                   },
+                  "limit": {
+                    "type": "integer"
+                  },
                   "format": {
                     "type": "string",
                     "enum": [
                       "json",
-                      "markdown",
-                      "csv",
-                      "geojson"
+                      "markdown"
                     ]
-                  },
-                  "mode": {
-                    "type": "string",
-                    "enum": [
-                      "execute",
-                      "plan"
-                    ]
-                  },
-                  "includeContextIds": {
-                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -1483,9 +1913,9 @@
         }
       }
     },
-    "/api/v1/sg_relationship_graph": {
+    "/api/v1/sg_lta_bus_arrivals": {
       "post": {
-        "summary": "Build a shallow relationship graph from supplied public dossier records, including explicit source-declared relationships when present and strict limits against inference.",
+        "summary": "Get live LTA bus arrival timings for a Singapore bus stop, optionally filtered to one service number.",
         "tags": [
           "canonical"
         ],
@@ -1496,18 +1926,1738 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "records": {},
+                  "busStopCode": {
+                    "type": "string"
+                  },
+                  "serviceNo": {
+                    "type": "string"
+                  },
                   "format": {
                     "type": "string",
                     "enum": [
                       "json",
-                      "markdown"
+                      "markdown",
+                      "csv",
+                      "geojson"
                     ]
                   }
                 },
                 "required": [
-                  "records"
+                  "busStopCode"
                 ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_carpark_availability": {
+      "post": {
+        "summary": "Get live LTA DataMall carpark availability with optional filters on carpark id or development name.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "carparkId": {
+                    "type": "string"
+                  },
+                  "development": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_coe_results": {
+      "post": {
+        "summary": "Get LTA Certificate of Entitlement (COE) bidding results (quota, bids, premium) by vehicle category and bidding exercise.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string"
+                  },
+                  "biddingNo": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_road_openings": {
+      "post": {
+        "summary": "Get live LTA road-opening events with start and end timing context.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_road_works": {
+      "post": {
+        "summary": "Get live LTA road-work events with start and end timing context.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_taxi_availability": {
+      "post": {
+        "summary": "Get live LTA DataMall available taxi coordinates across Singapore, bounded by an optional limit.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_traffic_images": {
+      "post": {
+        "summary": "Get live Singapore traffic camera image references with camera coordinates.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_traffic_incidents": {
+      "post": {
+        "summary": "Get live LTA traffic incidents with incident type, location, and message.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_lta_train_alerts": {
+      "post": {
+        "summary": "Get live LTA train service alerts including affected MRT lines, stations, and free shuttle or bus arrangements.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_mas_exchange_rates": {
+      "post": {
+        "summary": "Get MAS exchange rates for SGD against foreign currencies. Supports latest data, an exact date, or a bounded date range.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "currency": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_mas_financial_stats": {
+      "post": {
+        "summary": "Get MAS banking statistics. This phase supports banking data only, with latest data, an exact date, or a bounded date range.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_mas_interest_rates": {
+      "post": {
+        "summary": "Get MAS interest rates. This phase supports SORA only, with latest data, an exact date, or a bounded date range.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "date": {
+                    "type": "string"
+                  },
+                  "startDate": {
+                    "type": "string"
+                  },
+                  "endDate": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_moe_schools": {
+      "post": {
+        "summary": "Search Singapore schools from MOE directory via data.gov.sg, filtered by level, zone, or name.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "level": {
+                    "type": "string"
+                  },
+                  "zone": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_moh_facilities": {
+      "post": {
+        "summary": "Search healthcare facilities (hospitals, clinics) from MOH directory via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_mom_labour_stats": {
+      "post": {
+        "summary": "Get labour market statistics from MOM via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "indicator": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_msf_family_services": {
+      "post": {
+        "summary": "Search MSF family service centres with optional postal-code or proximity filters.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
+                    "type": "number"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_msf_social_service_offices": {
+      "post": {
+        "summary": "Search MSF social service offices with optional postal-code or proximity filters.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
+                    "type": "number"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_msf_student_care_services": {
+      "post": {
+        "summary": "Search MSF student care services with optional postal-code, audit-status, SCFA, or proximity filters.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
+                    "type": "number"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  },
+                  "auditStatus": {
+                    "type": "string"
+                  },
+                  "scfaOnly": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_nea_air_quality": {
+      "post": {
+        "summary": "Get NEA air quality readings by region, including PSI and PM2.5 metrics.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "region": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_nea_forecast_2hr": {
+      "post": {
+        "summary": "Get NEA 2-hour weather forecast data, optionally filtered to one area.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "area": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_nea_rainfall": {
+      "post": {
+        "summary": "Get NEA rainfall readings by station, optionally filtered to one station ID.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "stationId": {
+                    "type": "string"
+                  },
+                  "date": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_nlb_libraries": {
+      "post": {
+        "summary": "Search NLB public library directory by name, region, or postal code via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_nparks_parks": {
+      "post": {
+        "summary": "List parks and nature reserves from NParks via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_onemap_convert_coords": {
+      "post": {
+        "summary": "Convert between SVY21 (Singapore) and WGS84 (GPS) coordinate systems.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "enum": [
+                      "SVY21",
+                      "WGS84"
+                    ]
+                  },
+                  "x": {
+                    "type": "number"
+                  },
+                  "y": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "from",
+                  "x",
+                  "y"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_onemap_geocode": {
+      "post": {
+        "summary": "Convert a Singapore address, building name, or postal code to coordinates. Returns latitude, longitude, full address, and postal code.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "searchVal": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "searchVal"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_onemap_population": {
+      "post": {
+        "summary": "Get demographic data for a Singapore planning area. Includes population totals, age distribution, ethnicity, housing type, education, and income data.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "planningArea": {
+                    "type": "string"
+                  },
+                  "year": {
+                    "type": "string"
+                  },
+                  "dataType": {
+                    "type": "string",
+                    "enum": [
+                      "getEconomicStatus",
+                      "getEthnicGroup",
+                      "getHouseholdMonthlyIncomeWork",
+                      "getPopulationAgeGroup",
+                      "getSpokenAtHome",
+                      "getTenantHouseholdSize",
+                      "getTypeOfDwellingHousehold"
+                    ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "required": [
+                  "planningArea"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_onemap_reverse_geocode": {
+      "post": {
+        "summary": "Convert coordinates to a Singapore address. Returns the nearest building, block, street, and postal code within the search radius.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "buffer": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "lat",
+                  "lng"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_onemap_route": {
+      "post": {
+        "summary": "Get routing directions between two Singapore locations. Supports public transport (bus/MRT), driving, walking, and cycling.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "startLat": {
+                    "type": "number"
+                  },
+                  "startLng": {
+                    "type": "number"
+                  },
+                  "endLat": {
+                    "type": "number"
+                  },
+                  "endLng": {
+                    "type": "number"
+                  },
+                  "routeType": {
+                    "type": "string",
+                    "enum": [
+                      "walk",
+                      "drive",
+                      "pt",
+                      "cycle"
+                    ]
+                  }
+                },
+                "required": [
+                  "startLat",
+                  "startLng",
+                  "endLat",
+                  "endLng",
+                  "routeType"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_pa_community_outlets": {
+      "post": {
+        "summary": "Search People's Association community clubs and PAssion WaVe outlets with optional postal-code or proximity filters.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
+                    "type": "number"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "community_club",
+                      "passion_wave"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_pa_resident_network_centres": {
+      "post": {
+        "summary": "Search People's Association residents' committee and residents' network centres with optional postal-code or proximity filters.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "postalCode": {
+                    "type": "string"
+                  },
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
+                    "type": "number"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_pub_water_levels": {
+      "post": {
+        "summary": "Get water level readings from PUB monitoring stations via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "station": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
                 "additionalProperties": false
               }
             }
@@ -1585,9 +3735,9 @@
         }
       }
     },
-    "/api/v1/sg_resolve_counterparty": {
+    "/api/v1/sg_sfa_establishments": {
       "post": {
-        "summary": "Resolve a raw Singapore counterparty name or UEN into official CDD registry candidates before running a report.",
+        "summary": "Search SFA licensed food establishments via data.gov.sg.",
         "tags": [
           "canonical"
         ],
@@ -1598,37 +3748,8 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "identifier": {
+                  "name": {
                     "type": "string"
-                  },
-                  "modules": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "acra",
-                        "bca",
-                        "cea",
-                        "gebiz",
-                        "boa",
-                        "hsa",
-                        "hlb"
-                      ]
-                    }
-                  },
-                  "sectorHints": {
-                    "type": "array",
-                    "items": {
-                      "type": "string",
-                      "enum": [
-                        "construction",
-                        "real_estate",
-                        "architecture",
-                        "healthcare",
-                        "hospitality",
-                        "procurement"
-                      ]
-                    }
                   },
                   "limit": {
                     "type": "integer"
@@ -1637,12 +3758,131 @@
                     "type": "string",
                     "enum": [
                       "json",
-                      "markdown"
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_singstat_browse": {
+      "post": {
+        "summary": "Browse SingStat dataset categories. Call without arguments to see top-level categories, or provide a category to see its datasets.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "category": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_singstat_compare": {
+      "post": {
+        "summary": "Compare multiple SingStat indicators side by side. Useful for correlating economic, demographic, or trade data.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "queries": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tableId": {
+                          "type": "string"
+                        },
+                        "indicator": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "tableId",
+                        "indicator",
+                        "label"
+                      ]
+                    }
+                  },
+                  "startYear": {
+                    "type": "integer"
+                  },
+                  "endYear": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
                     ]
                   }
                 },
                 "required": [
-                  "identifier"
+                  "queries"
                 ],
                 "additionalProperties": false
               }
@@ -1669,9 +3909,242 @@
         }
       }
     },
-    "/api/v1/sg_sanctions_screen": {
+    "/api/v1/sg_singstat_search": {
       "post": {
-        "summary": "Screen a company name and optional UEN against OpenSanctions candidate matches with provenance, freshness, gaps, and license-aware limits.",
+        "summary": "Search SingStat Table Builder for datasets matching a keyword. Returns dataset IDs, titles, and update frequency.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "keyword": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "keyword"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_singstat_table": {
+      "post": {
+        "summary": "Retrieve data from a specific SingStat table. Use sg_singstat_search first to find table IDs.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tableId": {
+                    "type": "string"
+                  },
+                  "timeFilter": {
+                    "type": "string"
+                  },
+                  "variables": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "required": [
+                  "tableId"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_singstat_timeseries": {
+      "post": {
+        "summary": "Get time series data for a specific indicator from a SingStat table. Returns values for each period in the specified year range.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tableId": {
+                    "type": "string"
+                  },
+                  "indicator": {
+                    "type": "string"
+                  },
+                  "startYear": {
+                    "type": "integer"
+                  },
+                  "endYear": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "required": [
+                  "tableId",
+                  "indicator",
+                  "startYear",
+                  "endYear"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_spf_crime_stats": {
+      "post": {
+        "summary": "Get Singapore Police Force annual crime statistics by offence category and year via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "offenceCategory": {
+                    "type": "string"
+                  },
+                  "year": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_sportsg_facilities": {
+      "post": {
+        "summary": "Search Sport Singapore public facilities with optional facility-type, postal-code, or proximity filters.",
         "tags": [
           "canonical"
         ],
@@ -1685,29 +4158,90 @@
                   "name": {
                     "type": "string"
                   },
-                  "uen": {
+                  "postalCode": {
                     "type": "string"
                   },
-                  "threshold": {
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "radiusKm": {
                     "type": "number"
                   },
                   "limit": {
                     "type": "integer"
                   },
-                  "dataset": {
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  },
+                  "facilityType": {
                     "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_stb_visitor_stats": {
+      "post": {
+        "summary": "Get Singapore visitor arrival statistics from STB via data.gov.sg.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "country": {
+                    "type": "string"
+                  },
+                  "year": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
                   },
                   "format": {
                     "type": "string",
                     "enum": [
                       "json",
-                      "markdown"
+                      "markdown",
+                      "csv"
                     ]
                   }
                 },
-                "required": [
-                  "name"
-                ],
                 "additionalProperties": false
               }
             }
@@ -1760,6 +4294,459 @@
                 "required": [
                   "traceId"
                 ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_ura_dev_charges": {
+      "post": {
+        "summary": "Get URA development charge rates by use group and sector. Rates are updated semi-annually.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "useGroup": {
+                    "type": "string"
+                  },
+                  "sector": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_ura_planning_area": {
+      "post": {
+        "summary": "Get URA master plan data for a location or planning area. Returns zoning information, gross plot ratio, and land use designations.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "lat": {
+                    "type": "number"
+                  },
+                  "lng": {
+                    "type": "number"
+                  },
+                  "planningArea": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/sg_ura_property_transactions": {
+      "post": {
+        "summary": "Get property transaction data from URA. Includes resale and rental prices for private residential, commercial, and industrial properties.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "propertyType": {
+                    "type": "string",
+                    "enum": [
+                      "residential",
+                      "commercial",
+                      "industrial"
+                    ]
+                  },
+                  "area": {
+                    "type": "string"
+                  },
+                  "period": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "markdown",
+                      "csv",
+                      "geojson"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/swee_pulse_explain": {
+      "post": {
+        "summary": "Explain the current Swee Pulse snapshot with deterministic fallback text and no AI dependency.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "area": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "stationId": {
+                    "type": "string"
+                  },
+                  "focus": {
+                    "type": "string",
+                    "enum": [
+                      "mobility",
+                      "weather",
+                      "all"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/swee_pulse_mobility": {
+      "post": {
+        "summary": "Return deterministic Swee Pulse mobility signals from LTA traffic, road, rail, and camera source adapters.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/swee_pulse_snapshot": {
+      "post": {
+        "summary": "Return a source-backed Singapore mobility and weather Pulse snapshot with provenance, freshness, gaps, and recommended actions.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "area": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "stationId": {
+                    "type": "string"
+                  },
+                  "focus": {
+                    "type": "string",
+                    "enum": [
+                      "mobility",
+                      "weather",
+                      "all"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/swee_pulse_weather": {
+      "post": {
+        "summary": "Return deterministic Swee Pulse weather signals from NEA forecast, air-quality, and rainfall source adapters.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "area": {
+                    "type": "string"
+                  },
+                  "region": {
+                    "type": "string"
+                  },
+                  "stationId": {
+                    "type": "string"
+                  },
+                  "focus": {
+                    "type": "string",
+                    "enum": [
+                      "mobility",
+                      "weather",
+                      "all"
+                    ]
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/swee_shield_audit_lookup": {
+      "post": {
+        "summary": "Look up Swee Shield audit records and replay metadata by audit, trace, request, or tool identifier.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "auditId": {
+                    "type": "string"
+                  },
+                  "traceId": {
+                    "type": "string"
+                  },
+                  "requestId": {
+                    "type": "string"
+                  },
+                  "toolName": {
+                    "type": "string"
+                  },
+                  "limit": {
+                    "type": "integer"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tool result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Tool error"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/swee_shield_scan_tools": {
+      "post": {
+        "summary": "Scan registered tool descriptions for MCP prompt-injection and poisoning warning patterns.",
+        "tags": [
+          "canonical"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {},
                 "additionalProperties": false
               }
             }

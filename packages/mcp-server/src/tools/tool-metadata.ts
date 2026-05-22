@@ -101,6 +101,9 @@ const TITLE_TOKENS: Readonly<Record<string, string>> = {
   coe: "COE",
   ura: "URA",
   sg: "SG",
+  swee: "Swee",
+  pulse: "Pulse",
+  shield: "Shield",
   hr: "2hr",
 };
 
@@ -110,7 +113,7 @@ const toTitleToken = (token: string): string => {
 
 export const inferToolTitle = (name: string): string => {
   return name
-    .replace(/^sg_/, "")
+    .replace(/^(sg|swee)_/, "")
     .split("_")
     .map((token) => toTitleToken(token))
     .join(" ");
@@ -127,7 +130,11 @@ const isDiligenceProfileTool = (name: string): boolean => {
 export const inferToolSets = (name: string): readonly ToolSet[] => {
   const toolsets: ToolSet[] = [];
 
-  if (name === "sg_query") {
+  if (name.startsWith("swee_pulse_")) {
+    toolsets.push("public");
+  } else if (name.startsWith("swee_shield_")) {
+    toolsets.push("ops");
+  } else if (name === "sg_query") {
     toolsets.push("query");
   } else if (name === "sg_health_check") {
     toolsets.push("health");

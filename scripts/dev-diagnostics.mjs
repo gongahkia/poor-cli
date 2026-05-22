@@ -42,9 +42,13 @@ const toolNames = TOOL_CATALOG.map((tool) => tool.name);
 const uniqueToolNames = new Set(toolNames);
 assert(uniqueToolNames.size === toolNames.length, "duplicate tool names detected in TOOL_CATALOG.");
 
-const sgQuery = TOOL_CATALOG.find((tool) => tool.name === "sg_query");
-assert(sgQuery !== undefined, "sg_query missing from TOOL_CATALOG.");
-assert(sgQuery.preferred === true, "sg_query must remain marked as preferred.");
+const pulseSnapshot = TOOL_CATALOG.find((tool) => tool.name === "swee_pulse_snapshot");
+assert(pulseSnapshot !== undefined, "swee_pulse_snapshot missing from TOOL_CATALOG.");
+assert(pulseSnapshot.preferred === true, "swee_pulse_snapshot must remain marked as preferred.");
+
+for (const removedTool of ["sg_query", "sg_business_dossier", "sg_cdd_report", "sg_resolve_counterparty"]) {
+  assert(!uniqueToolNames.has(removedTool), `${removedTool} must not be registered in the Swee SG runtime.`);
+}
 
 for (const api of API_CATALOG) {
   for (const toolName of api.tools) {

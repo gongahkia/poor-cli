@@ -62,28 +62,28 @@ const LIVE_API_CATALOG = buildApiCatalog(ALL_TOOL_DEFINITIONS);
 const toSerializable = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
 describe("tool catalog parity", () => {
-  it("contains exactly one entry for each registered CDD runtime tool", () => {
+  it("contains exactly one entry for each registered Swee SG runtime tool", () => {
     const { registeredTools } = collectSurface();
     const catalogNames = LIVE_TOOL_CATALOG.map((tool) => tool.name);
 
     expect(new Set(catalogNames).size).toBe(catalogNames.length);
     expect(catalogNames.slice().sort()).toEqual(registeredTools.slice().sort());
-    expect(catalogNames).toHaveLength(28);
-    expect(catalogNames).toEqual(expect.arrayContaining(["sg_cdd_report", "sg_resolve_counterparty"]));
+    expect(catalogNames.length).toBeGreaterThan(50);
+    expect(catalogNames).toEqual(expect.arrayContaining(["swee_pulse_snapshot", "swee_shield_audit_lookup", "sg_datagov_search"]));
     expect(catalogNames).not.toEqual(
-      expect.arrayContaining(["sg_property_brief", "sg_macro_brief", "sg_transport_brief", "sg_datagov_search"]),
+      expect.arrayContaining(["sg_query", "sg_business_dossier", "sg_cdd_report", "sg_resolve_counterparty"]),
     );
   });
 
-  it("marks sg_query as the preferred canonical CDD interface", () => {
-    expect(TOOL_CATALOG.find((tool) => tool.name === "sg_query")).toMatchObject({
-      name: "sg_query",
+  it("marks Swee Pulse as the preferred canonical interface", () => {
+    expect(TOOL_CATALOG.find((tool) => tool.name === "swee_pulse_snapshot")).toMatchObject({
+      name: "swee_pulse_snapshot",
       surface: "canonical",
       preferred: true,
     });
   });
 
-  it("keeps CDD API catalog tool groups in sync with the registered surface", () => {
+  it("keeps Swee SG API catalog tool groups in sync with the registered surface", () => {
     const catalogNames = new Set(TOOL_CATALOG.map((tool) => tool.name));
 
     for (const api of API_CATALOG) {
@@ -92,34 +92,25 @@ describe("tool catalog parity", () => {
       }
     }
 
-    expect(API_CATALOG).toHaveLength(11);
     expect(API_CATALOG).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ name: "CDD Query", tools: ["sg_query"] }),
-        expect.objectContaining({ name: "Business Dossier", tools: ["sg_business_dossier"] }),
-        expect.objectContaining({ name: "ACRA", tools: ["sg_acra_entities"] }),
-        expect.objectContaining({ name: "BCA", tools: ["sg_bca_licensed_builders", "sg_bca_registered_contractors"] }),
-        expect.objectContaining({ name: "BOA", tools: ["sg_boa_architects", "sg_boa_architecture_firms"] }),
-        expect.objectContaining({ name: "CEA", tools: ["sg_cea_salespersons"] }),
-        expect.objectContaining({ name: "GeBIZ", tools: ["sg_gebiz_tenders"] }),
-        expect.objectContaining({ name: "HSA", tools: ["sg_hsa_licensed_pharmacies", "sg_hsa_health_product_licensees"] }),
-        expect.objectContaining({ name: "HLB", tools: ["sg_hlb_hotels"] }),
-        expect.objectContaining({ name: "External Diligence", tools: ["sg_sanctions_screen", "sg_opencorporates_links", "sg_adverse_media_lite", "sg_relationship_graph"] }),
+        expect.objectContaining({ name: "Swee Pulse", preferredInterface: "swee_pulse_snapshot" }),
+        expect.objectContaining({ name: "Swee Shield", preferredInterface: "swee_shield_audit_lookup" }),
+        expect.objectContaining({ name: "Mobility Sources" }),
+        expect.objectContaining({ name: "Weather Sources" }),
+        expect.objectContaining({ name: "Singapore Public Data Sources" }),
       ]),
     );
-    expect(API_CATALOG
-      .filter((api) => api.name !== "Operations")
-      .every((api) => api.preferredInterface === "sg_query")).toBe(true);
   });
 });
 
 describe("resource catalog parity", () => {
-  it("keeps prompt metadata coverage in sync with every shipped CDD recipe and playbook", () => {
+  it("keeps prompt metadata coverage in sync with every shipped recipe and playbook", () => {
     expect(NORMALIZED_RECIPE_CATALOG.every((entry) => entry.promptMetadata !== undefined)).toBe(true);
     expect(NORMALIZED_PLAYBOOK_CATALOG.every((entry) => entry.promptMetadata !== undefined)).toBe(true);
   });
 
-  it("keeps RECIPE_FALLBACK_TOOLS aligned with CDD recipes", async () => {
+  it("keeps RECIPE_FALLBACK_TOOLS aligned with shipped recipes", async () => {
     const { RECIPE_FALLBACK_TOOLS } = await import("../recipe-fallbacks.js");
     for (const [recipeId, fallbackTools] of Object.entries(RECIPE_FALLBACK_TOOLS)) {
       const entry = NORMALIZED_RECIPE_CATALOG.find((candidate) => candidate.id === recipeId);
@@ -128,7 +119,7 @@ describe("resource catalog parity", () => {
     }
   });
 
-  it("serves CDD catalog resources", async () => {
+  it("serves Swee SG catalog resources", async () => {
     const { resourceHandlers } = collectSurface();
 
     expect(JSON.parse((await resourceHandlers.get(RESOURCE_URIS.apis)!()).contents[0]!.text!)).toEqual(LIVE_API_CATALOG);
@@ -155,7 +146,7 @@ describe("resource catalog parity", () => {
       ],
       sloMeasurements: [
         {
-          workflow: "Company CDD Report",
+          workflow: "Swee Pulse Snapshot",
           availabilityPct: 99.1,
           latencyP50Ms: 900,
           latencyP95Ms: 1900,
@@ -187,56 +178,46 @@ describe("resource catalog parity", () => {
     }
   });
 
-  it("describes CDD-only workflow, recipe, playbook, and benchmark metadata", () => {
+  it("describes Swee Pulse, Shield, playbook, and benchmark metadata", () => {
     expect(WORKFLOW_CATALOG).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "company_cdd_report",
-          blockerFields: expect.arrayContaining(["entityName", "uen"]),
-          continuationTools: expect.arrayContaining(["sg_gebiz_tenders", "sg_sanctions_screen"]),
-          outputShapeVersion: "business-dossier/v1",
+          id: "pulse_snapshot",
+          blockerFields: expect.arrayContaining(["sourceHealth", "gaps"]),
+          fallbackTools: expect.arrayContaining(["swee_pulse_mobility", "swee_pulse_weather"]),
+          outputShapeVersion: "pulse-snapshot/v1",
         }),
       ]),
     );
     expect(RECIPE_CATALOG).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "business_due_diligence",
-          continuationTools: expect.arrayContaining(["sg_sanctions_screen", "sg_opencorporates_links"]),
+          id: "pulse_overview",
+          fallbackTools: expect.arrayContaining(["swee_pulse_mobility", "swee_pulse_weather"]),
         }),
-        expect.objectContaining({ id: "architecture_firm_diligence" }),
-        expect.objectContaining({ id: "healthcare_supplier_diligence" }),
-        expect.objectContaining({ id: "hotel_operator_lookup" }),
+        expect.objectContaining({ id: "shield_recent_audit" }),
       ]),
     );
     expect(PLAYBOOK_CATALOG).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: "business_opportunity_scan",
-          primaryWorkflows: expect.arrayContaining(["Company CDD Report"]),
-          directTools: expect.arrayContaining(["sg_business_dossier", "sg_gebiz_tenders", "sg_acra_entities"]),
+          id: "city_ops",
+          primaryWorkflows: expect.arrayContaining(["Swee Pulse Snapshot", "Swee Shield Audit Review"]),
+          directTools: expect.arrayContaining(["swee_pulse_snapshot", "swee_shield_audit_lookup"]),
         }),
       ]),
     );
     expect(BENCHMARK_CATALOG.workflowProfiles).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          workflow: "Company CDD Report",
-          primaryCacheTier: "STATIC + SUPPLEMENTAL",
+          workflow: "Swee Pulse Snapshot",
+          primaryCacheTier: "REALTIME + STATIC",
         }),
       ]),
     );
-    expect(RUNTIME_CATALOG.sourceUseWarnings).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          api: "ACRA",
-          warnings: expect.arrayContaining([expect.stringContaining("redistribution")]),
-        }),
-        expect.objectContaining({
-          api: "External Diligence",
-          warnings: expect.arrayContaining([expect.stringContaining("analyst review")]),
-        }),
-      ]),
-    );
+    expect(RUNTIME_CATALOG).toMatchObject({
+      schemaVersion: "swee-runtime/v1",
+      pulseContract: expect.stringContaining("Signals are deterministic"),
+    });
   });
 });

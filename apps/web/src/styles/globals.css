@@ -163,3 +163,55 @@ summary {
 .case-subsection {
   margin-top: 1rem;
 }
+
+.app-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.metric-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+}
+
+.metric {
+  border: 1px solid #d1d5db;
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem;
+}
+
+.metric span {
+  color: #6b7280;
+  font-size: 0.875rem;
+}
+
+.metric strong {
+  font-size: 1.5rem;
+}
+
+.signal-list {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.signal {
+  align-items: start;
+  border: 1px solid #d1d5db;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+  padding: 0.75rem;
+}
+
+.signal-watch {
+  border-left: 4px solid #ca8a04;
+}
+
+.signal-disrupted,
+.signal-critical {
+  border-left: 4px solid #dc2626;
+}

@@ -5,30 +5,31 @@ import { inferToolSets, isToolEnabled } from "../tool-metadata.js";
 const toToolsetSet = (values: readonly ToolSet[]): ReadonlySet<ToolSet> => new Set(values);
 
 describe("tool metadata profile subsets", () => {
-  it("tags business dossier tools into the diligence profile", () => {
-    const toolsets = inferToolSets("sg_business_dossier");
+  it("tags Swee Pulse tools into the public profile", () => {
+    const toolsets = inferToolSets("swee_pulse_snapshot");
 
-    expect(toolsets).toEqual(expect.arrayContaining(["briefs", "diligence"]));
+    expect(toolsets).toEqual(expect.arrayContaining(["public"]));
     expect(toolsets).not.toContain("property");
   });
 
-  it("tags external diligence tools into the diligence profile", () => {
-    const toolsets = inferToolSets("sg_sanctions_screen");
+  it("tags Swee Shield tools into the ops profile", () => {
+    const toolsets = inferToolSets("swee_shield_audit_lookup");
 
-    expect(toolsets).toEqual(expect.arrayContaining(["public", "diligence"]));
+    expect(toolsets).toEqual(expect.arrayContaining(["ops"]));
     expect(toolsets).not.toContain("property");
   });
 
-  it("keeps sg_query available to the diligence profile", () => {
-    expect(inferToolSets("sg_query")).toEqual(expect.arrayContaining(["query", "diligence"]));
-    expect(inferToolSets("sg_query")).not.toContain("property");
+  it("keeps source adapters available to the public profile", () => {
+    expect(inferToolSets("sg_datagov_search")).toEqual(expect.arrayContaining(["public"]));
+    expect(inferToolSets("sg_datagov_search")).not.toContain("property");
   });
 
   it("matches profile-only filters through isToolEnabled", () => {
-    const diligenceOnly = toToolsetSet(["diligence"]);
+    const publicOnly = toToolsetSet(["public"]);
+    const opsOnly = toToolsetSet(["ops"]);
 
-    expect(isToolEnabled({ toolsets: inferToolSets("sg_business_dossier") }, diligenceOnly)).toBe(true);
-    expect(isToolEnabled({ toolsets: inferToolSets("sg_sanctions_screen") }, diligenceOnly)).toBe(true);
-    expect(isToolEnabled({ toolsets: inferToolSets("sg_property_brief") }, diligenceOnly)).toBe(false);
+    expect(isToolEnabled({ toolsets: inferToolSets("swee_pulse_snapshot") }, publicOnly)).toBe(true);
+    expect(isToolEnabled({ toolsets: inferToolSets("swee_shield_audit_lookup") }, opsOnly)).toBe(true);
+    expect(isToolEnabled({ toolsets: inferToolSets("sg_property_brief") }, publicOnly)).toBe(false);
   });
 });

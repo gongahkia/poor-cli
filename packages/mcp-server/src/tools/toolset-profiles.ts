@@ -69,17 +69,17 @@ export const resolveEnabledToolsets = (options: {
 export const TOOLSET_PROFILE_CATALOG = [
   {
     profile: "public",
-    intent: "Default CDD profile for company search, cited dossier generation, public registry reads, and health checks.",
+    intent: "Default Swee SG profile for source adapters, Pulse signals, Shield-safe reads, and health checks.",
     toolsets: TOOLSET_PROFILE_PRESETS.public,
   },
   {
     profile: "cdd_report",
-    intent: "Full analyst report profile with public registries, orchestrated CDD reports, sg_query routing, and supplemental diligence evidence.",
+    intent: "Legacy compatibility profile name mapped to source adapters and health checks while CDD product tools are removed.",
     toolsets: TOOLSET_PROFILE_PRESETS.cdd_report,
   },
   {
     profile: "diligence",
-    intent: "Least-privilege direct-tool profile for company/UEN diligence and supplemental review evidence.",
+    intent: "Legacy compatibility profile name for direct registry/source adapters.",
     toolsets: TOOLSET_PROFILE_PRESETS.diligence,
   },
   {

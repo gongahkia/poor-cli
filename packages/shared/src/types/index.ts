@@ -62,6 +62,42 @@ export type ShieldPolicyDecision = {
   readonly message: string;
 };
 
+export type ShieldAuditStatus = "success" | "error" | "denied";
+
+export type ShieldReplayMetadata = {
+  readonly auditId: string;
+  readonly toolName: string;
+  readonly sanitizedInput: unknown;
+  readonly decision: ShieldPolicyDecision;
+  readonly status: ShieldAuditStatus;
+  readonly outputHash: string | null;
+  readonly durationMs: number;
+};
+
+export type ShieldAuditRecord = {
+  readonly auditId: string;
+  readonly traceId?: string;
+  readonly requestId?: string;
+  readonly toolName: string;
+  readonly decision: ShieldPolicyDecision;
+  readonly status: ShieldAuditStatus;
+  readonly startedAt: string;
+  readonly finishedAt: string;
+  readonly durationMs: number;
+  readonly inputHash: string;
+  readonly outputHash: string | null;
+  readonly sanitizedInput: unknown;
+  readonly error?: ToolErrorPayload;
+};
+
+export type ShieldScannerFinding = {
+  readonly toolName: string;
+  readonly severity: ShieldRiskLevel;
+  readonly code: string;
+  readonly message: string;
+  readonly evidence: string;
+};
+
 export type PulseSignalCategory = "mobility" | "weather" | "source_health";
 export type PulseSignalSeverity = "info" | "watch" | "disrupted" | "critical";
 export type PulseFreshnessStatus = "fresh" | "stale" | "unknown";

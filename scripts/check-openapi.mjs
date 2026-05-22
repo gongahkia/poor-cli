@@ -45,25 +45,42 @@ for (const definition of toolDefinitions) {
 }
 
 for (const pathKey of [
-  "/api/v1/sg_boa_architects",
-  "/api/v1/sg_boa_architecture_firms",
-  "/api/v1/sg_hsa_licensed_pharmacies",
-  "/api/v1/sg_hsa_health_product_licensees",
-  "/api/v1/sg_hlb_hotels",
+  "/api/v1/swee_pulse_snapshot",
+  "/api/v1/swee_pulse_weather",
+  "/api/v1/swee_pulse_mobility",
+  "/api/v1/swee_pulse_explain",
+  "/api/v1/swee_shield_audit_lookup",
+  "/api/v1/swee_shield_scan_tools",
+  "/api/v1/sg_nea_forecast_2hr",
+  "/api/v1/sg_nea_air_quality",
+  "/api/v1/sg_nea_rainfall",
+  "/api/v1/sg_lta_traffic_incidents",
+  "/api/v1/sg_lta_train_alerts",
 ]) {
   if (spec.paths[pathKey]?.post === undefined) {
-    throw new Error(`Generated OpenAPI is missing required diligence endpoint ${pathKey}.`);
+    throw new Error(`Generated OpenAPI is missing required Swee SG endpoint ${pathKey}.`);
   }
 }
 
-const dossierProperties = spec.paths["/api/v1/sg_business_dossier"]?.post?.requestBody?.content?.["application/json"]?.schema?.properties;
-if (dossierProperties === undefined) {
-  throw new Error("Generated OpenAPI is missing the sg_business_dossier request schema.");
+for (const removedPath of [
+  "/api/v1/sg_business_dossier",
+  "/api/v1/sg_cdd_report",
+  "/api/v1/sg_query",
+  "/api/v1/sg_resolve_counterparty",
+]) {
+  if (spec.paths[removedPath] !== undefined) {
+    throw new Error(`Generated OpenAPI still exposes removed CDD endpoint ${removedPath}.`);
+  }
 }
 
-for (const key of ["modules", "sectorHints"]) {
-  if (dossierProperties[key] === undefined) {
-    throw new Error(`Generated OpenAPI is missing sg_business_dossier.${key}.`);
+const pulseProperties = spec.paths["/api/v1/swee_pulse_snapshot"]?.post?.requestBody?.content?.["application/json"]?.schema?.properties;
+if (pulseProperties === undefined) {
+  throw new Error("Generated OpenAPI is missing the swee_pulse_snapshot request schema.");
+}
+
+for (const key of ["area", "region", "stationId", "focus"]) {
+  if (pulseProperties[key] === undefined) {
+    throw new Error(`Generated OpenAPI is missing swee_pulse_snapshot.${key}.`);
   }
 }
 
