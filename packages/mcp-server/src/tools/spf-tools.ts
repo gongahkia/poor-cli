@@ -1,5 +1,5 @@
-import { formatResponse, SpfCrimeStatsSchema, resolveOutputFormat } from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+import { formatResponse, SpfCrimeStatsSchema, resolveOutputFormat } from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { getSpfCrimeStats } from "../apis/spf/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

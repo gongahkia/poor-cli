@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { createLogger } from "@dude/shared";
+import { createLogger } from "@swee-sg/shared";
 import { startCacheWarmScheduler, warmCache } from "./cache/warm.js";
 import { derivePublicHttpToolsets, HttpAuthController, type HttpAuthMode } from "./http-auth.js";
 import { startHttpServer, isLocalHost } from "./http-server.js";

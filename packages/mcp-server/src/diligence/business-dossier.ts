@@ -13,7 +13,7 @@ import type {
   NextCheck,
   RiskFlag,
   SourceCoverageItem,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import { getAcraEntities } from "../apis/acra/client.js";
 import { getBcaLicensedBuilders, getBcaRegisteredContractors } from "../apis/bca/client.js";
 import { getBoaArchitects, getBoaArchitectureFirms } from "../apis/boa/client.js";

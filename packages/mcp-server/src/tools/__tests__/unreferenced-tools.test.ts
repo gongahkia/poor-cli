@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ToolResult } from "@dude/shared";
+import type { ToolResult } from "@swee-sg/shared";
 
 // state dir must be redirected before keystore-tools loads (module creates a Keystore at import).
 vi.hoisted(async () => {

@@ -1,4 +1,4 @@
-# @dude/sdk
+# @swee-sg/sdk
 
 Typed REST client for Dude Cloud and self-hosted Dude MCP gateways.
 
@@ -16,7 +16,7 @@ The SDK is intentionally thin:
 After the package is public on npm:
 
 ```bash
-npm install @dude/sdk
+npm install @swee-sg/sdk
 ```
 
 For local development inside this monorepo, build the workspace first:
@@ -30,7 +30,7 @@ npm run build
 Use the workspace package locally or a GitHub tarball from a tagged release until npm publication is complete. The import path below is the intended public package name after publication.
 
 ```ts
-import { createDudeClient } from "@dude/sdk";
+import { createDudeClient } from "@swee-sg/sdk";
 
 const dude = createDudeClient({
   baseUrl: "https://dude.example",

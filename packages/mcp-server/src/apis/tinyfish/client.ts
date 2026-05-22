@@ -1,4 +1,4 @@
-import { httpGet, createLogger } from "@dude/shared";
+import { httpGet, createLogger } from "@swee-sg/shared";
 
 const TINYFISH_SEARCH_URL = "https://api.search.tinyfish.ai";
 const logger = createLogger("tinyfish-client");

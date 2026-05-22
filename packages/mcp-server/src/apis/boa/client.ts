@@ -3,7 +3,7 @@ import type {
   BoaArchitectureFirmRecord,
   BoaNormalizedArchitectRecord,
   BoaNormalizedArchitectureFirmRecord,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import { downloadDatasetCsvRows } from "../datagov/client.js";
 import { toNullableString } from "../civic/utils.js";
 import { scoreBusinessNameMatch } from "../../diligence/name-matching.js";

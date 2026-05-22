@@ -1,7 +1,7 @@
 import {
   BusinessDossierSchema,
   QuerySchema,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import type {
   BriefArtifact,
   GatewayHealth,

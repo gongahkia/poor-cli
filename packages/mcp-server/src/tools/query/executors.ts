@@ -1,4 +1,4 @@
-import { formatResponse, type ToolResult } from "@dude/shared";
+import { formatResponse, type ToolResult } from "@swee-sg/shared";
 import { handleAcraEntities } from "../acra-tools.js";
 import {
   handleBcaLicensedBuilders,

@@ -59,7 +59,7 @@ const readinessDocs = [
 if (mode === "readiness") {
   for (const phrase of [
     "no public version exists yet",
-    "Do not represent `@dude/mcp` as published",
+    "Do not represent `@swee-sg/shield` as published",
     "After the package is public on npm",
     "should not be published to npm until",
   ]) {

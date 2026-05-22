@@ -1,4 +1,4 @@
-import { formatResponse } from "@dude/shared";
+import { formatResponse } from "@swee-sg/shared";
 import type {
   NextCheck,
   OutputFormat,
@@ -8,7 +8,7 @@ import type {
   QueryResultSummary,
   ToolErrorPayload,
   ToolResult,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import type { QueryPlan, QueryStep } from "../../router/planner.js";
 
 export type ExecutedQueryStep = QueryExecutedStep;

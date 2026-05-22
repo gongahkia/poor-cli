@@ -146,11 +146,11 @@ const summarizeDocsDrift = (kpi) => {
 
 const summarizeNpmTrend = (ecosystem) => {
   const packages = Array.isArray(ecosystem?.externalSignals?.npmPackages) ? ecosystem.externalSignals.npmPackages : [];
-  const dudeMcp = packages.find((entry) => entry?.packageName === "@dude/mcp");
+  const dudeMcp = packages.find((entry) => entry?.packageName === "@swee-sg/shield");
   if (dudeMcp === undefined) {
-    return "@dude/mcp monthly downloads: n/a";
+    return "@swee-sg/shield monthly downloads: n/a";
   }
-  return `@dude/mcp monthly downloads: ${toNumber(dudeMcp.downloadsLastMonth)}`;
+  return `@swee-sg/shield monthly downloads: ${toNumber(dudeMcp.downloadsLastMonth)}`;
 };
 
 const render = (input) => {

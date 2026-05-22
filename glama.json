@@ -1,7 +1,7 @@
 {
-  "name": "dude-mcp",
-  "description": "Dude MCP backend for Singapore company/UEN CDD reports across CDD Query, Business Dossier, ACRA, BCA, BOA, CEA, GeBIZ, HSA, HLB, External Diligence, and Operations.",
+  "name": "swee-sg",
+  "description": "Swee SG MCP gateway for policy-governed Singapore public-data tools, Shield audit trails, and Pulse city signals.",
   "transport": "stdio",
   "install": "npm install && npm run build && node packages/mcp-server/dist/index.js",
-  "repository": "https://github.com/gongahkia/dude"
+  "repository": "https://github.com/gongahkia/swee-sg"
 }

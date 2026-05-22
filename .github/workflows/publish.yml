@@ -55,12 +55,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Publish @dude/shared
+      - name: Publish @swee-sg/shared
         run: npm publish --workspace packages/shared --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-      - name: Publish @dude/mcp
+      - name: Publish @swee-sg/shield
         run: npm publish --workspace packages/mcp-server --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

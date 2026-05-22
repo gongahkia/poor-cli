@@ -1,5 +1,5 @@
 import { getHdbResalePrices } from "../apis/hdb/client.js";
-import type { HdbNormalizedResaleRecord } from "@dude/shared";
+import type { HdbNormalizedResaleRecord } from "@swee-sg/shared";
 
 export type ResaleCompareInput = {
   readonly town: string;

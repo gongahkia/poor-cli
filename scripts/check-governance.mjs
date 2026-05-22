@@ -251,11 +251,11 @@ ensureIncludes(resolve(root, "docs/mas-outsourcing-readiness.md"), [
 ]);
 
 ensureIncludes(resolve(root, "docs/npm-publish-readiness.md"), [
-  "@dude/mcp",
+  "@swee-sg/shield",
   "npm run release:dryrun",
   "npm publish --workspace packages/mcp-server --access public --dry-run",
   "NPM_TOKEN",
-  "npm view @dude/mcp version",
+  "npm view @swee-sg/shield version",
 ]);
 
 ensureIncludes(resolve(root, "docs/psg-application-track.md"), [

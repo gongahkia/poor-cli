@@ -1,4 +1,4 @@
-import type { QueryBlocker, ToolResult } from "@dude/shared";
+import type { QueryBlocker, ToolResult } from "@swee-sg/shared";
 
 export type QueryExecutionContext = {
   readonly results: ReadonlyMap<

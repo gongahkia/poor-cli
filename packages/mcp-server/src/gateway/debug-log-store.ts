@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { resolveStatePath, subscribeLogEntries, type LogEntry } from "@dude/shared";
+import { resolveStatePath, subscribeLogEntries, type LogEntry } from "@swee-sg/shared";
 
 export type DebugLogSnapshot = {
   readonly enabled: boolean;

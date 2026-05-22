@@ -1,6 +1,6 @@
 // release:dryrun - publish-equivalent proof without touching the npm registry.
 // 1. npm pack each publishable workspace into artifacts/release/<commit>.
-// 2. Install the tarballs into a fresh temp project (simulates `npx @dude/mcp`).
+// 2. Install the tarballs into a fresh temp project (simulates `npx @swee-sg/shield`).
 // 3. Boot the server bin, list tools, and read sg://recipes.
 // 4. Write a release-receipt.json so a maintainer can see exactly what would publish.
 import { execFileSync } from "node:child_process";

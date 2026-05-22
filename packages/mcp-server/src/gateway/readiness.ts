@@ -1,4 +1,4 @@
-import { ApiError } from "@dude/shared";
+import { ApiError } from "@swee-sg/shared";
 import {
   generateText,
   ProviderRequestError,

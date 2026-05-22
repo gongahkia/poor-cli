@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.gongahkia/dude-mcp",
-  "title": "Dude MCP",
-  "description": "Dude MCP backend for Singapore company/UEN CDD reports with cited registry evidence, supplemental analyst-review signals, report exports, and runtime ops tools.",
+  "name": "io.github.gongahkia/swee-sg",
+  "title": "Swee SG",
+  "description": "Swee SG MCP gateway for policy-governed Singapore public-data tools, Shield audit trails, and Pulse city signals.",
   "version": "0.1.0",
   "repository": {
-    "url": "https://github.com/gongahkia/dude",
+    "url": "https://github.com/gongahkia/swee-sg",
     "source": "github"
   },
   "packages": [
     {
       "registryType": "oci",
-      "identifier": "ghcr.io/gongahkia/dude-mcp",
+      "identifier": "ghcr.io/gongahkia/swee-sg",
       "version": "0.1.0",
       "transport": {
         "type": "stdio"

@@ -4,7 +4,7 @@ This repository presents **Dude** as the product and **Dude MCP** as its backend
 
 ## Stable Names That Should Not Change
 
-- npm package: `@dude/mcp`
+- npm package: `@swee-sg/shield`
 - executable: `dude-mcp`
 - MCP server package directory: `packages/mcp-server`
 - Tool names and schemas: `sg_*`
@@ -23,7 +23,7 @@ This repository presents **Dude** as the product and **Dude MCP** as its backend
 
 ## Legacy Compatibility
 
-The `sg-apis-mcp` executable is retained as a compatibility alias inside `@dude/mcp` for older local MCP client configs. New documentation, releases, and registry metadata should use `@dude/mcp`, `dude-mcp`, and `ghcr.io/gongahkia/dude-mcp`.
+The `sg-apis-mcp` executable is retained as a compatibility alias inside `@swee-sg/shield` for older local MCP client configs. New documentation, releases, and registry metadata should use `@swee-sg/shield`, `dude-mcp`, and `ghcr.io/gongahkia/dude-mcp`.
 
 ## Local Clone And Remote Expectations
 

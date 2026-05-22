@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { Cache, createLogger, getCacheTtl } from "@dude/shared";
-import type { TTLKey } from "@dude/shared";
+import { Cache, createLogger, getCacheTtl } from "@swee-sg/shared";
+import type { TTLKey } from "@swee-sg/shared";
 
 const logger = createLogger("cache-middleware");
 

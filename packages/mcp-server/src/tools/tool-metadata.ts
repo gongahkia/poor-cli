@@ -1,6 +1,6 @@
 import {
   BriefArtifactSchema,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import { z } from "zod";
 import type { RegisteredToolDefinition, ToolSet } from "./tool-definition.js";
 

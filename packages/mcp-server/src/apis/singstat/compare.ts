@@ -1,4 +1,4 @@
-import type { IndicatorQuery, ComparisonResult } from "@dude/shared";
+import type { IndicatorQuery, ComparisonResult } from "@swee-sg/shared";
 import { getTimeSeries } from "./client.js";
 
 export const compareIndicators = async (

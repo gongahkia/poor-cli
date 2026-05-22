@@ -1,5 +1,5 @@
-import { formatResponse, PubWaterLevelsSchema, resolveOutputFormat } from "@dude/shared";
-import type { OutputFormat, ToolResult } from "@dude/shared";
+import { formatResponse, PubWaterLevelsSchema, resolveOutputFormat } from "@swee-sg/shared";
+import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { getWaterLevels } from "../apis/pub/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 

@@ -1,4 +1,4 @@
-import { createLogger } from "@dude/shared";
+import { createLogger } from "@swee-sg/shared";
 
 const logger = createLogger("cache-warm");
 const DEFAULT_WARM_INTERVAL_MS = 15 * 60 * 1000;
@@ -19,7 +19,7 @@ export const warmCache = async (): Promise<WarmResult> => {
       name: "mas_exchange_rates",
       fn: async () => {
         const { query } = await import("../apis/mas/client.js");
-        const { MasDataset } = await import("@dude/shared");
+        const { MasDataset } = await import("@swee-sg/shared");
         await query(MasDataset.EXCHANGE_RATES, { limit: 10 });
       },
     },

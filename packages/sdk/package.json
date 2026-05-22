@@ -1,7 +1,7 @@
 {
-  "name": "@dude/sdk",
+  "name": "@swee-sg/sdk",
   "version": "0.1.0",
-  "description": "Typed REST client for Dude Cloud and self-hosted Dude MCP gateways",
+  "description": "Typed REST client for Swee SG Shield and Pulse gateways",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -28,7 +28,7 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@dude/shared": "0.1.0",
+    "@swee-sg/shared": "0.1.0",
     "zod": "^3.23.0"
   }
 }

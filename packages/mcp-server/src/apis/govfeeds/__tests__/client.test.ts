@@ -4,8 +4,8 @@ import { readFileSync } from "node:fs";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
-vi.mock("@dude/shared", async () => {
-  const actual = await vi.importActual<typeof import("@dude/shared")>("@dude/shared");
+vi.mock("@swee-sg/shared", async () => {
+  const actual = await vi.importActual<typeof import("@swee-sg/shared")>("@swee-sg/shared");
   return {
     ...actual,
     getRateLimiter: () => ({ acquire: vi.fn().mockResolvedValue(undefined) }),

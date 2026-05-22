@@ -1,5 +1,5 @@
-import { subscribeLogEntries } from "@dude/shared";
-import type { LogEntry, LogLevel } from "@dude/shared";
+import { subscribeLogEntries } from "@swee-sg/shared";
+import type { LogEntry, LogLevel } from "@swee-sg/shared";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SetLevelRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 

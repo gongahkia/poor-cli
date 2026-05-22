@@ -1,5 +1,5 @@
-import { BriefArtifactSchema, formatResponse } from "@dude/shared";
-import type { BriefArtifact, BriefFreshnessItem, BriefLimit, BriefProvenanceItem, EvidenceGap, RiskFlag, ToolResult } from "@dude/shared";
+import { BriefArtifactSchema, formatResponse } from "@swee-sg/shared";
+import type { BriefArtifact, BriefFreshnessItem, BriefLimit, BriefProvenanceItem, EvidenceGap, RiskFlag, ToolResult } from "@swee-sg/shared";
 import { getGovFeedItems } from "../apis/govfeeds/client.js";
 
 type FetchLike = (

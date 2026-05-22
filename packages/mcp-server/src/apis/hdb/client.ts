@@ -3,7 +3,7 @@ import type {
   HdbNormalizedResaleRecord,
   HdbRentalRecord,
   HdbResaleRecord,
-} from "@dude/shared";
+} from "@swee-sg/shared";
 import { queryDatastore } from "../datagov/client.js";
 
 const RESALE_RESOURCE_ID = "d_8b84c4ee58e3cfc0ece0d773c8ca6abc";

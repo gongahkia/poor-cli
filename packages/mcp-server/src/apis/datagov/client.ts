@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { httpGet, httpGetText, ApiError, createLogger, resolveStatePath } from "@dude/shared";
+import { httpGet, httpGetText, ApiError, createLogger, resolveStatePath } from "@swee-sg/shared";
 import type {
   DatagovColumnMetadata,
   DatagovDatastoreResult,
@@ -10,8 +10,8 @@ import type {
   DatagovDatasetMetadata,
   DatagovMetadataResponse,
   DatagovV2ListResponse,
-} from "@dude/shared";
-import type { TTLKey } from "@dude/shared";
+} from "@swee-sg/shared";
+import type { TTLKey } from "@swee-sg/shared";
 import { withCache, buildCacheKey } from "../../middleware/cache-middleware.js";
 
 const logger = createLogger("datagov-client");

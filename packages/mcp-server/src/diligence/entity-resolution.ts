@@ -1,4 +1,4 @@
-import type { MatchConfidence } from "@dude/shared";
+import type { MatchConfidence } from "@swee-sg/shared";
 import {
   isBusinessNameMatch,
   normalizeBusinessNameForSearch,
