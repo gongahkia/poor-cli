@@ -10,7 +10,7 @@ export {
   formatResponse,
   formatStream,
 } from "./formatters/index.js";
-export { httpGet, resetCircuitBreakers } from "./http-client.js";
+export { httpGet, httpGetBuffer, resetCircuitBreakers } from "./http-client.js";
 export type { HttpOptions } from "./http-client.js";
 export { httpGetText } from "./http-client.js";
 export { Keystore } from "./keystore.js";

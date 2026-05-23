@@ -1,6 +1,6 @@
 {
   "schemaVersion": "swee-source-live-benchmark/v1",
-  "generatedAt": "2026-05-23T01:54:23.497Z",
+  "generatedAt": "2026-05-23T02:42:52.550Z",
   "source": "local-live-mcp",
   "command": "npm run benchmark:sources:live",
   "sourceChecks": [
@@ -12,10 +12,10 @@
       "coverage": "2-hour forecast coverage for Singapore areas.",
       "state": "ready",
       "recordCount": 47,
-      "observedAt": "2026-05-23T01:54:23.871Z",
-      "upstreamTimestamp": "2026-05-23T09:41:44+08:00",
+      "observedAt": "2026-05-23T02:42:52.976Z",
+      "upstreamTimestamp": "2026-05-23T10:36:53+08:00",
       "freshnessStatus": "fresh",
-      "ageSeconds": 759,
+      "ageSeconds": 359,
       "gapCodes": [],
       "gapMessages": [],
       "auditId": null,
@@ -29,10 +29,10 @@
       "coverage": "Regional PSI and PM2.5 readings.",
       "state": "ready",
       "recordCount": 5,
-      "observedAt": "2026-05-23T01:54:24.004Z",
-      "upstreamTimestamp": "2026-05-23T09:45:59+08:00",
+      "observedAt": "2026-05-23T02:42:53.110Z",
+      "upstreamTimestamp": "2026-05-23T10:30:57+08:00",
       "freshnessStatus": "fresh",
-      "ageSeconds": 505,
+      "ageSeconds": 716,
       "gapCodes": [],
       "gapMessages": [],
       "auditId": null,
@@ -46,10 +46,10 @@
       "coverage": "Station rainfall readings.",
       "state": "ready",
       "recordCount": 76,
-      "observedAt": "2026-05-23T01:54:24.658Z",
-      "upstreamTimestamp": "2026-05-23T09:45:00+08:00",
+      "observedAt": "2026-05-23T02:42:54.046Z",
+      "upstreamTimestamp": "2026-05-23T10:35:00+08:00",
       "freshnessStatus": "fresh",
-      "ageSeconds": 564,
+      "ageSeconds": 474,
       "gapCodes": [],
       "gapMessages": [],
       "auditId": null,
@@ -63,7 +63,7 @@
       "coverage": "Address/building-name geocoding to Singapore coordinates.",
       "state": "credential_missing",
       "recordCount": 0,
-      "observedAt": "2026-05-23T01:54:24.665Z",
+      "observedAt": "2026-05-23T02:42:54.056Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
@@ -73,7 +73,7 @@
       "gapMessages": [
         "OneMap credentials not configured. Run sg_key_set."
       ],
-      "auditId": "af308039-2c35-40cc-b042-f8da3142bf6b",
+      "auditId": "07d5e54b-55f7-4162-bee8-de64fdd908ea",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -94,13 +94,13 @@
       "coverage": "Public dataset discovery through data.gov.sg search.",
       "state": "ready",
       "recordCount": 4,
-      "observedAt": "2026-05-23T01:54:43.124Z",
+      "observedAt": "2026-05-23T02:43:07.695Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
       "gapCodes": [],
       "gapMessages": [],
-      "auditId": "ef3f8eb9-a298-4fd3-934b-31b883171f01",
+      "auditId": "a4442bed-dd82-4b53-9f71-99782dcaf78a",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -121,13 +121,13 @@
       "coverage": "Official statistics table discovery through SingStat Table Builder search.",
       "state": "ready",
       "recordCount": 5,
-      "observedAt": "2026-05-23T01:54:53.177Z",
+      "observedAt": "2026-05-23T02:43:17.799Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
       "gapCodes": [],
       "gapMessages": [],
-      "auditId": "4a6d04c4-fea7-4fec-9a2c-55c76faab1f4",
+      "auditId": "3f71da2e-56d6-43ad-a581-935aa1044990",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -148,13 +148,13 @@
       "coverage": "Hawker centre quarterly cleaning and other-works closure windows.",
       "state": "ready",
       "recordCount": 25,
-      "observedAt": "2026-05-23T01:54:53.228Z",
+      "observedAt": "2026-05-23T02:43:18.515Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
       "gapCodes": [],
       "gapMessages": [],
-      "auditId": "e348a56a-37fb-4d6b-8cc4-9f10b8bb180f",
+      "auditId": "f3c6a908-240b-4086-a798-dde549d9333d",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -175,13 +175,13 @@
       "coverage": "Public library directory records.",
       "state": "ready",
       "recordCount": 5,
-      "observedAt": "2026-05-23T01:55:07.163Z",
+      "observedAt": "2026-05-23T02:43:33.023Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
       "gapCodes": [],
       "gapMessages": [],
-      "auditId": "0d1bd766-9c03-4496-9006-e1331ff4732a",
+      "auditId": "6e972e01-33fe-4c6e-aa02-49efb847aa95",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -202,13 +202,13 @@
       "coverage": "Public sports facility directory records.",
       "state": "ready",
       "recordCount": 5,
-      "observedAt": "2026-05-23T01:55:14.239Z",
+      "observedAt": "2026-05-23T02:43:45.713Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
       "gapCodes": [],
       "gapMessages": [],
-      "auditId": "cc7d1128-6d71-4130-9eb8-c743f5d40b22",
+      "auditId": "5d95ec31-b5cf-491c-ba0c-224215c289b8",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -229,13 +229,13 @@
       "coverage": "Parks and nature reserve directory records.",
       "state": "ready",
       "recordCount": 5,
-      "observedAt": "2026-05-23T01:55:21.931Z",
+      "observedAt": "2026-05-23T02:43:58.976Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
       "gapCodes": [],
       "gapMessages": [],
-      "auditId": "ebed1b66-bd8f-4648-8f45-5410a64e412a",
+      "auditId": "6273d8b1-b8ac-4a5f-a7d1-bb137059a39f",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -254,19 +254,15 @@
       "family": "water-levels",
       "authRequired": false,
       "coverage": "PUB water-level sensor station records; public fields do not include live water-height readings.",
-      "state": "gap",
-      "recordCount": 0,
-      "observedAt": "2026-05-23T01:55:27.676Z",
+      "state": "ready",
+      "recordCount": 5,
+      "observedAt": "2026-05-23T02:44:17.437Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
-      "gapCodes": [
-        "UNSUPPORTED_SOURCE_FORMAT"
-      ],
-      "gapMessages": [
-        "data.gov.sg currently exposes PUB Water Level Sensors as a non-GeoJSON download, so sg_pub_water_levels reports a source gap instead of inferring live water-height values."
-      ],
-      "auditId": "2cc7c555-bfaf-4e8f-b93d-a2f3063c7ed1",
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": "218f3e3c-a50e-4ac4-9e3b-c977031c2b85",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -287,13 +283,13 @@
       "coverage": "Community club and PAssion WaVe outlet directory records.",
       "state": "ready",
       "recordCount": 5,
-      "observedAt": "2026-05-23T01:55:43.660Z",
+      "observedAt": "2026-05-23T02:44:37.529Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
       "gapCodes": [],
       "gapMessages": [],
-      "auditId": "5c58374c-822f-4cd9-b9fa-f50f5a95654e",
+      "auditId": "706874e6-6e36-486a-b29c-385762f3026f",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -305,11 +301,173 @@
         "message": "Swee Shield allowed sg_pa_community_outlets."
       },
       "credentialGuidance": null
+    },
+    {
+      "sourceTool": "sg_moe_schools",
+      "source": "MOE via data.gov.sg",
+      "family": "education",
+      "authRequired": false,
+      "coverage": "School directory records by level, zone, or name.",
+      "state": "ready",
+      "recordCount": 5,
+      "observedAt": "2026-05-23T02:44:48.920Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": "fffcfbb1-08a0-4020-8367-28e5c9323da2",
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "sg_moe_schools",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed sg_moe_schools."
+      },
+      "credentialGuidance": null
+    },
+    {
+      "sourceTool": "sg_ecda_childcare_centres",
+      "source": "ECDA via data.gov.sg",
+      "family": "childcare",
+      "authRequired": false,
+      "coverage": "Childcare centre directory and vacancy metadata records.",
+      "state": "ready",
+      "recordCount": 5,
+      "observedAt": "2026-05-23T02:44:53.435Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": "5b8ee954-7a83-47dd-baf1-89ae28ec39dc",
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "sg_ecda_childcare_centres",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed sg_ecda_childcare_centres."
+      },
+      "credentialGuidance": null
+    },
+    {
+      "sourceTool": "sg_msf_family_services",
+      "source": "MSF via data.gov.sg",
+      "family": "social-support",
+      "authRequired": false,
+      "coverage": "Family service centre directory records.",
+      "state": "ready",
+      "recordCount": 5,
+      "observedAt": "2026-05-23T02:45:07.881Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": "d09b041a-ec06-4506-b314-e47dfce11972",
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "sg_msf_family_services",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed sg_msf_family_services."
+      },
+      "credentialGuidance": null
+    },
+    {
+      "sourceTool": "sg_msf_student_care_services",
+      "source": "MSF via data.gov.sg",
+      "family": "student-care",
+      "authRequired": false,
+      "coverage": "Student care service directory records.",
+      "state": "ready",
+      "recordCount": 5,
+      "observedAt": "2026-05-23T02:45:19.789Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": "d5797968-a33f-4e8f-ac69-8e1d263385ae",
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "sg_msf_student_care_services",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed sg_msf_student_care_services."
+      },
+      "credentialGuidance": null
+    },
+    {
+      "sourceTool": "sg_msf_social_service_offices",
+      "source": "MSF via data.gov.sg",
+      "family": "social-support",
+      "authRequired": false,
+      "coverage": "Social Service Office directory records.",
+      "state": "ready",
+      "recordCount": 5,
+      "observedAt": "2026-05-23T02:45:32.509Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": "2c34f6a6-db2b-43a5-af7d-ec25997b49bd",
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "sg_msf_social_service_offices",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed sg_msf_social_service_offices."
+      },
+      "credentialGuidance": null
+    },
+    {
+      "sourceTool": "sg_moh_facilities",
+      "source": "MOH via data.gov.sg",
+      "family": "health-facilities",
+      "authRequired": false,
+      "coverage": "Healthcare facility directory records only; no medical guidance is inferred.",
+      "state": "ready",
+      "recordCount": 5,
+      "observedAt": "2026-05-23T02:45:44.402Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": "56e2621d-b9ed-4c0b-bbb5-925e3611f1cc",
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "sg_moh_facilities",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed sg_moh_facilities."
+      },
+      "credentialGuidance": null
     }
   ],
   "pulseWeather": {
     "toolName": "swee_pulse_weather",
-    "auditId": "5d5dd9ca-72a9-4574-960a-b8844e1b97a6",
+    "auditId": "d66f15f8-138f-4b75-818a-6b0a26c4254a",
     "decision": {
       "mode": "observe",
       "decision": "allow",
@@ -321,7 +479,7 @@
       "message": "Swee Shield allowed swee_pulse_weather."
     },
     "replay": {
-      "auditId": "5d5dd9ca-72a9-4574-960a-b8844e1b97a6",
+      "auditId": "d66f15f8-138f-4b75-818a-6b0a26c4254a",
       "toolName": "swee_pulse_weather",
       "sanitizedInput": {},
       "decision": {
@@ -335,17 +493,18 @@
         "message": "Swee Shield allowed swee_pulse_weather."
       },
       "status": "success",
-      "outputHash": "d539ae185ffd9b360464fc90d51cf2c0f5f5a46bf29169ee0d99f06eec94368c",
-      "durationMs": 950
+      "outputHash": "085f990d34eadf95eaa24c9ec7973606fe468328294d7182d58a5b6a51c927c9",
+      "durationMs": 1239
     },
-    "signalCount": 17,
+    "signalCount": 20,
     "gapCount": 0
   },
   "limits": [
     "This artifact is live local evidence, not an SLA or official public-agency service status.",
     "A ready source check means the adapter returned a bounded response during this run; it does not certify upstream completeness.",
     "Missing upstream timestamps, empty results, and source gaps are reported directly instead of being filled with synthetic freshness.",
-    "Direct discovery probes use stable sample queries: OneMap 'Raffles Place', data.gov.sg 'weather', SingStat 'population', plus bounded directory probes for hawker closures, libraries, sports facilities, parks, water levels, and community outlets.",
-    "OneMap geocoding is expected to show credential_missing until SG_API_ONEMAP_EMAIL and SG_API_ONEMAP_PASSWORD, or the onemap_email/onemap_password keystore keys, are configured."
+    "Direct discovery probes use stable sample queries: OneMap 'Raffles Place', data.gov.sg 'weather', SingStat 'population', plus bounded directory probes for hawker closures, libraries, sports facilities, parks, water levels, community outlets, education, childcare, social-support, and health-facility directories.",
+    "OneMap geocoding is expected to show credential_missing until SG_API_ONEMAP_EMAIL and SG_API_ONEMAP_PASSWORD, or the onemap_email/onemap_password keystore keys, are configured.",
+    "MOH, MSF, and ECDA probes are directory/source coverage only and must not be read as medical, social-work, safety, or eligibility advice."
   ]
 }

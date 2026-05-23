@@ -2609,7 +2609,7 @@
     },
     "/api/v1/sg_moh_facilities": {
       "post": {
-        "summary": "Search healthcare facilities (hospitals, clinics) from MOH directory via data.gov.sg.",
+        "summary": "Search CHAS clinic facility records from MOH via data.gov.sg. Directory coverage only; does not provide medical advice.",
         "tags": [
           "canonical"
         ],

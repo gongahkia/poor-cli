@@ -18,6 +18,12 @@ const REQUIRED_SOURCE_TOOLS = [
   "sg_nparks_parks",
   "sg_pub_water_levels",
   "sg_pa_community_outlets",
+  "sg_moe_schools",
+  "sg_ecda_childcare_centres",
+  "sg_msf_family_services",
+  "sg_msf_student_care_services",
+  "sg_msf_social_service_offices",
+  "sg_moh_facilities",
 ];
 const VALID_STATES = new Set(["ready", "stale", "gap", "credential_missing", "not_returned", "error"]);
 

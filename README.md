@@ -59,6 +59,7 @@ Selected raw source adapters:
 - `sg_lta_traffic_incidents`, `sg_lta_train_alerts`, `sg_lta_road_works`, `sg_lta_traffic_images`
 - `sg_datagov_search`, `sg_singstat_search`, `sg_onemap_geocode`
 - `sg_hawker_closures`, `sg_nlb_libraries`, `sg_sportsg_facilities`, `sg_nparks_parks`, `sg_pub_water_levels`, `sg_pa_community_outlets`
+- `sg_moe_schools`, `sg_ecda_childcare_centres`, `sg_msf_family_services`, `sg_msf_student_care_services`, `sg_msf_social_service_offices`, `sg_moh_facilities`
 
 Ops:
 
@@ -88,7 +89,9 @@ Those artifacts are release evidence, not an SLA. Transport rows describe source
 
 `npm run benchmark:transport:live` runs the local MCP runtime against `swee_pulse_mobility` and writes live proof artifacts to `artifacts/transport/latest.json` and `artifacts/transport/latest.md`. Missing `SG_API_LTA_KEY` is reported as `credential_missing` for credentialed LTA sources rather than treated as a command failure.
 
-`npm run benchmark:sources:live` runs broader no-auth source-family probes for NEA weather, OneMap geocoding, data.gov.sg discovery, and SingStat discovery. It writes `artifacts/sources/latest.json` and `artifacts/sources/latest.md` with source states, record counts, gap codes, Shield audit IDs, and limits.
+`npm run benchmark:sources:live` runs broader source-family probes for NEA weather, OneMap geocoding, data.gov.sg discovery, SingStat discovery, and civic directory families. It writes `artifacts/sources/latest.json` and `artifacts/sources/latest.md` with source states, record counts, gap codes, Shield audit IDs, and limits.
+
+`npm run benchmark:sources:contracts:live`, `npm run benchmark:datagov:discovery:live`, and `npm run benchmark:credentials:live` add live evidence for source-contract drift, data.gov.sg discovery quality, and optional credential readiness. The check-only counterparts validate committed artifacts during `npm run verify`.
 
 ## Runtime Contract
 

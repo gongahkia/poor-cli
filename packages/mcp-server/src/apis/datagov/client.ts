@@ -1,7 +1,8 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import Database from "better-sqlite3";
-import { httpGet, httpGetText, ApiError, createLogger, resolveStatePath } from "@swee-sg/shared";
+import { readSheet } from "read-excel-file/node";
+import { httpGet, httpGetBuffer, httpGetText, ApiError, createLogger, resolveStatePath } from "@swee-sg/shared";
 import type {
   DatagovColumnMetadata,
   DatagovDatastoreResult,
@@ -39,6 +40,7 @@ type DatagovDatasetDownloadResponse = {
 };
 
 const INDEX_TTL = 604800; // WHY: dataset list changes slowly, weekly refresh is sufficient
+const INDEX_FUTURE_SKEW_SECONDS = 60 * 60;
 const DATASETS_PAGE_SIZE = 100;
 const DEFAULT_REMOTE_SEARCH_PAGE_LIMIT = 25;
 const TABULAR_FORMATS = new Set(["CSV", "JSON", "GEOJSON", "XLSX", "XLS", "TXT"]);
@@ -93,7 +95,11 @@ const isIndexFresh = (): boolean => {
       .get() as { value: string } | undefined;
     if (row === undefined) return false;
     const lastBuilt = parseInt(row.value, 10);
-    return Date.now() / 1000 - lastBuilt < INDEX_TTL;
+    const nowSeconds = Date.now() / 1000;
+    if (!Number.isFinite(lastBuilt) || lastBuilt > nowSeconds + INDEX_FUTURE_SKEW_SECONDS) {
+      return false;
+    }
+    return nowSeconds - lastBuilt < INDEX_TTL;
   } catch {
     return false;
   }
@@ -698,6 +704,37 @@ const parseCsvRows = (csv: string): readonly Readonly<Record<string, string>>[] 
     );
 };
 
+const spreadsheetCellToString = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return "";
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  return String(value).trim();
+};
+
+const parseXlsxRows = async (
+  buffer: Buffer,
+): Promise<readonly Readonly<Record<string, string>>[]> => {
+  const rows = await readSheet(buffer);
+  const [headerRow, ...dataRows] = rows;
+  if (headerRow === undefined) {
+    return [];
+  }
+
+  const headers = headerRow.map(spreadsheetCellToString);
+  return dataRows
+    .filter((candidate) => candidate.some((cell) => spreadsheetCellToString(cell) !== ""))
+    .map((cells) =>
+      Object.fromEntries(
+        headers.flatMap((header, index) =>
+          header === "" ? [] : [[header, spreadsheetCellToString(cells[index])]],
+        ),
+      ),
+    );
+};
+
 export const downloadDatasetText = async (
   datasetId: string,
   ttlKey: TTLKey = "DAILY",
@@ -708,6 +745,19 @@ export const downloadDatasetText = async (
     return httpGetText(downloadUrl, { apiName: "datagov" });
   });
   return data;
+};
+
+export const downloadDatasetBuffer = async (
+  datasetId: string,
+  ttlKey: TTLKey = "DAILY",
+): Promise<Buffer> => {
+  const cacheKey = buildCacheKey("datagov", "dataset-download-buffer", { datasetId, ttlKey });
+  const { data } = await withCache(cacheKey, ttlKey, async () => {
+    const downloadUrl = await getDatasetDownloadUrl(datasetId);
+    const buffer = await httpGetBuffer(downloadUrl, { apiName: "datagov" });
+    return buffer.toString("base64");
+  });
+  return Buffer.from(data, "base64");
 };
 
 export const downloadDatasetGeoJson = async <
@@ -748,6 +798,16 @@ export const downloadDatasetCsvRows = async <
 ): Promise<readonly TRow[]> => {
   const text = await downloadDatasetText(datasetId, ttlKey);
   return parseCsvRows(text) as readonly TRow[];
+};
+
+export const downloadDatasetXlsxRows = async <
+  TRow extends Readonly<Record<string, string>> = Readonly<Record<string, string>>,
+>(
+  datasetId: string,
+  ttlKey: TTLKey = "DAILY",
+): Promise<readonly TRow[]> => {
+  const buffer = await downloadDatasetBuffer(datasetId, ttlKey);
+  return (await parseXlsxRows(buffer)) as readonly TRow[];
 };
 
 export const queryDatastoreResult = async <TRecord extends Readonly<Record<string, unknown>>>(

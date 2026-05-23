@@ -14,7 +14,8 @@ This page is the public entrypoint for product-health, governance, and adoption 
 - `Works today` Swee Pulse and Shield local smoke — no-auth dashboard, Pulse snapshot, and Shield audit paths are covered by repository smoke checks; live upstreams still depend on source availability.
 - `Works today` [Public benchmark/status](./status/public-status.md) — generated Pulse, Shield, and transport-reliability evidence; this is release evidence, not an SLA or official public-agency status page.
 - `Works today` `npm run benchmark:transport:live` — live local MCP proof for `swee_pulse_mobility`, source states, Shield audit replay metadata, and credential gaps.
-- `Works today` `npm run benchmark:sources:live` — broader live local MCP proof for NEA weather, OneMap geocode, data.gov.sg discovery, SingStat discovery, and civic source families including hawker closures, libraries, sports facilities, parks, water levels, and community outlets.
+- `Works today` `npm run benchmark:sources:live` — broader live local MCP proof for NEA weather, OneMap geocode, data.gov.sg discovery, SingStat discovery, and civic source families including hawker closures, libraries, sports facilities, parks, water levels, community outlets, education, childcare, social support, and health-facility directories.
+- `Works today` `npm run benchmark:sources:contracts:live`, `npm run benchmark:datagov:discovery:live`, and `npm run benchmark:credentials:live` — source-contract drift, data.gov.sg discovery quality, and optional credential readiness evidence.
 - `Works today` [Market conventions audit](./market-conventions-audit.md) — MCP ecosystem expectations and positioning.
 - `Works today` [Ecosystem snapshot](./ecosystem-snapshot.md) — generated ecosystem evidence and comparison context.
 

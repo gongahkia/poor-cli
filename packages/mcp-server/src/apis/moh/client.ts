@@ -1,15 +1,15 @@
-import { queryDatastore } from "../datagov/client.js";
+import { downloadDatasetGeoJson } from "../datagov/client.js";
+import { normalizePostalCode, parseDescriptionAttributes, toNullableString } from "../civic/utils.js";
 
-export const MOH_HEALTHCARE_FACILITIES_RESOURCE_ID = "d_23b6e552fdce728e1e9fa5a5103d0205";
+export const MOH_HEALTHCARE_FACILITIES_RESOURCE_ID = "d_548c33ea2d99e29ec63a7cc9edcccedc";
 
-type FacilityRawRecord = {
-  readonly hci_name: string;
-  readonly hci_code: string;
-  readonly licence_type: string;
-  readonly street_name: string;
-  readonly building_blk_no: string;
-  readonly postal_code: string;
-  readonly tel_no: string;
+type FacilityFeature = {
+  readonly geometry: {
+    readonly coordinates?: readonly number[];
+  };
+  readonly properties: {
+    readonly Description?: string;
+  };
 };
 
 export type FacilityNormalizedRecord = {
@@ -20,6 +20,8 @@ export type FacilityNormalizedRecord = {
   readonly block: string;
   readonly postalCode: string;
   readonly telephone: string;
+  readonly lat?: number | null;
+  readonly lng?: number | null;
 };
 
 type FacilityFilterParams = {
@@ -32,21 +34,32 @@ type FacilityFilterParams = {
 export const getHealthcareFacilities = async (
   params: FacilityFilterParams,
 ): Promise<readonly FacilityNormalizedRecord[]> => {
-  const filters: Record<string, string> = {};
-  if (params.type !== undefined) filters["licence_type"] = params.type;
-  if (params.name !== undefined) filters["hci_name"] = params.name;
-  if (params.postalCode !== undefined) filters["postal_code"] = params.postalCode;
-  const rows = await queryDatastore<FacilityRawRecord>(MOH_HEALTHCARE_FACILITIES_RESOURCE_ID, {
-    limit: Math.min(params.limit ?? 50, 200),
-    filters,
-  });
-  return rows.map((r) => ({
-    name: r.hci_name,
-    code: r.hci_code,
-    type: r.licence_type,
-    street: r.street_name,
-    block: r.building_blk_no,
-    postalCode: r.postal_code,
-    telephone: r.tel_no,
-  }));
+  const collection = await downloadDatasetGeoJson<FacilityFeature["properties"]>(
+    MOH_HEALTHCARE_FACILITIES_RESOURCE_ID,
+    "STATIC",
+  );
+  const normalizedType = params.type?.trim().toLowerCase();
+  const normalizedName = params.name?.trim().toLowerCase();
+  const normalizedPostalCode = normalizePostalCode(params.postalCode);
+  return collection.features
+    .map((feature) => {
+      const geoFeature = feature as unknown as FacilityFeature;
+      const attributes = parseDescriptionAttributes(geoFeature.properties.Description);
+      const coordinates = geoFeature.geometry.coordinates ?? [];
+      return {
+        name: attributes["HCI_NAME"] ?? "Unknown healthcare facility",
+        code: attributes["HCI_CODE"] ?? "",
+        type: attributes["LICENCE_TYPE"] ?? "",
+        street: attributes["STREET_NAME"] ?? "",
+        block: attributes["BLK_HSE_NO"] ?? "",
+        postalCode: normalizePostalCode(attributes["POSTAL_CD"]) ?? "",
+        telephone: toNullableString(attributes["HCI_TEL"]) ?? "",
+        lat: typeof coordinates[1] === "number" ? coordinates[1] : null,
+        lng: typeof coordinates[0] === "number" ? coordinates[0] : null,
+      };
+    })
+    .filter((record) => normalizedType === undefined || record.type.toLowerCase().includes(normalizedType))
+    .filter((record) => normalizedName === undefined || record.name.toLowerCase().includes(normalizedName))
+    .filter((record) => normalizedPostalCode === null || record.postalCode === normalizedPostalCode)
+    .slice(0, Math.min(params.limit ?? 50, 200));
 };

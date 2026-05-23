@@ -3,7 +3,7 @@ import type { OutputFormat, ToolResult } from "@swee-sg/shared";
 import { getHealthcareFacilities, MOH_HEALTHCARE_FACILITIES_RESOURCE_ID } from "../apis/moh/client.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 
-const MOH_DIRECTORY_SOURCE_URL = "https://data.gov.sg/datasets/d_23b6e552fdce728e1e9fa5a5103d0205/view";
+const MOH_DIRECTORY_SOURCE_URL = "https://data.gov.sg/datasets/d_548c33ea2d99e29ec63a7cc9edcccedc/view";
 
 export const handleMohFacilities = async (
   params: Readonly<{
@@ -25,7 +25,7 @@ export const handleMohFacilities = async (
       provenance: {
         source: "data.gov.sg datastore",
         publisher: "Ministry of Health",
-        dataset: "Healthcare Institutions and Services",
+        dataset: "CHAS Clinics",
         resourceId: MOH_HEALTHCARE_FACILITIES_RESOURCE_ID,
         datasetUrl: MOH_DIRECTORY_SOURCE_URL,
         license: "Singapore Open Data Licence v1.0",
@@ -46,7 +46,7 @@ export const handleMohFacilities = async (
 export const mohToolDefinitions: readonly RegisteredToolDefinition[] = [
   {
     name: "sg_moh_facilities",
-    description: "Search healthcare facilities (hospitals, clinics) from MOH directory via data.gov.sg.",
+    description: "Search CHAS clinic facility records from MOH via data.gov.sg. Directory coverage only; does not provide medical advice.",
     surface: "canonical",
     inputSchema: MohFacilitiesSchema.shape,
     handler: async (input: unknown): Promise<ToolResult> => {

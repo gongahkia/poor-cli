@@ -19,7 +19,7 @@ const readOption = (name) => {
 const outputPath = resolve(root, readOption("output") ?? "artifacts/sources/latest.json");
 const markdownPath = resolve(root, readOption("markdown") ?? "artifacts/sources/latest.md");
 const generatedAt = process.env["SWEE_SOURCES_BENCHMARK_GENERATED_AT"] ?? new Date().toISOString();
-const DATASET_DOWNLOAD_PAUSE_MS = 5500;
+const DATASET_DOWNLOAD_PAUSE_MS = 11000;
 
 const DIRECT_PROBES = [
   {
@@ -101,6 +101,60 @@ const DIRECT_PROBES = [
     input: { limit: 5 },
     coverage: "Community club and PAssion WaVe outlet directory records.",
     rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
+  },
+  {
+    sourceTool: "sg_moe_schools",
+    source: "MOE via data.gov.sg",
+    family: "education",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "School directory records by level, zone, or name.",
+    rateLimitPauseMs: 2600,
+  },
+  {
+    sourceTool: "sg_ecda_childcare_centres",
+    source: "ECDA via data.gov.sg",
+    family: "childcare",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Childcare centre directory and vacancy metadata records.",
+    rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
+  },
+  {
+    sourceTool: "sg_msf_family_services",
+    source: "MSF via data.gov.sg",
+    family: "social-support",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Family service centre directory records.",
+    rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
+  },
+  {
+    sourceTool: "sg_msf_student_care_services",
+    source: "MSF via data.gov.sg",
+    family: "student-care",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Student care service directory records.",
+    rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
+  },
+  {
+    sourceTool: "sg_msf_social_service_offices",
+    source: "MSF via data.gov.sg",
+    family: "social-support",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Social Service Office directory records.",
+    rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
+  },
+  {
+    sourceTool: "sg_moh_facilities",
+    source: "MOH via data.gov.sg",
+    family: "health-facilities",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Healthcare facility directory records only; no medical guidance is inferred.",
+    rateLimitPauseMs: 2600,
   },
 ];
 
@@ -356,8 +410,9 @@ const main = async () => {
         "This artifact is live local evidence, not an SLA or official public-agency service status.",
         "A ready source check means the adapter returned a bounded response during this run; it does not certify upstream completeness.",
         "Missing upstream timestamps, empty results, and source gaps are reported directly instead of being filled with synthetic freshness.",
-        "Direct discovery probes use stable sample queries: OneMap 'Raffles Place', data.gov.sg 'weather', SingStat 'population', plus bounded directory probes for hawker closures, libraries, sports facilities, parks, water levels, and community outlets.",
+        "Direct discovery probes use stable sample queries: OneMap 'Raffles Place', data.gov.sg 'weather', SingStat 'population', plus bounded directory probes for hawker closures, libraries, sports facilities, parks, water levels, community outlets, education, childcare, social-support, and health-facility directories.",
         "OneMap geocoding is expected to show credential_missing until SG_API_ONEMAP_EMAIL and SG_API_ONEMAP_PASSWORD, or the onemap_email/onemap_password keystore keys, are configured.",
+        "MOH, MSF, and ECDA probes are directory/source coverage only and must not be read as medical, social-work, safety, or eligibility advice.",
       ],
     };
     writeArtifacts(artifact);

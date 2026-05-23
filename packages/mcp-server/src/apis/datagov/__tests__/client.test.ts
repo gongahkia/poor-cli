@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockFetch = vi.fn();
+const mockReadSheet = vi.hoisted(() => vi.fn());
 vi.stubGlobal("fetch", mockFetch);
 const testHomeDir = mkdtempSync(join(tmpdir(), "sg-apis-datagov-test-"));
 
@@ -31,8 +32,13 @@ vi.mock("../../../middleware/cache-middleware.js", () => ({
   buildCacheKey: vi.fn((...args: unknown[]) => args.join(":")),
 }));
 
+vi.mock("read-excel-file/node", () => ({
+  readSheet: mockReadSheet,
+}));
+
 import {
   downloadDatasetCsvRows,
+  downloadDatasetXlsxRows,
   getDatasetMetadata,
   getDatasetResources,
   getDatasetRows,
@@ -48,6 +54,7 @@ describe("data.gov.sg client", () => {
 
   beforeEach(() => {
     mockFetch.mockReset();
+    mockReadSheet.mockReset();
     resetLocalIndexState();
     rmSync(join(testHomeDir, ".sg-apis"), { recursive: true, force: true });
     nowSeed += 8 * 24 * 60 * 60 * 1000;
@@ -279,6 +286,49 @@ describe("data.gov.sg client", () => {
       "https://download.data.gov.sg/boa-architecture-firms.csv",
       expect.any(Object),
     );
+  });
+
+  it("downloads XLSX rows through the data.gov.sg file-download contract", async () => {
+    mockReadSheet.mockResolvedValueOnce([
+      ["Station ID", "Station Name", "X", "Y"],
+      ["CWS186", "Eng Neo Ave OD", 24084.322, 34974.365],
+      ["", "", "", ""],
+      ["CWS192", "Happy Ave OD", null, 34953.956],
+    ]);
+    mockFetch
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          code: 0,
+          data: {
+            url: "https://download.data.gov.sg/water-level-sensors.xlsx",
+            status: "DOWNLOAD_SUCCESS",
+          },
+          errorMsg: "",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        arrayBuffer: async () => Uint8Array.from([1, 2, 3]).buffer,
+      });
+
+    const rows = await downloadDatasetXlsxRows("d_31333fa5cf0834f012d840365b336610", "STATIC");
+
+    expect(mockReadSheet).toHaveBeenCalledWith(Buffer.from([1, 2, 3]));
+    expect(rows).toEqual([
+      {
+        "Station ID": "CWS186",
+        "Station Name": "Eng Neo Ave OD",
+        X: "24084.322",
+        Y: "34974.365",
+      },
+      {
+        "Station ID": "CWS192",
+        "Station Name": "Happy Ave OD",
+        X: "",
+        Y: "34953.956",
+      },
+    ]);
   });
 
   it("reads bounded datastore rows with truthful pagination metadata", async () => {
