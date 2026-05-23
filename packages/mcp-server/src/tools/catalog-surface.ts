@@ -28,7 +28,8 @@ export type PromptCompletionSource =
   | "outputFormat"
   | "coordinateSystem"
   | "communityOutletType"
-  | "developmentChargeSector";
+  | "developmentChargeSector"
+  | "pulseFocus";
 
 export type PromptArgumentDefinition = {
   readonly name: string;
@@ -559,6 +560,7 @@ const RECIPE_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
         description: "Optional Pulse focus.",
         kind: "enum",
         enumValues: ["mobility", "weather", "all"],
+        completionSource: "pulseFocus",
       },
       { name: "area", description: "Optional Singapore area filter.", kind: "string" },
       { name: "region", description: "Optional Singapore region filter.", kind: "string" },
@@ -622,6 +624,7 @@ const PLAYBOOK_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
         description: "Optional operations focus.",
         kind: "enum",
         enumValues: ["mobility", "weather", "all"],
+        completionSource: "pulseFocus",
       },
     ],
     buildStarterPrompt: (args) => {

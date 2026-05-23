@@ -24,6 +24,7 @@ const PROMPT_COMPLETIONS = {
   coordinateSystem: [...COORDINATE_SYSTEMS],
   communityOutletType: ["community_club", "passion_wave"],
   developmentChargeSector: ["A", "B1", "B2", "C"],
+  pulseFocus: ["mobility", "weather", "all"],
 } as const;
 
 const formatPromptArgumentValue = (value: string | number | undefined): string => {

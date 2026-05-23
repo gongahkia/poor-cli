@@ -7,6 +7,8 @@ dist/
 !.env.*.example
 .sg-apis/
 *.tsbuildinfo
+__pycache__/
+*.pyc
 CLAUDE.md
 artifacts/release/
 output/

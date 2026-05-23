@@ -328,7 +328,7 @@ describe("MCP surface", () => {
         focus: "weather",
       },
     });
-    expect(JSON.stringify(recipePrompt.messages)).toContain("Swee Pulse snapshot");
+    expect(JSON.stringify(recipePrompt.messages)).toContain("Swee Pulse weather snapshot");
 
     const completion = await client.complete({
       ref: { type: "ref/prompt", name: "playbook-city_ops" },
