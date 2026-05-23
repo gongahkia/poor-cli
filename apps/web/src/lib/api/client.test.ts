@@ -13,7 +13,7 @@ describe("api client errors", () => {
       { status: 429 },
     ));
 
-    await expect(callTool("sg_business_dossier", {})).rejects.toThrow("Nested failure");
+    await expect(callTool("swee_pulse_snapshot", {})).rejects.toThrow("Nested failure");
   });
 
   it("surfaces nested gateway error messages for GET and POST helper calls", async () => {
@@ -23,13 +23,13 @@ describe("api client errors", () => {
     ));
 
     await expect(getGatewayJson("/api/v1/health")).rejects.toThrow("Gateway unavailable");
-    await expect(postGatewayJson("/api/v1/dude/memo", {})).rejects.toThrow("Gateway unavailable");
+    await expect(postGatewayJson("/api/v1/pulse/explain", {})).rejects.toThrow("Gateway unavailable");
   });
 
   it("adds setup context for network and CORS fetch failures", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("Failed to fetch"));
 
-    await expect(getGatewayJson("/api/v1/health")).rejects.toThrow("DUDE_WEB_ORIGIN_ALLOWLIST");
+    await expect(getGatewayJson("/api/v1/health")).rejects.toThrow("SWEE_WEB_ORIGIN_ALLOWLIST");
     await expect(getGatewayJson("/api/v1/health")).rejects.toThrow("Failed to fetch");
   });
 });

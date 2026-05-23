@@ -271,16 +271,16 @@ describe("MCP surface", () => {
     const { client } = await createConnectedInMemoryClient();
     const result = await client.listTools();
 
-    const queryTool = result.tools.find((tool) => tool.name === "sg_query");
-    expect(queryTool).toMatchObject({
-      name: "sg_query",
-      title: "Query",
+    const pulseTool = result.tools.find((tool) => tool.name === "swee_pulse_snapshot");
+    expect(pulseTool).toMatchObject({
+      name: "swee_pulse_snapshot",
+      title: "Pulse Snapshot",
       annotations: expect.objectContaining({
         readOnlyHint: true,
         openWorldHint: true,
       }),
     });
-    expect(queryTool?.outputSchema).toBeDefined();
+    expect(pulseTool?.outputSchema).toBeDefined();
 
     const destructiveTool = result.tools.find((tool) => tool.name === "sg_cache_clear");
     expect(destructiveTool).toMatchObject({
@@ -299,17 +299,16 @@ describe("MCP surface", () => {
     expect(prompts.prompts).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          name: "recipe-business_due_diligence",
+          name: "recipe-pulse_overview",
           arguments: expect.arrayContaining([
-            expect.objectContaining({ name: "entityName", required: true }),
-            expect.objectContaining({ name: "uen", required: false }),
+            expect.objectContaining({ name: "focus", required: false }),
+            expect.objectContaining({ name: "area", required: false }),
           ]),
         }),
         expect.objectContaining({
-          name: "playbook-business_opportunity_scan",
+          name: "playbook-city_ops",
           arguments: expect.arrayContaining([
-            expect.objectContaining({ name: "entityName", required: false }),
-            expect.objectContaining({ name: "outputFormat", required: false }),
+            expect.objectContaining({ name: "focus", required: false }),
           ]),
         }),
       ]),
@@ -323,18 +322,19 @@ describe("MCP surface", () => {
     }
 
     const recipePrompt = await client.getPrompt({
-      name: "recipe-business_due_diligence",
+      name: "recipe-pulse_overview",
       arguments: {
-        entityName: "DP Architects",
+        area: "Bedok",
+        focus: "weather",
       },
     });
-    expect(JSON.stringify(recipePrompt.messages)).toContain("Business dossier for DP Architects");
+    expect(JSON.stringify(recipePrompt.messages)).toContain("Swee Pulse snapshot");
 
     const completion = await client.complete({
-      ref: { type: "ref/prompt", name: "playbook-business_opportunity_scan" },
-      argument: { name: "outputFormat", value: "j" },
+      ref: { type: "ref/prompt", name: "playbook-city_ops" },
+      argument: { name: "focus", value: "w" },
     });
-    expect(completion.completion.values).toContain("json");
+    expect(completion.completion.values).toContain("weather");
   });
 
   it("lists root resources, templates, artifacts, and the UI resource", async () => {
@@ -368,18 +368,15 @@ describe("MCP surface", () => {
     );
   });
 
-  it("does not expose removed generic row drilldown tools", async () => {
+  it("retains source adapters while excluding removed CDD tools", async () => {
     const { client } = await createConnectedInMemoryClient();
     const tools = await client.listTools();
+    const names = tools.tools.map((tool) => tool.name);
 
-    expect(tools.tools.map((tool) => tool.name)).not.toContain("sg_datagov_rows");
-  });
-
-  it("does not expose removed geospatial map tools", async () => {
-    const { client } = await createConnectedInMemoryClient();
-    const tools = await client.listTools();
-
-    expect(tools.tools.map((tool) => tool.name)).not.toContain("sg_onemap_geocode");
+    expect(names).toEqual(expect.arrayContaining(["sg_datagov_rows", "sg_onemap_geocode", "swee_pulse_snapshot"]));
+    expect(names).not.toEqual(
+      expect.arrayContaining(["sg_query", "sg_business_dossier", "sg_cdd_report", "sg_resolve_counterparty"]),
+    );
   });
 
   it("serves the filtered mixed HTTP surface for unauthenticated sessions", async () => {
@@ -387,7 +384,7 @@ describe("MCP surface", () => {
     const tools = await client.listTools();
 
     expect(tools.tools.find((tool) => tool.name === "sg_key_set")).toBeUndefined();
-    expect(tools.tools.find((tool) => tool.name === "sg_query")).toBeDefined();
+    expect(tools.tools.find((tool) => tool.name === "swee_pulse_snapshot")).toBeDefined();
   }, 20_000);
 
   it("serves the full mixed HTTP surface for authenticated sessions", async () => {

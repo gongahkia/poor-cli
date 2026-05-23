@@ -178,7 +178,7 @@ const buildGatewayConnectionMessage = (url: string, error: unknown): string => {
     ? ` (${error.message})`
     : "";
   const webOrigin = getWebOrigin();
-  return `Unable to reach REST gateway at ${getGatewayOrigin(url)} from ${webOrigin}. Start npm run dev:gateway and ensure DUDE_WEB_ORIGIN_ALLOWLIST includes ${webOrigin}.${reason}`;
+  return `Unable to reach REST gateway at ${getGatewayOrigin(url)} from ${webOrigin}. Start npm run dev:gateway and ensure SWEE_WEB_ORIGIN_ALLOWLIST includes ${webOrigin}.${reason}`;
 };
 
 const fetchGateway = async (url: string, init: RequestInit): Promise<Response> => {

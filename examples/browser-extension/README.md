@@ -1,6 +1,6 @@
-# Dude UEN Overlay Prototype
+# Swee Pulse Overlay Prototype
 
-This is a Manifest V3 browser-extension prototype for Singapore UEN detection on arbitrary web pages. It highlights UEN-like text and loads a bounded Dude dossier preview only after the user clicks a detected UEN.
+This is a Manifest V3 browser-extension prototype for Singapore place-name detection on arbitrary web pages. It highlights common planning-area names and loads a bounded Swee Pulse preview only after the user clicks a detected place.
 
 ## Supported Browsers
 
@@ -10,7 +10,7 @@ This is a Manifest V3 browser-extension prototype for Singapore UEN detection on
 
 ## Local Setup
 
-1. Start Dude locally:
+1. Start Swee SG locally:
 
    ```sh
    npm run dev:local
@@ -18,19 +18,19 @@ This is a Manifest V3 browser-extension prototype for Singapore UEN detection on
 
 2. Open `chrome://extensions`, enable Developer mode, and load `examples/browser-extension` as an unpacked extension.
 3. Open extension options and set:
-   - Dude gateway URL: `http://localhost:8787` or your REST gateway origin.
-   - Dude web app URL: `http://localhost:5173` or your web app origin.
+   - Swee SG gateway URL: `http://localhost:3000` or your REST gateway origin.
+   - Swee SG web app URL: `http://localhost:5173` or your web app origin.
 
 ## Privacy And Permissions
 
-- The content script scans visible page text locally for UEN-like patterns.
-- It does not send page text, URLs, or detected UENs to Dude until the user clicks a highlighted UEN.
-- The request payload is limited to `{ "uen": "<detected UEN>" }`.
-- Host permissions are limited to localhost Dude development origins. Widen them only after a production privacy review.
+- The content script scans visible page text locally for known Singapore area names.
+- It does not send page text, URLs, or detected places to Swee SG until the user clicks a highlighted place.
+- The request is limited to `GET /api/v1/pulse/snapshot?focus=all&area=<detected area>`.
+- Host permissions are limited to localhost Swee SG development origins. Widen them only after a production privacy review.
 
 ## Limits
 
-- UEN detection is regex-based and can highlight false positives in ordinary page text.
-- Image-only UENs, PDFs rendered by browser plugins, shadow-DOM-heavy apps, and dynamically loaded content after the first scan may be missed.
-- The preview is a prototype and does not replace the full dossier, provenance, freshness, gaps, and limits shown in the Dude web app.
-- Do not use this prototype to make legal, credit, tax, investment, or licensed compliance decisions.
+- Place-name detection is dictionary-based and can highlight false positives in ordinary page text.
+- Image-only text, PDFs rendered by browser plugins, shadow-DOM-heavy apps, and dynamically loaded content after the first scan may be missed.
+- The preview is a prototype and does not replace the full Pulse dashboard, source health, freshness, gaps, and Shield audit trails shown in the Swee SG web app.
+- Do not use this prototype as an official emergency, transport, weather, legal, credit, tax, investment, or licensed compliance decision tool.

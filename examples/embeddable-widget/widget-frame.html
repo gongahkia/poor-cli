@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Dude dossier frame</title>
-    <script src="./dude-dossier-widget.js"></script>
+    <title>Swee Pulse frame</title>
+    <script src="./swee-pulse-widget.js"></script>
     <style>
       html,
       body {
@@ -18,16 +18,15 @@
     </style>
   </head>
   <body>
-    <dude-dossier-widget id="widget"></dude-dossier-widget>
+    <swee-pulse-widget id="widget"></swee-pulse-widget>
     <script type="module">
       const params = new URLSearchParams(window.location.search);
       const widget = document.querySelector("#widget");
       for (const [attribute, parameter] of [
         ["gateway-url", "gatewayUrl"],
         ["brand-name", "brandName"],
-        ["identifier", "identifier"],
-        ["modules", "modules"],
-        ["sector-hints", "sectorHints"],
+        ["area", "area"],
+        ["focus", "focus"],
         ["theme", "theme"],
       ]) {
         const value = params.get(parameter);

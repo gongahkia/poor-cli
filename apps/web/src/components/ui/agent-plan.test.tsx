@@ -7,43 +7,43 @@ describe("AgentPlan", () => {
   it("renders active tool-call steps with tool labels", () => {
     const tasks: AgentPlanTask[] = [
       {
-        id: "dossier",
-        title: "Resolve the counterparty identity",
-        description: "Call the dossier workflow.",
+        id: "pulse",
+        title: "Build the Pulse snapshot",
+        description: "Call the city-signal workflow.",
         status: "in-progress",
         subtasks: [
           {
             id: "tool",
-            title: "Run CDD orchestrator",
-            description: "Requesting the ACRA-gated CDD workflow.",
+            title: "Run Pulse aggregator",
+            description: "Requesting source-backed mobility and weather signals.",
             status: "in-progress",
-            tools: ["cdd-orchestrator"],
+            tools: ["swee_pulse_snapshot"],
           },
         ],
       },
     ];
 
     const html = renderToStaticMarkup(
-      <AgentPlan description="Dude is calling official Singapore data tools." tasks={tasks} />,
+      <AgentPlan description="Swee SG is calling official Singapore data tools." tasks={tasks} />,
     );
 
-    expect(html).toContain("Dude is working");
-    expect(html).toContain("Resolve the counterparty identity");
-    expect(html).toContain("Run CDD orchestrator");
-    expect(html).toContain("cdd-orchestrator");
+    expect(html).toContain("Swee SG is working");
+    expect(html).toContain("Build the Pulse snapshot");
+    expect(html).toContain("Run Pulse aggregator");
+    expect(html).toContain("swee_pulse_snapshot");
   });
 
   it("keeps status treatment neutral across working states", () => {
     const tasks: AgentPlanTask[] = [
       {
         id: "completed",
-        title: "Prepare dossier input",
+        title: "Prepare Pulse input",
         description: "Done.",
         status: "completed",
       },
       {
         id: "running",
-        title: "Run CDD orchestrator",
+        title: "Run Pulse aggregator",
         description: "Running.",
         status: "in-progress",
       },

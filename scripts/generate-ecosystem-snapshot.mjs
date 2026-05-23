@@ -124,7 +124,7 @@ const fetchJson = async (url, headers = {}) => {
     const response = await fetch(url, {
       headers: {
         Accept: "application/json",
-        "User-Agent": "dude-mcp-ecosystem-snapshot",
+        "User-Agent": "swee-sg-ecosystem-snapshot",
         ...headers,
       },
       signal: controller.signal,
@@ -267,9 +267,12 @@ const main = async () => {
     fetchJson("https://api.github.com/search/repositories?q=mcp+singapore+in:name,description&sort=updated&order=desc&per_page=20", githubHeaders),
   ]);
 
-  const briefTools = TOOL_CATALOG
-    .filter((entry) => entry.name.endsWith("_brief") || entry.name === "sg_business_dossier")
+  const pulseTools = TOOL_CATALOG
+    .filter((entry) => entry.name.startsWith("swee_pulse_"))
     .map((entry) => entry.name);
+  const pulseFamilyCount = API_CATALOG
+    .filter((entry) => entry.preferredInterface?.startsWith("swee_pulse_"))
+    .length;
 
   const toolCoverage = collectToolTestCoverage(TOOL_CATALOG.map((entry) => entry.name));
 
@@ -303,8 +306,8 @@ const main = async () => {
       apiFamilyCount: API_CATALOG.length,
       workflowCount: WORKFLOW_CATALOG.length,
       recipeCount: RECIPE_CATALOG.length,
-      routedFamilyCount: API_CATALOG.filter((entry) => entry.preferredInterface === "sg_query").length,
-      briefTools,
+      pulseFamilyCount,
+      pulseTools,
       toolCatalogResources: RESOURCE_URIS,
       testCoverage: toolCoverage,
     },
@@ -368,8 +371,8 @@ const main = async () => {
           apiFamilyCount: API_CATALOG.length - Number(previousSnapshot.localSurface?.apiFamilyCount ?? API_CATALOG.length),
           workflowCount: WORKFLOW_CATALOG.length - Number(previousSnapshot.localSurface?.workflowCount ?? WORKFLOW_CATALOG.length),
           recipeCount: RECIPE_CATALOG.length - Number(previousSnapshot.localSurface?.recipeCount ?? RECIPE_CATALOG.length),
-          routedFamilyCount: API_CATALOG.filter((entry) => entry.preferredInterface === "sg_query").length
-            - Number(previousSnapshot.localSurface?.routedFamilyCount ?? API_CATALOG.filter((entry) => entry.preferredInterface === "sg_query").length),
+          pulseFamilyCount: pulseFamilyCount
+            - Number(previousSnapshot.localSurface?.pulseFamilyCount ?? pulseFamilyCount),
         },
       },
   };

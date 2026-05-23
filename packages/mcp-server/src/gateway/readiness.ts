@@ -109,21 +109,21 @@ const sanitizeProviderReadinessError = (
 
     if (error.status === 429) {
       return {
-        message: `${provider} rate limit reached during the analyst memo readiness probe.`,
+        message: `${provider} rate limit reached during the explain-only AI readiness probe.`,
         errorCode: "AI_PROVIDER_RATE_LIMITED",
         retryable: true,
       };
     }
 
     return {
-      message: `${provider} provider rejected the analyst memo readiness probe with HTTP ${error.status}.`,
+      message: `${provider} provider rejected the explain-only AI readiness probe with HTTP ${error.status}.`,
       errorCode: error.status >= 500 ? "AI_PROVIDER_UPSTREAM_FAILED" : "AI_PROVIDER_REQUEST_FAILED",
       retryable: error.status >= 500,
     };
   }
 
   return {
-    message: error instanceof Error ? error.message : "Analyst memo readiness probe failed.",
+    message: error instanceof Error ? error.message : "Explain-only AI readiness probe failed.",
     errorCode: error instanceof Error ? error.name : "AI_PROVIDER_READINESS_FAILED",
     retryable: true,
   };
@@ -191,7 +191,7 @@ const checkTinyFishReadiness = async (): Promise<GatewayHealthPayload["services"
         status: "unconfigured",
         configured: false,
         mode: "web-discovery-only",
-        message: "TinyFish web discovery is not configured.",
+        message: "Optional web-evidence provider is not configured.",
         observedAt: toObservedAt(),
         latencyMs: Date.now() - startedAt,
       };
@@ -201,7 +201,7 @@ const checkTinyFishReadiness = async (): Promise<GatewayHealthPayload["services"
       status: "ready",
       configured: true,
       mode: "web-discovery-only",
-      message: "TinyFish search accepted the readiness query.",
+      message: "Optional web-evidence provider accepted the readiness query.",
       observedAt: toObservedAt(),
       latencyMs: Date.now() - startedAt,
       details: {
@@ -262,7 +262,7 @@ const checkAnalystMemoReadiness = async (): Promise<
       configured: true,
       provider: config.provider,
       model: config.model,
-      message: "Analyst memo provider accepted the readiness probe.",
+      message: "Explain-only AI provider accepted the readiness probe.",
       observedAt: toObservedAt(),
       latencyMs: Date.now() - startedAt,
       details: {

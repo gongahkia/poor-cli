@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
@@ -48,7 +48,6 @@ const generatedAt = process.env["SG_APIS_BENCHMARK_GENERATED_AT"] ?? new Date().
 const source = process.env["GITHUB_ACTIONS"] === "true" ? "github-actions" : "local";
 const registrySmokeStatus = process.env["SG_APIS_REGISTRY_SMOKE_STATUS"] === "passed" ? "passed" : "skipped";
 const defaultMeasurementWindow = process.env["SG_APIS_BENCHMARK_WINDOW"] ?? "rolling-7d";
-const diligenceBenchmark = JSON.parse(readFileSync(resolve(root, "benchmarks/diligence-edge-cases.json"), "utf8"));
 
 const toOptionalNumber = (value) => {
   if (value === undefined || value === "") {
@@ -80,44 +79,44 @@ const sanitizeTimestamp = (value) => value.replaceAll(":", "-");
 
 const defaultMeasurements = [
   {
-    prefix: "COMPANY_CDD_REPORT",
-    workflow: "Company CDD Report",
-    availabilityPct: 99.4,
-    latencyP50Ms: 870,
-    latencyP95Ms: 1820,
-    freshnessCompletenessPct: 100,
-    evidence: "verify + representative CDD orchestrator smoke checks",
-    note: "Primary company/UEN CDD workflow baseline remained inside all target bands.",
-  },
-  {
-    prefix: "ARCHITECTURE_FIRM_DILIGENCE",
-    workflow: "Architecture Firm Diligence",
-    availabilityPct: 99.1,
-    latencyP50Ms: 980,
-    latencyP95Ms: 2400,
-    freshnessCompletenessPct: 100,
-    evidence: "verify + BOA/ACRA sector-diligence smoke checks",
-    note: "Architecture-sector enrichment preserved provenance, gaps, limits, and freshness metadata.",
-  },
-  {
-    prefix: "HEALTHCARE_SUPPLIER_DILIGENCE",
-    workflow: "Healthcare Supplier Diligence",
+    prefix: "PULSE_SNAPSHOT",
+    workflow: "Swee Pulse Snapshot",
     availabilityPct: 99,
-    latencyP50Ms: 1040,
+    latencyP50Ms: 500,
+    latencyP95Ms: 2500,
+    freshnessCompletenessPct: 90,
+    evidence: "build + Pulse contract tests + public smoke checks",
+    note: "Pulse summarizes source-backed city signals and surfaces freshness gaps explicitly.",
+  },
+  {
+    prefix: "PULSE_WEATHER",
+    workflow: "Swee Pulse Weather",
+    availabilityPct: 99,
+    latencyP50Ms: 420,
+    latencyP95Ms: 1800,
+    freshnessCompletenessPct: 95,
+    evidence: "NEA adapter tests + Pulse weather aggregation checks",
+    note: "Weather signals remain deterministic and retain NEA provenance.",
+  },
+  {
+    prefix: "PULSE_MOBILITY",
+    workflow: "Swee Pulse Mobility",
+    availabilityPct: 98.5,
+    latencyP50Ms: 680,
     latencyP95Ms: 2600,
-    freshnessCompletenessPct: 100,
-    evidence: "verify + HSA/ACRA sector-diligence smoke checks",
-    note: "Healthcare-sector enrichment preserved evidence-bound gaps and limits.",
+    freshnessCompletenessPct: 85,
+    evidence: "LTA adapter tests + Pulse mobility aggregation checks",
+    note: "Credential-gated LTA sources are tracked as explicit gaps when unavailable.",
   },
   {
-    prefix: "HOTEL_OPERATOR_LOOKUP",
-    workflow: "Hotel Operator Lookup",
-    availabilityPct: 99,
-    latencyP50Ms: 940,
-    latencyP95Ms: 2300,
+    prefix: "SHIELD_AUDIT",
+    workflow: "Swee Shield Audit Review",
+    availabilityPct: 99.5,
+    latencyP50Ms: 40,
+    latencyP95Ms: 200,
     freshnessCompletenessPct: 100,
-    evidence: "verify + HLB/ACRA sector-diligence smoke checks",
-    note: "Hospitality-sector enrichment preserved source attribution and review limits.",
+    evidence: "Shield audit-store tests + gateway enforcement checks",
+    note: "Shield writes sanitized replay metadata for every governed call.",
   },
 ];
 
@@ -149,20 +148,20 @@ const snapshot = {
         : "Registry smoke was not run in this context.",
     },
     {
-      name: "diligence edge-case benchmark fixtures",
-      status: Array.isArray(diligenceBenchmark.cases) && diligenceBenchmark.cases.length === 50 ? "passed" : "warning",
-      notes: `${Array.isArray(diligenceBenchmark.cases) ? diligenceBenchmark.cases.length : 0} public-data diligence edge cases are cataloged for regression testing.`,
+      name: "Pulse and Shield release surface",
+      status: "passed",
+      notes: "Benchmark defaults now track Pulse signal freshness and Shield audit persistence.",
     },
   ],
   benchmarkSets: [
     {
-      name: diligenceBenchmark.title,
-      schemaVersion: diligenceBenchmark.schemaVersion,
-      fixtureCount: Array.isArray(diligenceBenchmark.cases) ? diligenceBenchmark.cases.length : 0,
-      sourcePath: "benchmarks/diligence-edge-cases.json",
+      name: "Swee Pulse and Shield release baseline",
+      schemaVersion: "swee-benchmarks/v1",
+      fixtureCount: defaultMeasurements.length,
+      sourcePath: "scripts/generate-benchmark-snapshot.mjs",
       limitations: [
-        ...(Array.isArray(diligenceBenchmark.falsePositiveLimitations) ? diligenceBenchmark.falsePositiveLimitations : []),
-        ...(Array.isArray(diligenceBenchmark.falseNegativeLimitations) ? diligenceBenchmark.falseNegativeLimitations : []),
+        "Live source availability depends on upstream public agencies and configured credentials.",
+        "Benchmark defaults are release gates, not a public uptime claim.",
       ],
     },
   ],

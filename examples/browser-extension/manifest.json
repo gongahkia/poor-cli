@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Dude UEN Overlay Prototype",
+  "name": "Swee Pulse Overlay Prototype",
   "version": "0.1.0",
-  "description": "Detect Singapore UEN-like text on the current page and open a click-triggered Dude dossier preview.",
+  "description": "Detect Singapore place names on the current page and open a click-triggered Swee Pulse preview.",
   "permissions": ["storage"],
   "host_permissions": [
     "http://localhost:3000/*",

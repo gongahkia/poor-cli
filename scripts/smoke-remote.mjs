@@ -41,7 +41,7 @@ const transport = new StreamableHTTPClientTransport(baseUrl, {
 });
 
 const client = new Client(
-  { name: "sg-apis-remote-smoke", version: "0.1.0" },
+  { name: "swee-sg-remote-smoke", version: "0.1.0" },
   { capabilities: {} },
 );
 
@@ -49,13 +49,13 @@ try {
   await client.connect(transport);
 
   const tools = await client.listTools();
-  if (!(tools.tools ?? []).some((tool) => tool.name === "sg_query")) {
-    throw new Error("Remote smoke did not find sg_query.");
+  if (!(tools.tools ?? []).some((tool) => tool.name === "swee_pulse_snapshot")) {
+    throw new Error("Remote smoke did not find swee_pulse_snapshot.");
   }
 
   const prompts = await client.listPrompts();
-  if (!(prompts.prompts ?? []).some((prompt) => prompt.name === "recipe-postal_route")) {
-    throw new Error("Remote smoke did not find recipe prompts.");
+  if (!(prompts.prompts ?? []).some((prompt) => prompt.name === "recipe-pulse_overview")) {
+    throw new Error("Remote smoke did not find Pulse recipe prompts.");
   }
 
   const resource = await client.readResource({ uri: "sg://runtime" });

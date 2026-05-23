@@ -1,19 +1,19 @@
 services:
-  dude-assets:
-    image: ghcr.io/gongahkia/dude-mcp:${SG_APIS_IMAGE_TAG:-latest}
+  swee-assets:
+    image: ghcr.io/gongahkia/swee-sg:${SG_APIS_IMAGE_TAG:-latest}
     restart: "no"
     entrypoint: ["sh", "-lc"]
-    command: ["rm -rf /srv/dude/* && cp -R /app/apps/web/dist/. /srv/dude/"]
+    command: ["rm -rf /srv/swee/* && cp -R /app/apps/web/dist/. /srv/swee/"]
     volumes:
-      - dude_web_assets:/srv/dude
+      - swee_web_assets:/srv/swee
 
-  dude-gateway:
-    image: ghcr.io/gongahkia/dude-mcp:${SG_APIS_IMAGE_TAG:-latest}
+  swee-gateway:
+    image: ghcr.io/gongahkia/swee-sg:${SG_APIS_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       PORT: 3000
-      DUDE_WEB_ORIGIN_ALLOWLIST: ${DUDE_WEB_ORIGIN_ALLOWLIST:-}
+      SWEE_WEB_ORIGIN_ALLOWLIST: ${SWEE_WEB_ORIGIN_ALLOWLIST:-}
       SG_APIS_TOOLSETS: ${SG_APIS_TOOLSETS:-public,briefs,query,health,ops}
       SG_APIS_LOG_LEVEL: ${SG_APIS_LOG_LEVEL:-info}
       SG_APIS_STATE_DIR: /var/lib/sg-apis
@@ -32,12 +32,12 @@ services:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
     entrypoint: ["node", "packages/mcp-server/dist/rest-gateway.js"]
     volumes:
-      - dude_mcp_state:/var/lib/sg-apis
+      - swee_state:/var/lib/sg-apis
     expose:
       - "3000"
 
-  dude-mcp:
-    image: ghcr.io/gongahkia/dude-mcp:${SG_APIS_IMAGE_TAG:-latest}
+  swee-mcp:
+    image: ghcr.io/gongahkia/swee-sg:${SG_APIS_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
       SG_APIS_HTTP_AUTH_MODE: ${SG_APIS_HTTP_AUTH_MODE:-mixed}
@@ -57,7 +57,7 @@ services:
       TINYFISH_API_KEY: ${TINYFISH_API_KEY:-}
     command: ["--transport", "http", "--host", "0.0.0.0", "--port", "3000"]
     volumes:
-      - dude_mcp_state:/var/lib/sg-apis
+      - swee_state:/var/lib/sg-apis
     expose:
       - "3000"
 
@@ -65,11 +65,11 @@ services:
     image: caddy:2.10
     restart: unless-stopped
     depends_on:
-      dude-assets:
+      swee-assets:
         condition: service_completed_successfully
-      dude-gateway:
+      swee-gateway:
         condition: service_started
-      dude-mcp:
+      swee-mcp:
         condition: service_started
     ports:
       - "80:80"
@@ -78,12 +78,12 @@ services:
       PUBLIC_HOSTNAME: ${PUBLIC_HOSTNAME}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - dude_web_assets:/srv/dude:ro
+      - swee_web_assets:/srv/swee:ro
       - caddy_data:/data
       - caddy_config:/config
 
 volumes:
-  dude_mcp_state:
-  dude_web_assets:
+  swee_state:
+  swee_web_assets:
   caddy_data:
   caddy_config:

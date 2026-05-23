@@ -48,7 +48,7 @@ const { generateText, ProviderRequestError } = await import("../ai/providers.js"
 const { getGatewayHealthPayload } = await import("./readiness.js");
 
 describe("gateway readiness", () => {
-  it("surfaces analyst memo provider auth failures before dossier generation", async () => {
+  it("surfaces explain-only AI provider auth failures", async () => {
     vi.mocked(generateText).mockRejectedValueOnce(new ProviderRequestError("openai", 401));
 
     const health = await getGatewayHealthPayload({

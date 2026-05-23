@@ -2,12 +2,12 @@
   encode zstd gzip
 
   @api path /api/v1 /api/v1/*
-  reverse_proxy @api dude-gateway:3000
+  reverse_proxy @api swee-gateway:3000
 
   @mcp path /mcp /healthz /icon.svg /.well-known/oauth-protected-resource /.well-known/oauth-protected-resource/*
-  reverse_proxy @mcp dude-mcp:3000
+  reverse_proxy @mcp swee-mcp:3000
 
-  root * /srv/dude
+  root * /srv/swee
   try_files {path} /index.html
   file_server
 }

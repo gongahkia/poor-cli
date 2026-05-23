@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(import.meta.dirname, "..");
-const tempDir = mkdtempSync(join(tmpdir(), "dude-mcp-registry-smoke-"));
+const tempDir = mkdtempSync(join(tmpdir(), "swee-sg-registry-smoke-"));
 const runtimeEnv = { ...process.env };
 
 const serverPkg = JSON.parse(readFileSync(resolve(root, "packages/mcp-server/package.json"), "utf8"));
@@ -54,7 +54,7 @@ try {
     join(tempDir, "package.json"),
     JSON.stringify(
       {
-        name: "dude-mcp-registry-smoke",
+        name: "swee-sg-registry-smoke",
         private: true,
         type: "module",
       },
@@ -74,7 +74,7 @@ try {
   );
 
   const transport = new StdioClientTransport({
-    command: join(tempDir, "node_modules", ".bin", "dude-mcp"),
+    command: join(tempDir, "node_modules", ".bin", "swee-sg"),
     cwd: tempDir,
     env: {
       ...runtimeEnv,
@@ -85,7 +85,7 @@ try {
   });
 
   const client = new Client(
-    { name: "dude-mcp-registry-smoke", version: serverVersion },
+    { name: "swee-sg-registry-smoke", version: serverVersion },
     { capabilities: {} },
   );
 
@@ -93,8 +93,8 @@ try {
     await client.connect(transport);
 
     const prompts = await client.listPrompts();
-    if (!(prompts.prompts ?? []).some((prompt) => prompt.name === "recipe-business_due_diligence")) {
-      throw new Error("Registry-installed server did not expose recipe prompts.");
+    if (!(prompts.prompts ?? []).some((prompt) => prompt.name === "recipe-pulse_overview")) {
+      throw new Error("Registry-installed server did not expose Pulse recipe prompts.");
     }
 
     const templates = await client.listResourceTemplates();
@@ -120,16 +120,12 @@ try {
       throw new Error("Registry-installed server did not return runtime resource text.");
     }
 
-    const queryResult = await client.callTool({
-      name: "sg_query",
-      arguments: {
-        query: "Business dossier for ABC CONSTRUCTION PTE LTD",
-        mode: "plan",
-        format: "json",
-      },
+    const scanResult = await client.callTool({
+      name: "swee_shield_scan_tools",
+      arguments: {},
     });
-    if (!("structuredContent" in queryResult) || queryResult.structuredContent?.workflow !== "business_dossier") {
-      throw new Error("Registry-installed sg_query did not route company search to the business dossier workflow.");
+    if (!("structuredContent" in scanResult) || typeof scanResult.structuredContent?.scannedTools !== "number") {
+      throw new Error("Registry-installed Shield scanner did not return scanner metadata.");
     }
 
   } finally {

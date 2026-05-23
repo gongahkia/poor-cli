@@ -1,102 +1,102 @@
-const DUDE_DEFAULT_GATEWAY_URL = "http://localhost:3000";
+const SWEE_DEFAULT_GATEWAY_URL = "http://localhost:3000";
 
 /**
- * Runs a Dude CDD orchestrator lookup and returns the raw dossier JSON envelope.
+ * Returns the raw Swee Pulse snapshot JSON envelope.
  *
- * @param {string} identifier Company name or UEN.
- * @param {string=} gatewayUrl Dude REST gateway URL.
- * @param {string=} token Optional short-lived Dude bearer token.
- * @return {string} JSON string for the dossier result.
+ * @param {string=} focus Optional focus: all, mobility, or weather.
+ * @param {string=} area Optional Singapore area filter.
+ * @param {string=} gatewayUrl Swee SG REST gateway URL.
+ * @param {string=} token Optional short-lived bearer token.
+ * @return {string} JSON string for the Pulse snapshot.
  * @customfunction
  */
-function DUDE_DOSSIER(identifier, gatewayUrl, token) {
-  const dossier = dudeFetchDossier_(identifier, gatewayUrl, token);
-  return JSON.stringify(dossier);
+function SWEE_PULSE_SNAPSHOT(focus, area, gatewayUrl, token) {
+  const snapshot = sweeFetchPulse_(focus, area, gatewayUrl, token);
+  return JSON.stringify(snapshot);
 }
 
 /**
- * Runs a Dude CDD orchestrator lookup and returns a two-column summary table.
+ * Returns Swee Pulse signal rows.
  *
- * @param {string} identifier Company name or UEN.
- * @param {string=} gatewayUrl Dude REST gateway URL.
- * @param {string=} token Optional short-lived Dude bearer token.
- * @return {Array<Array<string>>} Summary rows.
+ * @param {string=} focus Optional focus: all, mobility, or weather.
+ * @param {string=} area Optional Singapore area filter.
+ * @param {string=} gatewayUrl Swee SG REST gateway URL.
+ * @param {string=} token Optional short-lived bearer token.
+ * @return {Array<Array<string>>} Signal rows.
  * @customfunction
  */
-function DUDE_DOSSIER_SUMMARY(identifier, gatewayUrl, token) {
-  const dossier = dudeFetchDossier_(identifier, gatewayUrl, token);
-  const rows = [["Label", "Value"]];
-  const summary = Array.isArray(dossier.summary) ? dossier.summary : [];
-  summary.forEach((item) => {
-    rows.push([String(item.label || ""), String(item.value ?? "")]);
-  });
-  return rows;
-}
-
-/**
- * Runs a Dude CDD orchestrator lookup and returns freshness/provenance rows.
- *
- * @param {string} identifier Company name or UEN.
- * @param {string=} gatewayUrl Dude REST gateway URL.
- * @param {string=} token Optional short-lived Dude bearer token.
- * @return {Array<Array<string>>} Freshness rows.
- * @customfunction
- */
-function DUDE_DOSSIER_FRESHNESS(identifier, gatewayUrl, token) {
-  const dossier = dudeFetchDossier_(identifier, gatewayUrl, token);
-  const provenance = Array.isArray(dossier.provenance) ? dossier.provenance : [];
-  const freshness = Array.isArray(dossier.freshness) ? dossier.freshness : [];
-  const bySource = {};
-  provenance.forEach((item) => {
-    bySource[item.source] = item;
-  });
-
-  const rows = [["Source", "Observed at", "Upstream timestamp", "Records"]];
-  freshness.forEach((item) => {
-    const source = String(item.source || "");
+function SWEE_PULSE_SIGNALS(focus, area, gatewayUrl, token) {
+  const snapshot = sweeFetchPulse_(focus, area, gatewayUrl, token);
+  const rows = [["Severity", "Category", "Title", "Summary", "Source", "Observed at"]];
+  const signals = Array.isArray(snapshot.signals) ? snapshot.signals : [];
+  signals.forEach((signal) => {
+    const provenance = Array.isArray(signal.provenance) ? signal.provenance[0] : {};
     rows.push([
-      source,
-      String(item.observedAt || ""),
-      String(item.upstreamTimestamp || ""),
-      String(bySource[source]?.recordCount ?? ""),
+      String(signal.severity || ""),
+      String(signal.category || ""),
+      String(signal.title || ""),
+      String(signal.summary || ""),
+      String(provenance?.source || signal.source || ""),
+      String(signal.freshness?.observedAt || provenance?.observedAt || ""),
     ]);
   });
   return rows;
 }
 
-function dudeFetchDossier_(identifier, gatewayUrl, token) {
-  const value = String(identifier || "").trim();
-  if (value === "") {
-    throw new Error("identifier is required");
+/**
+ * Returns Swee Pulse source-health rows.
+ *
+ * @param {string=} focus Optional focus: all, mobility, or weather.
+ * @param {string=} area Optional Singapore area filter.
+ * @param {string=} gatewayUrl Swee SG REST gateway URL.
+ * @param {string=} token Optional short-lived bearer token.
+ * @return {Array<Array<string>>} Source-health rows.
+ * @customfunction
+ */
+function SWEE_PULSE_SOURCES(focus, area, gatewayUrl, token) {
+  const snapshot = sweeFetchPulse_(focus, area, gatewayUrl, token);
+  const rows = [["Source", "Status", "Rows", "Observed at", "Message"]];
+  const sourceHealth = Array.isArray(snapshot.sourceHealth) ? snapshot.sourceHealth : [];
+  sourceHealth.forEach((source) => {
+    rows.push([
+      String(source.source || ""),
+      String(source.status || ""),
+      String(source.recordCount ?? source.rows ?? ""),
+      String(source.observedAt || ""),
+      String(source.message || ""),
+    ]);
+  });
+  return rows;
+}
+
+function sweeFetchPulse_(focus, area, gatewayUrl, token) {
+  const baseUrl = String(gatewayUrl || SWEE_DEFAULT_GATEWAY_URL).replace(/\/+$/, "");
+  const query = [];
+  if (String(focus || "").trim() !== "") {
+    query.push(`focus=${encodeURIComponent(String(focus).trim())}`);
+  }
+  if (String(area || "").trim() !== "") {
+    query.push(`area=${encodeURIComponent(String(area).trim())}`);
   }
 
-  const url = `${String(gatewayUrl || DUDE_DEFAULT_GATEWAY_URL).replace(/\/+$/, "")}/api/v1/dude/cdd-orchestrator`;
-  const payload = dudeLooksLikeUen_(value)
-    ? { uen: value.toUpperCase() }
-    : { entityName: value };
-  const headers = { "Content-Type": "application/json" };
+  const url = `${baseUrl}/api/v1/pulse/snapshot${query.length === 0 ? "" : `?${query.join("&")}`}`;
+  const headers = {};
   if (token !== undefined && String(token).trim() !== "") {
     headers.Authorization = `Bearer ${String(token).trim()}`;
   }
 
   const response = UrlFetchApp.fetch(url, {
-    method: "post",
-    contentType: "application/json",
+    method: "get",
     headers,
     muteHttpExceptions: true,
-    payload: JSON.stringify(payload),
   });
 
   const body = response.getContentText();
   const parsed = body ? JSON.parse(body) : {};
   const status = response.getResponseCode();
   if (status < 200 || status >= 300) {
-    throw new Error(parsed?.error?.message || parsed?.message || `Dude gateway returned ${status}`);
+    throw new Error(parsed?.error?.message || parsed?.message || `Swee SG gateway returned ${status}`);
   }
 
-  return parsed?.data?.dossier || parsed?.dossier || parsed?.data?.record || parsed;
-}
-
-function dudeLooksLikeUen_(value) {
-  return /^[0-9A-Z]{9,10}$/i.test(String(value).replace(/\s+/g, ""));
+  return parsed?.data?.snapshot || parsed?.snapshot || parsed?.data?.record || parsed;
 }

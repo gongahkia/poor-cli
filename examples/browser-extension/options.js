@@ -3,7 +3,7 @@ const webAppInput = document.getElementById("webAppUrl");
 const status = document.getElementById("status");
 
 chrome.storage.sync.get({
-  gatewayUrl: "http://localhost:8787",
+  gatewayUrl: "http://localhost:3000",
   webAppUrl: "http://localhost:5173",
 }, (items) => {
   gatewayInput.value = items.gatewayUrl;

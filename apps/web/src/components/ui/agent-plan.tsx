@@ -104,7 +104,7 @@ export default function AgentPlan({
   defaultExpandedTaskIds,
   description,
   tasks,
-  title = "Dude is working",
+  title = "Swee SG is working",
 }: AgentPlanProps) {
   const prefersReducedMotion = useReducedMotion();
   const [expandedTasks, setExpandedTasks] = useState<string[]>(() => defaultExpandedIds(tasks, defaultExpandedTaskIds));

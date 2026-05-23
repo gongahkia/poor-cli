@@ -34,7 +34,7 @@ if (firstFetch === -1 || openPreview === -1 || firstFetch < openPreview) {
   fail("network fetch must be click-triggered inside openPreview");
 }
 
-for (const required of ["UEN_PATTERN", "chrome.storage.sync", "No page data was sent before this click"]) {
+for (const required of ["AREA_PATTERN", "chrome.storage.sync", "/api/v1/pulse/snapshot", "No page data was sent before this click"]) {
   if (!contentScript.includes(required)) {
     fail(`content script must include ${required}`);
   }

@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const root = resolve(import.meta.dirname, "..");
-const tempDir = mkdtempSync(join(tmpdir(), "dude-mcp-smoke-"));
+const tempDir = mkdtempSync(join(tmpdir(), "swee-sg-smoke-"));
 const npmCacheDir = join(tempDir, "npm-cache");
 const smokeEnv = {
   ...process.env,
@@ -18,21 +18,16 @@ const RUNTIME_LEAK_PATTERNS = ["/__tests__/", "/fixtures/", "/mock-server/", "/g
 const runtimeEnv = { ...process.env };
 
 const EXPECTED_TOOL_NAMES = [
-  "sg_cea_salespersons",
-  "sg_bca_licensed_builders",
-  "sg_bca_registered_contractors",
-  "sg_boa_architects",
-  "sg_boa_architecture_firms",
+  "swee_pulse_snapshot",
+  "swee_pulse_mobility",
+  "swee_pulse_weather",
+  "swee_pulse_explain",
+  "swee_shield_audit_lookup",
+  "swee_shield_scan_tools",
+  "sg_datagov_search",
+  "sg_nea_forecast_2hr",
+  "sg_lta_traffic_images",
   "sg_acra_entities",
-  "sg_gebiz_tenders",
-  "sg_hsa_licensed_pharmacies",
-  "sg_hsa_health_product_licensees",
-  "sg_hlb_hotels",
-  "sg_sanctions_screen",
-  "sg_opencorporates_links",
-  "sg_adverse_media_lite",
-  "sg_relationship_graph",
-  "sg_business_dossier",
   "sg_health_check",
   "sg_key_set",
   "sg_key_list",
@@ -43,7 +38,6 @@ const EXPECTED_TOOL_NAMES = [
   "sg_config_set",
   "sg_trace_lookup",
   "sg_request_lookup",
-  "sg_query",
 ];
 
 const EXPECTED_RESOURCE_URIS = [
@@ -92,7 +86,7 @@ try {
     join(tempDir, "package.json"),
     JSON.stringify(
       {
-        name: "dude-mcp-smoke",
+        name: "swee-sg-smoke",
         private: true,
         type: "module",
       },
@@ -104,12 +98,12 @@ try {
   run(["install", "--no-package-lock", sharedTarball], tempDir);
   run(["install", "--no-package-lock", serverTarball], tempDir);
 
-  JSON.parse(readFileSync(join(tempDir, "node_modules", "@dude", "mcp", "package.json"), "utf8"));
-  JSON.parse(readFileSync(join(tempDir, "node_modules", "@dude", "shared", "package.json"), "utf8"));
-  JSON.parse(readFileSync(join(tempDir, "node_modules", "@dude", "mcp", "openapi.json"), "utf8"));
+  JSON.parse(readFileSync(join(tempDir, "node_modules", "@swee-sg", "shield", "package.json"), "utf8"));
+  JSON.parse(readFileSync(join(tempDir, "node_modules", "@swee-sg", "shared", "package.json"), "utf8"));
+  JSON.parse(readFileSync(join(tempDir, "node_modules", "@swee-sg", "shield", "openapi.json"), "utf8"));
 
   const transport = new StdioClientTransport({
-    command: join(tempDir, "node_modules", ".bin", "dude-mcp"),
+    command: join(tempDir, "node_modules", ".bin", "swee-sg"),
     cwd: tempDir,
     env: {
       ...runtimeEnv,
@@ -125,7 +119,7 @@ try {
 
   const client = new Client(
     {
-      name: "dude-mcp-smoke",
+      name: "swee-sg-smoke",
       version: "0.1.0",
     },
     { capabilities: {} },
@@ -139,7 +133,7 @@ try {
   try {
     await client.connect(transport);
 
-    if (client.getServerVersion()?.name !== "dude") {
+    if (client.getServerVersion()?.name !== "swee-sg") {
       throw new Error(`Unexpected MCP server name: ${JSON.stringify(client.getServerVersion())}${formatServerLogs()}`);
     }
 
@@ -162,7 +156,7 @@ try {
       }
     }
 
-    for (const promptName of ["recipe-business_due_diligence", "playbook-business_opportunity_scan"]) {
+    for (const promptName of ["recipe-pulse_overview", "recipe-shield_recent_audit", "playbook-city_ops"]) {
       if (!(promptsResult.prompts ?? []).some((prompt) => prompt.name === promptName)) {
         throw new Error(`Packaged MCP server is missing prompt: ${promptName}${formatServerLogs()}`);
       }
@@ -208,20 +202,16 @@ try {
       throw new Error(`Packaged MCP tool invocation failed to return config payload${formatServerLogs()}`);
     }
 
-    const queryExecuteResult = await client.callTool({
-      name: "sg_query",
-      arguments: {
-        query: "Business dossier for ABC CONSTRUCTION PTE LTD",
-        mode: "plan",
-        format: "json",
-      },
+    const shieldScanResult = await client.callTool({
+      name: "swee_shield_scan_tools",
+      arguments: {},
     });
     if (
-      !("structuredContent" in queryExecuteResult)
-      || queryExecuteResult.structuredContent?.status !== "planned"
-      || queryExecuteResult.structuredContent?.workflow !== "business_dossier"
+      !("structuredContent" in shieldScanResult)
+      || typeof shieldScanResult.structuredContent?.scannedTools !== "number"
+      || !Array.isArray(shieldScanResult.structuredContent?.findings)
     ) {
-      throw new Error(`Packaged sg_query plan call did not return the CDD workflow${formatServerLogs()}`);
+      throw new Error(`Packaged Shield scan call did not return scanner metadata${formatServerLogs()}`);
     }
 
   } catch (error) {
@@ -245,7 +235,7 @@ try {
   });
   const compatClient = new Client(
     {
-      name: "dude-mcp-compat-smoke",
+      name: "swee-sg-compat-smoke",
       version: "0.1.0",
     },
     { capabilities: {} },
@@ -253,7 +243,7 @@ try {
 
   try {
     await compatClient.connect(compatTransport);
-    if (compatClient.getServerVersion()?.name !== "dude") {
+    if (compatClient.getServerVersion()?.name !== "swee-sg") {
       throw new Error(`Compatibility bin returned unexpected MCP server name: ${JSON.stringify(compatClient.getServerVersion())}`);
     }
   } finally {

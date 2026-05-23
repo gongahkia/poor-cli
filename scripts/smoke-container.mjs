@@ -6,7 +6,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 const root = resolve(import.meta.dirname, "..");
 const runtimeEnv = { ...process.env };
 const configuredImage = process.env["SG_APIS_CONTAINER_IMAGE"]?.trim();
-const localImage = `dude-mcp-smoke:${Date.now()}`;
+const localImage = `swee-sg-smoke:${Date.now()}`;
 const imageRef = configuredImage && configuredImage.length > 0 ? configuredImage : localImage;
 const removeImageAfter = configuredImage === undefined || configuredImage.length === 0;
 
@@ -93,7 +93,7 @@ try {
 
   const transport = new StdioClientTransport({
     command: "docker",
-    args: ["run", "--rm", "-i", "-e", "HOME=/tmp/dude-mcp", "-e", "SG_APIS_LOG_LEVEL=error", imageRef],
+    args: ["run", "--rm", "-i", "-e", "HOME=/tmp/swee-sg", "-e", "SG_APIS_LOG_LEVEL=error", imageRef],
     cwd: root,
     env: runtimeEnv,
     stderr: "pipe",
@@ -109,13 +109,13 @@ try {
   };
 
   client = new Client(
-    { name: "sg-apis-container-smoke", version: "0.1.0" },
+    { name: "swee-sg-container-smoke", version: "0.1.0" },
     { capabilities: {} },
   );
   await client.connect(transport);
 
   const serverVersion = client.getServerVersion();
-  assert(serverVersion?.name === "dude", `Unexpected container server identity: ${JSON.stringify(serverVersion)}${formatServerLogs()}`);
+  assert(serverVersion?.name === "swee-sg", `Unexpected container server identity: ${JSON.stringify(serverVersion)}${formatServerLogs()}`);
 
   const [toolsResult, resourcesResult, promptsResult, templatesResult] = await Promise.all([
     client.listTools(),
@@ -124,11 +124,11 @@ try {
     client.listResourceTemplates(),
   ]);
 
-  const sgQuery = (toolsResult.tools ?? []).find((tool) => tool.name === "sg_query");
-  assert(sgQuery !== undefined, `Container image is missing sg_query${formatServerLogs()}`);
-  assert(typeof sgQuery.title === "string" && sgQuery.title.length > 0, `Container sg_query is missing title metadata${formatServerLogs()}`);
-  assert(sgQuery.annotations?.readOnlyHint === true, `Container sg_query is missing readOnlyHint metadata${formatServerLogs()}`);
-  assert(sgQuery.outputSchema !== undefined, `Container sg_query is missing outputSchema metadata${formatServerLogs()}`);
+  const pulseSnapshot = (toolsResult.tools ?? []).find((tool) => tool.name === "swee_pulse_snapshot");
+  assert(pulseSnapshot !== undefined, `Container image is missing swee_pulse_snapshot${formatServerLogs()}`);
+  assert(typeof pulseSnapshot.title === "string" && pulseSnapshot.title.length > 0, `Container swee_pulse_snapshot is missing title metadata${formatServerLogs()}`);
+  assert(pulseSnapshot.annotations?.readOnlyHint === true, `Container swee_pulse_snapshot is missing readOnlyHint metadata${formatServerLogs()}`);
+  assert(pulseSnapshot.outputSchema !== undefined, `Container swee_pulse_snapshot is missing outputSchema metadata${formatServerLogs()}`);
 
   const recipesResource = (resourcesResult.resources ?? []).find((resource) => resource.uri === "sg://recipes");
   assert(recipesResource !== undefined, `Container image is missing sg://recipes${formatServerLogs()}`);
@@ -136,8 +136,8 @@ try {
   assert(typeof recipesResource.description === "string" && recipesResource.description.length > 0, `Container sg://recipes is missing description metadata${formatServerLogs()}`);
 
   assert(
-    (promptsResult.prompts ?? []).some((prompt) => prompt.name === "recipe-business_due_diligence"),
-    `Container image is missing CDD recipe prompts${formatServerLogs()}`,
+    (promptsResult.prompts ?? []).some((prompt) => prompt.name === "recipe-pulse_overview"),
+    `Container image is missing Pulse recipe prompts${formatServerLogs()}`,
   );
   assert(
     (templatesResult.resourceTemplates ?? []).some((template) => template.uriTemplate === "sg://recipes/{id}"),

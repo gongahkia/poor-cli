@@ -22,7 +22,7 @@ const baseHealth: GatewayHealth = {
     },
     tinyfish: {
       configured: true,
-      message: "TinyFish search accepted the readiness query.",
+      message: "Optional web-evidence provider accepted the readiness query.",
       mode: "web-discovery-only",
       status: "ready",
     },
@@ -32,7 +32,7 @@ const baseHealth: GatewayHealth = {
 };
 
 describe("getGatewayReadinessIssues", () => {
-  it("flags analyst memo provider failures before a dossier is generated", () => {
+  it("flags explain-only AI provider failures without dossier language", () => {
     const issues = getGatewayReadinessIssues({
       ...baseHealth,
       readiness: "degraded",
@@ -54,7 +54,7 @@ describe("getGatewayReadinessIssues", () => {
     expect(issues).toEqual([
       expect.objectContaining({
         key: "analystMemo",
-        label: "OpenAI key",
+        label: "OpenAI explain key",
         state: "Failing",
         tone: "bad",
       }),
@@ -67,7 +67,7 @@ describe("getGatewayReadinessIssues", () => {
     expect(getGatewayReadinessIssues(baseHealth)).toEqual([]);
   });
 
-  it("keeps the analyst memo readiness metadata compact", () => {
+  it("keeps the explain-only AI readiness metadata compact", () => {
     const html = renderToStaticMarkup(
       createElement(
         GatewayStatusPanel,
@@ -85,7 +85,7 @@ describe("getGatewayReadinessIssues", () => {
                   requiredEnvVar: "OPENAI_API_KEY",
                 },
                 latencyMs: 943,
-                message: "Analyst memo provider accepted the readiness probe.",
+                message: "Explain-only AI provider accepted the readiness probe.",
                 model: "gpt-4o",
                 provider: "openai",
                 status: "ready",
@@ -96,7 +96,7 @@ describe("getGatewayReadinessIssues", () => {
       ),
     );
 
-    expect(html).toContain("OpenAI key");
+    expect(html).toContain("OpenAI explain key");
     expect(html).toContain("Probe");
     expect(html).toContain("943ms");
     expect(html).toContain("Provider");

@@ -11,17 +11,17 @@ const entries = Object.fromEntries(
 );
 
 const checks = [
-  ["Google Sheets raw function", entries.google.includes("function DUDE_DOSSIER(")],
-  ["Google Sheets summary function", entries.google.includes("function DUDE_DOSSIER_SUMMARY(")],
-  ["Google Sheets freshness function", entries.google.includes("function DUDE_DOSSIER_FRESHNESS(")],
-  ["Google Sheets orchestrator endpoint", entries.google.includes("/api/v1/dude/cdd-orchestrator")],
+  ["Google Sheets raw function", entries.google.includes("function SWEE_PULSE_SNAPSHOT(")],
+  ["Google Sheets signals function", entries.google.includes("function SWEE_PULSE_SIGNALS(")],
+  ["Google Sheets sources function", entries.google.includes("function SWEE_PULSE_SOURCES(")],
+  ["Google Sheets Pulse endpoint", entries.google.includes("/api/v1/pulse/snapshot")],
   ["Google Sheets auth header", entries.google.includes("headers.Authorization")],
-  ["Excel raw function", entries.excel.includes("async function DUDE_DOSSIER(")],
-  ["Excel custom functions association", entries.excel.includes('CustomFunctions.associate("DUDE.DOSSIER"')],
+  ["Excel raw function", entries.excel.includes("async function SWEE_PULSE_SNAPSHOT(")],
+  ["Excel custom functions association", entries.excel.includes('CustomFunctions.associate("SWEE.PULSE.SNAPSHOT"')],
   ["Excel auth header", entries.excel.includes('headers.set("Authorization"')],
   ["Docs rate limits", entries.readme.includes("Rate Limits") && entries.readme.includes("backoff for 429/5xx")],
   ["Docs auth", entries.readme.includes("short-lived token") && entries.readme.includes("customer-controlled proxy")],
-  ["Docs export behavior", entries.readme.includes("Export Behavior") && entries.readme.includes("provenance")],
+  ["Docs export behavior", entries.readme.includes("Export Behavior") && entries.readme.includes("source health")],
   ["Docs Excel scope", entries.readme.includes("Office manifest") && entries.readme.includes("AppSource")],
 ];
 

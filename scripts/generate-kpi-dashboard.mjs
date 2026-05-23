@@ -542,7 +542,7 @@ const main = async () => {
       apiFamilies: API_CATALOG.length,
       workflows: WORKFLOW_CATALOG.length,
       recipes: RECIPE_CATALOG.length,
-      routedFamilies: API_CATALOG.filter((entry) => entry.preferredInterface === "sg_query").length,
+      pulseFamilies: API_CATALOG.filter((entry) => entry.preferredInterface?.startsWith("swee_pulse_")).length,
     },
     kpis: {
       installability: {

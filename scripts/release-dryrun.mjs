@@ -19,7 +19,7 @@ const commitSha = (() => {
   }
 })();
 const releaseDir = resolve(root, "artifacts", "release", commitSha);
-const tempDir = mkdtempSync(join(tmpdir(), "dude-mcp-release-"));
+const tempDir = mkdtempSync(join(tmpdir(), "swee-sg-release-"));
 const npmCacheDir = join(tempDir, "npm-cache");
 const env = { ...process.env, NPM_CONFIG_CACHE: npmCacheDir, npm_config_cache: npmCacheDir };
 
@@ -44,13 +44,13 @@ const main = async () => {
   const serverPack = pack("packages/mcp-server");
 
   process.stdout.write("Installing packed tarballs into temp project...\n");
-  writeFileSync(join(tempDir, "package.json"), JSON.stringify({ name: "dude-mcp-release-dryrun", private: true, type: "module" }, null, 2));
+  writeFileSync(join(tempDir, "package.json"), JSON.stringify({ name: "swee-sg-release-dryrun", private: true, type: "module" }, null, 2));
   run(["install", "--no-package-lock", sharedPack.archived], tempDir);
   run(["install", "--no-package-lock", serverPack.archived], tempDir);
 
   process.stdout.write("Booting server bin and probing surface...\n");
   const transport = new StdioClientTransport({
-    command: join(tempDir, "node_modules", ".bin", "dude-mcp"),
+    command: join(tempDir, "node_modules", ".bin", "swee-sg"),
     cwd: tempDir,
     env: { ...env, HOME: tempDir, SG_APIS_LOG_LEVEL: "error" },
     stderr: "pipe",

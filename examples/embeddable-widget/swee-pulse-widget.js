@@ -3,23 +3,23 @@ const TEMPLATE = document.createElement("template");
 TEMPLATE.innerHTML = `
   <style>
     :host {
-      --dude-widget-accent: #16213e;
-      --dude-widget-accent-contrast: #ffffff;
-      --dude-widget-border: #d8e0ec;
-      --dude-widget-muted: #64748b;
-      --dude-widget-surface: #ffffff;
-      --dude-widget-text: #111827;
+      --swee-widget-accent: #0f766e;
+      --swee-widget-accent-contrast: #ffffff;
+      --swee-widget-border: #d8e0ec;
+      --swee-widget-muted: #64748b;
+      --swee-widget-surface: #ffffff;
+      --swee-widget-text: #111827;
       display: block;
-      color: var(--dude-widget-text);
+      color: var(--swee-widget-text);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
 
     .shell {
-      border: 1px solid var(--dude-widget-border);
+      border: 1px solid var(--swee-widget-border);
       border-radius: 8px;
-      background: var(--dude-widget-surface);
+      background: var(--swee-widget-surface);
       padding: 16px;
-      max-width: 680px;
+      max-width: 720px;
     }
 
     .brand {
@@ -43,9 +43,9 @@ TEMPLATE.innerHTML = `
 
     input {
       min-width: 0;
-      border: 1px solid var(--dude-widget-border);
+      border: 1px solid var(--swee-widget-border);
       border-radius: 6px;
-      color: var(--dude-widget-text);
+      color: var(--swee-widget-text);
       font: inherit;
       padding: 10px 12px;
     }
@@ -53,8 +53,8 @@ TEMPLATE.innerHTML = `
     button {
       border: 0;
       border-radius: 6px;
-      background: var(--dude-widget-accent);
-      color: var(--dude-widget-accent-contrast);
+      background: var(--swee-widget-accent);
+      color: var(--swee-widget-accent-contrast);
       cursor: pointer;
       font: inherit;
       font-weight: 700;
@@ -70,7 +70,7 @@ TEMPLATE.innerHTML = `
     .status,
     .limits,
     .freshness {
-      color: var(--dude-widget-muted);
+      color: var(--swee-widget-muted);
       font-size: 13px;
       line-height: 1.45;
       margin-top: 10px;
@@ -92,14 +92,14 @@ TEMPLATE.innerHTML = `
     }
 
     .row {
-      border-top: 1px solid var(--dude-widget-border);
+      border-top: 1px solid var(--swee-widget-border);
       display: grid;
       gap: 3px;
       padding-top: 8px;
     }
 
     .row span {
-      color: var(--dude-widget-muted);
+      color: var(--swee-widget-muted);
       font-size: 12px;
       text-transform: uppercase;
     }
@@ -139,35 +139,24 @@ TEMPLATE.innerHTML = `
   </style>
   <section class="shell">
     <div class="brand">
-      <strong data-brand>Dude diligence</strong>
-      <span class="badge" data-mode>Public data</span>
+      <strong data-brand>Swee Pulse</strong>
+      <span class="badge" data-mode>Source backed</span>
     </div>
     <form>
-      <input data-input autocomplete="off" placeholder="Company name or UEN" />
-      <button type="submit" data-submit>Check</button>
+      <input data-input autocomplete="off" placeholder="Optional area, e.g. Bedok" />
+      <button type="submit" data-submit>Refresh</button>
     </form>
-    <div class="status" data-status>Enter a company name or UEN to run a public dossier check.</div>
+    <div class="status" data-status>Load source-backed Pulse signals for Singapore.</div>
     <div class="result" data-result hidden></div>
   </section>
 `;
 
-const MODULES = new Set(["acra", "bca", "cea", "gebiz", "boa", "hsa", "hlb"]);
-const SECTOR_HINTS = new Set([
-  "construction",
-  "real_estate",
-  "architecture",
-  "healthcare",
-  "hospitality",
-  "procurement",
-]);
+const FOCUS_VALUES = new Set(["all", "mobility", "weather"]);
 
-const splitList = (value, allowed) =>
-  (value ?? "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter((item) => allowed.has(item));
-
-const looksLikeUen = (value) => /^[0-9A-Z]{9,10}$/i.test(value.replace(/\s+/g, ""));
+const normalizeFocus = (value) => {
+  const focus = String(value || "all").trim().toLowerCase();
+  return FOCUS_VALUES.has(focus) ? focus : "all";
+};
 
 const text = (value) => {
   if (value === null || value === undefined || value === "") {
@@ -176,14 +165,13 @@ const text = (value) => {
   return String(value);
 };
 
-class DudeDossierWidget extends HTMLElement {
+class SweePulseWidget extends HTMLElement {
   static observedAttributes = [
     "api-token",
+    "area",
     "brand-name",
+    "focus",
     "gateway-url",
-    "identifier",
-    "modules",
-    "sector-hints",
     "theme",
   ];
 
@@ -208,9 +196,7 @@ class DudeDossierWidget extends HTMLElement {
   connectedCallback() {
     this.shadowRoot.querySelector("form").addEventListener("submit", this.#handleSubmit);
     this.#syncAttributes();
-    if (this.getAttribute("identifier")?.trim()) {
-      void this.run();
-    }
+    void this.run();
   }
 
   disconnectedCallback() {
@@ -235,25 +221,19 @@ class DudeDossierWidget extends HTMLElement {
   }
 
   async run() {
-    const identifier = this.#input.value.trim();
-    if (identifier === "") {
-      this.#setStatus("Enter a company name or UEN to run a public dossier check.");
-      return;
-    }
-
     this.#abortController?.abort();
     this.#abortController = new AbortController();
     this.#submit.disabled = true;
-    this.#setStatus("Checking public registry sources...");
+    this.#setStatus("Loading Pulse signals...");
     this.#result.hidden = true;
     this.#result.replaceChildren();
 
     try {
-      const dossier = await this.#fetchDossier(identifier, this.#abortController.signal);
-      this.#renderDossier(dossier);
-      this.dispatchEvent(new CustomEvent("dude-dossier-complete", {
+      const snapshot = await this.#fetchPulse(this.#abortController.signal);
+      this.#renderPulse(snapshot);
+      this.dispatchEvent(new CustomEvent("swee-pulse-complete", {
         bubbles: true,
-        detail: { dossier },
+        detail: { snapshot },
       }));
     } catch (error) {
       if (error.name === "AbortError") {
@@ -261,7 +241,7 @@ class DudeDossierWidget extends HTMLElement {
       }
       const message = error instanceof Error ? error.message : String(error);
       this.#setStatus(message, true);
-      this.dispatchEvent(new CustomEvent("dude-dossier-error", {
+      this.dispatchEvent(new CustomEvent("swee-pulse-error", {
         bubbles: true,
         detail: { error },
       }));
@@ -272,105 +252,98 @@ class DudeDossierWidget extends HTMLElement {
 
   #handleSubmit = (event) => {
     event.preventDefault();
+    this.setAttribute("area", this.#input.value.trim());
     void this.run();
   };
 
   #syncAttributes() {
-    const identifier = this.getAttribute("identifier");
-    if (identifier !== null && document.activeElement !== this.#input) {
-      this.#input.value = identifier;
+    const area = this.getAttribute("area");
+    if (area !== null && document.activeElement !== this.#input) {
+      this.#input.value = area;
     }
-    this.#brand.textContent = this.getAttribute("brand-name")?.trim() || "Dude diligence";
+    this.#brand.textContent = this.getAttribute("brand-name")?.trim() || "Swee Pulse";
 
     const theme = this.getAttribute("theme")?.trim();
     if (theme === "compact") {
-      this.style.setProperty("--dude-widget-border", "#cbd5e1");
+      this.style.setProperty("--swee-widget-border", "#cbd5e1");
     }
   }
 
-  async #fetchDossier(identifier, signal) {
+  async #fetchPulse(signal) {
     const gatewayUrl = (this.getAttribute("gateway-url") || window.location.origin).replace(/\/+$/, "");
-    const payload = looksLikeUen(identifier)
-      ? { uen: identifier.toUpperCase() }
-      : { entityName: identifier };
-    const modules = splitList(this.getAttribute("modules"), MODULES);
-    const sectorHints = splitList(this.getAttribute("sector-hints"), SECTOR_HINTS);
-    if (modules.length > 0) {
-      payload.modules = modules;
-    }
-    if (sectorHints.length > 0) {
-      payload.sectorHints = sectorHints;
+    const url = new URL(`${gatewayUrl}/api/v1/pulse/snapshot`);
+    url.searchParams.set("focus", normalizeFocus(this.getAttribute("focus")));
+    const area = this.#input.value.trim();
+    if (area !== "") {
+      url.searchParams.set("area", area);
     }
 
-    const headers = new Headers({ "Content-Type": "application/json" });
+    const headers = new Headers();
     if (this.authToken !== "") {
       headers.set("Authorization", `Bearer ${this.authToken}`);
     }
 
-    const response = await fetch(`${gatewayUrl}/api/v1/dude/cdd-orchestrator`, {
-      body: JSON.stringify(payload),
+    const response = await fetch(url, {
       headers,
-      method: "POST",
+      method: "GET",
       signal,
     });
     const bodyText = await response.text();
     const body = bodyText ? JSON.parse(bodyText) : {};
 
     if (!response.ok) {
-      throw new Error(body?.error?.message || body?.message || `Dude gateway returned ${response.status}.`);
+      throw new Error(body?.error?.message || body?.message || `Swee SG gateway returned ${response.status}.`);
     }
 
-    return body?.data?.dossier ?? body?.dossier ?? body?.data?.record ?? body;
+    return body?.data?.snapshot ?? body?.snapshot ?? body?.data?.record ?? body;
   }
 
-  #renderDossier(dossier) {
-    const summary = Array.isArray(dossier.summary) ? dossier.summary : [];
-    const provenance = Array.isArray(dossier.provenance) ? dossier.provenance : [];
-    const freshness = Array.isArray(dossier.freshness) ? dossier.freshness : [];
-    const gaps = Array.isArray(dossier.gaps) ? dossier.gaps : [];
-    const limits = Array.isArray(dossier.limits) ? dossier.limits : [];
+  #renderPulse(snapshot) {
+    const signals = Array.isArray(snapshot.signals) ? snapshot.signals : [];
+    const sourceHealth = Array.isArray(snapshot.sourceHealth) ? snapshot.sourceHealth : [];
+    const gaps = Array.isArray(snapshot.gaps) ? snapshot.gaps : [];
 
     const title = document.createElement("strong");
-    title.textContent = text(dossier.title);
+    title.textContent = `Pulse snapshot: ${text(snapshot.focus ?? "all")}`;
 
     const summaryList = document.createElement("div");
     summaryList.className = "summary";
-    for (const item of summary.slice(0, 6)) {
+    for (const signal of signals.slice(0, 6)) {
       const row = document.createElement("div");
       row.className = "row";
       const label = document.createElement("span");
-      label.textContent = text(item.label);
+      label.textContent = `${text(signal.category)} / ${text(signal.severity)}`;
       const value = document.createElement("strong");
-      value.textContent = text(item.value);
+      value.textContent = `${text(signal.title)} - ${text(signal.summary)}`;
       row.append(label, value);
       summaryList.append(row);
     }
 
     const badges = document.createElement("div");
     badges.className = "badges";
-    for (const source of provenance.slice(0, 8)) {
+    for (const source of sourceHealth.slice(0, 8)) {
       const badge = document.createElement("span");
       badge.className = "badge";
-      badge.textContent = `${text(source.source)}: ${text(source.recordCount)} records`;
+      badge.textContent = `${text(source.source)}: ${text(source.status)} (${text(source.recordCount ?? source.rows ?? 0)} rows)`;
       badges.append(badge);
     }
 
     const freshnessText = document.createElement("div");
     freshnessText.className = "freshness";
-    freshnessText.textContent = freshness.length > 0
-      ? `Freshness: ${freshness.map((item) => `${item.source} observed ${item.observedAt}`).join("; ")}`
-      : "Freshness: not returned by gateway.";
+    freshnessText.textContent = sourceHealth.length > 0
+      ? `Sources: ${sourceHealth.map((source) => `${source.source} observed ${source.observedAt ?? "unknown"}`).join("; ")}`
+      : "Sources: not returned by gateway.";
 
     const limitsText = document.createElement("div");
     limitsText.className = "limits";
-    const limitMessages = [...gaps, ...limits].map((item) => item.message).filter(Boolean);
-    limitsText.textContent = limitMessages.length > 0
-      ? `Gaps and limits: ${limitMessages.join(" ")}`
-      : "No gaps or limits reported by the gateway.";
+    const gapMessages = gaps.map((item) => item.message).filter(Boolean);
+    limitsText.textContent = gapMessages.length > 0
+      ? `Gaps: ${gapMessages.join(" ")}`
+      : "No Pulse gaps reported by the gateway.";
 
     this.#result.replaceChildren(title, summaryList, badges, freshnessText, limitsText);
     this.#result.hidden = false;
-    this.#setStatus("Dossier check complete.");
+    this.#setStatus("Pulse snapshot loaded.");
   }
 
   #setStatus(message, isError = false) {
@@ -379,4 +352,4 @@ class DudeDossierWidget extends HTMLElement {
   }
 }
 
-customElements.define("dude-dossier-widget", DudeDossierWidget);
+customElements.define("swee-pulse-widget", SweePulseWidget);

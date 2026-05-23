@@ -31,7 +31,7 @@ export type GatewayReadinessIssue = {
   tone: HealthTone;
 };
 
-type GatewayAnalystMemoReadiness = NonNullable<GatewayHealth["services"]>["analystMemo"];
+type GatewayExplainAiReadiness = NonNullable<GatewayHealth["services"]>["analystMemo"];
 
 const toneClasses: Record<HealthTone, string> = {
   good: "border-emerald-200 bg-emerald-50 text-emerald-950",
@@ -133,18 +133,18 @@ function readServiceDetail(service: GatewayServiceReadiness | undefined, key: st
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
-function getProviderName(service: GatewayAnalystMemoReadiness | undefined): string {
+function getProviderName(service: GatewayExplainAiReadiness | undefined): string {
   return service?.provider ?? readServiceDetail(service, "provider") ?? "openai";
 }
 
-function getProviderKeyEnv(service: GatewayAnalystMemoReadiness | undefined): string {
+function getProviderKeyEnv(service: GatewayExplainAiReadiness | undefined): string {
   const provider = getProviderName(service);
   return readServiceDetail(service, "requiredEnvVar") ?? providerKeyEnv[provider] ?? "OPENAI_API_KEY";
 }
 
-function getAnalystMemoKeyLabel(service: GatewayAnalystMemoReadiness | undefined): string {
+function getExplainAiKeyLabel(service: GatewayExplainAiReadiness | undefined): string {
   const provider = getProviderName(service);
-  return `${providerLabels[provider] ?? "AI provider"} key`;
+  return `${providerLabels[provider] ?? "AI provider"} explain key`;
 }
 
 function getServiceMessage(
@@ -161,8 +161,8 @@ function getServiceMetadata(service: GatewayServiceReadiness | undefined): { lab
   ].filter((item): item is { label: string; value: string } => item !== null);
 }
 
-function getAnalystMemoMetadata(
-  service: GatewayAnalystMemoReadiness | undefined,
+function getExplainAiMetadata(
+  service: GatewayExplainAiReadiness | undefined,
 ): { label: string; value: string }[] {
   const provider = getProviderName(service);
   const providerLabel = providerLabels[provider] ?? provider;
@@ -191,15 +191,15 @@ export function getGatewayReadinessIssues(health: GatewayHealth): GatewayReadine
       service: health.services?.acraLookup,
     },
     {
-      fallback: "Optional web discovery did not report readiness.",
+      fallback: "Optional web-evidence provider did not report readiness.",
       key: "tinyfish",
-      label: "TinyFish",
+      label: "Optional web evidence",
       service: health.services?.tinyfish,
     },
     {
-      fallback: `Set ${getProviderKeyEnv(health.services?.analystMemo)} on the REST gateway process to enable analyst memo generation.`,
+      fallback: `Set ${getProviderKeyEnv(health.services?.analystMemo)} on the REST gateway process to enable explain-only AI.`,
       key: "analystMemo",
-      label: getAnalystMemoKeyLabel(health.services?.analystMemo),
+      label: getExplainAiKeyLabel(health.services?.analystMemo),
       service: health.services?.analystMemo,
     },
   ];
@@ -348,12 +348,12 @@ export function GatewayReadinessBanner() {
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">
-            {hasFailingIssue ? "Service issue before you search" : "Optional services need setup"}
+            {hasFailingIssue ? "Signal dependencies need attention" : "Optional evidence services need setup"}
           </p>
           <p className="mt-1 text-sm leading-6 opacity-85">
             {issues.length === 1
               ? `${primaryIssue.label}: ${primaryIssue.detail}`
-              : `${issues.length} services need attention before full output is available.`}
+              : `${issues.length} services need attention before full signal context is available.`}
           </p>
           {issues.length > 1 ? (
             <ul className="mt-2 grid gap-1.5 text-xs leading-5 opacity-85">
@@ -409,8 +409,8 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
       <StatusChip label="Gateway" service={gateway} />
       <StatusChip label="data.gov.sg" service={datagovDatastore} />
       <StatusChip label="ACRA" service={acraLookup} />
-      <StatusChip label="TinyFish" service={tinyfish} />
-      <StatusChip label={getAnalystMemoKeyLabel(analystMemo)} service={analystMemo} />
+      <StatusChip label="Web evidence" service={tinyfish} />
+      <StatusChip label={getExplainAiKeyLabel(analystMemo)} service={analystMemo} />
     </div>
   );
 }
@@ -473,9 +473,9 @@ export function GatewayStatusPanel({ health }: { health: GatewayHealth }) {
         tone={getReadinessTone(acraLookup?.status)}
       />
       <HealthRow
-        detail={getServiceMessage(tinyfish, "Optional web discovery did not report readiness.")}
+        detail={getServiceMessage(tinyfish, "Optional web-evidence provider did not report readiness.")}
         icon={Globe2}
-        label="TinyFish"
+        label="Optional web evidence"
         metadata={getServiceMetadata(tinyfish)}
         state={getReadinessState(tinyfish?.status)}
         tone={getReadinessTone(tinyfish?.status)}
@@ -483,11 +483,11 @@ export function GatewayStatusPanel({ health }: { health: GatewayHealth }) {
       <HealthRow
         detail={getServiceMessage(
           analystMemo,
-          `Set ${getProviderKeyEnv(analystMemo)} on the REST gateway process to enable analyst memo generation.`,
+          `Set ${getProviderKeyEnv(analystMemo)} on the REST gateway process to enable explain-only AI.`,
         )}
         icon={KeyRound}
-        label={getAnalystMemoKeyLabel(analystMemo)}
-        metadata={getAnalystMemoMetadata(analystMemo)}
+        label={getExplainAiKeyLabel(analystMemo)}
+        metadata={getExplainAiMetadata(analystMemo)}
         state={getReadinessState(analystMemo?.status)}
         tone={getReadinessTone(analystMemo?.status)}
       />

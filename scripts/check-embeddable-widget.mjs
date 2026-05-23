@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 
 const files = [
-  "examples/embeddable-widget/dude-dossier-widget.js",
+  "examples/embeddable-widget/swee-pulse-widget.js",
   "examples/embeddable-widget/widget-frame.html",
   "examples/embeddable-widget/demo.html",
   "examples/embeddable-widget/README.md",
@@ -9,21 +9,21 @@ const files = [
 
 const read = async (path) => [path, await readFile(path, "utf8")];
 const entries = Object.fromEntries(await Promise.all(files.map(read)));
-const widget = entries["examples/embeddable-widget/dude-dossier-widget.js"];
+const widget = entries["examples/embeddable-widget/swee-pulse-widget.js"];
 const readme = entries["examples/embeddable-widget/README.md"];
 const frame = entries["examples/embeddable-widget/widget-frame.html"];
 
 const checks = [
-  ["defines custom element", widget.includes('customElements.define("dude-dossier-widget"')],
-  ["calls orchestrator endpoint", widget.includes("/api/v1/dude/cdd-orchestrator")],
+  ["defines custom element", widget.includes('customElements.define("swee-pulse-widget"')],
+  ["calls Pulse endpoint", widget.includes("/api/v1/pulse/snapshot")],
   ["supports gateway-url", widget.includes('"gateway-url"')],
   ["supports auth token", widget.includes("Authorization") && readme.includes("short-lived token")],
-  ["supports module scoping", widget.includes('"modules"') && readme.includes("acra,bca,cea,gebiz,boa,hsa,hlb")],
-  ["surfaces freshness", widget.includes("Freshness:")],
-  ["surfaces gaps and limits", widget.includes("Gaps and limits:")],
+  ["supports focus scoping", widget.includes('"focus"') && readme.includes("all`, `mobility`, or `weather")],
+  ["surfaces source freshness", widget.includes("Sources:")],
+  ["surfaces gaps", widget.includes("Gaps:")],
   ["documents origin controls", readme.includes("CORS allowlist")],
-  ["documents iframe API", frame.includes("gatewayUrl") && readme.includes("Iframe Wrapper")],
-  ["documents white-label CSS", readme.includes("--dude-widget-accent")],
+  ["documents iframe API", frame.includes("gatewayUrl") && frame.includes("focus") && readme.includes("Iframe Wrapper")],
+  ["documents white-label CSS", readme.includes("--swee-widget-accent")],
 ];
 
 const failed = checks.filter(([, passed]) => !passed);
