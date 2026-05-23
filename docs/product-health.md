@@ -13,6 +13,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 
 - `Works today` Swee Pulse and Shield local smoke — no-auth dashboard, Pulse snapshot, and Shield audit paths are covered by repository smoke checks; live upstreams still depend on source availability.
 - `Works today` [Public benchmark/status](./status/public-status.md) — generated Pulse, Shield, and transport-reliability evidence; this is release evidence, not an SLA or official public-agency status page.
+- `Works today` `npm run benchmark:transport:live` — live local MCP proof for `swee_pulse_mobility`, source states, Shield audit replay metadata, and credential gaps.
 - `Works today` [Market conventions audit](./market-conventions-audit.md) — MCP ecosystem expectations and positioning.
 - `Works today` [Ecosystem snapshot](./ecosystem-snapshot.md) — generated ecosystem evidence and comparison context.
 

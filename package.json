@@ -30,6 +30,8 @@
     "sdk:pack:dryrun": "npm pack -w @swee-sg/sdk --dry-run",
     "ecosystem:snapshot": "node ./scripts/generate-ecosystem-snapshot.mjs",
     "benchmarks:snapshot": "node ./scripts/generate-benchmark-snapshot.mjs",
+    "benchmark:transport:live": "node ./scripts/transport-live-benchmark.mjs",
+    "benchmark:transport:check": "node ./scripts/check-transport-benchmark.mjs",
     "status:public": "node ./scripts/generate-public-status.mjs",
     "kpis:dashboard": "node ./scripts/generate-kpi-dashboard.mjs",
     "dev": "concurrently -n gateway,web -c cyan,green \"npm:dev:gateway\" \"npm:dev:web\"",

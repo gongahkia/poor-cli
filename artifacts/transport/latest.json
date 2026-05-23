@@ -1,0 +1,328 @@
+{
+  "schemaVersion": "swee-transport-live-benchmark/v1",
+  "generatedAt": "2026-05-23T01:16:55.967Z",
+  "source": "local-live-mcp",
+  "command": "npm run benchmark:transport:live",
+  "pulse": {
+    "toolName": "swee_pulse_mobility",
+    "signalCount": 0,
+    "actionSignalCount": 0,
+    "gapCount": 4,
+    "gaps": [
+      {
+        "code": "SG_LTA_TRAFFIC_INCIDENTS_FAILED",
+        "message": "LTA API key not configured."
+      },
+      {
+        "code": "SG_LTA_TRAIN_ALERTS_FAILED",
+        "message": "LTA API key not configured."
+      },
+      {
+        "code": "SG_LTA_ROAD_WORKS_FAILED",
+        "message": "LTA API key not configured."
+      },
+      {
+        "code": "SG_LTA_ROAD_OPENINGS_FAILED",
+        "message": "LTA API key not configured."
+      }
+    ],
+    "sourceHealth": [
+      {
+        "source": "LTA",
+        "sourceTool": "sg_lta_traffic_incidents",
+        "status": "gap",
+        "observedAt": "2026-05-23T01:16:56.212Z",
+        "recordCount": 0,
+        "freshness": {
+          "observedAt": "2026-05-23T01:16:56.212Z",
+          "upstreamTimestamp": null,
+          "maxAgeSeconds": 900,
+          "status": "unknown",
+          "ageSeconds": null
+        },
+        "gaps": [
+          {
+            "code": "SG_LTA_TRAFFIC_INCIDENTS_FAILED",
+            "message": "LTA API key not configured."
+          }
+        ],
+        "provenance": [
+          {
+            "source": "LTA",
+            "sourceTool": "sg_lta_traffic_incidents",
+            "observedAt": "2026-05-23T01:16:56.212Z",
+            "upstreamTimestamp": null,
+            "recordCount": 0
+          }
+        ]
+      },
+      {
+        "source": "LTA",
+        "sourceTool": "sg_lta_train_alerts",
+        "status": "gap",
+        "observedAt": "2026-05-23T01:16:56.212Z",
+        "recordCount": 0,
+        "freshness": {
+          "observedAt": "2026-05-23T01:16:56.212Z",
+          "upstreamTimestamp": null,
+          "maxAgeSeconds": 900,
+          "status": "unknown",
+          "ageSeconds": null
+        },
+        "gaps": [
+          {
+            "code": "SG_LTA_TRAIN_ALERTS_FAILED",
+            "message": "LTA API key not configured."
+          }
+        ],
+        "provenance": [
+          {
+            "source": "LTA",
+            "sourceTool": "sg_lta_train_alerts",
+            "observedAt": "2026-05-23T01:16:56.212Z",
+            "upstreamTimestamp": null,
+            "recordCount": 0
+          }
+        ]
+      },
+      {
+        "source": "LTA",
+        "sourceTool": "sg_lta_road_works",
+        "status": "gap",
+        "observedAt": "2026-05-23T01:16:56.212Z",
+        "recordCount": 0,
+        "freshness": {
+          "observedAt": "2026-05-23T01:16:56.212Z",
+          "upstreamTimestamp": null,
+          "maxAgeSeconds": 900,
+          "status": "unknown",
+          "ageSeconds": null
+        },
+        "gaps": [
+          {
+            "code": "SG_LTA_ROAD_WORKS_FAILED",
+            "message": "LTA API key not configured."
+          }
+        ],
+        "provenance": [
+          {
+            "source": "LTA",
+            "sourceTool": "sg_lta_road_works",
+            "observedAt": "2026-05-23T01:16:56.212Z",
+            "upstreamTimestamp": null,
+            "recordCount": 0
+          }
+        ]
+      },
+      {
+        "source": "LTA",
+        "sourceTool": "sg_lta_road_openings",
+        "status": "gap",
+        "observedAt": "2026-05-23T01:16:56.212Z",
+        "recordCount": 0,
+        "freshness": {
+          "observedAt": "2026-05-23T01:16:56.212Z",
+          "upstreamTimestamp": null,
+          "maxAgeSeconds": 900,
+          "status": "unknown",
+          "ageSeconds": null
+        },
+        "gaps": [
+          {
+            "code": "SG_LTA_ROAD_OPENINGS_FAILED",
+            "message": "LTA API key not configured."
+          }
+        ],
+        "provenance": [
+          {
+            "source": "LTA",
+            "sourceTool": "sg_lta_road_openings",
+            "observedAt": "2026-05-23T01:16:56.212Z",
+            "upstreamTimestamp": null,
+            "recordCount": 0
+          }
+        ]
+      },
+      {
+        "source": "data.gov.sg",
+        "sourceTool": "sg_lta_traffic_images",
+        "status": "ready",
+        "observedAt": "2026-05-23T01:16:56.279Z",
+        "recordCount": 90,
+        "freshness": {
+          "observedAt": "2026-05-23T01:16:56.279Z",
+          "upstreamTimestamp": "2026-05-23T09:16:16+08:00",
+          "maxAgeSeconds": 900,
+          "status": "fresh",
+          "ageSeconds": 40
+        },
+        "gaps": [],
+        "provenance": [
+          {
+            "source": "data.gov.sg",
+            "sourceTool": "sg_lta_traffic_images",
+            "observedAt": "2026-05-23T01:16:56.279Z",
+            "upstreamTimestamp": "2026-05-23T09:16:16+08:00",
+            "recordCount": 90
+          }
+        ]
+      }
+    ]
+  },
+  "sourceChecks": [
+    {
+      "sourceTool": "sg_lta_traffic_incidents",
+      "source": "LTA DataMall",
+      "authRequired": true,
+      "surface": "Swee Pulse mobility",
+      "coverage": "Network-wide traffic incident rows.",
+      "state": "credential_missing",
+      "pulseStatus": "gap",
+      "recordCount": 0,
+      "observedAt": "2026-05-23T01:16:56.212Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [
+        "SG_LTA_TRAFFIC_INCIDENTS_FAILED"
+      ],
+      "gapMessages": [
+        "LTA API key not configured."
+      ]
+    },
+    {
+      "sourceTool": "sg_lta_train_alerts",
+      "source": "LTA DataMall",
+      "authRequired": true,
+      "surface": "Swee Pulse mobility",
+      "coverage": "Network-wide train service alerts and operator messages.",
+      "state": "credential_missing",
+      "pulseStatus": "gap",
+      "recordCount": 0,
+      "observedAt": "2026-05-23T01:16:56.212Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [
+        "SG_LTA_TRAIN_ALERTS_FAILED"
+      ],
+      "gapMessages": [
+        "LTA API key not configured."
+      ]
+    },
+    {
+      "sourceTool": "sg_lta_road_works",
+      "source": "LTA DataMall",
+      "authRequired": true,
+      "surface": "Swee Pulse mobility",
+      "coverage": "Network-wide road-work events with start/end timing.",
+      "state": "credential_missing",
+      "pulseStatus": "gap",
+      "recordCount": 0,
+      "observedAt": "2026-05-23T01:16:56.212Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [
+        "SG_LTA_ROAD_WORKS_FAILED"
+      ],
+      "gapMessages": [
+        "LTA API key not configured."
+      ]
+    },
+    {
+      "sourceTool": "sg_lta_road_openings",
+      "source": "LTA DataMall",
+      "authRequired": true,
+      "surface": "Swee Pulse mobility",
+      "coverage": "Network-wide road-opening events with start/end timing.",
+      "state": "credential_missing",
+      "pulseStatus": "gap",
+      "recordCount": 0,
+      "observedAt": "2026-05-23T01:16:56.212Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [
+        "SG_LTA_ROAD_OPENINGS_FAILED"
+      ],
+      "gapMessages": [
+        "LTA API key not configured."
+      ]
+    },
+    {
+      "sourceTool": "sg_lta_traffic_images",
+      "source": "data.gov.sg transport feed",
+      "authRequired": false,
+      "surface": "Swee Pulse source health",
+      "coverage": "Traffic camera image references and camera timestamps.",
+      "state": "ready",
+      "pulseStatus": "ready",
+      "recordCount": 90,
+      "observedAt": "2026-05-23T01:16:56.279Z",
+      "upstreamTimestamp": "2026-05-23T09:16:16+08:00",
+      "freshnessStatus": "fresh",
+      "ageSeconds": 40,
+      "gapCodes": [],
+      "gapMessages": []
+    }
+  ],
+  "shield": {
+    "pulseAuditId": "21930226-4fc7-4d3e-9194-a090a228b784",
+    "pulseDecision": {
+      "mode": "observe",
+      "decision": "allow",
+      "toolName": "swee_pulse_mobility",
+      "riskLevel": "medium",
+      "reasonCodes": [
+        "default_allow"
+      ],
+      "message": "Swee Shield allowed swee_pulse_mobility."
+    },
+    "pulseAudit": {
+      "auditId": "21930226-4fc7-4d3e-9194-a090a228b784",
+      "toolName": "swee_pulse_mobility",
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "swee_pulse_mobility",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed swee_pulse_mobility."
+      },
+      "status": "success",
+      "startedAt": "2026-05-23T01:16:56.211Z",
+      "finishedAt": "2026-05-23T01:16:56.279Z",
+      "durationMs": 69,
+      "inputHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "outputHash": "957325ffdacc4574472989079be8ae15feec3818fc79858cba43e63fd3afea13",
+      "sanitizedInput": {}
+    },
+    "pulseReplay": {
+      "auditId": "21930226-4fc7-4d3e-9194-a090a228b784",
+      "toolName": "swee_pulse_mobility",
+      "sanitizedInput": {},
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "swee_pulse_mobility",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed swee_pulse_mobility."
+      },
+      "status": "success",
+      "outputHash": "957325ffdacc4574472989079be8ae15feec3818fc79858cba43e63fd3afea13",
+      "durationMs": 69
+    }
+  },
+  "limits": [
+    "This artifact is live local evidence, not an SLA or official public-agency service status.",
+    "Credentialed LTA DataMall checks require SG_API_LTA_KEY or a local Swee SG keystore entry.",
+    "Missing upstream timestamps and source gaps are preserved instead of being filled with synthetic freshness.",
+    "Stop-level bus arrivals, carparks, and taxis remain direct-adapter follow-ups; this proof covers the default Pulse mobility runtime path."
+  ]
+}
