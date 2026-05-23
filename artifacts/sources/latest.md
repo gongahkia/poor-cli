@@ -1,6 +1,6 @@
 # Swee Source Family Live Benchmark
 
-Generated: 2026-05-23T01:25:29.522Z
+Generated: 2026-05-23T01:30:12.608Z
 
 ## Source Checks
 
@@ -9,13 +9,13 @@ Generated: 2026-05-23T01:25:29.522Z
 | weather | sg_nea_forecast_2hr | NEA | stale | 47 | stale | n/a | none |
 | weather | sg_nea_air_quality | NEA | ready | 5 | fresh | n/a | none |
 | weather | sg_nea_rainfall | NEA | ready | 76 | fresh | n/a | none |
-| geospatial | sg_onemap_geocode | OneMap | credential_missing | 0 | unknown | 947b7621-ac68-4e28-9eab-71b76ac080e2 | AUTH_MISSING |
+| geospatial | sg_onemap_geocode | OneMap | credential_missing | 0 | unknown | cc1e9ea3-f5a6-430b-8f5b-d63cf8670885 | AUTH_MISSING |
 | dataset-discovery | sg_datagov_search | data.gov.sg | error | 0 | unknown | n/a | TOOL_CALL_FAILED |
-| statistics-discovery | sg_singstat_search | SingStat | ready | 5 | unknown | 220403c2-99ab-4ea1-95cb-fcb0d7e945bc | none |
+| statistics-discovery | sg_singstat_search | SingStat | ready | 5 | unknown | 90b689c4-bdb9-4f50-be26-6f84bf1ef7c2 | none |
 
 ## Pulse Weather
 
-Pulse audit: fea4203f-b8ca-43da-b333-0c52ef012c93
+Pulse audit: 87903e5c-acea-429b-a104-50e611843d39
 
 Signals: 17
 

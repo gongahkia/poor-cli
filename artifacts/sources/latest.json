@@ -1,6 +1,6 @@
 {
   "schemaVersion": "swee-source-live-benchmark/v1",
-  "generatedAt": "2026-05-23T01:25:29.522Z",
+  "generatedAt": "2026-05-23T01:30:12.608Z",
   "source": "local-live-mcp",
   "command": "npm run benchmark:sources:live",
   "sourceChecks": [
@@ -12,10 +12,10 @@
       "coverage": "2-hour forecast coverage for Singapore areas.",
       "state": "stale",
       "recordCount": 47,
-      "observedAt": "2026-05-23T01:25:29.948Z",
+      "observedAt": "2026-05-23T01:30:13.047Z",
       "upstreamTimestamp": "2026-05-23T09:06:52+08:00",
       "freshnessStatus": "stale",
-      "ageSeconds": 1117,
+      "ageSeconds": 1401,
       "gapCodes": [],
       "gapMessages": [],
       "auditId": null,
@@ -29,10 +29,10 @@
       "coverage": "Regional PSI and PM2.5 readings.",
       "state": "ready",
       "recordCount": 5,
-      "observedAt": "2026-05-23T01:25:30.162Z",
+      "observedAt": "2026-05-23T01:30:13.180Z",
       "upstreamTimestamp": "2026-05-23T09:16:02+08:00",
       "freshnessStatus": "fresh",
-      "ageSeconds": 568,
+      "ageSeconds": 851,
       "gapCodes": [],
       "gapMessages": [],
       "auditId": null,
@@ -46,10 +46,10 @@
       "coverage": "Station rainfall readings.",
       "state": "ready",
       "recordCount": 76,
-      "observedAt": "2026-05-23T01:25:30.993Z",
-      "upstreamTimestamp": "2026-05-23T09:15:00+08:00",
+      "observedAt": "2026-05-23T01:30:13.886Z",
+      "upstreamTimestamp": "2026-05-23T09:20:00+08:00",
       "freshnessStatus": "fresh",
-      "ageSeconds": 630,
+      "ageSeconds": 613,
       "gapCodes": [],
       "gapMessages": [],
       "auditId": null,
@@ -63,7 +63,7 @@
       "coverage": "Address/building-name geocoding to Singapore coordinates.",
       "state": "credential_missing",
       "recordCount": 0,
-      "observedAt": "2026-05-23T01:25:31.001Z",
+      "observedAt": "2026-05-23T01:30:13.894Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
@@ -73,7 +73,7 @@
       "gapMessages": [
         "OneMap credentials not configured. Run sg_key_set."
       ],
-      "auditId": "947b7621-ac68-4e28-9eab-71b76ac080e2",
+      "auditId": "cc1e9ea3-f5a6-430b-8f5b-d63cf8670885",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -114,13 +114,13 @@
       "coverage": "Official statistics table discovery through SingStat Table Builder search.",
       "state": "ready",
       "recordCount": 5,
-      "observedAt": "2026-05-23T01:26:37.830Z",
+      "observedAt": "2026-05-23T01:32:21.960Z",
       "upstreamTimestamp": null,
       "freshnessStatus": "unknown",
       "ageSeconds": null,
       "gapCodes": [],
       "gapMessages": [],
-      "auditId": "220403c2-99ab-4ea1-95cb-fcb0d7e945bc",
+      "auditId": "90b689c4-bdb9-4f50-be26-6f84bf1ef7c2",
       "decision": {
         "mode": "observe",
         "decision": "allow",
@@ -135,7 +135,7 @@
   ],
   "pulseWeather": {
     "toolName": "swee_pulse_weather",
-    "auditId": "fea4203f-b8ca-43da-b333-0c52ef012c93",
+    "auditId": "87903e5c-acea-429b-a104-50e611843d39",
     "decision": {
       "mode": "observe",
       "decision": "allow",
@@ -147,7 +147,7 @@
       "message": "Swee Shield allowed swee_pulse_weather."
     },
     "replay": {
-      "auditId": "fea4203f-b8ca-43da-b333-0c52ef012c93",
+      "auditId": "87903e5c-acea-429b-a104-50e611843d39",
       "toolName": "swee_pulse_weather",
       "sanitizedInput": {},
       "decision": {
@@ -161,8 +161,8 @@
         "message": "Swee Shield allowed swee_pulse_weather."
       },
       "status": "success",
-      "outputHash": "fe2f8bd23c0ba9fb29b245ba18630c625dba9cf7b49e1848e8d0944f8685281c",
-      "durationMs": 1214
+      "outputHash": "eac25ab69ea32fedd6687bf604835dad49db2f6e523641fd1ad55b3d5ae531a3",
+      "durationMs": 1038
     },
     "signalCount": 17,
     "gapCount": 0
