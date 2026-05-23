@@ -1,7 +1,7 @@
 // Lightweight syntactic-validity smoke for examples/integration/outcomes/*.ts.
 // Type-checks and import-validates each outcome script without spawning the MCP server
-// or making upstream calls. Catches the "I broke an outcome example by changing the
-// brief envelope" class of regression.
+// or making upstream calls. Catches the "I broke an outcome example by changing
+// the Pulse/Shield payload" class of regression.
 import { execFileSync } from "node:child_process";
 import { readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";

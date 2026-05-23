@@ -4,14 +4,14 @@ This page is the public entrypoint for product-health, governance, and adoption 
 
 ## Readiness Status
 
-- `Works today`: implemented in the local/self-hosted CDD product path and covered by smoke or repository tests.
+- `Works today`: implemented in the local/self-hosted Swee Pulse and Swee Shield product path and covered by smoke or repository tests.
 - `Requires credentials`: implemented, but only fully useful when the named provider key, licence, or source approval is configured.
 - `Unpublished`: prepared in the repo but not available through the public registry or marketplace yet.
 - `Hosted/commercial blocked`: planning or governance evidence only; do not treat as a production attestation, public listing, or customer-ready hosted control.
 
 ## Evaluation
 
-- `Works today` [First-run CDD orchestrator artifact pack](./evaluator-artifacts/first-run-cdd-orchestrator/README.md) — committed evaluator snapshot from a passing no-auth orchestrator browser smoke; fixture-only and not a live-source substitute.
+- `Works today` Swee Pulse and Shield local smoke — no-auth dashboard, Pulse snapshot, and Shield audit paths are covered by repository smoke checks; live upstreams still depend on source availability.
 - `Works today` [Market conventions audit](./market-conventions-audit.md) — MCP ecosystem expectations and positioning.
 - `Works today` [Ecosystem snapshot](./ecosystem-snapshot.md) — generated ecosystem evidence and comparison context.
 
@@ -30,7 +30,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 - `Works today` [Governance checklist](./governance-checklist.md) — release and ownership gates.
 - `Works today` [Audit retention policy](./audit-retention-policy.md) — local trace and request-retention policy.
 - `Requires credentials` [ACRA licensing track](./acra-licensing-track.md) — API Marketplace, authorised ISP, and hosted paid enrichment blocker status.
-- `Hosted/commercial blocked` [Commercial data use review](./commercial-data-use.md) — OneMap and URA commercial-use posture for removed non-CDD surfaces plus source-limit history.
+- `Hosted/commercial blocked` [Commercial data use review](./commercial-data-use.md) — OneMap, URA, and other source-use posture plus source-limit history.
 - `Hosted/commercial blocked` [PDPA notification and DPO readiness](./privacy-dpo-readiness.md) — hosted beta privacy notice, DPO contact, retention, and DPIA checklist.
 - `Hosted/commercial blocked` [Data Processing Agreement template](./data-processing-agreement-template.md) — draft hosted customer DPA requiring legal review.
 - `Hosted/commercial blocked` [SOC 2 Type I readiness roadmap](./soc2-type1-roadmap.md) — hosted assurance gap analysis, control backlog, cost estimate, and buyer trigger; not an attestation.

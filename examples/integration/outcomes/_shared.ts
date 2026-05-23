@@ -47,43 +47,38 @@ export const connectClient = async (label: string): Promise<Client> => {
   return client;
 };
 
-type BriefEnvelope = Readonly<{
-  title?: string;
-  summary?: readonly Readonly<{ label: string; value: unknown; source: string }>[];
-  gaps?: readonly Readonly<{ code: string; message: string }>[];
-  freshness?: readonly Readonly<{ source: string; observedAt: string; upstreamTimestamp: string | null }>[];
-  riskFlags?: readonly Readonly<{ code: string; severity: string; message: string; source: string }>[];
-  nextChecks?: readonly Readonly<{ tool: string; reason: string; input: Readonly<Record<string, unknown>> }>[];
+type PulseSnapshot = Readonly<{
+  generatedAt?: string;
+  signals?: readonly Readonly<{
+    title?: string;
+    severity?: string;
+    sourceTool?: string;
+    recommendedAction?: string;
+  }>[];
+  sourceHealth?: readonly Readonly<{
+    sourceTool?: string;
+    status?: string;
+    recordCount?: number;
+  }>[];
+  gaps?: readonly Readonly<{ code?: string; message?: string }>[];
 }>;
 
-export const renderBrief = (label: string, brief: BriefEnvelope): void => {
-  console.log(`\n=== ${label} :: ${brief.title ?? "(no title)"} ===`);
-  console.log("Summary:");
-  for (const item of brief.summary ?? []) {
-    console.log(`  - ${item.label}: ${JSON.stringify(item.value)} [${item.source}]`);
+export const renderPulseSnapshot = (label: string, snapshot: PulseSnapshot): void => {
+  console.log(`\n=== ${label} :: ${snapshot.generatedAt ?? "(no timestamp)"} ===`);
+  console.log("Signals:");
+  for (const signal of snapshot.signals ?? []) {
+    console.log(`  - [${signal.severity ?? "unknown"}] ${signal.title ?? "(untitled)"} (${signal.sourceTool ?? "unknown source"})`);
   }
-  if (brief.riskFlags !== undefined && brief.riskFlags.length > 0) {
-    console.log("Risk flags:");
-    for (const flag of brief.riskFlags) {
-      console.log(`  - [${flag.severity.toUpperCase()}] ${flag.code}: ${flag.message}`);
+  if (snapshot.sourceHealth !== undefined && snapshot.sourceHealth.length > 0) {
+    console.log("Source health:");
+    for (const source of snapshot.sourceHealth) {
+      console.log(`  - ${source.sourceTool ?? "unknown"}: ${source.status ?? "unknown"} (${source.recordCount ?? 0} rows)`);
     }
   }
-  if (brief.gaps !== undefined && brief.gaps.length > 0) {
+  if (snapshot.gaps !== undefined && snapshot.gaps.length > 0) {
     console.log("Gaps:");
-    for (const gap of brief.gaps) {
-      console.log(`  - ${gap.code}: ${gap.message}`);
-    }
-  }
-  if (brief.nextChecks !== undefined && brief.nextChecks.length > 0) {
-    console.log("Next checks (UI buttons):");
-    for (const check of brief.nextChecks) {
-      console.log(`  - ${check.tool}: ${check.reason}`);
-    }
-  }
-  if (brief.freshness !== undefined) {
-    const stale = brief.freshness.filter((f) => f.upstreamTimestamp === null);
-    if (stale.length > 0) {
-      console.log(`Freshness warnings: ${stale.length} source(s) without upstream timestamp.`);
+    for (const gap of snapshot.gaps) {
+      console.log(`  - ${gap.code ?? "UNKNOWN_GAP"}: ${gap.message ?? ""}`);
     }
   }
 };

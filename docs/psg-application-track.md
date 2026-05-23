@@ -1,6 +1,6 @@
 # PSG Application Track
 
-This track records the current Productivity Solutions Grant (PSG) path for making Dude eligible for grant-assisted SME adoption. It is product and go-to-market readiness planning, not grant, legal, tax, or procurement advice.
+This track records the current Productivity Solutions Grant (PSG) path for making Swee SG eligible for grant-assisted SME adoption. It is product and go-to-market readiness planning, not grant, legal, tax, or procurement advice.
 
 Observed at: 2026-05-17 09:33 Asia/Singapore.
 
@@ -35,7 +35,7 @@ For SME buyers applying for PSG, the current general EnterpriseSG posture is:
 - applicant applies directly through the Business Grants Portal using Corppass;
 - one UEN per application, with no group applications.
 
-This buyer context matters for sales enablement, but it does not make Dude pre-approved. Dude still needs vendor pre-approval before buyers can select it as a PSG-supported solution.
+This buyer context matters for sales enablement, but it does not make Swee SG pre-approved. Swee SG still needs vendor pre-approval before buyers can select it as a PSG-supported solution.
 
 ## Vendor Pre-Approval Requirements
 
@@ -77,7 +77,7 @@ Current gating criteria to clear before application:
 ### Customer Evidence Packet
 
 - Five qualifying SME references from the target sector, excluding subsidiaries and affiliated companies.
-- Proof each SME used Dude for at least six months and is still using it.
+- Proof each SME used Swee SG for at least six months and is still using it.
 - Customer satisfaction survey responses for service, solution price, and solution quality.
 - Productivity-gain evidence showing at least 15% improvement tied to the selected workflow.
 - Permission status for public reference, anonymized case study, or private reviewer-only evidence.
@@ -116,7 +116,7 @@ IMDA's guide says the structured evaluation journey typically spans 4-5 months. 
 Do not file the first enquiry or application from this repo yet. The current blockers are:
 
 - no operating entity and authorised Corppass/Vendor Management Portal admin are recorded;
-- no evidence of at least five qualifying SME customers using Dude for six months is recorded;
+- no evidence of at least five qualifying SME customers using Swee SG for six months is recorded;
 - no satisfaction survey, productivity-gain evidence, or customer-reference permission is recorded;
 - no final PSG package category, qualifying-cost package, or official quotation template is recorded;
 - no owner has accepted accountability for the application after submission.
@@ -143,4 +143,4 @@ The first executable next step is to assign a GTM owner and create the five-cust
 - This document does not decide grant eligibility for any specific buyer.
 - This document does not guarantee IMDA, ACRA, EnterpriseSG, or GoBusiness approval.
 - This document does not interpret private Vendor Management Portal terms or appointment-letter conditions.
-- Do not claim Dude is PSG pre-approved until an appointment letter is accepted and the solution is publicly listed through the relevant official channel.
+- Do not claim Swee SG is PSG pre-approved until an appointment letter is accepted and the solution is publicly listed through the relevant official channel.

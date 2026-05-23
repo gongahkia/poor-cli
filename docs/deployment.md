@@ -1,16 +1,17 @@
 # Remote Deployment
 
-This repo ships a single-node Docker VPS deployment bundle for Dude as a web product and for Dude MCP's public Streamable HTTP surface.
+This repo ships a single-node Docker VPS deployment bundle for Swee SG as a web product and public Streamable HTTP MCP surface.
 
 ## Topology
 
 - `caddy` terminates TLS for `https://<public-hostname>`
-- `dude-assets` copies the Vite production build into a shared static asset volume
+- `swee-assets` copies the Vite production build into a shared static asset volume
 - `caddy` serves the web app from `/` and falls back to `index.html` for client-side routes
-- `dude-gateway` serves the REST gateway under `/api/v1`
-- `dude-mcp` serves Dude MCP over `/mcp`
+- `swee-gateway` serves the REST gateway under `/api/v1`
+- `swee-mcp` serves Swee SG over `/mcp`
+- services use the `ghcr.io/gongahkia/swee-sg` container image by default
 - `/.well-known/oauth-protected-resource*`, `/healthz`, and `/icon.svg` are proxied to the same server
-- All persistent state (cache, keys, config, artifacts) lives under `SG_APIS_STATE_DIR` (`/var/lib/sg-apis` in the container) on the `dude_mcp_state` Docker volume
+- All persistent state (cache, keys, config, artifacts) lives under `SG_APIS_STATE_DIR` (`/var/lib/sg-apis` in the container) on the `swee_state` Docker volume
 
 ## Files
 
@@ -23,7 +24,7 @@ This repo ships a single-node Docker VPS deployment bundle for Dude as a web pro
 1. Copy `.env.deploy.example` to `.env.deploy` on the VPS.
 2. Replace `PUBLIC_HOSTNAME` with the real hostname that fronts the web app and `/mcp`.
 3. Fill in the OIDC issuer and audience for the authorization server that will issue access tokens for this MCP endpoint.
-4. Add upstream credentials only for the Singapore API families you actually need. For analyst memos, set `DUDE_AI_PROVIDER` and exactly the matching server-side provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY`).
+4. Add upstream credentials only for the Singapore API families you actually need. For optional explain-only AI, set `DUDE_AI_PROVIDER` and exactly the matching server-side provider key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY`).
 5. Start the stack:
 
 ```bash
@@ -38,17 +39,17 @@ docker compose --env-file .env.deploy up -d
 - the protected-resource metadata `resource` value must match the same `/mcp` URL
 - `SG_APIS_HTTP_AUTH_MODE` should stay `mixed` for a public deployment unless the server is intentionally private
 - the normal web deployment uses same-origin REST calls through Caddy, so browser traffic goes to `https://<public-hostname>/api/v1`
-- `DUDE_WEB_ORIGIN_ALLOWLIST` may stay empty for the same-origin Caddy deployment; set it to exact origins only if a separate browser origin calls the REST gateway directly
-- analyst memo credentials must be present only on `dude-gateway`; never expose provider keys through `VITE_*` browser variables
+- `SWEE_WEB_ORIGIN_ALLOWLIST` may stay empty for the same-origin Caddy deployment; set it to exact origins only if a separate browser origin calls the REST gateway directly
+- explain-only AI credentials must be present only on `swee-gateway`; never expose provider keys through `VITE_*` browser variables
 
 ## Routes
 
 | Public path | Service | Notes |
 | --- | --- | --- |
-| `/` and app routes | `caddy` static files | Serves `apps/web/dist` from the Docker image via the `dude_web_assets` volume. |
-| `/api/v1/*` | `dude-gateway` | REST gateway for the web app, including `/api/v1/health`, `/api/v1/metrics`, and tool POST routes. |
-| `/mcp` | `dude-mcp` | Streamable HTTP MCP endpoint. |
-| `/healthz`, `/icon.svg`, `/.well-known/oauth-protected-resource*` | `dude-mcp` | MCP deployment metadata and health. |
+| `/` and app routes | `caddy` static files | Serves `apps/web/dist` from the Docker image via the `swee_web_assets` volume. |
+| `/api/v1/*` | `swee-gateway` | REST gateway for the web app, including `/api/v1/health`, `/api/v1/metrics`, and tool POST routes. |
+| `/mcp` | `swee-mcp` | Streamable HTTP MCP endpoint. |
+| `/healthz`, `/icon.svg`, `/.well-known/oauth-protected-resource*` | `swee-mcp` | MCP deployment metadata and health. |
 
 ## Operations
 
@@ -73,13 +74,13 @@ curl -fsS https://<public-hostname>/.well-known/oauth-protected-resource/mcp
 SQLite artifact inspection:
 
 ```bash
-docker compose exec dude-mcp sh -lc 'sqlite3 /var/lib/sg-apis/artifacts.db "select kind, tool_name, created_at, expires_at from artifacts order by created_at desc limit 20;"'
+docker compose exec swee-mcp sh -lc 'sqlite3 /var/lib/sg-apis/artifacts.db "select kind, tool_name, created_at, expires_at from artifacts order by created_at desc limit 20;"'
 ```
 
 Manual artifact cleanup:
 
 ```bash
-docker compose exec dude-mcp sh -lc 'sqlite3 /var/lib/sg-apis/artifacts.db "delete from artifacts where expires_at <= strftime(''%s'',''now'') * 1000;"'
+docker compose exec swee-mcp sh -lc 'sqlite3 /var/lib/sg-apis/artifacts.db "delete from artifacts where expires_at <= strftime(''%s'',''now'') * 1000;"'
 ```
 
 The server also performs artifact cleanup on startup and once per hour.

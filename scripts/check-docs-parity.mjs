@@ -7,21 +7,9 @@ const { API_CATALOG, RECIPE_CATALOG, RUNTIME_CATALOG, TOOL_CATALOG, WORKFLOW_CAT
   pathToFileURL(resolve(root, "packages/mcp-server/dist/tools/catalog.js")).href
 );
 
-const totalTools = TOOL_CATALOG.length;
-const familyCount = API_CATALOG.length;
-const routedFamilyCount = API_CATALOG.filter((api) => api.preferredInterface === "sg_query").length;
-const routedFamilyLabel = `${routedFamilyCount} sg_query-routed CDD ${routedFamilyCount === 1 ? "family" : "families"}`;
-const familyNames = API_CATALOG.map((api) => api.name);
-const workflowNames = WORKFLOW_CATALOG.map((workflow) => workflow.name);
-const recipeNames = RECIPE_CATALOG.map((recipe) => recipe.name);
-const sgQuery = TOOL_CATALOG.find((tool) => tool.name === "sg_query");
-
-if (sgQuery?.preferred !== true) {
-  throw new Error("sg_query is no longer marked preferred in the built tool catalog.");
-}
-
 const readmeTarget = existsSync(resolve(root, "README2.md")) ? "README2.md" : "README.md";
 const read = (path) => readFileSync(resolve(root, path), "utf8");
+
 const ensureIncludes = (path, snippets) => {
   const text = read(path);
   for (const snippet of snippets) {
@@ -40,164 +28,136 @@ const ensureExcludes = (path, snippets) => {
   }
 };
 
-const ensureProductDocsUseOrchestratorPath = (paths) => {
-  const prohibited = [
-    {
-      pattern: /POST\s+\/api\/v1\/sg_business_dossier/,
-      message: "documents the direct dossier REST endpoint as a product entrypoint",
-    },
-    {
-      pattern: /calls? .*\/api\/v1\/sg_business_dossier/i,
-      message: "describes a product integration calling the direct dossier endpoint",
-    },
-    {
-      pattern: /Company\/UEN CDD report\s*\|\s*`sg_business_dossier`/i,
-      message: "routes company CDD reports directly to sg_business_dossier",
-    },
-  ];
+const toolNames = new Set(TOOL_CATALOG.map((tool) => tool.name));
+const recipeNames = new Set(RECIPE_CATALOG.map((recipe) => recipe.name));
+const workflowNames = new Set(WORKFLOW_CATALOG.map((workflow) => workflow.name));
+const apiNames = new Set(API_CATALOG.map((api) => api.name));
 
-  for (const path of paths) {
-    const text = read(path);
-    for (const { pattern, message } of prohibited) {
-      if (pattern.test(text)) {
-        throw new Error(`${path} ${message}. Use the CDD orchestrator path and describe sg_business_dossier as low-level compatibility.`);
-      }
-    }
+for (const toolName of [
+  "swee_pulse_snapshot",
+  "swee_pulse_mobility",
+  "swee_pulse_weather",
+  "swee_pulse_explain",
+  "swee_shield_audit_lookup",
+  "swee_shield_scan_tools",
+]) {
+  if (!toolNames.has(toolName)) {
+    throw new Error(`Built tool catalog is missing ${toolName}.`);
   }
-};
+}
 
-const cddCoreSnippets = [
-  "Search a Singapore company or UEN. Get a cited CDD report for analyst review.",
-  `${totalTools} \`sg_*\` tools total`,
-  `${familyCount} CDD catalog families`,
-  routedFamilyLabel,
-  "sg_business_dossier",
-  "sg_acra_entities",
-  "sg_boa_architecture_firms",
-  "sg_hsa_health_product_licensees",
-  "sg_hlb_hotels",
-  "sg_sanctions_screen",
-  "sg://recipes",
-  "sg://runtime",
-  "sg://playbooks",
-  "sg://benchmarks",
+for (const familyName of ["Swee Pulse", "Swee Shield", "Operations"]) {
+  if (!apiNames.has(familyName)) {
+    throw new Error(`Built API catalog is missing ${familyName}.`);
+  }
+}
+
+for (const workflowName of ["Swee Pulse Snapshot", "Swee Shield Audit Review"]) {
+  if (!workflowNames.has(workflowName)) {
+    throw new Error(`Built workflow catalog is missing ${workflowName}.`);
+  }
+}
+
+for (const recipeName of ["Pulse Overview", "Recent Shield Audit"]) {
+  if (!recipeNames.has(recipeName)) {
+    throw new Error(`Built recipe catalog is missing ${recipeName}.`);
+  }
+}
+
+if (RUNTIME_CATALOG.schemaVersion !== "swee-runtime/v1") {
+  throw new Error("Built runtime catalog must use swee-runtime/v1.");
+}
+
+const staleProductSnippets = [
+  "Dude CDD",
+  "CDD-only",
+  "CDD orchestrator",
+  "Search a Singapore company or UEN. Get a cited CDD report",
+  "/api/v1/dude",
   "Report Builder",
-  "PDF or DOCX",
-];
-
-const removedSurfaceSnippets = [
-  "sg_property_brief",
-  "sg_macro_brief",
-  "sg_transport_brief",
-  "sg_environment_brief",
-  "sg_civic_brief",
-  "sg_datagov_browse",
-  "sg_singstat_browse",
-  "sg_onemap_route",
-  "Property Due Diligence",
-  "Postal Route",
-  "SingStat Drilldown",
-  "HDB Rental Check",
-  "Dataset Collection Browse",
+  "Company/UEN CDD report",
 ];
 
 ensureIncludes(readmeTarget, [
-  ...cddCoreSnippets,
-  "agent-builder-quickstart.md",
-  "product-health.md",
-  "Start Here For Builders",
-  "examples/integration/basic-client.ts",
-  "examples/integration/basic-client.py",
+  "Swee SG",
+  "Swee Shield",
+  "Swee Pulse",
+  "swee_pulse_snapshot",
+  "swee_shield_audit_lookup",
+  "/api/v1/pulse/snapshot",
+  "SWEE_WEB_ORIGIN_ALLOWLIST",
   "npm run test:smoke:profiles",
-  ...familyNames,
-  ...workflowNames,
 ]);
-ensureExcludes(readmeTarget, removedSurfaceSnippets);
+ensureExcludes(readmeTarget, staleProductSnippets);
 
 ensureIncludes("AGENTS.md", [
-  "CDD-only",
-  "CDD orchestrator",
-  "low-level compatibility",
-  "sg_query",
-  "sg_business_dossier",
-  "Evidence Pack",
-  "Never invent CDD values",
+  "Swee SG",
+  "Swee Pulse",
+  "Swee Shield",
+  "Never invent public-data values",
+  "swee_pulse_snapshot",
+  "swee_shield_audit_lookup",
 ]);
-ensureExcludes("AGENTS.md", ["Housing Advisor", "sg_housing_affordability", "sg_grant_eligibility"]);
+ensureExcludes("AGENTS.md", staleProductSnippets);
 
 ensureIncludes("docs/architecture.md", [
-  `${familyCount} CDD catalog families`,
-  "company CDD report",
-  "architecture firm diligence",
-  "healthcare supplier diligence",
-  "hotel operator lookup",
-  "sector-scoped business diligence",
-  "ReportTemplate",
-  "ReportWritingStyle",
+  "Swee Pulse",
+  "Swee Shield",
+  "Pulse Contract",
+  "Shield Contract",
+  "/api/v1/pulse/snapshot",
 ]);
-ensureExcludes("docs/architecture.md", removedSurfaceSnippets);
+ensureExcludes("docs/architecture.md", staleProductSnippets);
 
-ensureIncludes("docs/agent-builder-quickstart.md", [
-  "CDD-only",
-  "sg://recipes",
-  "sg://workflows",
-  "sg://runtime",
-  "blocked",
-  "unsupported",
-  "failed",
-  "sg_business_dossier",
-  "sg_boa_architecture_firms",
-  "npm run verify",
+ensureIncludes("docs/deployment.md", [
+  "Swee SG",
+  "swee-gateway",
+  "swee-mcp",
+  "SWEE_WEB_ORIGIN_ALLOWLIST",
+  "ghcr.io/gongahkia/swee-sg",
 ]);
-ensureExcludes("docs/agent-builder-quickstart.md", removedSurfaceSnippets);
 
-ensureProductDocsUseOrchestratorPath([
-  readmeTarget,
-  "AGENTS.md",
-  "docs/agent-builder-quickstart.md",
-  "docs/product/corp-services-cdd.md",
-  "docs/product/secondary-workflows.md",
-  "examples/embeddable-widget/README.md",
-  "examples/spreadsheet-addins/README.md",
+ensureIncludes("docs/naming-and-remotes.md", [
+  "Swee SG",
+  "swee-sg",
+  "swee-shield",
+  "ghcr.io/gongahkia/swee-sg",
+  "SWEE_WEB_ORIGIN_ALLOWLIST",
 ]);
 
 ensureIncludes("examples/README.md", [
-  "business-dossier.md",
-  "architecture-firm-diligence.md",
-  "healthcare-supplier-diligence.md",
-  "hotel-operator-lookup.md",
-  "sector-scoped-business-diligence.md",
-  "npm run diagnostics",
-  "npm run test:smoke:profiles",
-  "sg://runtime",
-  "sg://playbooks",
-  "sg://benchmarks",
-  "sg_query completed, blocked, unsupported, and failed outcomes",
-  "basic-client.py",
-  "backend-worker-template.py",
-  "queue-consumer-template.py",
+  "browser-extension/",
+  "spreadsheet-addins/",
+  "embeddable-widget/",
+  "/api/v1/pulse/snapshot",
+  "npm run widget:check",
 ]);
-ensureExcludes("examples/README.md", removedSurfaceSnippets);
+ensureExcludes("examples/README.md", staleProductSnippets);
 
-for (const path of ["smithery.yaml", "glama.json", "packages/mcp-server/package.json"]) {
-  ensureIncludes(path, familyNames);
-}
+ensureIncludes("examples/browser-extension/README.md", [
+  "Swee Pulse",
+  "/api/v1/pulse/snapshot",
+  "area",
+]);
+ensureIncludes("examples/spreadsheet-addins/README.md", [
+  "SWEE_PULSE_SNAPSHOT",
+  "SWEE_PULSE_SIGNALS",
+  "SWEE_PULSE_SOURCES",
+]);
+ensureIncludes("examples/embeddable-widget/README.md", [
+  "swee-pulse-widget",
+  "/api/v1/pulse/snapshot",
+  "swee-pulse-complete",
+]);
 
-if (!Array.isArray(RUNTIME_CATALOG.queryStatusContract) || RUNTIME_CATALOG.queryStatusContract.length !== 5) {
-  throw new Error("Built runtime catalog is missing the full sg_query status contract.");
-}
-
-for (const recipeName of [
-  "Business Due Diligence",
-  "Architecture Firm Diligence",
-  "Healthcare Supplier Diligence",
-  "Hotel Operator Lookup",
-]) {
-  if (!recipeNames.includes(recipeName)) {
-    throw new Error(`Built recipe catalog is missing expected CDD recipe: ${recipeName}`);
-  }
-}
+ensureIncludes("packages/mcp-server/README.md", [
+  "@swee-sg/shield",
+  "swee-sg",
+  "swee_pulse_snapshot",
+  "swee_shield_scan_tools",
+]);
+ensureExcludes("packages/mcp-server/README.md", staleProductSnippets);
 
 process.stdout.write(
-  `Docs parity OK: ${totalTools} tools, ${familyCount} CDD catalog families, ${routedFamilyLabel}.\n`,
+  `Docs parity OK: ${TOOL_CATALOG.length} tools, ${API_CATALOG.length} API families, ${WORKFLOW_CATALOG.length} workflows.\n`,
 );

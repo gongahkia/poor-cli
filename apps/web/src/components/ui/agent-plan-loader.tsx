@@ -8,7 +8,7 @@ const LazyAgentPlan = lazy(() => import("@/components/ui/agent-plan"));
 export function AgentPlan({
   className,
   description,
-  title = "Dude is working",
+  title = "Swee SG is working",
   ...props
 }: AgentPlanProps) {
   return (

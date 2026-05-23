@@ -1,59 +1,34 @@
 {
   "schemaVersion": "1.0",
-  "generatedAt": "2026-05-18T00:00:00.000+08:00",
+  "generatedAt": "2026-05-23T00:00:00.000+08:00",
   "ownerPolicy": {
-    "rule": "Every retained CDD API family and workflow must have a primary owner role and backup owner role.",
-    "escalationChannel": "maintainers@dude"
+    "rule": "Every Swee SG API family and workflow must have a primary owner role and backup owner role.",
+    "escalationChannel": "maintainers@swee-sg"
   },
   "apiFamilies": [
     {
-      "name": "CDD Query",
-      "primaryOwner": "maintainer:diligence",
+      "name": "Swee Pulse",
+      "primaryOwner": "maintainer:city-signals",
       "backupOwner": "maintainer:governance"
     },
     {
-      "name": "Business Dossier",
-      "primaryOwner": "maintainer:diligence",
+      "name": "Swee Shield",
+      "primaryOwner": "maintainer:runtime-security",
       "backupOwner": "maintainer:governance"
     },
     {
-      "name": "ACRA",
+      "name": "Mobility Sources",
       "primaryOwner": "maintainer:data-surface",
-      "backupOwner": "maintainer:governance"
+      "backupOwner": "maintainer:runtime-reliability"
     },
     {
-      "name": "BCA",
+      "name": "Weather Sources",
       "primaryOwner": "maintainer:data-surface",
-      "backupOwner": "maintainer:governance"
+      "backupOwner": "maintainer:runtime-reliability"
     },
     {
-      "name": "BOA",
+      "name": "Singapore Public Data Sources",
       "primaryOwner": "maintainer:data-surface",
-      "backupOwner": "maintainer:governance"
-    },
-    {
-      "name": "CEA",
-      "primaryOwner": "maintainer:data-surface",
-      "backupOwner": "maintainer:governance"
-    },
-    {
-      "name": "GeBIZ",
-      "primaryOwner": "maintainer:data-surface",
-      "backupOwner": "maintainer:governance"
-    },
-    {
-      "name": "HSA",
-      "primaryOwner": "maintainer:data-surface",
-      "backupOwner": "maintainer:governance"
-    },
-    {
-      "name": "HLB",
-      "primaryOwner": "maintainer:data-surface",
-      "backupOwner": "maintainer:governance"
-    },
-    {
-      "name": "External Diligence",
-      "primaryOwner": "maintainer:diligence",
       "backupOwner": "maintainer:governance"
     },
     {
@@ -64,29 +39,24 @@
   ],
   "workflows": [
     {
-      "name": "Company CDD Report",
-      "primaryOwner": "maintainer:diligence",
+      "name": "Swee Pulse Snapshot",
+      "primaryOwner": "maintainer:city-signals",
+      "backupOwner": "maintainer:runtime-reliability"
+    },
+    {
+      "name": "Swee Shield Audit Review",
+      "primaryOwner": "maintainer:runtime-security",
       "backupOwner": "maintainer:governance"
     },
     {
-      "name": "Architecture Firm Diligence",
-      "primaryOwner": "maintainer:diligence",
-      "backupOwner": "maintainer:governance"
-    },
-    {
-      "name": "Healthcare Supplier Diligence",
-      "primaryOwner": "maintainer:diligence",
-      "backupOwner": "maintainer:governance"
-    },
-    {
-      "name": "Hotel Operator Lookup",
-      "primaryOwner": "maintainer:diligence",
-      "backupOwner": "maintainer:governance"
+      "name": "Raw Source Adapter Lookup",
+      "primaryOwner": "maintainer:data-surface",
+      "backupOwner": "maintainer:runtime-reliability"
     }
   ],
   "playbooks": [
     {
-      "name": "CDD Analyst Review",
+      "name": "City Operations Desk",
       "primaryOwner": "maintainer:adoption",
       "backupOwner": "maintainer:governance"
     }

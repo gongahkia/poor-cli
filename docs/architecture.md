@@ -1,95 +1,81 @@
 # Architecture
 
-Dude is now a CDD-only product.
+Swee SG is a local-first Singapore public-data runtime with two app-facing surfaces:
 
-The system has two surfaces:
-
-1. `packages/mcp-server`: the bounded runtime for Singapore company/UEN diligence tools.
-2. `apps/web`: the report-first analyst UI for search, cited summary review, evidence inspection, workspace workflows, and exports.
+1. `packages/mcp-server`: MCP and REST runtime for Swee Pulse, Swee Shield, and retained raw `sg_*` source adapters.
+2. `apps/web`: signal-first dashboard for source-backed mobility, weather, source health, freshness gaps, and Shield audit review.
 
 ## Product Flow
 
 ```mermaid
 flowchart LR
-  Search["Company / UEN Search"] --> Orchestrator["CDD Orchestrator"]
-  Orchestrator --> Dossier["Enriched Dossier"]
-  Orchestrator --> Memo["Cited AI Summary"]
-  Orchestrator --> Trace["Stage Trace"]
-  Memo --> Evidence["Evidence Drawer / Evidence Pack"]
-  Dossier --> Builder["Report Builder"]
-  Builder --> PDF["PDF Export"]
-  Builder --> DOCX["DOCX Export"]
-  Dossier --> Workspace["Workspace: Saved Dossiers, Watchlists, Bulk Runs, Audit Logs"]
+  Operator["Operator / MCP Client"] --> Gateway["REST or MCP Gateway"]
+  Gateway --> Shield["Swee Shield Policy + Audit"]
+  Shield --> Pulse["Swee Pulse Aggregator"]
+  Pulse --> Sources["NEA, LTA, data.gov.sg, OneMap, SingStat adapters"]
+  Pulse --> Signals["Signals + Freshness + Gaps"]
+  Signals --> Web["Swee SG Dashboard"]
+  Shield --> Audit["Audit Lookup + Replay Metadata"]
+  Audit --> Web
 ```
 
-The primary experience is not a tabbed public-data explorer. The first useful screen is the CDD summary with citations. Raw records, source details, provenance, gaps, limits, and supplemental evidence live in the Evidence Pack and drawer interactions.
+The primary experience is not a generic data browser. It starts with an operator-readable Pulse snapshot: what is happening, which sources are healthy, what is missing, and which follow-up checks are justified.
 
 ## Runtime Scope
 
-The MCP runtime exposes 28 `sg_*` tools across 11 CDD catalog families.
+Product families:
 
-Retained CDD families:
+- Swee Pulse: source-backed mobility, weather, source-health, and deterministic explain signals.
+- Swee Shield: policy decisions, audit lookup, replay metadata, and MCP poisoning scanner warnings.
+- Raw source adapters: direct `sg_*` tools for callers with exact structured inputs.
+- Operations: health, cache, key, config, trace, and request lookup.
 
-- ACRA entity identity
-- BCA builders and contractors
-- BOA architects and architecture firms
-- CEA salespersons
-- GeBIZ tenders
-- HSA pharmacies and health-product licensees
-- HLB hotels
-- External diligence signals: sanctions, OpenCorporates links, adverse-media hints, relationship graph
-- Safe counterparty resolution and structured CDD report orchestration
-- Business dossier composition
-- Ops: health, cache, key, config, trace, request lookup
+The old report-first CDD product path is not the product entrypoint. Compatibility code may still exist while the migration finishes, but new docs, demos, release checks, and UI surfaces should route through Pulse and Shield.
 
-Removed from runtime/product discovery:
+## Pulse Contract
 
-- property and housing
-- macro and financial statistics
-- transport and transit ops
-- weather/environment
-- civic amenities
-- generic data.gov drilldowns
-- visualization
-- law search
-- COE, IRAS, SPF, EMA, NLB, and similar broad public-data families
+Pulse output must preserve:
 
-## Query Planner
+- signal severity and summary
+- source provenance
+- observed freshness
+- source health
+- gaps and limits
+- recommended operator actions
 
-`sg_query` only plans or executes CDD entity and sector diligence workflows, and execution uses the CDD orchestrator path. `sg_resolve_counterparty` is the structured preflight for fuzzy name normalization and ambiguous candidate confirmation; `sg_cdd_report` is the structured MCP report interface. Non-CDD prompts return an explicit unsupported response. This keeps the agent contract honest and avoids pretending Dude is a general Singapore data assistant.
+Pulse signals are deterministic transformations of source records. Optional AI is explain-only and must not create data, change severity, or hide gaps.
 
-Supported workflow families:
+## Shield Contract
 
-- company CDD report
-- architecture firm diligence
-- healthcare supplier diligence
-- hotel operator lookup
-- sector-scoped business diligence
+Shield wraps tool execution with:
 
-## Report Model
+- mode-aware policy decisions
+- sanitized audit payloads
+- replay hashes
+- trace and request identifiers
+- scanner findings for risky tool descriptions or schemas
 
-The web app uses a shared report model:
+The audit trail is local-first SQLite state. Secrets must remain redacted in stored payloads.
 
-- `ReportTemplate`
-- `ReportSectionId`
-- `ReportWritingStyle`
-- `ReportExportFormat`
-- `ReportDocumentModel`
+## REST Shortcuts
 
-Report sections can be included/excluded and reordered. Writing style is constrained to controlled CDD presets. PDF and DOCX are first-class report exports; JSON and CSV are advanced data exports.
+The generic tool route remains `POST /api/v1/<tool-name>`. The dashboard also uses app-level shortcuts:
 
-## Evidence Contract
+- `GET /api/v1/pulse/snapshot`
+- `GET /api/v1/pulse/weather`
+- `GET /api/v1/pulse/mobility`
+- `GET /api/v1/shield/audits`
+- `GET /api/v1/shield/scan`
 
-CDD output must preserve:
+## Web Model
 
-- cited findings
-- exact supporting evidence
-- provenance
-- freshness
-- gaps
-- limits
-- confidence blockers
-- next actions
-- report manifest data
+The web app favors dense operational views:
 
-No component should turn missing public evidence into a positive clearance claim.
+- signal overview metrics
+- mobility and weather groups
+- source-health tables
+- gap summaries
+- Shield audit rows
+- optional explain-only AI status
+
+UI copy should make the takeaway obvious: what changed, which source supports it, what is stale or missing, and what to check next.

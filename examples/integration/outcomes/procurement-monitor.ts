@@ -1,5 +1,4 @@
-// Outcome: Procurement monitor.
-// Mirrors examples/outcome-procurement-monitor.md.
+// Outcome: Direct source-adapter procurement monitor.
 // Run: npx tsx examples/integration/outcomes/procurement-monitor.ts "<sectorKeyword>"
 import { callToolPayload, connectClient, exitOnError } from "./_shared.js";
 

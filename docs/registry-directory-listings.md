@@ -1,6 +1,6 @@
 # Registry And Directory Listing Tracker
 
-This tracker keeps Dude MCP's external discovery metadata explicit. It is a readiness and submission log, not proof that a third-party directory has accepted or indexed the project.
+This tracker keeps Swee SG's external discovery metadata explicit. It is a readiness and submission log, not proof that a third-party directory has accepted or indexed the project.
 
 Observed on 2026-05-17.
 
@@ -14,10 +14,10 @@ Observed on 2026-05-17.
 
 | Surface | Local file | Required state | Current status |
 | --- | --- | --- | --- |
-| Official MCP Registry | [server.json](../server.json) | Uses the 2025-12-11 schema, `io.github.gongahkia/dude-mcp`, GHCR package metadata, and CDD-only report/runtime wording. The npm package entry stays omitted until `@swee-sg/shield` is public. | Ready for submission after publisher namespace and package ownership checks. |
-| Smithery | [smithery.yaml](../smithery.yaml) | Uses `dude-mcp`, stdio transport, and the local npm/build/start install command. | Ready for local listing or bundle review; hosted URL listing needs a public `/mcp` endpoint. |
-| Glama | [glama.json](../glama.json) | Uses `dude-mcp`, stdio transport, the same install command, and canonical GitHub repository. | Ready for indexing or claim flow. |
-| README | [README.md](../README.md) | Surface snapshot is CDD-only and lists retained CDD and ops tools. | Current. |
+| Official MCP Registry | [server.json](../server.json) | Uses the 2025-12-11 schema, `io.github.gongahkia/swee-sg`, GHCR package metadata, and Pulse/Shield wording. The npm package entry stays omitted until `@swee-sg/shield` is public. | Ready for submission after publisher namespace and package ownership checks. |
+| Smithery | [smithery.yaml](../smithery.yaml) | Uses `swee-sg`, stdio transport, and the local npm/build/start install command. | Ready for local listing or bundle review; hosted URL listing needs a public `/mcp` endpoint. |
+| Glama | [glama.json](../glama.json) | Uses `swee-sg`, stdio transport, the same install command, and canonical GitHub repository. | Ready for indexing or claim flow. |
+| README | [README.md](../README.md) | Surface snapshot lists Swee Pulse, Swee Shield, retained source adapters, and ops tools. | Current. |
 
 Run this check before external submission:
 
@@ -33,7 +33,7 @@ npm run registry:metadata:check
 | Smithery | Submit through Smithery's publish flow or package/bundle flow depending on whether the target is local stdio or hosted Streamable HTTP. | External submission pending. | TBD |
 | Glama | Submit or claim the server listing and verify the scanned install metadata. | External submission pending. | TBD |
 | MCP-Hive | Manual directory submission or maintainer request. | External submission pending. | TBD |
-| Awesome-MCP | Pull request adding Dude MCP with a short source-backed description. | External submission pending. | TBD |
+| Awesome-MCP | Pull request adding Swee SG with a short source-backed description. | External submission pending. | TBD |
 | mcp.so | Directory submission or listing claim after package metadata is public. | External submission pending. | TBD |
 
 ## External Blockers To Track Separately
@@ -47,16 +47,16 @@ npm run registry:metadata:check
 
 Short description:
 
-> Dude MCP is a Singapore company/UEN CDD runtime with cited registry evidence, supplemental analyst-review signals, report exports, and provenance-aware artifacts.
+> Swee SG is a policy-governed Singapore public-data runtime with Pulse city signals, Shield audit trails, and retained raw source adapters.
 
 Category candidates:
 
 - Singapore
-- due diligence
-- compliance operations
-- business registry
-- CDD reports
+- city operations
+- public data
+- source health
+- MCP security
 
 Important caveat:
 
-Dude MCP surfaces public-registry evidence, provenance, freshness, gaps, and limits. It does not provide legal, tax, AML, sanctions, credit, investment, or licensed compliance advice.
+Swee SG surfaces public-data signals, provenance, freshness, gaps, and limits. It does not provide legal, tax, AML, sanctions, credit, investment, safety, medical, or licensed compliance advice.

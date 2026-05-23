@@ -263,7 +263,7 @@ ensureIncludes(resolve(root, "docs/psg-application-track.md"), [
   "IMDA Pre-Approval Onboarding Guide",
   "five qualifying SME customers",
   "Vendor Management Portal",
-  "Do not claim Dude is PSG pre-approved",
+  "Do not claim Swee SG is PSG pre-approved",
 ]);
 
 ensureIncludes(resolve(root, "docs/diligence-case-study-content-engine.md"), [

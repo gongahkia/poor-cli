@@ -1,151 +1,121 @@
-// UI integration template for Dude MCP.
-// Demonstrates how a frontend state layer can handle blocked / unsupported / failed
-// outcomes from sg_query without treating every non-completed status as a crash.
+// UI integration template for Swee SG.
+// Demonstrates how a frontend state layer can turn Pulse snapshots and Shield
+// failures into concise operator states.
 
-type QueryBlocker = Readonly<{
-  field: string;
-  directTool: string;
-  suggestedPrompt: string;
+type PulseSignal = Readonly<{
+  title: string;
+  severity: "info" | "watch" | "disrupted";
+  sourceTool: string;
+  recommendedAction: string;
 }>;
 
-type QueryOutcome = Readonly<{
-  status: "planned" | "completed" | "blocked" | "unsupported" | "failed";
-  workflow?: string;
-  reason?: string;
-  suggestion?: string;
-  blockers?: readonly QueryBlocker[];
-  failedStep?: Readonly<{
-    tool?: string;
-    error?: Readonly<{
-      code?: string;
-      message?: string;
-      suggestedAction?: string;
-    }>;
-  }> | null;
-  toolsUsed?: readonly string[];
+type PulseSourceHealth = Readonly<{
+  sourceTool: string;
+  status: "ready" | "stale" | "gap";
+  recordCount: number;
 }>;
 
-type QueryViewState =
+type PulseSnapshot = Readonly<{
+  generatedAt: string;
+  signals: readonly PulseSignal[];
+  sourceHealth: readonly PulseSourceHealth[];
+  gaps: readonly Readonly<{ code: string; message: string }>[];
+}>;
+
+type PulseViewState =
   | Readonly<{
-      kind: "success";
+      kind: "disrupted";
       headline: string;
-      workflow?: string;
-      toolsUsed: readonly string[];
+      action: string;
+      sourceTool: string;
     }>
   | Readonly<{
-      kind: "needs_input";
+      kind: "watch";
       headline: string;
-      blockerField: string;
-      blockerTool: string;
-      recoveryPrompt: string;
+      action: string;
+      sourceTool: string;
     }>
   | Readonly<{
-      kind: "unsupported";
+      kind: "source_gap";
       headline: string;
-      suggestion: string;
+      gapCount: number;
     }>
   | Readonly<{
-      kind: "error";
+      kind: "normal";
       headline: string;
-      detail: string;
-      retryable: boolean;
+      readySources: number;
     }>;
 
-const fallbackSuggestion = "Try sg://recipes or call a direct sg_* tool with exact parameters.";
-
-export const toQueryViewState = (outcome: QueryOutcome): QueryViewState => {
-  if (outcome.status === "completed") {
+export const toPulseViewState = (snapshot: PulseSnapshot): PulseViewState => {
+  const disrupted = snapshot.signals.find((signal) => signal.severity === "disrupted");
+  if (disrupted !== undefined) {
     return {
-      kind: "success",
-      headline: "Workflow completed",
-      ...(outcome.workflow === undefined ? {} : { workflow: outcome.workflow }),
-      toolsUsed: outcome.toolsUsed ?? [],
+      kind: "disrupted",
+      headline: disrupted.title,
+      action: disrupted.recommendedAction,
+      sourceTool: disrupted.sourceTool,
     };
   }
 
-  if (outcome.status === "blocked") {
-    const first = outcome.blockers?.[0];
+  const watch = snapshot.signals.find((signal) => signal.severity === "watch");
+  if (watch !== undefined) {
     return {
-      kind: "needs_input",
-      headline: outcome.reason ?? "Need one more field before this workflow can run.",
-      blockerField: first?.field ?? "unknown",
-      blockerTool: first?.directTool ?? "unknown",
-      recoveryPrompt: first?.suggestedPrompt ?? "",
+      kind: "watch",
+      headline: watch.title,
+      action: watch.recommendedAction,
+      sourceTool: watch.sourceTool,
     };
   }
 
-  if (outcome.status === "unsupported") {
+  if (snapshot.gaps.length > 0 || snapshot.sourceHealth.some((source) => source.status === "gap")) {
     return {
-      kind: "unsupported",
-      headline: outcome.reason ?? "Prompt is outside bounded workflow coverage.",
-      suggestion: outcome.suggestion ?? fallbackSuggestion,
-    };
-  }
-
-  if (outcome.status === "failed") {
-    const message = outcome.failedStep?.error?.message
-      ?? outcome.reason
-      ?? "Workflow execution failed.";
-    const code = outcome.failedStep?.error?.code;
-    const retryable = code === "TIMEOUT" || code === "NETWORK_ERROR" || code === "RETRY_EXHAUSTED";
-
-    return {
-      kind: "error",
-      headline: "Workflow failed",
-      detail: message,
-      retryable,
+      kind: "source_gap",
+      headline: "Pulse has source gaps to review.",
+      gapCount: Math.max(snapshot.gaps.length, snapshot.sourceHealth.filter((source) => source.status === "gap").length),
     };
   }
 
   return {
-    kind: "unsupported",
-    headline: `Unhandled sg_query status: ${outcome.status}`,
-    suggestion: fallbackSuggestion,
+    kind: "normal",
+    headline: "Pulse signals are normal.",
+    readySources: snapshot.sourceHealth.filter((source) => source.status === "ready").length,
   };
 };
 
-export const renderBannerText = (state: QueryViewState): string => {
-  if (state.kind === "success") {
-    const workflow = state.workflow === undefined ? "unknown-workflow" : state.workflow;
-    const tools = state.toolsUsed.length === 0 ? "no direct tools reported" : state.toolsUsed.join(", ");
-    return `Completed ${workflow}. Tools used: ${tools}.`;
+export const renderBannerText = (state: PulseViewState): string => {
+  if (state.kind === "disrupted") {
+    return `${state.headline}. Check ${state.sourceTool}. ${state.action}`;
   }
-
-  if (state.kind === "needs_input") {
-    return `${state.headline} Missing "${state.blockerField}" for ${state.blockerTool}.`;
+  if (state.kind === "watch") {
+    return `${state.headline}. Monitor ${state.sourceTool}. ${state.action}`;
   }
-
-  if (state.kind === "unsupported") {
-    return `${state.headline} ${state.suggestion}`;
+  if (state.kind === "source_gap") {
+    return `${state.headline} ${state.gapCount} source gap(s) need review.`;
   }
-
-  return state.retryable
-    ? `${state.headline}. ${state.detail} Retry is safe after a short delay.`
-    : `${state.headline}. ${state.detail} Manual intervention is required.`;
+  return `${state.headline} ${state.readySources} source(s) ready.`;
 };
 
-// Example outcomes to quickly test the view-state mapper in isolation.
-const demoOutcomes: readonly QueryOutcome[] = [
+const demoSnapshots: readonly PulseSnapshot[] = [
   {
-    status: "blocked",
-    reason: "sg_query needs a company name, entity name, UEN, salesperson, or estate-agent identifier to run registry diligence.",
-    blockers: [{ field: "entityName", directTool: "sg_business_dossier", suggestedPrompt: "Business dossier for DP Architects" }],
+    generatedAt: new Date().toISOString(),
+    signals: [{
+      title: "Bukit Timah: heavy rain",
+      severity: "disrupted",
+      sourceTool: "sg_nea_rainfall",
+      recommendedAction: "Check wet-weather plans for affected outdoor routes and sites.",
+    }],
+    sourceHealth: [{ sourceTool: "sg_nea_rainfall", status: "ready", recordCount: 12 }],
+    gaps: [],
   },
   {
-    status: "unsupported",
-    reason: "The prompt did not match a bounded Singapore workflow.",
-  },
-  {
-    status: "failed",
-    reason: "Business dossier execution failed.",
-    failedStep: {
-      tool: "sg_business_dossier",
-      error: { code: "UPSTREAM_TIMEOUT", message: "ACRA request timed out." },
-    },
+    generatedAt: new Date().toISOString(),
+    signals: [],
+    sourceHealth: [{ sourceTool: "sg_lta_traffic_incidents", status: "gap", recordCount: 0 }],
+    gaps: [{ code: "SG_LTA_TRAFFIC_INCIDENTS_FAILED", message: "LTA request failed." }],
   },
 ];
 
-for (const outcome of demoOutcomes) {
-  const state = toQueryViewState(outcome);
+for (const snapshot of demoSnapshots) {
+  const state = toPulseViewState(snapshot);
   console.log(`[${state.kind}] ${renderBannerText(state)}`);
 }

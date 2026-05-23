@@ -47,7 +47,7 @@ runNodeScript("openapi parity", "./scripts/check-openapi.mjs");
 runNodeScript("docs parity", "./scripts/check-docs-parity.mjs");
 runNodeScript("schema governance", "./scripts/check-schema-governance.mjs");
 runNodeScript("governance policy", "./scripts/check-governance.mjs");
-runNodeScript("diligence benchmark fixtures", "./scripts/check-diligence-benchmarks.mjs");
+runNodeScript("Swee benchmark catalog", "./scripts/check-swee-benchmarks.mjs");
 runNodeScript("browser extension prototype", "./scripts/check-browser-extension-prototype.mjs");
 runNodeScript("web deployment config", "./scripts/check-web-deployment.mjs");
 run("template smoke", ["run", "test:smoke:templates"], testEnv);

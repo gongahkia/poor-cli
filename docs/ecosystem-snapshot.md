@@ -39,8 +39,8 @@ Default history directory:
 
 - local surface shape from built catalog:
   - tool, family, workflow, and recipe counts
-  - routed-family count for `sg_query`
-  - additive brief inventory
+  - Pulse family count
+  - Swee Pulse tool inventory
   - test-file reference coverage per tool
 - GitHub repository telemetry:
   - MCP ecosystem baselines

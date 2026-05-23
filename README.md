@@ -19,10 +19,13 @@ The REST gateway starts on `http://localhost:3000` and the web dashboard starts 
 
 No AI key is required for the main dashboard. Live LTA routes require `SG_API_LTA_KEY` where upstream DataMall credentials are needed.
 
+For split-origin local development, set `SWEE_WEB_ORIGIN_ALLOWLIST` on the REST gateway to the exact web origin, for example `http://localhost:5173`.
+
 ## Useful Commands
 
 ```bash
 npm run diagnostics
+npm run test:smoke:profiles
 npm run test:smoke:web
 npm test -w apps/web
 npx vitest run packages/mcp-server/src/pulse/__tests__ packages/mcp-server/src/shield/__tests__

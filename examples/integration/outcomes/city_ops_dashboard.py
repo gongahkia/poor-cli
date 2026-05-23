@@ -1,12 +1,5 @@
 #!/usr/bin/env python3
-"""Queue consumer integration template for Swee SG.
-
-Dry-run mode:
-  python3 examples/integration/queue-consumer-template.py --dry-run
-
-Live mode after `npm run build`:
-  python3 examples/integration/queue-consumer-template.py
-"""
+"""City operations outcome example for Swee SG."""
 
 from __future__ import annotations
 
@@ -14,19 +7,11 @@ import json
 import os
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 
 LATEST_PROTOCOL_VERSION = "2025-11-25"
-
-
-@dataclass(frozen=True)
-class QueueJob:
-    id: str
-    focus: str
-    area: str | None = None
 
 
 class JsonRpcStdioClient:
@@ -85,7 +70,7 @@ class JsonRpcStdioClient:
             {
                 "protocolVersion": LATEST_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {"name": "swee-queue-consumer-template-python", "version": "0.1.0"},
+                "clientInfo": {"name": "city-ops-dashboard-python", "version": "0.1.0"},
             },
         )
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -102,56 +87,30 @@ def get_text(contents: list[dict[str, Any]]) -> str:
     raise RuntimeError("Expected text content from MCP response.")
 
 
-def pulse(client: JsonRpcStdioClient, job: QueueJob) -> dict[str, Any]:
-    arguments: dict[str, Any] = {"focus": job.focus}
-    if job.area:
-        arguments["area"] = job.area
-    result = client.call_tool("swee_pulse_snapshot", arguments)
+def call_payload(client: JsonRpcStdioClient, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    result = client.call_tool(name, arguments)
     structured = result.get("structuredContent")
     if isinstance(structured, dict):
         return structured
     return json.loads(get_text(result["content"]))
 
 
-def to_queue_action(payload: dict[str, Any]) -> tuple[str, str]:
-    snapshot = payload.get("snapshot") if isinstance(payload.get("snapshot"), dict) else payload
-    signals = snapshot.get("signals") if isinstance(snapshot, dict) else []
-    source_health = snapshot.get("sourceHealth") if isinstance(snapshot, dict) else []
-    gaps = snapshot.get("gaps") if isinstance(snapshot, dict) else []
-
-    if any(isinstance(signal, dict) and signal.get("severity") == "disrupted" for signal in signals):
-        return ("ack_escalated", "disrupted Pulse signal")
-    if any(isinstance(signal, dict) and signal.get("severity") == "watch" for signal in signals):
-        return ("ack_monitor", "watch-level Pulse signal")
-    if gaps or any(isinstance(source, dict) and source.get("status") == "gap" for source in source_health):
-        return ("retry_later", "source gap")
-    return ("ack", "normal Pulse snapshot")
+def render_snapshot(area: str, snapshot: dict[str, Any]) -> None:
+    print(f"\n=== Swee Pulse for {area} ===")
+    for signal in snapshot.get("signals", [])[:10]:
+        if isinstance(signal, dict):
+            print(f"  - [{signal.get('severity', 'unknown')}] {signal.get('title', '(untitled)')} ({signal.get('sourceTool', 'unknown')})")
+    gaps = snapshot.get("gaps", [])
+    if gaps:
+        print("Gaps:")
+        for gap in gaps:
+            if isinstance(gap, dict):
+                print(f"  - {gap.get('code', 'UNKNOWN_GAP')}: {gap.get('message', '')}")
 
 
-def run_jobs(jobs: list[QueueJob], payloads: list[dict[str, Any]]) -> None:
-    if len(jobs) != len(payloads):
-        raise RuntimeError("jobs and payloads length mismatch")
-    for job, payload in zip(jobs, payloads):
-        action, detail = to_queue_action(payload)
-        print(f"{job.id}: {action} - {detail}")
-
-
-def run_dry() -> None:
-    jobs = [
-        QueueJob("job-1", "all", "Bedok"),
-        QueueJob("job-2", "weather", "Ang Mo Kio"),
-        QueueJob("job-3", "mobility"),
-    ]
-    synthetic = [
-        {"snapshot": {"signals": [{"severity": "watch"}], "sourceHealth": [], "gaps": []}},
-        {"snapshot": {"signals": [], "sourceHealth": [{"status": "gap"}], "gaps": [{"code": "SOURCE_EMPTY"}]}},
-        {"snapshot": {"signals": [], "sourceHealth": [{"status": "ready"}], "gaps": []}},
-    ]
-    run_jobs(jobs, synthetic)
-
-
-def run_live() -> None:
-    root = Path(__file__).resolve().parents[2]
+def main() -> None:
+    area = sys.argv[1] if len(sys.argv) > 1 else "Bedok"
+    root = Path(__file__).resolve().parents[3]
     server_entry = root / "packages" / "mcp-server" / "dist" / "index.js"
     env = os.environ.copy()
     env["SG_APIS_LOG_LEVEL"] = "error"
@@ -159,18 +118,12 @@ def run_live() -> None:
     client = JsonRpcStdioClient(["node", str(server_entry)], root, env)
     client.initialize()
     try:
-        jobs = [QueueJob("job-1", "all", "Bedok"), QueueJob("job-2", "weather", "Ang Mo Kio"), QueueJob("job-3", "mobility")]
-        payloads = [pulse(client, job) for job in jobs]
-        run_jobs(jobs, payloads)
+        pulse = call_payload(client, "swee_pulse_snapshot", {"focus": "all", "area": area})
+        render_snapshot(area, pulse["snapshot"])
+        audits = call_payload(client, "swee_shield_audit_lookup", {"limit": 5})
+        print(f"\nRecent Shield audit rows: {len(audits.get('records', []))}")
     finally:
         client.close()
-
-
-def main() -> None:
-    if "--dry-run" in sys.argv:
-        run_dry()
-        return
-    run_live()
 
 
 if __name__ == "__main__":

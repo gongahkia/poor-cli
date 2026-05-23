@@ -10,7 +10,7 @@ This repo publishes two npm packages:
 It also publishes:
 
 - `server.json` registry metadata at the repo root
-- `ghcr.io/gongahkia/dude-mcp` as the container image
+- `ghcr.io/gongahkia/swee-sg` as the container image
 - `packages/mcp-server/openapi.json` as the checked-in REST artifact
 
 The publish workflow is tag-driven from `.github/workflows/publish.yml`. It runs on `v*` tags and supports `workflow_dispatch` for controlled manual execution.
@@ -132,7 +132,7 @@ The publish workflow runs in this order:
 
 1. `@swee-sg/shared`
 2. `@swee-sg/shield`
-3. `ghcr.io/gongahkia/dude-mcp`
+3. `ghcr.io/gongahkia/swee-sg`
 4. registry smoke against the public npm registry
 
 That order matters because `@swee-sg/shield` installs `@swee-sg/shared` from npm.
@@ -194,8 +194,8 @@ npm view @swee-sg/shield version
 You should also sanity-check:
 
 - `npx -y @swee-sg/shield`
-- `docker run --rm -i ghcr.io/gongahkia/dude-mcp:latest`
-- `SG_APIS_CONTAINER_IMAGE=ghcr.io/gongahkia/dude-mcp:latest npm run test:smoke:container`
+- `docker run --rm -i ghcr.io/gongahkia/swee-sg:latest`
+- `SG_APIS_CONTAINER_IMAGE=ghcr.io/gongahkia/swee-sg:latest npm run test:smoke:container`
 - one MCP client configuration using the published package
 - the README install instructions if this is the first public release
 

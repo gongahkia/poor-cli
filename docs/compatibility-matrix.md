@@ -10,7 +10,7 @@ Support tiers are intentionally explicit so teams know what is verified versus b
 | Client / Environment | Transport | Auth Mode | Tier | Validation Path | Notes |
 | --- | --- | --- | --- | --- | --- |
 | MCP Inspector (local) | stdio | none | `tier-1` | `npm run test:smoke:packaging` | Primary local inspection path. |
-| Claude Desktop (local server) | stdio | none / key-based upstream creds | `tier-1` | `npm run quick-start` + `npm run test:smoke:live` | Best onboarding path for direct tool and `sg_query` testing. |
+| Claude Desktop (local server) | stdio | none / key-based upstream creds | `tier-1` | `npm run quick-start` + `npm run test:smoke:live` | Best onboarding path for Swee Pulse, Swee Shield, and direct source-adapter testing. |
 | Cursor / VS Code MCP clients | stdio | none / key-based upstream creds | `tier-1` | `npm run test:smoke:packaging` + profile smoke | Uses same `server.json` metadata and command wiring as registry installs. |
 | Remote MCP over Streamable HTTP | streamable HTTP (`/mcp`) | `none` / `mixed` / `all` | `tier-1` | `npm run test:smoke:remote` | OIDC and bearer-mode checks live in `http-auth` regression tests. |
 | REST gateway consumers (`/api/tools/*`) | HTTP JSON | bearer when enabled | `tier-2` | `packages/mcp-server/src/tools/__tests__/gateway-toolset.test.ts` | Supported for tool invocation parity and profile filtering. |

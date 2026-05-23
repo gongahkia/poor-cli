@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal stdlib-only MCP client example for Dude MCP.
+"""Minimal stdlib-only MCP client example for Swee SG.
 
 Run after `npm run build`:
   python3 examples/integration/basic-client.py
@@ -47,12 +47,7 @@ class JsonRpcStdioClient:
     def _request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         request_id = self._next_id
         self._next_id += 1
-        self._send({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "method": method,
-            "params": params,
-        })
+        self._send({"jsonrpc": "2.0", "id": request_id, "method": method, "params": params})
 
         if self._process.stdout is None:
             raise RuntimeError("MCP process stdout is not available.")
@@ -78,10 +73,7 @@ class JsonRpcStdioClient:
             {
                 "protocolVersion": LATEST_PROTOCOL_VERSION,
                 "capabilities": {},
-                "clientInfo": {
-                    "name": "basic-python-client",
-                    "version": "0.1.0",
-                },
+                "clientInfo": {"name": "swee-basic-client-python", "version": "0.1.0"},
             },
         )
         self._send({"jsonrpc": "2.0", "method": "notifications/initialized"})
@@ -106,47 +98,12 @@ def read_json_resource(client: JsonRpcStdioClient, uri: str) -> Any:
     return json.loads(get_text(result["contents"]))
 
 
-def call_tool_payload(client: JsonRpcStdioClient, name: str, arguments: dict[str, Any]) -> Any:
+def call_tool_payload(client: JsonRpcStdioClient, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
     result = client.call_tool(name, arguments)
     structured = result.get("structuredContent")
-    if structured is not None:
+    if isinstance(structured, dict):
         return structured
     return json.loads(get_text(result["content"]))
-
-
-def call_query(client: JsonRpcStdioClient, query: str) -> dict[str, Any]:
-    return call_tool_payload(
-        client,
-        "sg_query",
-        {
-            "query": query,
-            "mode": "execute",
-            "format": "json",
-        },
-    )
-
-
-def log_query_outcome(label: str, outcome: dict[str, Any]) -> None:
-    print(f"\n{label}")
-    print(f"status: {outcome.get('status', 'unknown')}")
-    if "workflow" in outcome:
-        print(f"workflow: {outcome['workflow']}")
-    if "toolsUsed" in outcome:
-        print(f"tools: {', '.join(outcome['toolsUsed'])}")
-    if "reason" in outcome:
-        print(f"reason: {outcome['reason']}")
-    if "suggestion" in outcome:
-        print(f"suggestion: {outcome['suggestion']}")
-    blockers = outcome.get("blockers") or []
-    if blockers:
-        first = blockers[0]
-        print(f"first blocker: {first.get('field')} -> {first.get('directTool')}")
-        print(f"recovery prompt: {first.get('suggestedPrompt')}")
-    if "routingExplanation" in outcome:
-        print(f"routing: {outcome['routingExplanation']}")
-    failed_step = outcome.get("failedStep") or {}
-    if "tool" in failed_step:
-        print(f"failed step: {failed_step['tool']}")
 
 
 def main() -> None:
@@ -157,63 +114,19 @@ def main() -> None:
 
     client = JsonRpcStdioClient(["node", str(server_entry)], root, env)
     client.initialize()
-
     try:
-        recipes = read_json_resource(client, "sg://recipes")
         runtime = read_json_resource(client, "sg://runtime")
-        playbooks = read_json_resource(client, "sg://playbooks")
-        health = call_tool_payload(client, "sg_health_check", {})
+        recipes = read_json_resource(client, "sg://recipes")
+        pulse = call_tool_payload(client, "swee_pulse_snapshot", {"focus": "all", "area": "Bedok"})
+        shield = call_tool_payload(client, "swee_shield_scan_tools", {})
 
-        print("connected to Dude MCP")
-        print(f"cached {len(recipes)} recipes from sg://recipes")
-        print(f"cached {len(playbooks)} playbooks from sg://playbooks")
-        print(
-            "runtime statuses: "
-            + ", ".join(
-                f"{entry['status']}:{'error' if entry['isError'] else 'ok'}"
-                for entry in runtime.get("queryStatusContract", [])
-            )
-        )
-        print(
-            "release gates: "
-            + ", ".join(runtime.get("releaseReadiness", {}).get("blockingCommands", []))
-        )
-        print(
-            "health probes: "
-            + ", ".join(
-                f"{entry.get('api')}:{'up' if entry.get('reachable') else 'down'}"
-                for entry in health.get("records", [])
-            )
-        )
-
-        supported = call_query(client, "Architecture firm diligence for DP Architects")
-        log_query_outcome("covered prompt via sg_query", supported)
-
-        blocked = call_query(client, "Run business diligence")
-        log_query_outcome("blocked prompt", blocked)
-
-        unsupported = call_query(client, "Compare GDP and CPI in Singapore")
-        log_query_outcome("unsupported prompt", unsupported)
-
-        failed = {
-            "status": "failed",
-            "workflow": "business_dossier",
-            "reason": "Synthetic example for failed-state UI handling.",
-            "failedStep": {"tool": "sg_business_dossier"},
-        }
-        log_query_outcome("failed prompt", failed)
-
-        direct_lookup = call_tool_payload(
-            client,
-            "sg_acra_entities",
-            {
-                "entityName": "DP ARCHITECTS PTE LTD",
-                "format": "json",
-            },
-        )
-        print("\nexact-parameter direct lookup")
-        print("tool: sg_acra_entities")
-        print(f"records: {len(direct_lookup.get('records', []))}")
+        snapshot = pulse["snapshot"]
+        print("connected to Swee SG")
+        print(f"runtime: {runtime.get('schemaVersion', 'unknown')}")
+        print(f"recipes: {', '.join(recipe['name'] for recipe in recipes)}")
+        print(f"signals: {len(snapshot.get('signals', []))}")
+        print(f"source health rows: {len(snapshot.get('sourceHealth', []))}")
+        print(f"shield findings: {len(shield.get('findings', []))}")
     finally:
         client.close()
 

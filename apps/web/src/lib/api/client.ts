@@ -64,59 +64,6 @@ export type ApiSearchSuggestion = {
   entityTypeDescription: string;
 };
 
-export type CounterpartyResolutionCandidate = {
-  id: string;
-  label: string;
-  sourceRegistry: "ACRA" | "BCA" | "BOA" | "CEA" | "GeBIZ" | "HSA" | "HLB";
-  sourceTool: string;
-  entityName: string;
-  uen: string | null;
-  officialIdentifier: string | null;
-  description: string;
-  score: number;
-  matchMethod: string;
-  matchReason: string;
-  normalizedName: string;
-  dossierInput: Record<string, string>;
-};
-
-export type CounterpartyResolutionResult = {
-  status: "resolved" | "needs_confirmation" | "no_match";
-  originalInput: string;
-  normalizedInput: string;
-  selectedCandidate: CounterpartyResolutionCandidate | null;
-  candidates: CounterpartyResolutionCandidate[];
-  confidenceBlockers: string[];
-  sourcesSearched: string[];
-  limits: string[];
-};
-
-export type WebPresenceResult = {
-  title: string;
-  snippet: string;
-  url: string;
-  siteName: string | null;
-  position: number;
-};
-
-export type WebPresence = {
-  query: string;
-  configured: boolean;
-  results: WebPresenceResult[];
-  possibleOfficialWebsite: string | null;
-  limits: string[];
-};
-
-export type PeopleDiscovery = {
-  entityName: string;
-  uen: string | null;
-  query: string;
-  configured: boolean;
-  results: WebPresenceResult[];
-  suggestedActions: string[];
-  limits: string[];
-};
-
 export type BackendLogEntry = {
   ts: string;
   level: "debug" | "info" | "warn" | "error" | string;

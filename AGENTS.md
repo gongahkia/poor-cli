@@ -1,91 +1,77 @@
-# AGENTS.md - Dude CDD Runtime
+# AGENTS.md - Swee SG Runtime
 
-This repository is now one product surface: Singapore counterparty due diligence.
+This repository is now one product surface: policy-governed Singapore public-data signals.
 
-Dude's job is to let a user search a Singapore company name or UEN, generate a cited CDD summary, inspect supporting evidence on demand, and export a report for analyst review.
+Swee SG's job is to let a user inspect current Singapore city signals, understand source freshness and gaps, and review the Shield audit trail behind every tool or REST call.
 
-The product and runtime posture is CDD-only.
-
-The `sg_*` namespace remains stable for compatibility, but the product path is the CDD orchestrator. Direct `sg_business_dossier` and sector tools are low-level compatibility APIs for advanced callers with exact structured parameters.
+The retained `sg_*` namespace remains stable for raw public-data adapters. Product workflows should enter through Swee Pulse and Swee Shield.
 
 ## Hard Rules
 
-Never invent CDD values.
+Never invent public-data values.
 
-1. Do not invent registry values, sanctions/media findings, or source freshness. Use the retained CDD tools.
-2. Do not provide legal, tax, AML, sanctions, credit, investment, or licensed-advisor opinions.
-3. Treat web presence, adverse-media, people-discovery, OpenCorporates, sanctions, and relationship graph results as supplemental analyst-review evidence.
-4. Surface provenance, freshness, gaps, limits, and confidence blockers in user-facing CDD output.
-5. If a user asks for housing, property, macro, transport, weather, civic amenities, generic data.gov browsing, law search, COE, IRAS, SPF, EMA, or NLB work, say Dude no longer exposes that product surface.
+1. Do not invent source rows, freshness, provenance, gaps, or recommendations.
+2. Treat Pulse output as an operator signal layer, not an official emergency instruction channel.
+3. Surface source health, freshness, gaps, limits, and recommended follow-ups in user-facing output.
+4. Do not provide legal, tax, AML, sanctions, credit, investment, medical, safety, or licensed-advisor opinions.
+5. If a user asks for the retired CDD product path, explain that Swee SG no longer exposes the report-first counterparty workflow and point to direct `sg_*` compatibility adapters only when exact structured parameters are available.
 
 ## Tool Routing
 
 | User asks about... | Preferred tool | Direct follow-ups |
 | --- | --- | --- |
-| Company/UEN CDD report | CDD orchestrator or `sg_query` | `sg_acra_entities`, `sg_gebiz_tenders`, sector tools |
-| Goal-shaped CDD prompt | `sg_query` | Only for business/sector diligence prompts |
-| ACRA identity | CDD orchestrator first, `sg_acra_entities` for exact source rows | `sg_business_dossier` compatibility API |
-| Construction contractor/builder | CDD orchestrator with construction hint | `sg_bca_licensed_builders`, `sg_bca_registered_contractors` |
-| Architecture firm | CDD orchestrator with architecture hint | `sg_boa_architecture_firms`, `sg_boa_architects` |
-| Estate agent/salesperson | CDD orchestrator with real-estate hint | `sg_cea_salespersons` |
-| Healthcare supplier/pharmacy | CDD orchestrator with healthcare hint | `sg_hsa_health_product_licensees`, `sg_hsa_licensed_pharmacies` |
-| Hotel operator/keeper | CDD orchestrator with hospitality hint | `sg_hlb_hotels` |
-| Procurement evidence | CDD orchestrator with procurement hint | `sg_gebiz_tenders` |
-| Supplemental checks | CDD orchestrator first | `sg_sanctions_screen`, `sg_opencorporates_links`, `sg_adverse_media_lite`, `sg_relationship_graph` |
+| Singapore city overview | `swee_pulse_snapshot` | `swee_pulse_mobility`, `swee_pulse_weather` |
+| Mobility signals | `swee_pulse_mobility` | `sg_lta_traffic_incidents`, `sg_lta_train_alerts`, `sg_lta_road_works`, `sg_lta_traffic_images` |
+| Weather and rainfall | `swee_pulse_weather` | `sg_nea_forecast_2hr`, `sg_nea_air_quality`, `sg_nea_rainfall` |
+| Source-backed explanation | `swee_pulse_explain` | Use only after deterministic Pulse signals exist |
+| Policy/audit review | `swee_shield_audit_lookup` | `swee_shield_scan_tools`, `sg_trace_lookup`, `sg_request_lookup` |
+| Raw public-data lookup | Exact `sg_*` adapter | Prefer Pulse for app-level workflows |
 | Runtime ops | ops tools | health, cache, key, config, trace, request lookup |
 
 ## Product UX
 
-The web app should stay report-first:
+The web app should stay signal-first:
 
-1. Search bar for company name or UEN.
-2. Entity identity and risk/confidence summary.
-3. Cited AI findings and next actions.
-4. Clickable citations or summary sections that open supporting evidence.
-5. Evidence Pack for raw records, provenance, freshness, gaps, limits, PDPA checklist, supplemental web/person evidence, and audit handoff.
-6. Report Builder for section selection, ordering, controlled writing style, and PDF/DOCX export.
-
-Allowed report writing styles:
-
-- `concise_analyst`
-- `audit_ready_formal`
-- `client_friendly_neutral`
-- `internal_escalation`
-
-Primary export formats are PDF and DOCX. JSON/CSV are advanced data exports only.
+1. Overview cards for active signals, watch-level signals, source health, and gaps.
+2. Mobility and weather sections that explain what changed, why it matters, and what the operator should check next.
+3. Source health that shows ready, degraded, and gap states with observed freshness.
+4. Shield audit rows that show policy decisions, status, duration, and replay metadata.
+5. Optional explain-only AI copy that never changes severity, provenance, or deterministic signal values.
 
 ## Output Contract
 
-For CDD answers:
+For Pulse answers:
 
-- Lead with the source-backed summary.
-- Show confidence blockers and recommended analyst follow-ups.
-- Cite source names and freshness.
-- Mention gaps and limits.
-- Do not turn absence of public evidence into a positive clearance claim.
+- Lead with the most important source-backed signal.
+- Show gaps, limits, and source freshness.
+- Cite source names when summarizing data.
+- Keep recommended actions operational and non-advisory.
+- Do not turn absence of public evidence into a positive clearance or safety claim.
 
 ## Retained Runtime Surface
 
-CDD tools:
+Product tools:
 
-- `sg_resolve_counterparty`
-- `sg_cdd_report`
-- `sg_query`
-- `sg_business_dossier`
-- `sg_acra_entities`
-- `sg_bca_licensed_builders`
-- `sg_bca_registered_contractors`
-- `sg_boa_architects`
-- `sg_boa_architecture_firms`
-- `sg_cea_salespersons`
-- `sg_gebiz_tenders`
-- `sg_hsa_licensed_pharmacies`
-- `sg_hsa_health_product_licensees`
-- `sg_hlb_hotels`
-- `sg_sanctions_screen`
-- `sg_opencorporates_links`
-- `sg_adverse_media_lite`
-- `sg_relationship_graph`
+- `swee_pulse_snapshot`
+- `swee_pulse_mobility`
+- `swee_pulse_weather`
+- `swee_pulse_explain`
+- `swee_shield_audit_lookup`
+- `swee_shield_scan_tools`
+
+Selected raw adapters:
+
+- `sg_datagov_search`
+- `sg_singstat_search`
+- `sg_onemap_geocode`
+- `sg_nea_forecast_2hr`
+- `sg_nea_air_quality`
+- `sg_nea_rainfall`
+- `sg_lta_traffic_incidents`
+- `sg_lta_train_alerts`
+- `sg_lta_road_works`
+- `sg_lta_road_openings`
+- `sg_lta_traffic_images`
 
 Ops tools:
 
