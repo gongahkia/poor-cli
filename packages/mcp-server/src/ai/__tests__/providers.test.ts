@@ -44,6 +44,25 @@ describe("AI provider config", () => {
     });
   });
 
+  it("uses Azure OpenAI deployment env for OpenAI when present", () => {
+    expect(resolveAiProviderConfig({
+      DUDE_AI_PROVIDER: "openai",
+      GPT5_MINI_API_KEY: "azure-key",
+      GPT5_MINI_API_VERSION: "2025-04-01-preview",
+      GPT5_MINI_DEPLOYMENT: "gpt-mini",
+      GPT5_MINI_ENDPOINT: "https://example.openai.azure.com",
+    } as NodeJS.ProcessEnv)).toMatchObject({
+      azureOpenAi: {
+        apiVersion: "2025-04-01-preview",
+        deployment: "gpt-mini",
+        endpoint: "https://example.openai.azure.com",
+      },
+      configured: true,
+      model: "gpt-mini",
+      provider: "openai",
+    });
+  });
+
   it("returns structured unavailable config for invalid provider selection", () => {
     expect(resolveAiProviderConfig({
       DUDE_AI_PROVIDER: "browser",

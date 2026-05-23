@@ -1,0 +1,176 @@
+{
+  "schemaVersion": "swee-source-live-benchmark/v1",
+  "generatedAt": "2026-05-23T01:25:29.522Z",
+  "source": "local-live-mcp",
+  "command": "npm run benchmark:sources:live",
+  "sourceChecks": [
+    {
+      "sourceTool": "sg_nea_forecast_2hr",
+      "source": "NEA",
+      "family": "weather",
+      "authRequired": false,
+      "coverage": "2-hour forecast coverage for Singapore areas.",
+      "state": "stale",
+      "recordCount": 47,
+      "observedAt": "2026-05-23T01:25:29.948Z",
+      "upstreamTimestamp": "2026-05-23T09:06:52+08:00",
+      "freshnessStatus": "stale",
+      "ageSeconds": 1117,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": null,
+      "decision": null
+    },
+    {
+      "sourceTool": "sg_nea_air_quality",
+      "source": "NEA",
+      "family": "weather",
+      "authRequired": false,
+      "coverage": "Regional PSI and PM2.5 readings.",
+      "state": "ready",
+      "recordCount": 5,
+      "observedAt": "2026-05-23T01:25:30.162Z",
+      "upstreamTimestamp": "2026-05-23T09:16:02+08:00",
+      "freshnessStatus": "fresh",
+      "ageSeconds": 568,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": null,
+      "decision": null
+    },
+    {
+      "sourceTool": "sg_nea_rainfall",
+      "source": "NEA",
+      "family": "weather",
+      "authRequired": false,
+      "coverage": "Station rainfall readings.",
+      "state": "ready",
+      "recordCount": 76,
+      "observedAt": "2026-05-23T01:25:30.993Z",
+      "upstreamTimestamp": "2026-05-23T09:15:00+08:00",
+      "freshnessStatus": "fresh",
+      "ageSeconds": 630,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": null,
+      "decision": null
+    },
+    {
+      "sourceTool": "sg_onemap_geocode",
+      "source": "OneMap",
+      "family": "geospatial",
+      "authRequired": true,
+      "coverage": "Address/building-name geocoding to Singapore coordinates.",
+      "state": "credential_missing",
+      "recordCount": 0,
+      "observedAt": "2026-05-23T01:25:31.001Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [
+        "AUTH_MISSING"
+      ],
+      "gapMessages": [
+        "OneMap credentials not configured. Run sg_key_set."
+      ],
+      "auditId": "947b7621-ac68-4e28-9eab-71b76ac080e2",
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "sg_onemap_geocode",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed sg_onemap_geocode."
+      }
+    },
+    {
+      "sourceTool": "sg_datagov_search",
+      "source": "data.gov.sg",
+      "family": "dataset-discovery",
+      "authRequired": false,
+      "coverage": "Public dataset discovery through data.gov.sg search.",
+      "state": "error",
+      "recordCount": 0,
+      "observedAt": null,
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [
+        "TOOL_CALL_FAILED"
+      ],
+      "gapMessages": [
+        "MCP error -32001: Request timed out"
+      ],
+      "auditId": null,
+      "decision": null
+    },
+    {
+      "sourceTool": "sg_singstat_search",
+      "source": "SingStat",
+      "family": "statistics-discovery",
+      "authRequired": false,
+      "coverage": "Official statistics table discovery through SingStat Table Builder search.",
+      "state": "ready",
+      "recordCount": 5,
+      "observedAt": "2026-05-23T01:26:37.830Z",
+      "upstreamTimestamp": null,
+      "freshnessStatus": "unknown",
+      "ageSeconds": null,
+      "gapCodes": [],
+      "gapMessages": [],
+      "auditId": "220403c2-99ab-4ea1-95cb-fcb0d7e945bc",
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "sg_singstat_search",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed sg_singstat_search."
+      }
+    }
+  ],
+  "pulseWeather": {
+    "toolName": "swee_pulse_weather",
+    "auditId": "fea4203f-b8ca-43da-b333-0c52ef012c93",
+    "decision": {
+      "mode": "observe",
+      "decision": "allow",
+      "toolName": "swee_pulse_weather",
+      "riskLevel": "medium",
+      "reasonCodes": [
+        "default_allow"
+      ],
+      "message": "Swee Shield allowed swee_pulse_weather."
+    },
+    "replay": {
+      "auditId": "fea4203f-b8ca-43da-b333-0c52ef012c93",
+      "toolName": "swee_pulse_weather",
+      "sanitizedInput": {},
+      "decision": {
+        "mode": "observe",
+        "decision": "allow",
+        "toolName": "swee_pulse_weather",
+        "riskLevel": "medium",
+        "reasonCodes": [
+          "default_allow"
+        ],
+        "message": "Swee Shield allowed swee_pulse_weather."
+      },
+      "status": "success",
+      "outputHash": "fe2f8bd23c0ba9fb29b245ba18630c625dba9cf7b49e1848e8d0944f8685281c",
+      "durationMs": 1214
+    },
+    "signalCount": 17,
+    "gapCount": 0
+  },
+  "limits": [
+    "This artifact is live local evidence, not an SLA or official public-agency service status.",
+    "A ready source check means the adapter returned a bounded response during this run; it does not certify upstream completeness.",
+    "Missing upstream timestamps, empty results, and source gaps are reported directly instead of being filled with synthetic freshness.",
+    "Direct discovery probes use stable sample queries: OneMap 'Raffles Place', data.gov.sg 'weather', and SingStat 'population'."
+  ]
+}

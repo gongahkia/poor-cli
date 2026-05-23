@@ -33,6 +33,7 @@ npm run test:smoke:profiles
 npm run test:smoke:web
 npm run benchmarks:snapshot
 npm run benchmark:transport:live
+npm run benchmark:sources:live
 npm run status:public
 npm test -w apps/web
 npx vitest run packages/mcp-server/src/pulse/__tests__ packages/mcp-server/src/shield/__tests__
@@ -85,6 +86,8 @@ Every generic tool endpoint is also exposed as `POST /api/v1/<tool-name>`.
 Those artifacts are release evidence, not an SLA. Transport rows describe source coverage, freshness handling, credentials, and limits; they do not claim official service status or operational safety.
 
 `npm run benchmark:transport:live` runs the local MCP runtime against `swee_pulse_mobility` and writes live proof artifacts to `artifacts/transport/latest.json` and `artifacts/transport/latest.md`. Missing `SG_API_LTA_KEY` is reported as `credential_missing` for credentialed LTA sources rather than treated as a command failure.
+
+`npm run benchmark:sources:live` runs broader no-auth source-family probes for NEA weather, OneMap geocoding, data.gov.sg discovery, and SingStat discovery. It writes `artifacts/sources/latest.json` and `artifacts/sources/latest.md` with source states, record counts, gap codes, Shield audit IDs, and limits.
 
 ## Runtime Contract
 

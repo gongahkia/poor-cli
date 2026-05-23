@@ -35,6 +35,11 @@ type ProviderConfigReady = {
   readonly provider: AiProvider;
   readonly model: string;
   readonly apiKey: string;
+  readonly azureOpenAi?: {
+    readonly endpoint: string;
+    readonly deployment: string;
+    readonly apiVersion: string;
+  };
 };
 
 export type ProviderConfig = ProviderConfigReady | ProviderConfigUnavailable;
@@ -117,7 +122,10 @@ const generateGoogle = async (input: ProviderGenerateInput): Promise<GenerateRes
 };
 
 const generateOpenAI = async (input: ProviderGenerateInput): Promise<GenerateResult> => {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const url = input.azureOpenAi
+    ? azureOpenAiChatCompletionsUrl(input.azureOpenAi)
+    : "https://api.openai.com/v1/chat/completions";
+  const response = await fetch(url, {
     body: JSON.stringify({
       max_tokens: input.maxTokens ?? 1200,
       messages: [
@@ -130,7 +138,9 @@ const generateOpenAI = async (input: ProviderGenerateInput): Promise<GenerateRes
     }),
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${input.apiKey}`,
+      ...(input.azureOpenAi
+        ? { "api-key": input.apiKey }
+        : { Authorization: `Bearer ${input.apiKey}` }),
     },
     method: "POST",
   });
@@ -146,6 +156,16 @@ const generateOpenAI = async (input: ProviderGenerateInput): Promise<GenerateRes
   }
 
   return { provider: "openai", model: input.model, text };
+};
+
+const azureOpenAiChatCompletionsUrl = (
+  config: NonNullable<ProviderGenerateInput["azureOpenAi"]>,
+): string => {
+  const url = new URL(
+    `${config.endpoint.replace(/\/+$/u, "")}/openai/deployments/${encodeURIComponent(config.deployment)}/chat/completions`,
+  );
+  url.searchParams.set("api-version", config.apiVersion);
+  return url.toString();
 };
 
 const PROVIDERS: Record<AiProvider, ProviderDefinition> = {
@@ -194,10 +214,15 @@ export const resolveAiProviderConfig = (env: NodeJS.ProcessEnv = process.env): P
   }
 
   const definition = PROVIDERS[configuredProvider];
+  const azureOpenAi =
+    configuredProvider === "openai" ? resolveAzureOpenAiConfig(env) : undefined;
   const model = readOptional(env, "DUDE_AI_MODEL")
     ?? readOptional(env, definition.modelEnvVar)
+    ?? azureOpenAi?.deployment
     ?? definition.defaultModel;
-  const apiKey = readOptional(env, definition.envVar);
+  const apiKey = readOptional(env, definition.envVar)
+    ?? (configuredProvider === "openai" ? readOptional(env, "GPT5_MINI_API_KEY") : undefined)
+    ?? (configuredProvider === "openai" ? readOptional(env, "GPT5_PRO_API_KEY") : undefined);
   if (apiKey === undefined) {
     return {
       configured: false,
@@ -212,10 +237,33 @@ export const resolveAiProviderConfig = (env: NodeJS.ProcessEnv = process.env): P
 
   return {
     apiKey,
+    ...(azureOpenAi === undefined ? {} : { azureOpenAi }),
     configured: true,
     model,
     provider: configuredProvider,
   };
+};
+
+const resolveAzureOpenAiConfig = (
+  env: NodeJS.ProcessEnv,
+): ProviderConfigReady["azureOpenAi"] | undefined => {
+  const endpoint = readOptional(env, "DUDE_AZURE_OPENAI_ENDPOINT")
+    ?? readOptional(env, "GPT5_MINI_ENDPOINT")
+    ?? readOptional(env, "GPT5_PRO_ENDPOINT")
+    ?? readOptional(env, "AZURE_ENDPOINT");
+  const deployment = readOptional(env, "DUDE_AZURE_OPENAI_DEPLOYMENT")
+    ?? readOptional(env, "GPT5_MINI_DEPLOYMENT")
+    ?? readOptional(env, "GPT5_PRO_DEPLOYMENT");
+  const apiVersion = readOptional(env, "DUDE_AZURE_OPENAI_API_VERSION")
+    ?? readOptional(env, "GPT5_MINI_API_VERSION")
+    ?? readOptional(env, "GPT5_PRO_API_VERSION")
+    ?? readOptional(env, "API_VERSION");
+
+  if (endpoint === undefined || deployment === undefined || apiVersion === undefined) {
+    return undefined;
+  }
+
+  return { endpoint, deployment, apiVersion };
 };
 
 export const generateText = async (
@@ -226,6 +274,7 @@ export const generateText = async (
   return definition.generate({
     ...input,
     apiKey: config.apiKey,
+    ...(config.azureOpenAi === undefined ? {} : { azureOpenAi: config.azureOpenAi }),
     model: config.model,
     provider: config.provider,
   });

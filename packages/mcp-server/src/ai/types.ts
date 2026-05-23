@@ -13,6 +13,11 @@ export type GenerateInput = {
 export type ProviderGenerateInput = GenerateInput & {
   readonly apiKey: string;
   readonly model: string;
+  readonly azureOpenAi?: {
+    readonly endpoint: string;
+    readonly deployment: string;
+    readonly apiVersion: string;
+  };
 };
 
 export type GenerateResult = {
