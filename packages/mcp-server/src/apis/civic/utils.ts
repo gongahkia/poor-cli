@@ -65,6 +65,39 @@ export const parseFmelTimestamp = (value: unknown): string | null => {
   return `${year}-${month}-${day}T${hour}:${minute}:${second}+08:00`;
 };
 
+const decodeHtmlEntities = (value: string): string =>
+  value
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;/gi, "'")
+    .replace(/&#(\d+);/g, (_match, codePoint: string) => String.fromCodePoint(Number(codePoint)))
+    .replace(/&#x([0-9a-f]+);/gi, (_match, codePoint: string) => String.fromCodePoint(parseInt(codePoint, 16)));
+
+const stripHtmlTags = (value: string): string =>
+  decodeHtmlEntities(value.replace(/<[^>]*>/g, " "))
+    .replace(/\s+/g, " ")
+    .trim();
+
+export const parseDescriptionAttributes = (description: unknown): Readonly<Record<string, string>> => {
+  if (typeof description !== "string" || description.trim() === "") {
+    return {};
+  }
+
+  const attributes: Record<string, string> = {};
+  const rowPattern = /<th[^>]*>([\s\S]*?)<\/th>\s*<td[^>]*>([\s\S]*?)<\/td>/gi;
+  for (const match of description.matchAll(rowPattern)) {
+    const key = stripHtmlTags(match[1] ?? "").toUpperCase();
+    const value = stripHtmlTags(match[2] ?? "");
+    if (key !== "") {
+      attributes[key] = value;
+    }
+  }
+  return attributes;
+};
+
 export const haversineKm = (
   startLat: number,
   startLng: number,

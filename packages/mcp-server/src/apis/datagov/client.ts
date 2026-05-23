@@ -40,6 +40,7 @@ type DatagovDatasetDownloadResponse = {
 
 const INDEX_TTL = 604800; // WHY: dataset list changes slowly, weekly refresh is sufficient
 const DATASETS_PAGE_SIZE = 100;
+const DEFAULT_REMOTE_SEARCH_PAGE_LIMIT = 25;
 const TABULAR_FORMATS = new Set(["CSV", "JSON", "GEOJSON", "XLSX", "XLS", "TXT"]);
 
 let indexDb: Database.Database | null = null;
@@ -214,9 +215,21 @@ const splitIlikeFilters = (
   };
 };
 
-const fetchDatasetsPage = async (page: number): Promise<DatagovV2ListResponse> => {
+const fetchDatasetsPage = async (pageIndex: number): Promise<DatagovV2ListResponse> => {
+  const page = pageIndex + 1;
   const url = `${BASE_URL}/datasets?page=${page}&resultSize=${DATASETS_PAGE_SIZE}`;
   return httpGet<DatagovV2ListResponse>(url, { apiName: "datagov" });
+};
+
+const assertDatasetListResponse = (response: DatagovV2ListResponse): void => {
+  if (response.code !== 0) {
+    throw new ApiError({
+      apiName: "datagov",
+      statusCode: 500,
+      message: response.errorMsg || "data.gov.sg query failed",
+      retryable: true,
+    });
+  }
 };
 
 const fetchAllDatasets = async (): Promise<DatagovDataset[]> => {
@@ -225,14 +238,7 @@ const fetchAllDatasets = async (): Promise<DatagovDataset[]> => {
 
   for (let page = 0; page < totalPages; page++) {
     const response = await fetchDatasetsPage(page);
-    if (response.code !== 0) {
-      throw new ApiError({
-        apiName: "datagov",
-        statusCode: 500,
-        message: response.errorMsg || "data.gov.sg query failed",
-        retryable: true,
-      });
-    }
+    assertDatasetListResponse(response);
 
     datasets.push(...response.data.datasets);
     totalPages = Math.max(totalPages, response.data.pages);
@@ -242,6 +248,51 @@ const fetchAllDatasets = async (): Promise<DatagovDataset[]> => {
   }
 
   return datasets;
+};
+
+const getRemoteSearchPageLimit = (): number => {
+  const configured = Number(process.env["SG_API_DATAGOV_SEARCH_MAX_PAGES"]);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_REMOTE_SEARCH_PAGE_LIMIT;
+  }
+  return Math.min(Math.floor(configured), 100);
+};
+
+const datasetMatchesKeyword = (dataset: DatagovDataset, normalizedKeyword: string): boolean => {
+  const haystack = `${dataset.name} ${dataset.description ?? ""}`.toLowerCase();
+  return haystack.includes(normalizedKeyword);
+};
+
+const searchRemoteDatasetPages = async (keyword: string, limit: number): Promise<DatagovDataset[]> => {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  if (normalizedKeyword === "") {
+    return [];
+  }
+
+  const matches: DatagovDataset[] = [];
+  const maxPages = getRemoteSearchPageLimit();
+  let totalPages = 1;
+
+  for (let page = 0; page < totalPages && page < maxPages && matches.length < limit; page++) {
+    const response = await fetchDatasetsPage(page);
+    assertDatasetListResponse(response);
+
+    for (const dataset of response.data.datasets) {
+      if (datasetMatchesKeyword(dataset, normalizedKeyword)) {
+        matches.push(dataset);
+        if (matches.length >= limit) {
+          break;
+        }
+      }
+    }
+
+    totalPages = Math.max(totalPages, response.data.pages);
+    if (response.data.datasets.length === 0) {
+      break;
+    }
+  }
+
+  return matches;
 };
 
 const loadIndexedCollections = (): { id: string; name: string; description: string }[] => {
@@ -390,16 +441,7 @@ export const searchDatasets = async (keyword: string, limit = 10): Promise<Datag
 
   const cacheKey = buildCacheKey("datagov", "search", { keyword, limit });
   const { data } = await withCache(cacheKey, "DAILY", async () => {
-    const datasets = await fetchAllDatasets();
-    scheduleLocalIndexRefresh(datasets);
-    const lowerKeyword = keyword.toLowerCase();
-    return datasets
-      .filter(
-        (d) =>
-          d.name.toLowerCase().includes(lowerKeyword) ||
-          (d.description?.toLowerCase().includes(lowerKeyword) ?? false),
-      )
-      .slice(0, limit);
+    return searchRemoteDatasetPages(keyword, limit);
   });
   return data;
 };

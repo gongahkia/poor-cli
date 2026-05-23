@@ -58,6 +58,7 @@ Selected raw source adapters:
 - `sg_nea_forecast_2hr`, `sg_nea_air_quality`, `sg_nea_rainfall`
 - `sg_lta_traffic_incidents`, `sg_lta_train_alerts`, `sg_lta_road_works`, `sg_lta_traffic_images`
 - `sg_datagov_search`, `sg_singstat_search`, `sg_onemap_geocode`
+- `sg_hawker_closures`, `sg_nlb_libraries`, `sg_sportsg_facilities`, `sg_nparks_parks`, `sg_pub_water_levels`, `sg_pa_community_outlets`
 
 Ops:
 

@@ -536,6 +536,45 @@ describe("data.gov.sg client", () => {
     expect(mockFetch).toHaveBeenCalledTimes(2);
   });
 
+  it("bounds live dataset search when the catalogue is larger than the search window", async () => {
+    process.env["SG_API_DATAGOV_SEARCH_MAX_PAGES"] = "2";
+    try {
+      for (let page = 0; page < 2; page++) {
+        mockFetch.mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            code: 0,
+            data: {
+              datasets: [
+                {
+                  datasetId: `d_page_${page}`,
+                  name: `Unrelated Dataset ${page}`,
+                  description: "Does not contain the search term",
+                  managedByAgencyName: "Agency",
+                  format: "CSV",
+                  lastUpdatedAt: "2026-03-01T00:00:00+08:00",
+                  createdAt: "2026-01-01T00:00:00+08:00",
+                  status: "active",
+                },
+              ],
+              pages: 99,
+              rowCount: 1,
+              totalRowCount: 99,
+            },
+            errorMsg: "",
+          }),
+        });
+      }
+
+      const results = await searchDatasets("weather");
+
+      expect(results).toEqual([]);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      delete process.env["SG_API_DATAGOV_SEARCH_MAX_PAGES"];
+    }
+  });
+
   it("pages through datastore results until exact matches are exhausted", async () => {
     mockFetch
       .mockResolvedValueOnce({

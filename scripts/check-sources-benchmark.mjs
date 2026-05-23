@@ -12,6 +12,12 @@ const REQUIRED_SOURCE_TOOLS = [
   "sg_onemap_geocode",
   "sg_datagov_search",
   "sg_singstat_search",
+  "sg_hawker_closures",
+  "sg_nlb_libraries",
+  "sg_sportsg_facilities",
+  "sg_nparks_parks",
+  "sg_pub_water_levels",
+  "sg_pa_community_outlets",
 ];
 const VALID_STATES = new Set(["ready", "stale", "gap", "credential_missing", "not_returned", "error"]);
 

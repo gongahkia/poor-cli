@@ -2,7 +2,7 @@ import { queryDatastore } from "../datagov/client.js";
 
 // [Unverified] data.gov.sg hawker-centre closure / cleaning schedule resource id.
 // Override via SG_API_HAWKER_CLOSURES_RESOURCE_ID if upstream rotates.
-const DEFAULT_HAWKER_CLOSURES_RESOURCE_ID = "d_7f6a0baff4e8e5b72a6d7d5c63a1c0d3";
+const DEFAULT_HAWKER_CLOSURES_RESOURCE_ID = "d_bda4baa634dd1cc7a6c7cad5f19e2d68";
 
 const getResourceId = (): string =>
   process.env["SG_API_HAWKER_CLOSURES_RESOURCE_ID"]?.trim() || DEFAULT_HAWKER_CLOSURES_RESOURCE_ID;

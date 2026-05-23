@@ -13,7 +13,7 @@ export const handlePubWaterLevels = async (
 
 export const pubToolDefinitions: readonly RegisteredToolDefinition[] = [{
   name: "sg_pub_water_levels",
-  description: "Get water level readings from PUB monitoring stations via data.gov.sg.",
+  description: "Get PUB water-level sensor station records via data.gov.sg; public fields do not include live water-height readings.",
   surface: "canonical",
   inputSchema: PubWaterLevelsSchema.shape,
   handler: async (input: unknown): Promise<ToolResult> => handlePubWaterLevels(PubWaterLevelsSchema.parse(input)),

@@ -26,6 +26,12 @@ export type PulseSnapshotInput = {
 
 const nowIso = (): string => new Date().toISOString();
 const DEFAULT_MAX_AGE_SECONDS = 15 * 60;
+const WEATHER_MAX_AGE_SECONDS = {
+  // Operational freshness windows for Pulse health; these are not upstream SLA claims.
+  forecast2Hr: 3 * 60 * 60,
+  airQuality: 90 * 60,
+  rainfall: 30 * 60,
+} as const;
 
 const makeId = (...parts: readonly unknown[]): string =>
   parts.map((part) => String(part ?? "na").toLowerCase().replace(/[^a-z0-9]+/g, "-")).join(":");
@@ -45,12 +51,13 @@ const withSourceHealth = (params: {
   readonly observedAt: string;
   readonly upstreamTimestamp: string | null;
   readonly recordCount: number;
+  readonly maxAgeSeconds?: number;
   readonly gaps?: readonly EvidenceGap[];
 }): PulseSourceHealth => {
   const freshness = evaluatePulseFreshness({
     observedAt: params.observedAt,
     upstreamTimestamp: params.upstreamTimestamp,
-    maxAgeSeconds: DEFAULT_MAX_AGE_SECONDS,
+    maxAgeSeconds: params.maxAgeSeconds ?? DEFAULT_MAX_AGE_SECONDS,
   });
   const health = {
     source: params.source,
@@ -93,11 +100,12 @@ export const buildPulseWeatherSnapshot = async (
       observedAt,
       upstreamTimestamp,
       recordCount: records.length,
+      maxAgeSeconds: WEATHER_MAX_AGE_SECONDS.forecast2Hr,
       gaps: records.length === 0 ? [toGap("NEA_FORECAST_EMPTY", "NEA returned no 2-hour forecast rows.")] : [],
     }));
     for (const record of records.slice(0, 12)) {
       const severity = /thundery|heavy|showers|rain/i.test(record.forecast) ? "watch" : "info";
-      const freshness = evaluatePulseFreshness({ observedAt, upstreamTimestamp: record.updatedAt ?? record.validFrom, maxAgeSeconds: DEFAULT_MAX_AGE_SECONDS });
+      const freshness = evaluatePulseFreshness({ observedAt, upstreamTimestamp: record.updatedAt ?? record.validFrom, maxAgeSeconds: WEATHER_MAX_AGE_SECONDS.forecast2Hr });
       signals.push({
         id: makeId("weather", "forecast", record.area),
         category: "weather",
@@ -131,12 +139,13 @@ export const buildPulseWeatherSnapshot = async (
       observedAt,
       upstreamTimestamp,
       recordCount: records.length,
+      maxAgeSeconds: WEATHER_MAX_AGE_SECONDS.airQuality,
       gaps: records.length === 0 ? [toGap("NEA_AIR_QUALITY_EMPTY", "NEA returned no air-quality rows.")] : [],
     }));
     for (const record of records.slice(0, 6)) {
       const pm25 = record.pm25OneHourly ?? record.pm25TwentyFourHourly ?? 0;
       const severity = pm25 >= 56 ? "disrupted" : pm25 >= 36 ? "watch" : "info";
-      const freshness = evaluatePulseFreshness({ observedAt, upstreamTimestamp: record.updatedAt, maxAgeSeconds: DEFAULT_MAX_AGE_SECONDS });
+      const freshness = evaluatePulseFreshness({ observedAt, upstreamTimestamp: record.updatedAt, maxAgeSeconds: WEATHER_MAX_AGE_SECONDS.airQuality });
       signals.push({
         id: makeId("weather", "air", record.region),
         category: "weather",
@@ -170,11 +179,12 @@ export const buildPulseWeatherSnapshot = async (
       observedAt,
       upstreamTimestamp,
       recordCount: records.length,
+      maxAgeSeconds: WEATHER_MAX_AGE_SECONDS.rainfall,
       gaps: records.length === 0 ? [toGap("NEA_RAINFALL_EMPTY", "NEA returned no rainfall rows.")] : [],
     }));
     for (const record of records.filter((item) => item.value > 0).slice(0, 12)) {
       const severity = record.value >= 10 ? "disrupted" : "watch";
-      const freshness = evaluatePulseFreshness({ observedAt, upstreamTimestamp: record.timestamp, maxAgeSeconds: DEFAULT_MAX_AGE_SECONDS });
+      const freshness = evaluatePulseFreshness({ observedAt, upstreamTimestamp: record.timestamp, maxAgeSeconds: WEATHER_MAX_AGE_SECONDS.rainfall });
       signals.push({
         id: makeId("weather", "rainfall", record.stationId),
         category: "weather",

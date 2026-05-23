@@ -3632,7 +3632,7 @@
     },
     "/api/v1/sg_pub_water_levels": {
       "post": {
-        "summary": "Get water level readings from PUB monitoring stations via data.gov.sg.",
+        "summary": "Get PUB water-level sensor station records via data.gov.sg; public fields do not include live water-height readings.",
         "tags": [
           "canonical"
         ],

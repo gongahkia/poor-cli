@@ -1,20 +1,21 @@
-import { queryDatastore } from "../datagov/client.js";
+import { downloadDatasetGeoJson } from "../datagov/client.js";
+import {
+  buildAddress,
+  normalizePostalCode,
+  parseDescriptionAttributes,
+  parseFmelTimestamp,
+  toNullableString,
+} from "../civic/utils.js";
 
-// [Unverified] data.gov.sg NLB library directory resource id.
+// data.gov.sg NLB Libraries dataset id.
 // Override via SG_API_NLB_LIBRARIES_RESOURCE_ID if upstream rotates.
-const DEFAULT_NLB_LIBRARIES_RESOURCE_ID = "d_8d5ff78ad2f0beb4b03c6a4e9f1b2f0c";
+const DEFAULT_NLB_LIBRARIES_RESOURCE_ID = "d_27b8dae65d9ca1539e14d09578b17cbf";
 
 const getNlbLibrariesResourceId = (): string =>
   process.env["SG_API_NLB_LIBRARIES_RESOURCE_ID"]?.trim() || DEFAULT_NLB_LIBRARIES_RESOURCE_ID;
 
-type NlbLibraryRaw = Readonly<{
-  library_name?: string;
-  address?: string;
-  postal_code?: string;
-  region?: string;
-  telephone?: string;
-  latitude?: string;
-  longitude?: string;
+type NlbLibraryFeature = Readonly<{
+  Description?: string;
 }>;
 
 export type NlbLibraryRecord = {
@@ -25,34 +26,43 @@ export type NlbLibraryRecord = {
   readonly telephone: string | null;
   readonly lat: number | null;
   readonly lng: number | null;
-};
-
-const toNumber = (value: string | undefined): number | null => {
-  if (value === undefined || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+  readonly url: string | null;
+  readonly lastUpdatedAt: string | null;
 };
 
 export const getNlbLibraries = async (
   params: Readonly<{ name?: string | undefined; region?: string | undefined; postalCode?: string | undefined; limit?: number | undefined }>,
 ): Promise<readonly NlbLibraryRecord[]> => {
-  const filters: Record<string, string> = {};
-  if (params.region !== undefined) filters["region"] = params.region;
-  if (params.postalCode !== undefined) filters["postal_code"] = params.postalCode;
-  const rows = await queryDatastore<NlbLibraryRaw>(getNlbLibrariesResourceId(), {
-    limit: Math.min(params.limit ?? 50, 200),
-    filters,
-  });
+  const collection = await downloadDatasetGeoJson<NlbLibraryFeature>(getNlbLibrariesResourceId(), "STATIC");
   const needle = params.name?.trim().toLowerCase();
-  return rows
-    .filter((r) => needle === undefined || (r.library_name ?? "").toLowerCase().includes(needle))
-    .map((r) => ({
-      name: r.library_name ?? null,
-      address: r.address ?? null,
-      postalCode: r.postal_code ?? null,
-      region: r.region ?? null,
-      telephone: r.telephone ?? null,
-      lat: toNumber(r.latitude),
-      lng: toNumber(r.longitude),
-    }));
+  const postalCode = normalizePostalCode(params.postalCode);
+  const region = params.region?.trim().toLowerCase();
+  const records = collection.features.map((feature) => {
+    const attributes = parseDescriptionAttributes(feature.properties.Description);
+    const coordinates = feature.geometry.coordinates ?? [];
+    const name = toNullableString(attributes["NAME"]);
+    return {
+      name,
+      address: buildAddress(
+        attributes["ADDRESSBLOCKHOUSENUMBER"],
+        attributes["ADDRESSBUILDINGNAME"],
+        attributes["ADDRESSSTREETNAME"],
+        attributes["ADDRESSFLOORNUMBER"] === undefined ? undefined : `#${attributes["ADDRESSFLOORNUMBER"]}`,
+        attributes["ADDRESSUNITNUMBER"],
+      ) || null,
+      postalCode: normalizePostalCode(attributes["ADDRESSPOSTALCODE"]),
+      region: null,
+      telephone: null,
+      lat: typeof coordinates[1] === "number" ? coordinates[1] : null,
+      lng: typeof coordinates[0] === "number" ? coordinates[0] : null,
+      url: toNullableString(attributes["HYPERLINK"]),
+      lastUpdatedAt: parseFmelTimestamp(attributes["FMEL_UPD_D"]),
+    } satisfies NlbLibraryRecord;
+  });
+
+  return records
+    .filter((record) => needle === undefined || (record.name ?? "").toLowerCase().includes(needle))
+    .filter((record) => postalCode === null || record.postalCode === postalCode)
+    .filter((record) => region === undefined || (record.region ?? "").toLowerCase() === region)
+    .slice(0, Math.min(params.limit ?? 50, 200));
 };

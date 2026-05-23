@@ -19,6 +19,7 @@ const readOption = (name) => {
 const outputPath = resolve(root, readOption("output") ?? "artifacts/sources/latest.json");
 const markdownPath = resolve(root, readOption("markdown") ?? "artifacts/sources/latest.md");
 const generatedAt = process.env["SWEE_SOURCES_BENCHMARK_GENERATED_AT"] ?? new Date().toISOString();
+const DATASET_DOWNLOAD_PAUSE_MS = 5500;
 
 const DIRECT_PROBES = [
   {
@@ -28,6 +29,7 @@ const DIRECT_PROBES = [
     authRequired: true,
     input: { searchVal: "Raffles Place", limit: 3 },
     coverage: "Address/building-name geocoding to Singapore coordinates.",
+    credentialGuidance: "Set SG_API_ONEMAP_EMAIL and SG_API_ONEMAP_PASSWORD, or store onemap_email/onemap_password with sg_key_set.",
   },
   {
     sourceTool: "sg_datagov_search",
@@ -36,6 +38,7 @@ const DIRECT_PROBES = [
     authRequired: false,
     input: { keyword: "weather", limit: 5 },
     coverage: "Public dataset discovery through data.gov.sg search.",
+    rateLimitPauseMs: 2600,
   },
   {
     sourceTool: "sg_singstat_search",
@@ -44,6 +47,60 @@ const DIRECT_PROBES = [
     authRequired: false,
     input: { keyword: "population", limit: 5 },
     coverage: "Official statistics table discovery through SingStat Table Builder search.",
+  },
+  {
+    sourceTool: "sg_hawker_closures",
+    source: "NEA via data.gov.sg",
+    family: "hawker-operations",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Hawker centre quarterly cleaning and other-works closure windows.",
+    rateLimitPauseMs: 2600,
+  },
+  {
+    sourceTool: "sg_nlb_libraries",
+    source: "NLB via data.gov.sg",
+    family: "public-amenities",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Public library directory records.",
+    rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
+  },
+  {
+    sourceTool: "sg_sportsg_facilities",
+    source: "SportSG via data.gov.sg",
+    family: "public-facilities",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Public sports facility directory records.",
+    rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
+  },
+  {
+    sourceTool: "sg_nparks_parks",
+    source: "NParks via data.gov.sg",
+    family: "parks",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Parks and nature reserve directory records.",
+    rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
+  },
+  {
+    sourceTool: "sg_pub_water_levels",
+    source: "PUB via data.gov.sg",
+    family: "water-levels",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "PUB water-level sensor station records; public fields do not include live water-height readings.",
+    rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
+  },
+  {
+    sourceTool: "sg_pa_community_outlets",
+    source: "People's Association via data.gov.sg",
+    family: "community-amenities",
+    authRequired: false,
+    input: { limit: 5 },
+    coverage: "Community club and PAssion WaVe outlet directory records.",
+    rateLimitPauseMs: DATASET_DOWNLOAD_PAUSE_MS,
   },
 ];
 
@@ -101,6 +158,8 @@ const latestAuditForTool = async (client, toolName) => {
 };
 
 const isCredentialText = (value) => /\b(auth|credential|api key|accountkey|key missing|not configured|token)\b/i.test(value);
+const isSourceGapText = (value) => /\b(source gap|unsupported|not exposed|not available|no live|non-geojson)\b/i.test(value);
+const isRateLimitText = (value) => /\b(rate limit|too many requests|429)\b/i.test(value);
 
 const classifyHealth = (source) => {
   if (source === undefined) return "not_returned";
@@ -108,6 +167,7 @@ const classifyHealth = (source) => {
     source.sourceTool,
     ...(Array.isArray(source.gaps) ? source.gaps.flatMap((gap) => [gap.code, gap.message]) : []),
   ].join(" ");
+  if (isRateLimitText(text)) return "gap";
   if (isCredentialText(text)) return "credential_missing";
   if (source.status === "ready") return "ready";
   if (source.status === "stale") return "stale";
@@ -127,14 +187,22 @@ const countRecords = (payload) => {
 const classifyDirectPayload = (payload, thrownError) => {
   if (thrownError !== null) {
     const message = thrownError instanceof Error ? thrownError.message : String(thrownError);
+    if (isRateLimitText(message)) return "gap";
+    if (isSourceGapText(message)) return "gap";
     return isCredentialText(message) ? "credential_missing" : "error";
   }
   if (payload?.error !== undefined) {
     const message = JSON.stringify(payload.error);
+    if (isRateLimitText(message)) return "gap";
+    if (isSourceGapText(message)) return "gap";
     return isCredentialText(message) ? "credential_missing" : "error";
   }
   return countRecords(payload) > 0 ? "ready" : "gap";
 };
+
+const pause = (milliseconds) => new Promise((resolvePause) => {
+  setTimeout(resolvePause, milliseconds);
+});
 
 const sourceCheckFromHealth = (profile, source) => ({
   ...profile,
@@ -178,6 +246,7 @@ const directProbeCheck = async (client, probe) => {
     gapMessages: payloadError?.message !== undefined ? [payloadError.message] : thrownMessage === null ? [] : [thrownMessage],
     auditId: payload?.shield?.auditId ?? audit?.auditId ?? null,
     decision: payload?.shield?.decision ?? audit?.decision ?? null,
+    credentialGuidance: state === "credential_missing" ? probe.credentialGuidance ?? null : null,
   };
 };
 
@@ -260,6 +329,9 @@ const main = async () => {
     const directChecks = [];
     for (const probe of DIRECT_PROBES) {
       directChecks.push(await directProbeCheck(client, probe));
+      if (typeof probe.rateLimitPauseMs === "number" && probe.rateLimitPauseMs > 0) {
+        await pause(probe.rateLimitPauseMs);
+      }
     }
 
     const weatherAuditId = weatherPayload.shield?.auditId;
@@ -284,7 +356,8 @@ const main = async () => {
         "This artifact is live local evidence, not an SLA or official public-agency service status.",
         "A ready source check means the adapter returned a bounded response during this run; it does not certify upstream completeness.",
         "Missing upstream timestamps, empty results, and source gaps are reported directly instead of being filled with synthetic freshness.",
-        "Direct discovery probes use stable sample queries: OneMap 'Raffles Place', data.gov.sg 'weather', and SingStat 'population'.",
+        "Direct discovery probes use stable sample queries: OneMap 'Raffles Place', data.gov.sg 'weather', SingStat 'population', plus bounded directory probes for hawker closures, libraries, sports facilities, parks, water levels, and community outlets.",
+        "OneMap geocoding is expected to show credential_missing until SG_API_ONEMAP_EMAIL and SG_API_ONEMAP_PASSWORD, or the onemap_email/onemap_password keystore keys, are configured.",
       ],
     };
     writeArtifacts(artifact);

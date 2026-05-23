@@ -118,6 +118,15 @@ export const OPS_TAXONOMY_CATALOG = {
       suggestedAction: "Choose a CSV/GeoJSON/JSON resource before running row reads.",
     },
     {
+      code: "UNSUPPORTED_SOURCE_FORMAT",
+      source: "data.gov.sg",
+      retryable: false,
+      severity: "low",
+      statusCode: 422,
+      category: "dataset_contract",
+      suggestedAction: "Inspect the current dataset format and add a parser before treating this source as ready.",
+    },
+    {
       code: "UNKNOWN_FEED_ID",
       source: "govfeeds",
       retryable: false,
