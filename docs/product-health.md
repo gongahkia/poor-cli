@@ -12,6 +12,7 @@ This page is the public entrypoint for product-health, governance, and adoption 
 ## Evaluation
 
 - `Works today` Swee Pulse and Shield local smoke — no-auth dashboard, Pulse snapshot, and Shield audit paths are covered by repository smoke checks; live upstreams still depend on source availability.
+- `Works today` [Public benchmark/status](./status/public-status.md) — generated Pulse, Shield, and transport-reliability evidence; this is release evidence, not an SLA or official public-agency status page.
 - `Works today` [Market conventions audit](./market-conventions-audit.md) — MCP ecosystem expectations and positioning.
 - `Works today` [Ecosystem snapshot](./ecosystem-snapshot.md) — generated ecosystem evidence and comparison context.
 
@@ -24,6 +25,10 @@ This page is the public entrypoint for product-health, governance, and adoption 
 - `Works today` [Compatibility matrix](./compatibility-matrix.md) — supported clients, transports, and smoke checks.
 - `Hosted/commercial blocked` [Incident playbook](./incident-playbook.md) — response flow template; production evidence still depends on hosted operations.
 - `Works today` [Troubleshooting](./troubleshooting.md) — common local/self-host failure modes and diagnostics.
+
+## Retired Material
+
+Older CDD, dossier, and counterparty artifacts may remain for compatibility and migration history. They are not the active product entrypoint. New demos, docs, status evidence, and UI surfaces should route through Swee Pulse and Swee Shield.
 
 ## Governance
 

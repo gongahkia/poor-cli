@@ -270,6 +270,35 @@ summary {
   font-size: 1rem;
 }
 
+.runtime-evidence {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: minmax(12rem, 0.8fr) minmax(0, 1.2fr);
+}
+
+.evidence-grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.evidence-item {
+  border: 1px solid #d1d5db;
+  display: grid;
+  gap: 0.25rem;
+  min-width: 0;
+  padding: 0.75rem;
+}
+
+.evidence-item span {
+  color: #64748b;
+  font-size: 0.875rem;
+}
+
+.evidence-item strong {
+  overflow-wrap: anywhere;
+}
+
 .source-gaps {
   border-left: 4px solid #dc2626;
   display: grid;
@@ -410,6 +439,7 @@ summary {
 @media (max-width: 760px) {
   .app-header,
   .signal,
+  .runtime-evidence,
   .status-panel,
   .source-gaps,
   .source-health-card {

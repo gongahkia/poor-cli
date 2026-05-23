@@ -32,6 +32,13 @@ const makeId = (...parts: readonly unknown[]): string =>
 
 const toGap = (code: string, message: string): EvidenceGap => ({ code, message });
 
+const firstRoadEventTimestamp = (
+  records: readonly { readonly startTime: string | null; readonly endTime: string | null }[],
+): string | null =>
+  records
+    .map((record) => record.startTime ?? record.endTime)
+    .find((timestamp): timestamp is string => typeof timestamp === "string" && timestamp.trim() !== "") ?? null;
+
 const withSourceHealth = (params: {
   readonly source: string;
   readonly sourceTool: string;
@@ -259,17 +266,50 @@ export const buildPulseMobilitySnapshot = async (): Promise<Pick<PulseSnapshot, 
   for (const [sourceTool, loader] of [
     ["sg_lta_road_works", getRoadWorks],
     ["sg_lta_road_openings", getRoadOpenings],
-    ["sg_lta_traffic_images", getTrafficImages],
   ] as const) {
     try {
       const records = await loader();
       const observedAt = nowIso();
-      const firstRecord = records[0] as { readonly timestamp?: unknown } | undefined;
-      const firstTimestamp = typeof firstRecord?.timestamp === "string" ? firstRecord.timestamp : null;
-      sourceHealth.push(withSourceHealth({ source: "LTA", sourceTool, observedAt, upstreamTimestamp: firstTimestamp, recordCount: records.length }));
+      const upstreamTimestamp = firstRoadEventTimestamp(records);
+      sourceHealth.push(withSourceHealth({ source: "LTA", sourceTool, observedAt, upstreamTimestamp, recordCount: records.length }));
+      for (const event of records.slice(0, 12)) {
+        const eventTimestamp = event.startTime ?? event.endTime;
+        const freshness = evaluatePulseFreshness({ observedAt, upstreamTimestamp: eventTimestamp, maxAgeSeconds: DEFAULT_MAX_AGE_SECONDS });
+        const isRoadWork = event.eventType === "road-work";
+        signals.push({
+          id: makeId("mobility", event.eventType, event.id, event.roadName),
+          category: "mobility",
+          severity: isRoadWork ? "watch" : "info",
+          title: event.roadName === null ? (isRoadWork ? "Road work" : "Road opening") : `${event.roadName}: ${isRoadWork ? "road work" : "road opening"}`,
+          description: event.message || `LTA reported a ${isRoadWork ? "road-work" : "road-opening"} event.`,
+          source: "LTA",
+          sourceTool,
+          observedAt,
+          upstreamTimestamp: eventTimestamp,
+          ...(event.lat === null || event.lng === null ? {} : { location: { lat: event.lat, lng: event.lng } }),
+          ...(event.roadName === null ? {} : { area: event.roadName }),
+          provenance: [{ source: "LTA", sourceTool, observedAt, upstreamTimestamp: eventTimestamp, recordCount: 1 }],
+          freshness,
+          gaps: [],
+          recommendedAction: isRoadWork
+            ? "Review the road-work window before routing through the affected corridor."
+            : "Check whether the opening changes near-term routing or access assumptions.",
+          raw: event,
+        });
+      }
     } catch (error) {
       sourceHealth.push(sourceGap("LTA", sourceTool, error));
     }
+  }
+
+  try {
+    const records = await getTrafficImages();
+    const observedAt = nowIso();
+    const firstRecord = records[0] as { readonly timestamp?: unknown } | undefined;
+    const firstTimestamp = typeof firstRecord?.timestamp === "string" ? firstRecord.timestamp : null;
+    sourceHealth.push(withSourceHealth({ source: "data.gov.sg", sourceTool: "sg_lta_traffic_images", observedAt, upstreamTimestamp: firstTimestamp, recordCount: records.length }));
+  } catch (error) {
+    sourceHealth.push(sourceGap("data.gov.sg", "sg_lta_traffic_images", error));
   }
 
   return { signals, sourceHealth, gaps: sourceHealth.flatMap((source) => source.gaps) };

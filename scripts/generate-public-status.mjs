@@ -10,6 +10,9 @@ const benchmark = JSON.parse(readFileSync(benchmarkPath, "utf8"));
 const measurements = Array.isArray(benchmark.sloMeasurements) ? benchmark.sloMeasurements : [];
 const benchmarkSets = Array.isArray(benchmark.benchmarkSets) ? benchmark.benchmarkSets : [];
 const checks = Array.isArray(benchmark.checks) ? benchmark.checks : [];
+const transportReliability = benchmark.transportReliability && typeof benchmark.transportReliability === "object"
+  ? benchmark.transportReliability
+  : null;
 
 const availabilityValues = measurements
   .map((item) => Number(item.availabilityPct))
@@ -43,7 +46,7 @@ const failures = [
 ];
 
 const status = {
-  schemaVersion: "dude-public-status/v1",
+  schemaVersion: "swee-public-status/v1",
   generatedAt: benchmark.generatedAt,
   source: benchmark.source,
   commitSha: benchmark.commitSha,
@@ -54,6 +57,7 @@ const status = {
     checks,
     benchmarkSets,
   },
+  transportReliability,
   uptime: {
     measurementWindow: measurements[0]?.measurementWindow ?? "unknown",
     averageAvailabilityPct: average(availabilityValues),
@@ -85,7 +89,7 @@ const status = {
 
 const fmt = (value, suffix = "") => value === null || value === undefined ? "n/a" : `${value}${suffix}`;
 const md = [
-  "# Public Benchmark And Uptime Status",
+  "# Public Benchmark And Source Status",
   "",
   `Generated: ${status.generatedAt}`,
   "",
@@ -93,13 +97,13 @@ const md = [
   "",
   `Commit: ${status.commitSha}`,
   "",
-  "## Uptime",
+  "## Release Evidence",
   "",
   `Measurement window: ${status.uptime.measurementWindow}`,
   "",
-  `Average availability: ${fmt(status.uptime.averageAvailabilityPct, "%")}`,
+  `Average availability-style gate: ${fmt(status.uptime.averageAvailabilityPct, "%")}`,
   "",
-  "| Workflow | Availability | p50 | p95 | Status |",
+  "| Workflow | Availability-style gate | p50 | p95 | Status |",
   "| --- | ---: | ---: | ---: | --- |",
   ...status.uptime.workflows.map((item) =>
     `| ${item.workflow} | ${fmt(item.availabilityPct, "%")} | ${fmt(item.latencyP50Ms, " ms")} | ${fmt(item.latencyP95Ms, " ms")} | ${item.status} |`,
@@ -121,6 +125,20 @@ const md = [
     ? "No warning or breach statuses in the latest snapshot."
     : status.failures.map((item) => `- ${item.scope}/${item.name}: ${item.status} - ${item.notes}`).join("\n"),
   "",
+  transportReliability === null ? "" : [
+    "## Transport Reliability",
+    "",
+    `${transportReliability.focus ?? "LTA transport reliability source coverage."}`,
+    "",
+    "| Source tool | Surface | Auth | Coverage | Freshness evidence |",
+    "| --- | --- | --- | --- | --- |",
+    ...((transportReliability.sourceChecks ?? []).map((item) =>
+      `| ${item.sourceTool} | ${item.surface} | ${item.authRequired ? "required" : "not required"} | ${item.coverage} | ${item.freshnessEvidence} |`,
+    )),
+    "",
+    ...((transportReliability.limits ?? []).map((item) => `- ${item}`)),
+    "",
+  ].join("\n"),
   "## Benchmarks",
   "",
   "| Set | Fixtures | Schema | Source |",

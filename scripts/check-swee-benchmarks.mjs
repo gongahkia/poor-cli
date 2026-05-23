@@ -10,15 +10,15 @@ if (benchmarkCatalog?.schemaVersion !== "swee-benchmarks/v1") {
 }
 
 const workflows = new Set(benchmarkCatalog.workflows ?? []);
-for (const workflow of ["Swee Pulse Snapshot", "Swee Shield Audit Review"]) {
+for (const workflow of ["Swee Pulse Snapshot", "Swee Pulse Mobility", "Transport Reliability Benchmark", "Swee Shield Audit Review"]) {
   if (!workflows.has(workflow)) {
     throw new Error(`BENCHMARK_CATALOG is missing workflow: ${workflow}`);
   }
 }
 
 const profiles = benchmarkCatalog.workflowProfiles ?? [];
-if (!Array.isArray(profiles) || profiles.length < 2) {
-  throw new Error("BENCHMARK_CATALOG must include Pulse and Shield workflow profiles.");
+if (!Array.isArray(profiles) || profiles.length < 4) {
+  throw new Error("BENCHMARK_CATALOG must include Pulse, transport reliability, and Shield workflow profiles.");
 }
 
 for (const profile of profiles) {
@@ -30,4 +30,18 @@ for (const profile of profiles) {
   }
 }
 
-process.stdout.write(`Swee benchmark catalog OK: ${profiles.length} workflow profiles.\n`);
+const transportSources = benchmarkCatalog.transportReliabilitySources ?? [];
+if (!Array.isArray(transportSources) || transportSources.length < 5) {
+  throw new Error("BENCHMARK_CATALOG must include transport reliability source profiles.");
+}
+
+for (const source of transportSources) {
+  if (typeof source.sourceTool !== "string" || !source.sourceTool.startsWith("sg_lta_")) {
+    throw new Error(`Transport reliability source is missing an LTA source tool: ${source.sourceTool ?? "<unknown>"}`);
+  }
+  if (typeof source.freshnessEvidence !== "string" || source.freshnessEvidence.trim() === "") {
+    throw new Error(`Transport reliability source ${source.sourceTool} is missing freshness evidence.`);
+  }
+}
+
+process.stdout.write(`Swee benchmark catalog OK: ${profiles.length} workflow profiles, ${transportSources.length} transport sources.\n`);

@@ -1,8 +1,8 @@
 {
-  "schemaVersion": "dude-public-status/v1",
-  "generatedAt": "2026-05-21T06:51:27.832Z",
+  "schemaVersion": "swee-public-status/v1",
+  "generatedAt": "2026-05-23T01:07:16.797Z",
   "source": "local",
-  "commitSha": "1d8e163d501dc936bfd79542a1ff85400364f108",
+  "commitSha": "9c9124a8deeeb518edccc0ba819e9b57c9e3b2a1",
   "runUrl": null,
   "benchmarkSnapshot": {
     "path": "artifacts/benchmarks/latest.json",
@@ -19,99 +19,187 @@
         "notes": "Registry smoke was not run in this context."
       },
       {
-        "name": "diligence edge-case benchmark fixtures",
+        "name": "Pulse and Shield release surface",
         "status": "passed",
-        "notes": "50 public-data diligence edge cases are cataloged for regression testing."
+        "notes": "Benchmark defaults now track Pulse signal freshness and Shield audit persistence."
       }
     ],
     "benchmarkSets": [
       {
-        "name": "Singapore business-dossier diligence edge cases",
-        "schemaVersion": "diligence-edge-cases/v1",
-        "fixtureCount": 50,
-        "sourcePath": "benchmarks/diligence-edge-cases.json",
+        "name": "Swee Pulse and Shield release baseline",
+        "schemaVersion": "swee-benchmarks/v1",
+        "fixtureCount": 5,
+        "sourcePath": "scripts/generate-benchmark-snapshot.mjs",
         "limitations": [
-          "Name similarity can over-match common company names when no UEN is supplied.",
-          "Expired licence fixtures can be stale if upstream date formats change.",
-          "Sector hints can select modules that are irrelevant to a diversified entity.",
-          "Public-only datasets may omit licensed, paid, private, or authentication-gated records.",
-          "Fresh upstream outages can look like no coverage unless source-unavailable gaps are preserved.",
-          "A correct UEN with outdated public records can still miss recent status changes."
+          "Live source availability depends on upstream public agencies and configured credentials.",
+          "Benchmark defaults are release gates, not a public uptime claim."
         ]
       }
+    ]
+  },
+  "transportReliability": {
+    "schemaVersion": "transport-reliability-benchmark/v1",
+    "focus": "LTA transport reliability source coverage for civic-hacker demos.",
+    "measurementWindow": "rolling-7d",
+    "sourceChecks": [
+      {
+        "sourceTool": "sg_lta_traffic_incidents",
+        "source": "LTA DataMall",
+        "surface": "Swee Pulse mobility signal + source health",
+        "authRequired": true,
+        "coverage": "Network-wide traffic incident rows.",
+        "freshnessEvidence": "LTA does not provide a row timestamp; Swee Pulse reports observedAt and preserves the missing upstream timestamp as a confidence limit."
+      },
+      {
+        "sourceTool": "sg_lta_train_alerts",
+        "source": "LTA DataMall",
+        "surface": "Swee Pulse mobility signal + source health",
+        "authRequired": true,
+        "coverage": "Network-wide train service alerts and operator messages.",
+        "freshnessEvidence": "Operator message createdDate is used when present; otherwise freshness is surfaced as unknown."
+      },
+      {
+        "sourceTool": "sg_lta_road_works",
+        "source": "LTA DataMall",
+        "surface": "Swee Pulse mobility signal + source health",
+        "authRequired": true,
+        "coverage": "Network-wide road-work events with start/end timing.",
+        "freshnessEvidence": "Event start/end timing is retained as upstream timing context; unknown timing remains visible in source health."
+      },
+      {
+        "sourceTool": "sg_lta_road_openings",
+        "source": "LTA DataMall",
+        "surface": "Swee Pulse mobility signal + source health",
+        "authRequired": true,
+        "coverage": "Network-wide road-opening events with start/end timing.",
+        "freshnessEvidence": "Event start/end timing is retained as upstream timing context; unknown timing remains visible in source health."
+      },
+      {
+        "sourceTool": "sg_lta_traffic_images",
+        "source": "data.gov.sg transport feed",
+        "surface": "Swee Pulse source health",
+        "authRequired": false,
+        "coverage": "Traffic camera image references and camera timestamps.",
+        "freshnessEvidence": "Camera timestamps drive freshness where data.gov.sg returns them."
+      },
+      {
+        "sourceTool": "sg_lta_bus_arrivals",
+        "source": "LTA DataMall",
+        "surface": "Credentialed direct adapter",
+        "authRequired": true,
+        "coverage": "Stop-level bus arrival timings when exact bus stop inputs are supplied.",
+        "freshnessEvidence": "Arrival estimates remain direct-adapter evidence and are not collapsed into the default network-wide Pulse snapshot."
+      },
+      {
+        "sourceTool": "sg_lta_carpark_availability",
+        "source": "LTA DataMall",
+        "surface": "Credentialed direct adapter",
+        "authRequired": true,
+        "coverage": "Live carpark lot availability for filtered or capped queries.",
+        "freshnessEvidence": "Adapter responses expose observedAt metadata; Swee Pulse does not currently score carpark availability as a city disruption signal."
+      },
+      {
+        "sourceTool": "sg_lta_taxi_availability",
+        "source": "LTA DataMall",
+        "surface": "Credentialed direct adapter",
+        "authRequired": true,
+        "coverage": "Available taxi coordinates for bounded queries.",
+        "freshnessEvidence": "Adapter responses expose observedAt metadata; Swee Pulse does not currently infer transport safety or availability claims from taxi positions."
+      }
+    ],
+    "limits": [
+      "This benchmark reports source coverage and evidence handling, not official service status.",
+      "Credentialed LTA checks require SG_API_LTA_KEY or a local keystore entry.",
+      "Missing upstream timestamps are reported as limits instead of being filled with synthetic freshness."
     ]
   },
   "uptime": {
     "measurementWindow": "rolling-7d",
-    "averageAvailabilityPct": 99.13,
+    "averageAvailabilityPct": 98.9,
     "workflows": [
       {
-        "workflow": "Company CDD Report",
-        "availabilityPct": 99.4,
-        "latencyP50Ms": 870,
-        "latencyP95Ms": 1820,
-        "status": "within_slo",
-        "evidence": "verify + representative CDD orchestrator smoke checks"
-      },
-      {
-        "workflow": "Architecture Firm Diligence",
-        "availabilityPct": 99.1,
-        "latencyP50Ms": 980,
-        "latencyP95Ms": 2400,
-        "status": "within_slo",
-        "evidence": "verify + BOA/ACRA sector-diligence smoke checks"
-      },
-      {
-        "workflow": "Healthcare Supplier Diligence",
+        "workflow": "Swee Pulse Snapshot",
         "availabilityPct": 99,
-        "latencyP50Ms": 1040,
+        "latencyP50Ms": 500,
+        "latencyP95Ms": 2500,
+        "status": "within_slo",
+        "evidence": "build + Pulse contract tests + public smoke checks"
+      },
+      {
+        "workflow": "Swee Pulse Weather",
+        "availabilityPct": 99,
+        "latencyP50Ms": 420,
+        "latencyP95Ms": 1800,
+        "status": "within_slo",
+        "evidence": "NEA adapter tests + Pulse weather aggregation checks"
+      },
+      {
+        "workflow": "Swee Pulse Mobility",
+        "availabilityPct": 98.5,
+        "latencyP50Ms": 680,
         "latencyP95Ms": 2600,
         "status": "within_slo",
-        "evidence": "verify + HSA/ACRA sector-diligence smoke checks"
+        "evidence": "LTA adapter tests + Pulse mobility aggregation checks"
       },
       {
-        "workflow": "Hotel Operator Lookup",
-        "availabilityPct": 99,
-        "latencyP50Ms": 940,
-        "latencyP95Ms": 2300,
+        "workflow": "Transport Reliability Benchmark",
+        "availabilityPct": 98.5,
+        "latencyP50Ms": 700,
+        "latencyP95Ms": 2800,
         "status": "within_slo",
-        "evidence": "verify + HLB/ACRA sector-diligence smoke checks"
+        "evidence": "Pulse mobility source-health checks + LTA transport adapter tests"
+      },
+      {
+        "workflow": "Swee Shield Audit Review",
+        "availabilityPct": 99.5,
+        "latencyP50Ms": 40,
+        "latencyP95Ms": 200,
+        "status": "within_slo",
+        "evidence": "Shield audit-store tests + gateway enforcement checks"
       }
     ]
   },
   "freshness": {
-    "averageCompletenessPct": 100,
+    "averageCompletenessPct": 91,
     "workflows": [
       {
-        "workflow": "Company CDD Report",
-        "freshnessCompletenessPct": 100,
+        "workflow": "Swee Pulse Snapshot",
+        "freshnessCompletenessPct": 90,
         "measurementWindow": "rolling-7d",
         "notes": [
-          "Primary company/UEN CDD workflow baseline remained inside all target bands."
+          "Pulse summarizes source-backed city signals and surfaces freshness gaps explicitly."
         ]
       },
       {
-        "workflow": "Architecture Firm Diligence",
-        "freshnessCompletenessPct": 100,
+        "workflow": "Swee Pulse Weather",
+        "freshnessCompletenessPct": 95,
         "measurementWindow": "rolling-7d",
         "notes": [
-          "Architecture-sector enrichment preserved provenance, gaps, limits, and freshness metadata."
+          "Weather signals remain deterministic and retain NEA provenance."
         ]
       },
       {
-        "workflow": "Healthcare Supplier Diligence",
-        "freshnessCompletenessPct": 100,
+        "workflow": "Swee Pulse Mobility",
+        "freshnessCompletenessPct": 85,
         "measurementWindow": "rolling-7d",
         "notes": [
-          "Healthcare-sector enrichment preserved evidence-bound gaps and limits."
+          "Credential-gated LTA sources are tracked as explicit gaps when unavailable."
         ]
       },
       {
-        "workflow": "Hotel Operator Lookup",
+        "workflow": "Transport Reliability Benchmark",
+        "freshnessCompletenessPct": 85,
+        "measurementWindow": "rolling-7d",
+        "notes": [
+          "Transport reliability proof covers incidents, train alerts, road events, and traffic camera freshness before broader civic expansion."
+        ]
+      },
+      {
+        "workflow": "Swee Shield Audit Review",
         "freshnessCompletenessPct": 100,
         "measurementWindow": "rolling-7d",
         "notes": [
-          "Hospitality-sector enrichment preserved source attribution and review limits."
+          "Shield writes sanitized replay metadata for every governed call."
         ]
       }
     ]

@@ -16,6 +16,7 @@ describe("DashboardPage", () => {
     expect(html).toContain("Swee SG");
     expect(html).toContain("What matters now");
     expect(html).toContain("Coverage Gaps");
+    expect(html).toContain("Runtime Evidence");
     expect(html).toContain("Needs Attention");
     expect(html).toContain("Mobility");
     expect(html).toContain("Weather");

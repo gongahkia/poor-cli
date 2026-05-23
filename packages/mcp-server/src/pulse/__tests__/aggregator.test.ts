@@ -90,8 +90,8 @@ describe("Swee Pulse aggregators", () => {
       alerts: [{ line: "EWL", status: 1, direction: null, stations: [], freePublicBus: [], freeMrtShuttle: [], mrtShuttleDirection: null }],
       messages: [{ content: "All clear", createdDate: "2026-05-22T06:58:00.000Z" }],
     });
-    mocked(getRoadWorks).mockResolvedValue([{ id: "rw-1", eventType: "road-work", lat: null, lng: null, roadName: "PIE", message: "Road works", startTime: null, endTime: null }]);
-    mocked(getRoadOpenings).mockResolvedValue([]);
+    mocked(getRoadWorks).mockResolvedValue([{ id: "rw-1", eventType: "road-work", lat: null, lng: null, roadName: "PIE", message: "Road works", startTime: "2026-05-22T07:00:00.000Z", endTime: null }]);
+    mocked(getRoadOpenings).mockResolvedValue([{ id: "ro-1", eventType: "road-opening", lat: null, lng: null, roadName: "TPE", message: "Road opening", startTime: "2026-05-22T08:00:00.000Z", endTime: null }]);
     mocked(getTrafficImages).mockResolvedValue([{ cameraId: "1701", imageUrl: "https://example.test/traffic.jpg", timestamp: "2026-05-22T06:58:00.000Z", lat: 1.3, lng: 103.8 }]);
 
     const result = await buildPulseMobilitySnapshot();
@@ -99,7 +99,13 @@ describe("Swee Pulse aggregators", () => {
     expect(result.signals.map((signal) => signal.sourceTool)).toEqual([
       "sg_lta_traffic_incidents",
       "sg_lta_train_alerts",
+      "sg_lta_road_works",
+      "sg_lta_road_openings",
     ]);
+    expect(result.signals.find((signal) => signal.sourceTool === "sg_lta_road_works")).toMatchObject({
+      severity: "watch",
+      title: "PIE: road work",
+    });
     expect(result.sourceHealth).toHaveLength(5);
     expect(result.gaps).toEqual([]);
   });

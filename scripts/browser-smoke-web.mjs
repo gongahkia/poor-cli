@@ -27,6 +27,8 @@ const pulseSnapshot = {
       observedAt: "2026-05-22T00:00:00.000Z",
       upstreamTimestamp: "2026-05-22T00:00:00.000Z",
       area: "Central",
+      freshness: { status: "fresh", ageSeconds: 0 },
+      gaps: [],
       recommendedAction: "Check alternate route before dispatch.",
     },
     {
@@ -40,6 +42,8 @@ const pulseSnapshot = {
       observedAt: "2026-05-22T00:00:00.000Z",
       upstreamTimestamp: "2026-05-22T00:00:00.000Z",
       area: "Islandwide",
+      freshness: { status: "fresh", ageSeconds: 0 },
+      gaps: [],
       recommendedAction: "Monitor outdoor operations and commute plans.",
     },
     {
@@ -52,6 +56,8 @@ const pulseSnapshot = {
       sourceTool: "swee_pulse_snapshot",
       observedAt: "2026-05-22T00:00:00.000Z",
       upstreamTimestamp: null,
+      freshness: { status: "unknown", ageSeconds: null },
+      gaps: [],
       recommendedAction: "Review source rows before acting on a signal.",
     },
   ],
@@ -61,6 +67,8 @@ const pulseSnapshot = {
       sourceTool: "sg_lta_traffic_incidents",
       status: "ready",
       observedAt: "2026-05-22T00:00:00.000Z",
+      freshness: { status: "fresh", upstreamTimestamp: "2026-05-22T00:00:00.000Z", ageSeconds: 0 },
+      gaps: [],
       recordCount: 1,
     },
     {
@@ -68,6 +76,8 @@ const pulseSnapshot = {
       sourceTool: "sg_nea_rainfall",
       status: "ready",
       observedAt: "2026-05-22T00:00:00.000Z",
+      freshness: { status: "fresh", upstreamTimestamp: "2026-05-22T00:00:00.000Z", ageSeconds: 0 },
+      gaps: [],
       recordCount: 1,
     },
   ],
@@ -131,7 +141,7 @@ const createMockGateway = () => createServer((request, response) => {
   if (request.method === "GET" && requestUrl.pathname === "/api/v1/pulse/snapshot") {
     jsonResponse(response, 200, {
       data: { snapshot: pulseSnapshot },
-      shield: { auditId: "audit_fixture_1", decision: "allow", riskLevel: "low" },
+      shield: { auditId: "audit_fixture_1", decision: { decision: "allow", riskLevel: "low", mode: "observe", reasonCodes: ["fixture public-data call"] } },
     });
     return;
   }
@@ -275,6 +285,8 @@ try {
   await page.getByText("2 signals need review across mobility and weather.").waitFor({ state: "visible" });
   await page.getByText("1 coverage gap limits confidence").waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Coverage Gaps" }).waitFor({ state: "visible" });
+  await page.getByRole("heading", { name: "Runtime Evidence" }).waitFor({ state: "visible" });
+  await page.getByText("allow / low").first().waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Needs Attention" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Mobility" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "Weather" }).waitFor({ state: "visible" });

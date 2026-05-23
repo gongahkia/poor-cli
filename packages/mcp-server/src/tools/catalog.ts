@@ -99,6 +99,15 @@ export type BenchmarkWorkflowProfile = {
   readonly notes: readonly string[];
 };
 
+export type TransportReliabilitySourceProfile = {
+  readonly sourceTool: string;
+  readonly source: string;
+  readonly surface: string;
+  readonly authRequired: boolean;
+  readonly coverage: string;
+  readonly freshnessEvidence: string;
+};
+
 export const TOOL_CATALOG: readonly ToolCatalogEntry[] = ALL_TOOL_DEFINITIONS.map(toToolCatalogEntry);
 
 export const API_CATALOG: readonly ApiCatalogEntry[] = [
@@ -276,7 +285,7 @@ export const BENCHMARK_EVIDENCE_SNAPSHOT: BenchmarkEvidenceSnapshot = {
 
 export const BENCHMARK_CATALOG = {
   schemaVersion: "swee-benchmarks/v1",
-  workflows: ["Swee Pulse Snapshot", "Swee Shield Audit Review"],
+  workflows: ["Swee Pulse Snapshot", "Swee Pulse Mobility", "Transport Reliability Benchmark", "Swee Shield Audit Review"],
   workflowProfiles: [
     {
       workflow: "Swee Pulse Snapshot",
@@ -286,6 +295,20 @@ export const BENCHMARK_CATALOG = {
       notes: ["Source freshness is surfaced per signal instead of hidden behind a generated summary."],
     },
     {
+      workflow: "Swee Pulse Mobility",
+      primaryCacheTier: "REALTIME",
+      freshnessTarget: "15 minutes for LTA and data.gov.sg transport sources where upstream timestamps are available",
+      evidence: "Pulse mobility aggregator tests and LTA adapter metadata",
+      notes: ["Road works and road openings are emitted as source-backed transport signals, not only hidden coverage rows."],
+    },
+    {
+      workflow: "Transport Reliability Benchmark",
+      primaryCacheTier: "REALTIME",
+      freshnessTarget: "Show observedAt, upstream timestamp or explicit missing-timestamp limits for every checked transport source",
+      evidence: "generated public benchmark transportReliability.sourceChecks",
+      notes: ["Benchmark evidence is coverage proof for civic-hacker demos, not an official operational status claim."],
+    },
+    {
       workflow: "Swee Shield Audit Review",
       primaryCacheTier: "LOCAL SQLITE",
       freshnessTarget: "Immediate write on every gateway and MCP tool invocation",
@@ -293,6 +316,48 @@ export const BENCHMARK_CATALOG = {
       notes: ["Replay metadata stores sanitized payloads and content hashes."],
     },
   ] satisfies readonly BenchmarkWorkflowProfile[],
+  transportReliabilitySources: [
+    {
+      sourceTool: "sg_lta_traffic_incidents",
+      source: "LTA DataMall",
+      surface: "Swee Pulse mobility signal + source health",
+      authRequired: true,
+      coverage: "Network-wide traffic incident rows.",
+      freshnessEvidence: "ObservedAt is retained; missing upstream row timestamps stay visible as a confidence limit.",
+    },
+    {
+      sourceTool: "sg_lta_train_alerts",
+      source: "LTA DataMall",
+      surface: "Swee Pulse mobility signal + source health",
+      authRequired: true,
+      coverage: "Network-wide train service alerts and operator messages.",
+      freshnessEvidence: "Operator message createdDate is used when present.",
+    },
+    {
+      sourceTool: "sg_lta_road_works",
+      source: "LTA DataMall",
+      surface: "Swee Pulse mobility signal + source health",
+      authRequired: true,
+      coverage: "Network-wide road-work events with start/end timing.",
+      freshnessEvidence: "Event timing is retained as upstream timing context.",
+    },
+    {
+      sourceTool: "sg_lta_road_openings",
+      source: "LTA DataMall",
+      surface: "Swee Pulse mobility signal + source health",
+      authRequired: true,
+      coverage: "Network-wide road-opening events with start/end timing.",
+      freshnessEvidence: "Event timing is retained as upstream timing context.",
+    },
+    {
+      sourceTool: "sg_lta_traffic_images",
+      source: "data.gov.sg transport feed",
+      surface: "Swee Pulse source health",
+      authRequired: false,
+      coverage: "Traffic camera image references and camera timestamps.",
+      freshnessEvidence: "Camera timestamps drive freshness where data.gov.sg returns them.",
+    },
+  ] satisfies readonly TransportReliabilitySourceProfile[],
   latestEvidenceSnapshot: BENCHMARK_EVIDENCE_SNAPSHOT,
 } as const;
 

@@ -109,6 +109,16 @@ const defaultMeasurements = [
     note: "Credential-gated LTA sources are tracked as explicit gaps when unavailable.",
   },
   {
+    prefix: "TRANSPORT_RELIABILITY",
+    workflow: "Transport Reliability Benchmark",
+    availabilityPct: 98.5,
+    latencyP50Ms: 700,
+    latencyP95Ms: 2800,
+    freshnessCompletenessPct: 85,
+    evidence: "Pulse mobility source-health checks + LTA transport adapter tests",
+    note: "Transport reliability proof covers incidents, train alerts, road events, and traffic camera freshness before broader civic expansion.",
+  },
+  {
     prefix: "SHIELD_AUDIT",
     workflow: "Swee Shield Audit Review",
     availabilityPct: 99.5,
@@ -127,6 +137,83 @@ const sloMeasurements = defaultMeasurements.map((entry) => {
     status: sanitizeStatus(measurement.status),
   };
 });
+
+const transportReliability = {
+  schemaVersion: "transport-reliability-benchmark/v1",
+  focus: "LTA transport reliability source coverage for civic-hacker demos.",
+  measurementWindow: defaultMeasurementWindow,
+  sourceChecks: [
+    {
+      sourceTool: "sg_lta_traffic_incidents",
+      source: "LTA DataMall",
+      surface: "Swee Pulse mobility signal + source health",
+      authRequired: true,
+      coverage: "Network-wide traffic incident rows.",
+      freshnessEvidence: "LTA does not provide a row timestamp; Swee Pulse reports observedAt and preserves the missing upstream timestamp as a confidence limit.",
+    },
+    {
+      sourceTool: "sg_lta_train_alerts",
+      source: "LTA DataMall",
+      surface: "Swee Pulse mobility signal + source health",
+      authRequired: true,
+      coverage: "Network-wide train service alerts and operator messages.",
+      freshnessEvidence: "Operator message createdDate is used when present; otherwise freshness is surfaced as unknown.",
+    },
+    {
+      sourceTool: "sg_lta_road_works",
+      source: "LTA DataMall",
+      surface: "Swee Pulse mobility signal + source health",
+      authRequired: true,
+      coverage: "Network-wide road-work events with start/end timing.",
+      freshnessEvidence: "Event start/end timing is retained as upstream timing context; unknown timing remains visible in source health.",
+    },
+    {
+      sourceTool: "sg_lta_road_openings",
+      source: "LTA DataMall",
+      surface: "Swee Pulse mobility signal + source health",
+      authRequired: true,
+      coverage: "Network-wide road-opening events with start/end timing.",
+      freshnessEvidence: "Event start/end timing is retained as upstream timing context; unknown timing remains visible in source health.",
+    },
+    {
+      sourceTool: "sg_lta_traffic_images",
+      source: "data.gov.sg transport feed",
+      surface: "Swee Pulse source health",
+      authRequired: false,
+      coverage: "Traffic camera image references and camera timestamps.",
+      freshnessEvidence: "Camera timestamps drive freshness where data.gov.sg returns them.",
+    },
+    {
+      sourceTool: "sg_lta_bus_arrivals",
+      source: "LTA DataMall",
+      surface: "Credentialed direct adapter",
+      authRequired: true,
+      coverage: "Stop-level bus arrival timings when exact bus stop inputs are supplied.",
+      freshnessEvidence: "Arrival estimates remain direct-adapter evidence and are not collapsed into the default network-wide Pulse snapshot.",
+    },
+    {
+      sourceTool: "sg_lta_carpark_availability",
+      source: "LTA DataMall",
+      surface: "Credentialed direct adapter",
+      authRequired: true,
+      coverage: "Live carpark lot availability for filtered or capped queries.",
+      freshnessEvidence: "Adapter responses expose observedAt metadata; Swee Pulse does not currently score carpark availability as a city disruption signal.",
+    },
+    {
+      sourceTool: "sg_lta_taxi_availability",
+      source: "LTA DataMall",
+      surface: "Credentialed direct adapter",
+      authRequired: true,
+      coverage: "Available taxi coordinates for bounded queries.",
+      freshnessEvidence: "Adapter responses expose observedAt metadata; Swee Pulse does not currently infer transport safety or availability claims from taxi positions.",
+    },
+  ],
+  limits: [
+    "This benchmark reports source coverage and evidence handling, not official service status.",
+    "Credentialed LTA checks require SG_API_LTA_KEY or a local keystore entry.",
+    "Missing upstream timestamps are reported as limits instead of being filled with synthetic freshness.",
+  ],
+};
 
 const snapshot = {
   schemaVersion: "2.0",
@@ -165,6 +252,7 @@ const snapshot = {
       ],
     },
   ],
+  transportReliability,
   sloMeasurements,
 };
 

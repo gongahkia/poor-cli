@@ -11,6 +11,11 @@ type PulseSignal = {
   readonly observedAt: string;
   readonly upstreamTimestamp: string | null;
   readonly area?: string;
+  readonly freshness?: {
+    readonly status: "fresh" | "stale" | "unknown";
+    readonly ageSeconds: number | null;
+  };
+  readonly gaps?: readonly { readonly code: string; readonly message: string }[];
   readonly recommendedAction: string;
 };
 
@@ -19,6 +24,12 @@ type PulseSourceHealth = {
   readonly sourceTool: string;
   readonly status: "ready" | "stale" | "gap";
   readonly observedAt: string;
+  readonly freshness?: {
+    readonly status: "fresh" | "stale" | "unknown";
+    readonly upstreamTimestamp: string | null;
+    readonly ageSeconds: number | null;
+  };
+  readonly gaps?: readonly { readonly code: string; readonly message: string }[];
   readonly recordCount: number;
 };
 
@@ -36,6 +47,11 @@ type ShieldAuditRow = {
   readonly startedAt: string;
   readonly durationMs: number;
   readonly decision: { readonly decision: string; readonly riskLevel: string };
+};
+
+type PulseShield = {
+  readonly auditId: string;
+  readonly decision: { readonly decision: string; readonly riskLevel: string; readonly mode?: string; readonly reasonCodes?: readonly string[] };
 };
 
 const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
@@ -66,6 +82,7 @@ const plural = (count: number, singular: string, pluralForm = `${singular}s`): s
 
 export function DashboardPage() {
   const [snapshot, setSnapshot] = useState<PulseSnapshot | null>(null);
+  const [pulseShield, setPulseShield] = useState<PulseShield | null>(null);
   const [audits, setAudits] = useState<readonly ShieldAuditRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [refreshCount, setRefreshCount] = useState(0);
@@ -79,12 +96,13 @@ export function DashboardPage() {
           fetch(`${apiBase}/api/v1/shield/audits?limit=12`),
         ]);
         if (!pulseResponse.ok) throw new Error(`Pulse API returned ${pulseResponse.status}`);
-        const pulsePayload = await pulseResponse.json() as { readonly data?: { readonly snapshot?: PulseSnapshot }; readonly snapshot?: PulseSnapshot };
+        const pulsePayload = await pulseResponse.json() as { readonly data?: { readonly snapshot?: PulseSnapshot }; readonly snapshot?: PulseSnapshot; readonly shield?: PulseShield };
         const auditPayload = auditResponse.ok
           ? await auditResponse.json() as { readonly records?: readonly ShieldAuditRow[] }
           : { records: [] };
         if (!cancelled) {
           setSnapshot(pulsePayload.data?.snapshot ?? pulsePayload.snapshot ?? null);
+          setPulseShield(pulsePayload.shield ?? null);
           setAudits(auditPayload.records ?? []);
           setError(null);
         }
@@ -178,6 +196,24 @@ export function DashboardPage() {
         />
       </section>
 
+      <section className="runtime-evidence">
+        <div>
+          <h2>Runtime Evidence</h2>
+          <p className="muted">Pulse values stay deterministic; Shield records the governed call that produced this view.</p>
+        </div>
+        <div className="evidence-grid">
+          <EvidenceItem label="Pulse audit" value={pulseShield?.auditId ?? "No audit returned"} />
+          <EvidenceItem
+            label="Shield decision"
+            value={pulseShield === null ? "unknown" : `${pulseShield.decision.decision} / ${pulseShield.decision.riskLevel}`}
+          />
+          <EvidenceItem
+            label="Replay route"
+            value={pulseShield === null ? "Unavailable" : `/api/v1/shield/replay/${pulseShield.auditId}`}
+          />
+        </div>
+      </section>
+
       <section className={coverageGapCount === 0 ? "source-gaps source-gaps-clear" : "source-gaps"}>
         <div>
           <h2>Coverage Gaps</h2>
@@ -240,6 +276,15 @@ function Takeaway({ label, value }: { readonly label: string; readonly value: st
   );
 }
 
+function EvidenceItem({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <article className="evidence-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </article>
+  );
+}
+
 function SignalList({ compact = false, emptyText, signals }: { readonly compact?: boolean; readonly emptyText: string; readonly signals: readonly PulseSignal[] }) {
   if (signals.length === 0) return <p className="muted">{emptyText}</p>;
   return (
@@ -250,7 +295,9 @@ function SignalList({ compact = false, emptyText, signals }: { readonly compact?
             <h3>{signal.title}</h3>
             <p>{signal.description}</p>
             {compact ? null : <p className="action-text">{signal.recommendedAction}</p>}
-            <p className="muted">{signal.sourceTool} · {formatTime(signal.upstreamTimestamp)}</p>
+            <p className="muted">
+              {signal.sourceTool} · freshness {signal.freshness?.status ?? "unknown"} · upstream {formatTime(signal.upstreamTimestamp)} · gaps {signal.gaps?.length ?? 0}
+            </p>
           </div>
           <strong>{signal.severity}</strong>
         </article>
@@ -276,7 +323,12 @@ function SourceIssueList({
       {sources.map((source) => (
         <article className="issue" key={`${source.sourceTool}:${source.observedAt}`}>
           <strong>{source.sourceTool}</strong>
-          <span>{source.status} · {source.recordCount} rows · observed {formatTime(source.observedAt)}</span>
+          <span>
+            {source.status} · freshness {source.freshness?.status ?? "unknown"} · {source.recordCount} rows · observed {formatTime(source.observedAt)}
+          </span>
+          {(source.gaps ?? []).slice(0, 2).map((gap) => (
+            <span key={gap.code}>{gap.code}: {gap.message}</span>
+          ))}
         </article>
       ))}
       {gaps.slice(0, 6).map((gap) => (
@@ -297,6 +349,7 @@ function SourceTable({ sources }: { readonly sources: readonly PulseSourceHealth
           <div>
             <strong>{source.sourceTool}</strong>
             <span>{source.recordCount} rows · observed {formatTime(source.observedAt)}</span>
+            <span>freshness {source.freshness?.status ?? "unknown"} · upstream {formatTime(source.freshness?.upstreamTimestamp ?? null)} · gaps {source.gaps?.length ?? 0}</span>
           </div>
           <span className={`status-pill status-pill-${source.status}`}>{source.status}</span>
         </article>
