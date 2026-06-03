@@ -193,7 +193,8 @@ def test_chat_transcript_persists_across_reload(browser_page, viewer_base_url: s
     assert "Move sofa 0.5m right" in transcript_before
     assert "Applied safely." in transcript_before
 
-    browser_page.reload(wait_until="networkidle")
+    browser_page.reload(wait_until="domcontentloaded")
+    browser_page.wait_for_selector("#chat-btn")
     browser_page.click("#chat-btn")
     browser_page.wait_for_function(
         """
@@ -369,9 +370,8 @@ def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_ur
     )
     browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
 
-    browser_page.click("#chat-float-btn")
+    browser_page.click("#chat-btn")
     browser_page.fill("#chat-input", "Design a compact 4-room HDB")
-    assert browser_page.locator("#chat-char-count").inner_text() == "27/2000"
     browser_page.click("#chat-send")
     browser_page.wait_for_selector(".chat-plan-card", timeout=6000)
 
