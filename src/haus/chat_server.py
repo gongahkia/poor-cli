@@ -13,6 +13,7 @@ import mimetypes
 import os
 import base64
 import ipaddress
+import re
 import socket
 import time
 from collections.abc import Callable
@@ -20,17 +21,18 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, cast
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.parse import parse_qs, parse_qsl, quote_plus, urlencode, unquote, urlparse, urlunparse
 from urllib.request import Request as UrlRequest, urlopen
 
 from starlette.applications import Starlette
 from starlette.requests import Request
-from starlette.responses import JSONResponse
+from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 import uvicorn
 
 from . import mcp_server as _mcp_server
+from .agent_loop import RoomPlan, plan_flat, plan_room
 from .logging_utils import configure_logging, new_request_id
 from .mcp_server import (
     _save_layout,
@@ -67,6 +69,7 @@ from .mcp_server import (
     set_visibility,
     simulate_layout_options,
     snap_to_grid,
+    score_walkway,
     suggest_furniture_placement,
     swap_furniture,
     tag_room,
@@ -82,7 +85,39 @@ _MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 _ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 _WEB_TIMEOUT_SECONDS = 8
 _MAX_WEB_RESPONSE_BYTES = 1_000_000
-_WEB_SEARCH_ENABLED = os.environ.get("HAUS_ENABLE_WEB_SEARCH", "1").lower() not in {"0", "false", "no"}
+_SEARCH_PROVIDER_DEFAULTS = ("serper", "exa", "tinyfish", "duckduckgo")
+_SEARCH_PROVIDER_KEY_ENV = {
+    "serper": "SERPER_API_KEY",
+    "exa": "EXA_API_KEY",
+    "tinyfish": "TINYFISH_API_KEY",
+}
+_TRACKING_QUERY_PARAMS = {
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+    "msclkid",
+    "ref",
+}
+_MAX_DESIGN_PLANS = 20
+_DESIGN_PLAN_CACHE: dict[str, dict[str, Any]] = {}
+_DESIGN_PLAN_ORDER: list[str] = []
+
+_CONCEPT_ACTION_RE = re.compile(
+    r"\b(build|create|design|draft|generate|layout|make|plan|renovate|replicate|rework|style)\b",
+    re.IGNORECASE,
+)
+_CONCEPT_ATTACHMENT_RE = re.compile(
+    r"\b(build|create|design|draft|generate|layout|plan|renovate|replicate|rework|style)\b",
+    re.IGNORECASE,
+)
+_CONCEPT_DOMAIN_RE = re.compile(
+    r"\b("
+    r"apartment|bathroom|bedroom|bto|condo|dining|flat|floor\s*plan|floorplan|furniture|haus|hdb|"
+    r"home|house|interior|kitchen|layout|living|office|renovation|room|space|study"
+    r")\b",
+    re.IGNORECASE,
+)
 
 _SYSTEM = (
     "You are an AI assistant for the haus floor plan editor. "
@@ -656,7 +691,33 @@ def _normalize_result_url(url: str) -> str:
     return url
 
 
-def _read_public_url(url: str, *, timeout: int = _WEB_TIMEOUT_SECONDS) -> tuple[str, str]:
+def _web_search_enabled() -> bool:
+    return os.environ.get("HAUS_ENABLE_WEB_SEARCH", "1").lower() not in {"0", "false", "no"}
+
+
+def _configured_search_providers() -> list[str]:
+    raw = os.environ.get("HAUS_SEARCH_PROVIDERS", ",".join(_SEARCH_PROVIDER_DEFAULTS))
+    providers: list[str] = []
+    for name in raw.split(","):
+        normalized = name.strip().lower()
+        if normalized in _SEARCH_PROVIDER_DEFAULTS and normalized not in providers:
+            providers.append(normalized)
+    return providers or ["duckduckgo"]
+
+
+def _available_search_providers() -> list[str]:
+    if not _web_search_enabled():
+        return []
+
+    available: list[str] = []
+    for provider in _configured_search_providers():
+        key_env = _SEARCH_PROVIDER_KEY_ENV.get(provider)
+        if key_env is None or os.environ.get(key_env):
+            available.append(provider)
+    return available
+
+
+def _validate_public_reference_url(url: str) -> None:
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise ValueError("Only public http(s) URLs can be fetched.")
@@ -683,6 +744,10 @@ def _read_public_url(url: str, *, timeout: int = _WEB_TIMEOUT_SECONDS) -> tuple[
         except socket.gaierror:
             pass
 
+
+def _read_public_url(url: str, *, timeout: int = _WEB_TIMEOUT_SECONDS) -> tuple[str, str]:
+    _validate_public_reference_url(url)
+
     req = UrlRequest(
         url,
         headers={
@@ -703,24 +768,244 @@ def _read_public_url(url: str, *, timeout: int = _WEB_TIMEOUT_SECONDS) -> tuple[
     return body.decode(encoding, errors="replace"), content_type
 
 
-def _web_search(query: str, max_results: int = 5) -> str:
-    if not _WEB_SEARCH_ENABLED:
-        return "Web search is disabled by HAUS_ENABLE_WEB_SEARCH=0."
+def _request_json(
+    url: str,
+    *,
+    method: str = "GET",
+    payload: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+) -> Any:
+    body = json.dumps(payload).encode("utf-8") if payload is not None else None
+    req_headers = {
+        "User-Agent": "Haus/0.1",
+        **(headers or {}),
+    }
+    if body is not None:
+        req_headers.setdefault("Content-Type", "application/json")
+
+    req = UrlRequest(url, data=body, headers=req_headers, method=method)
+    with urlopen(req, timeout=_WEB_TIMEOUT_SECONDS) as response:  # noqa: S310 - provider URLs are fixed.
+        raw = response.read(_MAX_WEB_RESPONSE_BYTES + 1)
+    if len(raw) > _MAX_WEB_RESPONSE_BYTES:
+        raise ValueError("Search provider response was too large.")
+    return json.loads(raw.decode("utf-8", errors="replace"))
+
+
+def _canonical_url(url: str) -> str:
+    normalized = _normalize_result_url(url.strip())
+    parsed = urlparse(normalized)
+    if not parsed.scheme or not parsed.netloc:
+        return normalized
+
+    query_pairs = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        lower = key.lower()
+        if lower.startswith("utm_") or lower in _TRACKING_QUERY_PARAMS:
+            continue
+        query_pairs.append((key, value))
+
+    path = parsed.path.rstrip("/") or "/"
+    return urlunparse(
+        (
+            parsed.scheme.lower(),
+            parsed.netloc.lower(),
+            path,
+            "",
+            urlencode(sorted(query_pairs)),
+            "",
+        )
+    )
+
+
+def _normalize_reference(
+    *,
+    title: Any,
+    url: Any,
+    snippet: Any = "",
+    source_provider: str,
+    published_date: Any = None,
+) -> dict[str, Any] | None:
+    normalized_url = _normalize_result_url(str(url or "").strip())
+    if not normalized_url:
+        return None
+
+    parsed = urlparse(normalized_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return None
+
+    clean_title = _collapse_ws(str(title or "")) or parsed.netloc
+    clean_snippet = _collapse_ws(str(snippet or ""))
+    published = _collapse_ws(str(published_date or "")) or None
+
+    return {
+        "title": clean_title[:240],
+        "url": normalized_url,
+        "snippet": clean_snippet[:800],
+        "source_provider": source_provider,
+        "published_date": published,
+        "retrieved_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def _dedupe_references(results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for result in results:
+        key = _canonical_url(str(result.get("url", "")))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(result)
+    return deduped
+
+
+def _search_duckduckgo(query: str, max_results: int) -> list[dict[str, Any]]:
+    search_url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+    html, _ = _read_public_url(search_url)
+    parser = _DuckDuckGoResultParser()
+    parser.feed(html)
+
+    results: list[dict[str, Any]] = []
+    for result in parser.results[:max_results]:
+        normalized = _normalize_reference(
+            title=result.get("title"),
+            url=result.get("url"),
+            snippet=result.get("snippet"),
+            source_provider="duckduckgo",
+        )
+        if normalized:
+            results.append(normalized)
+    return results
+
+
+def _search_serper(query: str, max_results: int) -> list[dict[str, Any]]:
+    api_key = os.environ.get("SERPER_API_KEY")
+    if not api_key:
+        return []
+
+    data = _request_json(
+        "https://google.serper.dev/search",
+        method="POST",
+        payload={"q": query, "num": max_results},
+        headers={"X-API-KEY": api_key},
+    )
+    raw_results = data.get("organic", []) if isinstance(data, dict) else []
+    results: list[dict[str, Any]] = []
+    if isinstance(raw_results, list):
+        for result in raw_results[:max_results]:
+            if not isinstance(result, dict):
+                continue
+            normalized = _normalize_reference(
+                title=result.get("title"),
+                url=result.get("link") or result.get("url"),
+                snippet=result.get("snippet") or result.get("description"),
+                source_provider="serper",
+                published_date=result.get("date"),
+            )
+            if normalized:
+                results.append(normalized)
+    return results
+
+
+def _search_exa(query: str, max_results: int) -> list[dict[str, Any]]:
+    api_key = os.environ.get("EXA_API_KEY")
+    if not api_key:
+        return []
+
+    data = _request_json(
+        "https://api.exa.ai/search",
+        method="POST",
+        payload={"query": query, "numResults": max_results, "contents": {"text": True}},
+        headers={"x-api-key": api_key},
+    )
+    raw_results = data.get("results", []) if isinstance(data, dict) else []
+    results: list[dict[str, Any]] = []
+    if isinstance(raw_results, list):
+        for result in raw_results[:max_results]:
+            if not isinstance(result, dict):
+                continue
+            normalized = _normalize_reference(
+                title=result.get("title"),
+                url=result.get("url"),
+                snippet=result.get("text") or result.get("summary") or result.get("snippet"),
+                source_provider="exa",
+                published_date=result.get("publishedDate") or result.get("published_date"),
+            )
+            if normalized:
+                results.append(normalized)
+    return results
+
+
+def _tinyfish_result_list(data: Any) -> list[Any]:
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        return []
+    for key in ("results", "data", "items", "organic"):
+        value = data.get(key)
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _search_tinyfish(query: str, max_results: int) -> list[dict[str, Any]]:
+    api_key = os.environ.get("TINYFISH_API_KEY")
+    if not api_key:
+        return []
+
+    data = _request_json(
+        f"https://api.search.tinyfish.ai?{urlencode({'query': query, 'limit': max_results})}",
+        headers={"X-API-Key": api_key},
+    )
+    results: list[dict[str, Any]] = []
+    for result in _tinyfish_result_list(data)[:max_results]:
+        if not isinstance(result, dict):
+            continue
+        normalized = _normalize_reference(
+            title=result.get("title") or result.get("name"),
+            url=result.get("url") or result.get("link"),
+            snippet=result.get("snippet") or result.get("description") or result.get("text"),
+            source_provider="tinyfish",
+            published_date=result.get("published_date") or result.get("publishedDate") or result.get("date"),
+        )
+        if normalized:
+            results.append(normalized)
+    return results
+
+
+_SEARCH_FNS: dict[str, Callable[[str, int], list[dict[str, Any]]]] = {
+    "serper": _search_serper,
+    "exa": _search_exa,
+    "tinyfish": _search_tinyfish,
+    "duckduckgo": _search_duckduckgo,
+}
+
+
+def search_references(query: str, max_results: int = 5) -> list[dict[str, Any]]:
+    if not _web_search_enabled():
+        return []
 
     query = _collapse_ws(query)
     if not query:
-        return "Error: web_search requires a non-empty query."
+        return []
 
     limit = max(1, min(int(max_results or 5), 8))
-    search_url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
-    try:
-        html, _ = _read_public_url(search_url)
-    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
-        return f"Error: web_search failed: {exc}"
+    results: list[dict[str, Any]] = []
+    for provider in _available_search_providers():
+        fn = _SEARCH_FNS.get(provider)
+        if fn is None:
+            continue
+        try:
+            results.extend(fn(query, limit))
+        except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            log.warning("search provider %s failed: %s", provider, exc)
+        results = _dedupe_references(results)
+        if len(results) >= limit:
+            break
+    return results[:limit]
 
-    parser = _DuckDuckGoResultParser()
-    parser.feed(html)
-    results = parser.results[:limit]
+
+def _format_reference_results(query: str, results: list[dict[str, Any]]) -> str:
     if not results:
         return f"No web search results found for: {query}"
 
@@ -728,16 +1013,74 @@ def _web_search(query: str, max_results: int = 5) -> str:
     for idx, result in enumerate(results, start=1):
         lines.append(f"[{idx}] {result['title']}")
         lines.append(f"URL: {result['url']}")
+        lines.append(f"Provider: {result['source_provider']}")
+        if result.get("published_date"):
+            lines.append(f"Published: {result['published_date']}")
         if result.get("snippet"):
             lines.append(f"Snippet: {result['snippet']}")
     return "\n".join(lines)
 
 
+def _web_search(query: str, max_results: int = 5) -> str:
+    if not _web_search_enabled():
+        return "Web search is disabled by HAUS_ENABLE_WEB_SEARCH=0."
+
+    query = _collapse_ws(query)
+    if not query:
+        return "Error: web_search requires a non-empty query."
+
+    try:
+        results = search_references(query, max_results=max_results)
+    except Exception as exc:  # pragma: no cover - provider failures are defensive.
+        return f"Error: web_search failed: {exc}"
+    return _format_reference_results(query, results)
+
+
+def _fetch_with_tinyfish(url: str, max_chars: int) -> str | None:
+    api_key = os.environ.get("TINYFISH_API_KEY")
+    if not api_key or "tinyfish" not in _available_search_providers():
+        return None
+
+    _validate_public_reference_url(url)
+    data = _request_json(
+        "https://api.fetch.tinyfish.ai",
+        method="POST",
+        payload={"url": url},
+        headers={"X-API-Key": api_key},
+    )
+    if not isinstance(data, dict):
+        return None
+
+    title = _collapse_ws(str(data.get("title") or ""))
+    text = _collapse_ws(
+        str(
+            data.get("text")
+            or data.get("markdown")
+            or data.get("content")
+            or data.get("body")
+            or data.get("html")
+            or ""
+        )
+    )
+    if not text:
+        return None
+
+    title_line = f"Title: {title}\n" if title else ""
+    return f"Fetched {url}\nProvider: tinyfish\n{title_line}\n{text[:max_chars]}"
+
+
 def _fetch_web_page(url: str, max_chars: int = 4000) -> str:
-    if not _WEB_SEARCH_ENABLED:
+    if not _web_search_enabled():
         return "Web fetch is disabled by HAUS_ENABLE_WEB_SEARCH=0."
 
     limit = max(500, min(int(max_chars or 4000), 12000))
+    try:
+        tinyfish_result = _fetch_with_tinyfish(url, limit)
+        if tinyfish_result:
+            return tinyfish_result
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+        log.warning("tinyfish fetch failed: %s", exc)
+
     try:
         html, content_type = _read_public_url(url)
     except (HTTPError, URLError, TimeoutError, ValueError) as exc:
@@ -839,6 +1182,412 @@ def _redact_history_for_client(messages: list[dict[str, Any]]) -> list[dict[str,
     return redacted
 
 
+def _is_concept_request(user_msg: str, attachments: list[dict[str, str]]) -> bool:
+    if attachments and _CONCEPT_ATTACHMENT_RE.search(user_msg):
+        return True
+    return bool(_CONCEPT_ACTION_RE.search(user_msg) and _CONCEPT_DOMAIN_RE.search(user_msg))
+
+
+def _parse_revision_request(user_msg: str) -> tuple[str, str] | None:
+    match = re.match(r"^\s*revise\s+plan\s+([A-Za-z0-9_-]+)\s*:?\s*(.*)$", user_msg, re.IGNORECASE | re.DOTALL)
+    if not match:
+        return None
+    return match.group(1), _collapse_ws(match.group(2)) or "Refine the existing plan while keeping the original intent."
+
+
+def _design_scope_from_brief(brief: str) -> str:
+    text = brief.lower()
+    if re.search(r"\b(whole|entire|full|flat|apartment|home|house|hdb|bto|condo|studio|3-room|4-room|5-room)\b", text):
+        return "whole_flat"
+    return "room"
+
+
+def _room_id_from_brief(brief: str) -> str:
+    text = brief.lower()
+    room_keywords = [
+        ("kitchen", "Kitchen"),
+        ("dining", "Dining"),
+        ("master", "Master Bedroom"),
+        ("bedroom", "Bedroom"),
+        ("study", "Study"),
+        ("office", "Study"),
+        ("bathroom", "Bathroom"),
+        ("living", "Living"),
+    ]
+    for keyword, room_name in room_keywords:
+        if keyword in text:
+            return room_name
+    return "Living"
+
+
+def _layout_bounds_dict(bounds: tuple[float, float, float, float]) -> dict[str, float]:
+    x_min, z_min, x_max, z_max = bounds
+    return {
+        "x_min": round(x_min, 3),
+        "z_min": round(z_min, 3),
+        "x_max": round(x_max, 3),
+        "z_max": round(z_max, 3),
+    }
+
+
+def _planned_furniture(plan: RoomPlan) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for spec in plan.items:
+        catalog_spec = _mcp_server.FURNITURE_CATALOG.get(spec.furniture_type, {})
+        items.append(
+            {
+                "label": spec.name or spec.furniture_type,
+                "furniture_type": spec.furniture_type,
+                "x": round(plan.origin_x + spec.dx, 3),
+                "z": round(plan.origin_z + spec.dz, 3),
+                "rotation_deg": round(spec.rotation_deg, 1),
+                "width_m": catalog_spec.get("w"),
+                "depth_m": catalog_spec.get("d"),
+            }
+        )
+    return items
+
+
+def _estimate_zone_area(plan: RoomPlan) -> float:
+    if not plan.items:
+        return 0.0
+
+    x_values: list[float] = []
+    z_values: list[float] = []
+    for spec in plan.items:
+        catalog_spec = _mcp_server.FURNITURE_CATALOG.get(spec.furniture_type, {})
+        width = float(catalog_spec.get("w", 1.0))
+        depth = float(catalog_spec.get("d", 1.0))
+        x = plan.origin_x + spec.dx
+        z = plan.origin_z + spec.dz
+        x_values.extend([x - width / 2, x + width / 2])
+        z_values.extend([z - depth / 2, z + depth / 2])
+
+    width_m = max(x_values) - min(x_values) + 1.0
+    depth_m = max(z_values) - min(z_values) + 1.0
+    return round(max(0.0, width_m * depth_m), 2)
+
+
+def _room_plan_to_zone(plan: RoomPlan) -> dict[str, Any]:
+    planned = _planned_furniture(plan)
+    return {
+        "name": plan.room_id,
+        "intent": plan.room_kind.replace("_", " "),
+        "target_center": {"x": round(plan.origin_x, 3), "z": round(plan.origin_z, 3)},
+        "planned_furniture": planned,
+        "estimated_area_m2": _estimate_zone_area(plan),
+        "circulation_notes": "Keep a 0.9m primary walkway and preserve direct access to seating, storage, and work surfaces.",
+    }
+
+
+def _planned_item_records(room_plans: list[RoomPlan]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for plan in room_plans:
+        for item in _planned_furniture(plan):
+            records.append({"room": plan.room_id, **item})
+    return records
+
+
+def _furniture_footprint_m2(room_plans: list[RoomPlan]) -> float:
+    total = 0.0
+    for plan in room_plans:
+        for spec in plan.items:
+            catalog_spec = _mcp_server.FURNITURE_CATALOG.get(spec.furniture_type, {})
+            total += float(catalog_spec.get("w", 1.0)) * float(catalog_spec.get("d", 1.0))
+    return round(total, 2)
+
+
+def _draft_room_plans(brief: str, scope: str) -> tuple[list[RoomPlan], tuple[float, float, float, float], int]:
+    data = _mcp_server._load_layout()
+    bounds = _mcp_server._layout_bounds(data)
+    if scope == "whole_flat":
+        return (
+            plan_flat(
+                style_prompt=brief,
+                constraints="Concept plan only; maintain accessible circulation and avoid collisions on apply.",
+                target="whole_flat",
+                bounds=bounds,
+            ),
+            bounds,
+            len(data["items"]),
+        )
+
+    x_min, z_min, x_max, z_max = bounds
+    return (
+        [
+            plan_room(
+                room_id=_room_id_from_brief(brief),
+                style_prompt=brief,
+                constraints="Concept plan only; maintain accessible circulation and avoid collisions on apply.",
+                origin_x=(x_min + x_max) / 2,
+                origin_z=(z_min + z_max) / 2,
+            )
+        ],
+        bounds,
+        len(data["items"]),
+    )
+
+
+def _cache_design_plan(plan: dict[str, Any]) -> None:
+    plan_id = str(plan["id"])
+    _DESIGN_PLAN_CACHE[plan_id] = plan
+    if plan_id in _DESIGN_PLAN_ORDER:
+        _DESIGN_PLAN_ORDER.remove(plan_id)
+    _DESIGN_PLAN_ORDER.append(plan_id)
+
+    while len(_DESIGN_PLAN_ORDER) > _MAX_DESIGN_PLANS:
+        old_id = _DESIGN_PLAN_ORDER.pop(0)
+        _DESIGN_PLAN_CACHE.pop(old_id, None)
+
+
+def _public_design_plan(plan: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in plan.items() if not key.startswith("_")}
+
+
+def _design_search_query(brief: str) -> str:
+    return f"{brief} interior design floor plan furniture dimensions circulation"
+
+
+def _draft_design_plan(
+    brief: str,
+    *,
+    references: list[dict[str, Any]] | None = None,
+    attachments: list[dict[str, str]] | None = None,
+    plan_id: str | None = None,
+    status: str = "draft",
+    revision_of: str | None = None,
+) -> dict[str, Any]:
+    clean_brief = _collapse_ws(brief)
+    scope = _design_scope_from_brief(clean_brief)
+    room_plans, bounds, existing_count = _draft_room_plans(clean_brief, scope)
+    zones = [_room_plan_to_zone(plan) for plan in room_plans]
+    planned_items = _planned_item_records(room_plans)
+    refs = references if references is not None else search_references(_design_search_query(clean_brief), max_results=5)
+    visual_refs = attachments or []
+
+    generated_id = plan_id or new_request_id("plan")
+    plan: dict[str, Any] = {
+        "id": generated_id,
+        "title": f"{'Whole-flat' if scope == 'whole_flat' else zones[0]['name']} concept plan",
+        "brief": clean_brief,
+        "scope": scope,
+        "assumptions": [
+            "Concept-level output for spatial planning, not construction drawings or code compliance.",
+            "Furniture uses the current Haus catalog and snaps to the existing 0.25m layout grid on apply.",
+            "Existing layout bounds are treated as the available planning envelope.",
+        ],
+        "web_references": refs,
+        "zones": zones,
+        "planned_items": planned_items,
+        "metrics": {
+            "existing_item_count": existing_count,
+            "planned_item_count": len(planned_items),
+            "zone_count": len(zones),
+            "zone_areas_m2": {zone["name"]: zone["estimated_area_m2"] for zone in zones},
+            "estimated_furniture_footprint_m2": _furniture_footprint_m2(room_plans),
+            "walkway_target_m": 0.9,
+            "layout_bounds": _layout_bounds_dict(bounds),
+            "reference_count": len(refs),
+            "visual_reference_count": len(visual_refs),
+            "overlap_risk": "checked during apply with collision-aware placement and post-apply overlap checks",
+        },
+        "validation_targets": [
+            "score_walkway across the planned envelope using a 0.9m target",
+            "check_overlap on newly applied furniture pairs",
+            "check_sightline where a sofa and TV console are planned in the same zone",
+            "compute_room_area for every tagged zone after apply",
+        ],
+        "rationale": [
+            "Uses deterministic Haus room kits so the draft can be applied directly and repeatably.",
+            "Keeps the plan verbal until the user applies it, so the current layout is not mutated by drafting.",
+            "Live references are attached to the concept package when search providers are available.",
+        ],
+        "status": status,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "_room_plans": room_plans,
+    }
+    if revision_of:
+        plan["revision_of"] = revision_of
+
+    _cache_design_plan(plan)
+    return _public_design_plan(plan)
+
+
+def _design_plan_response_text(plan: dict[str, Any]) -> str:
+    metrics = plan.get("metrics", {})
+    zone_names = ", ".join(zone.get("name", "Zone") for zone in plan.get("zones", []))
+    return (
+        f"Drafted {plan['title']} as a concept plan. "
+        f"Zones: {zone_names}. "
+        f"Planned {metrics.get('planned_item_count', 0)} item(s) with a "
+        f"{metrics.get('walkway_target_m', 0.9)}m circulation target. "
+        "Review or revise the plan, then apply it to update the layout."
+    )
+
+
+def _find_plan(plan_id: str) -> dict[str, Any] | None:
+    return _DESIGN_PLAN_CACHE.get(plan_id)
+
+
+def _post_apply_validation(
+    data: dict[str, Any],
+    room_plans: list[RoomPlan],
+    applied_by_room: dict[str, list[int]],
+) -> dict[str, Any]:
+    room_areas = {plan.room_id: compute_room_area(plan.room_id) for plan in room_plans}
+    applied_indices = [idx for indices in applied_by_room.values() for idx in indices]
+
+    overlap_checks: list[str] = []
+    for pos, left_idx in enumerate(applied_indices[:8]):
+        for right_idx in applied_indices[pos + 1 : 8]:
+            overlap_checks.append(check_overlap(left_idx, right_idx))
+
+    sightlines: list[str] = []
+    for plan in room_plans:
+        indices = applied_by_room.get(plan.room_id, [])
+        sofa_idx = None
+        tv_idx = None
+        for idx in indices:
+            item = data["items"][idx]
+            furniture_type = str(item.get("furnitureType", ""))
+            if sofa_idx is None and furniture_type.startswith("sofa"):
+                sofa_idx = idx
+            if tv_idx is None and furniture_type == "tv_console":
+                tv_idx = idx
+        if sofa_idx is not None and tv_idx is not None:
+            sightlines.append(check_sightline(sofa_idx, tv_idx))
+
+    x_min, z_min, x_max, z_max = _mcp_server._layout_bounds(data)
+    walkway = "No walkway check available."
+    if abs(x_max - x_min) > 0.01 or abs(z_max - z_min) > 0.01:
+        walkway = score_walkway(x_min, z_min, x_max, z_max, min_width=0.9)
+
+    return {
+        "layout_summary": get_layout_summary(),
+        "rooms": list_rooms(),
+        "room_areas": room_areas,
+        "walkway": walkway,
+        "overlap_checks": overlap_checks,
+        "sightlines": sightlines,
+    }
+
+
+def _apply_design_plan(plan_id: str) -> tuple[dict[str, Any], int]:
+    plan = _find_plan(plan_id)
+    if plan is None:
+        return {"ok": False, "error": f"Plan '{plan_id}' was not found."}, 404
+    if plan.get("status") == "applied":
+        return {"ok": False, "error": f"Plan '{plan_id}' has already been applied."}, 409
+
+    room_plans = cast(list[RoomPlan], plan.get("_room_plans", []))
+    if not room_plans:
+        return {"ok": False, "error": f"Plan '{plan_id}' has no applyable room plans."}, 422
+
+    data = _mcp_server._load_layout()
+    trace: list[dict[str, Any]] = [
+        {
+            "tool": "get_layout_summary",
+            "args": {},
+            "result": f"read {len(data['items'])} existing layout item(s)",
+        }
+    ]
+    applied_by_room: dict[str, list[int]] = {}
+    skipped_by_room: dict[str, list[str]] = {}
+    for room_plan in room_plans:
+        applied, skipped = _mcp_server._apply_room_plan(data, room_plan, trace)
+        applied_by_room[room_plan.room_id] = applied
+        skipped_by_room[room_plan.room_id] = skipped
+
+    save_err = _mcp_server._save_layout(data)
+    if save_err:
+        return {"ok": False, "error": save_err}, 500
+
+    validation = _post_apply_validation(data, room_plans, applied_by_room)
+    total_applied = sum(len(indices) for indices in applied_by_room.values())
+    plan["status"] = "applied"
+    plan["applied_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    plan["metrics"]["applied_item_count"] = total_applied
+
+    return (
+        {
+            "ok": True,
+            "summary": f"Applied plan {plan_id}: added {total_applied} item(s) across {len(room_plans)} zone(s).",
+            "plan": _public_design_plan(plan),
+            "actions": trace,
+            "applied_by_room": applied_by_room,
+            "skipped_by_room": skipped_by_room,
+            "validation": validation,
+        },
+        200,
+    )
+
+
+def _revise_design_plan(plan_id: str, revision: str) -> tuple[dict[str, Any], int]:
+    plan = _find_plan(plan_id)
+    if plan is None:
+        return {"ok": False, "error": f"Plan '{plan_id}' was not found."}, 404
+
+    old_brief = str(plan.get("brief", ""))
+    revised_brief = _collapse_ws(f"{old_brief} Revision: {revision}")
+    references = search_references(_design_search_query(revised_brief), max_results=5) or list(plan.get("web_references", []))
+    public_plan = _draft_design_plan(
+        revised_brief,
+        references=references,
+        plan_id=plan_id,
+        status="revised_draft",
+        revision_of=str(plan.get("revision_of") or plan_id),
+    )
+    return {"ok": True, "plan": public_plan, "summary": f"Revised plan {plan_id}."}, 200
+
+
+def _design_plan_report(plan: dict[str, Any]) -> str:
+    lines = [
+        f"# {plan['title']}",
+        "",
+        f"Plan ID: {plan['id']}",
+        f"Status: {plan['status']}",
+        f"Scope: {plan['scope']}",
+        "",
+        "## Brief",
+        plan["brief"],
+        "",
+        "## Assumptions",
+    ]
+    lines.extend(f"- {item}" for item in plan.get("assumptions", []))
+    lines.extend(["", "## Zones"])
+    for zone in plan.get("zones", []):
+        furniture = ", ".join(item["label"] for item in zone.get("planned_furniture", []))
+        lines.append(f"- {zone['name']}: {zone['intent']}; center ({zone['target_center']['x']}, {zone['target_center']['z']}); {zone['estimated_area_m2']}m2; {furniture}")
+        lines.append(f"  Circulation: {zone['circulation_notes']}")
+
+    metrics = plan.get("metrics", {})
+    lines.extend(
+        [
+            "",
+            "## Metrics",
+            f"- Planned items: {metrics.get('planned_item_count', 0)}",
+            f"- Zones: {metrics.get('zone_count', 0)}",
+            f"- Walkway target: {metrics.get('walkway_target_m', 0.9)}m",
+            f"- Estimated furniture footprint: {metrics.get('estimated_furniture_footprint_m2', 0)}m2",
+            f"- References: {metrics.get('reference_count', 0)}",
+            "",
+            "## Validation Targets",
+        ]
+    )
+    lines.extend(f"- {item}" for item in plan.get("validation_targets", []))
+    lines.extend(["", "## References"])
+    refs = plan.get("web_references", [])
+    if refs:
+        for ref in refs:
+            provider = ref.get("source_provider", "web")
+            lines.append(f"- [{ref.get('title', ref.get('url'))}]({ref.get('url')}) ({provider})")
+    else:
+        lines.append("- No live references were available for this draft.")
+    lines.extend(["", "## Rationale"])
+    lines.extend(f"- {item}" for item in plan.get("rationale", []))
+    return "\n".join(lines) + "\n"
+
+
 _DISPATCH_RAW: dict[str, Callable[[dict[str, Any]], str]] = {
     "design_room": lambda a: design_room(**a),
     "design_flat": lambda a: design_flat(**a),
@@ -907,6 +1656,12 @@ def _dispatch(
         "result": result,
         "elapsed_ms": elapsed_ms,
     }
+    try:
+        parsed_result = json.loads(result)
+        if isinstance(parsed_result, (dict, list)):
+            entry["result_json"] = parsed_result
+    except json.JSONDecodeError:
+        pass
     tool_log.append(entry)
 
     preview = result[:200] + "..." if len(result) > 200 else result
@@ -1335,20 +2090,104 @@ def _sanitize_history(raw: Any) -> list[dict[str, Any]]:
 
 async def _chat_status(request: Request) -> JSONResponse:
     providers = _provider_available()
+    configured_search = _configured_search_providers() if _web_search_enabled() else []
+    available_search = _available_search_providers()
     return JSONResponse(
         {
             "available": True,
             "providers_with_env_keys": providers,
             "supported_providers": list(_CHAT_FNS.keys()),
             "default_models": _DEFAULT_MODELS,
+            "search_providers_configured": configured_search,
+            "search_providers_available": available_search,
+            "search_fallback_provider": "duckduckgo" if "duckduckgo" in configured_search else "",
             "capabilities": {
-                "web_search": _WEB_SEARCH_ENABLED,
-                "web_fetch": _WEB_SEARCH_ENABLED,
+                "web_search": _web_search_enabled(),
+                "web_fetch": _web_search_enabled(),
                 "image_references": True,
+                "design_plans": True,
                 "max_image_attachments": _MAX_CHAT_ATTACHMENTS,
                 "max_image_attachment_mb": _MAX_ATTACHMENT_BYTES // (1024 * 1024),
                 "image_mime_types": sorted(_ALLOWED_IMAGE_MIME_TYPES),
             },
+        }
+    )
+
+
+def _design_chat_payload(
+    *,
+    user_msg: str,
+    history: list[dict[str, Any]],
+    attachments: list[dict[str, str]],
+    request_id: str,
+) -> JSONResponse:
+    start = time.perf_counter()
+    references = search_references(_design_search_query(user_msg), max_results=5)
+    plan = _draft_design_plan(user_msg, references=references, attachments=attachments)
+    text = _design_plan_response_text(plan)
+    messages = history + [
+        {"role": "user", "content": _build_user_content(user_msg, attachments)},
+        {"role": "assistant", "content": [{"type": "text", "text": text}]},
+    ]
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
+    action = {
+        "tool": "draft_design_plan",
+        "args": {"brief": user_msg, "reference_count": len(references)},
+        "result": f"Drafted concept plan {plan['id']}.",
+        "result_json": plan,
+        "elapsed_ms": elapsed_ms,
+    }
+    return JSONResponse(
+        {
+            "response": text,
+            "history": _redact_history_for_client(messages),
+            "provider": "haus-planner",
+            "model": "deterministic-concept-planner",
+            "actions": [action],
+            "pending_plan": plan,
+            "references": references,
+            "request_id": request_id,
+        }
+    )
+
+
+def _revision_chat_payload(
+    *,
+    plan_id: str,
+    revision: str,
+    history: list[dict[str, Any]],
+    user_msg: str,
+    request_id: str,
+) -> JSONResponse:
+    start = time.perf_counter()
+    payload, status = _revise_design_plan(plan_id, revision)
+    if status != 200:
+        return JSONResponse({"error": payload.get("error", "Revision failed."), "request_id": request_id}, status)
+
+    plan = payload["plan"]
+    text = _design_plan_response_text(plan)
+    messages = history + [
+        {"role": "user", "content": user_msg},
+        {"role": "assistant", "content": [{"type": "text", "text": text}]},
+    ]
+    elapsed_ms = int((time.perf_counter() - start) * 1000)
+    action = {
+        "tool": "revise_design_plan",
+        "args": {"plan_id": plan_id, "revision": revision},
+        "result": payload["summary"],
+        "result_json": plan,
+        "elapsed_ms": elapsed_ms,
+    }
+    return JSONResponse(
+        {
+            "response": text,
+            "history": _redact_history_for_client(messages),
+            "provider": "haus-planner",
+            "model": "deterministic-concept-planner",
+            "actions": [action],
+            "pending_plan": plan,
+            "references": plan.get("web_references", []),
+            "request_id": request_id,
         }
     )
 
@@ -1372,6 +2211,20 @@ async def _chat(request: Request) -> JSONResponse:
         return JSONResponse({"error": "Message must not be empty.", "request_id": request_id}, 400)
     if attachment_error:
         return JSONResponse({"error": attachment_error, "request_id": request_id}, 400)
+
+    revision_request = _parse_revision_request(user_msg)
+    if revision_request is not None:
+        plan_id, revision = revision_request
+        return _revision_chat_payload(
+            plan_id=plan_id,
+            revision=revision,
+            history=history,
+            user_msg=user_msg,
+            request_id=request_id,
+        )
+
+    if _is_concept_request(user_msg, attachments):
+        return _design_chat_payload(user_msg=user_msg, history=history, attachments=attachments, request_id=request_id)
 
     if provider not in _CHAT_FNS:
         return JSONResponse(
@@ -1419,6 +2272,39 @@ async def _chat(request: Request) -> JSONResponse:
         return JSONResponse({"error": str(exc), "request_id": request_id}, 500)
 
 
+async def _design_plan_apply(request: Request) -> JSONResponse:
+    request_id = new_request_id("apply-plan")
+    plan_id = str(request.path_params.get("plan_id", "")).strip()
+    payload, status = _apply_design_plan(plan_id)
+    payload["request_id"] = request_id
+    return JSONResponse(payload, status)
+
+
+async def _design_plan_revise(request: Request) -> JSONResponse:
+    request_id = new_request_id("revise-plan")
+    plan_id = str(request.path_params.get("plan_id", "")).strip()
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON body.", "request_id": request_id}, 400)
+
+    revision = _collapse_ws(str(body.get("revision", "")))
+    if not revision:
+        return JSONResponse({"ok": False, "error": "Revision must not be empty.", "request_id": request_id}, 400)
+
+    payload, status = _revise_design_plan(plan_id, revision)
+    payload["request_id"] = request_id
+    return JSONResponse(payload, status)
+
+
+async def _design_plan_report_route(request: Request) -> PlainTextResponse | JSONResponse:
+    plan_id = str(request.path_params.get("plan_id", "")).strip()
+    plan = _find_plan(plan_id)
+    if plan is None:
+        return JSONResponse({"ok": False, "error": f"Plan '{plan_id}' was not found."}, 404)
+    return PlainTextResponse(_design_plan_report(_public_design_plan(plan)), media_type="text/markdown")
+
+
 async def _sync_layout(request: Request) -> JSONResponse:
     request_id = new_request_id("sync")
 
@@ -1463,6 +2349,9 @@ def create_app(root_dir: str) -> Starlette:
         routes=[
             Route("/api/chat/status", _chat_status, methods=["GET"]),
             Route("/api/chat", _chat, methods=["POST"]),
+            Route("/api/design-plans/{plan_id}/apply", _design_plan_apply, methods=["POST"]),
+            Route("/api/design-plans/{plan_id}/revise", _design_plan_revise, methods=["POST"]),
+            Route("/api/design-plans/{plan_id}/report", _design_plan_report_route, methods=["GET"]),
             Route("/api/sync-layout", _sync_layout, methods=["POST"]),
             Route("/api/mcp/clear-layout", _mcp_clear_layout, methods=["POST"]),
             Mount("/", StaticFiles(directory=root_dir, html=True)),

@@ -185,7 +185,7 @@ function refreshProviders() {
 
   if (availableProviders.length === 0) {
     providerSel.style.display = 'none';
-    setStatus('Open Settings and add an API key (Anthropic, OpenAI, or Gemini).', true);
+    setStatus('Describe a design plan to use Haus Planner, or add an LLM key in Settings for general chat.', false);
   } else {
     providerSel.style.display = '';
     setStatus('');
@@ -330,6 +330,192 @@ function appendTool(action) {
   appendMessage('tool', `${action.tool}${args} -> ${action.result}${elapsed}`);
 }
 
+function appendPlanCard(plan) {
+  if (!plan || !plan.id) return;
+
+  const card = document.createElement('div');
+  card.className = 'chat-plan-card';
+
+  const header = document.createElement('div');
+  header.className = 'chat-plan-header';
+
+  const title = document.createElement('div');
+  title.className = 'chat-plan-title';
+  title.textContent = plan.title || 'Concept plan';
+
+  const badge = document.createElement('span');
+  badge.className = 'chat-plan-badge';
+  badge.textContent = plan.status || 'draft';
+
+  header.appendChild(title);
+  header.appendChild(badge);
+  card.appendChild(header);
+
+  const brief = document.createElement('p');
+  brief.className = 'chat-plan-brief';
+  brief.textContent = plan.brief || '';
+  card.appendChild(brief);
+
+  const metrics = plan.metrics || {};
+  const metricsGrid = document.createElement('div');
+  metricsGrid.className = 'chat-plan-metrics';
+  addMetric(metricsGrid, 'Zones', metrics.zone_count ?? (plan.zones || []).length);
+  addMetric(metricsGrid, 'Items', metrics.planned_item_count ?? (plan.planned_items || []).length);
+  addMetric(metricsGrid, 'Walkway', `${metrics.walkway_target_m || 0.9}m`);
+  addMetric(metricsGrid, 'Refs', metrics.reference_count ?? (plan.web_references || []).length);
+  card.appendChild(metricsGrid);
+
+  const zones = Array.isArray(plan.zones) ? plan.zones : [];
+  if (zones.length > 0) {
+    const zoneList = document.createElement('div');
+    zoneList.className = 'chat-plan-zones';
+    for (const zone of zones.slice(0, 5)) {
+      const row = document.createElement('div');
+      row.className = 'chat-plan-zone';
+
+      const zoneName = document.createElement('strong');
+      zoneName.textContent = zone.name || 'Zone';
+
+      const furniture = Array.isArray(zone.planned_furniture)
+        ? zone.planned_furniture.map((item) => item.label || item.furniture_type).filter(Boolean).join(', ')
+        : '';
+
+      const details = document.createElement('span');
+      details.textContent = `${zone.intent || 'layout'}${zone.estimated_area_m2 ? `, ${zone.estimated_area_m2}m2` : ''}${furniture ? `: ${furniture}` : ''}`;
+
+      row.appendChild(zoneName);
+      row.appendChild(details);
+      zoneList.appendChild(row);
+    }
+    card.appendChild(zoneList);
+  }
+
+  const refs = Array.isArray(plan.web_references) ? plan.web_references : [];
+  if (refs.length > 0) {
+    const refList = document.createElement('div');
+    refList.className = 'chat-plan-refs';
+    for (const ref of refs.slice(0, 3)) {
+      const link = document.createElement('a');
+      link.href = ref.url;
+      link.target = '_blank';
+      link.rel = 'noreferrer';
+      link.textContent = ref.title || ref.url;
+      refList.appendChild(link);
+    }
+    card.appendChild(refList);
+  }
+
+  const statusLine = document.createElement('div');
+  statusLine.className = 'chat-plan-status';
+
+  const actions = document.createElement('div');
+  actions.className = 'chat-plan-actions';
+
+  const applyBtn = document.createElement('button');
+  applyBtn.type = 'button';
+  applyBtn.textContent = 'Apply';
+  applyBtn.addEventListener('click', () => applyDesignPlan(plan.id, statusLine, applyBtn));
+
+  const reviseBtn = document.createElement('button');
+  reviseBtn.type = 'button';
+  reviseBtn.textContent = 'Revise';
+  reviseBtn.addEventListener('click', () => {
+    inputEl.value = `Revise plan ${plan.id}: `;
+    inputEl.focus();
+    inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
+  });
+
+  const downloadBtn = document.createElement('button');
+  downloadBtn.type = 'button';
+  downloadBtn.textContent = 'Download brief';
+  downloadBtn.addEventListener('click', () => downloadPlanReport(plan.id, statusLine));
+
+  actions.appendChild(applyBtn);
+  actions.appendChild(reviseBtn);
+  actions.appendChild(downloadBtn);
+  card.appendChild(actions);
+  card.appendChild(statusLine);
+
+  messagesEl.appendChild(card);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function addMetric(parent, labelText, valueText) {
+  const metric = document.createElement('div');
+  metric.className = 'chat-plan-metric';
+
+  const value = document.createElement('strong');
+  value.textContent = String(valueText ?? '-');
+
+  const label = document.createElement('span');
+  label.textContent = labelText;
+
+  metric.appendChild(value);
+  metric.appendChild(label);
+  parent.appendChild(metric);
+}
+
+async function refreshLayoutFromServer() {
+  if (!fn.applyLayoutData) return;
+  const res = await fetch(`./mcp-layout.json?t=${Date.now()}`);
+  if (!res.ok) return;
+  const data = await res.json();
+  if (Array.isArray(data.items)) {
+    fn.applyLayoutData(data, { frame: false });
+  }
+}
+
+async function applyDesignPlan(planId, statusLine, applyBtn) {
+  applyBtn.disabled = true;
+  statusLine.textContent = 'Applying plan...';
+
+  try {
+    const res = await fetch(`/api/design-plans/${encodeURIComponent(planId)}/apply`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || data.ok === false) throw new Error(data.error || `Apply failed with HTTP ${res.status}`);
+
+    statusLine.textContent = data.summary || 'Plan applied.';
+    appendMessage('assistant', data.summary || 'Plan applied.');
+    persistTranscript('assistant', data.summary || 'Plan applied.');
+
+    if (Array.isArray(data.actions)) {
+      for (const action of data.actions) {
+        appendTool(action);
+        persistTranscript('tool', `${action.tool} -> ${action.result}`);
+      }
+    }
+
+    await refreshLayoutFromServer();
+  } catch (err) {
+    statusLine.textContent = err.message || String(err);
+    appendMessage('error', statusLine.textContent);
+    persistTranscript('error', statusLine.textContent);
+    applyBtn.disabled = false;
+  }
+}
+
+async function downloadPlanReport(planId, statusLine) {
+  statusLine.textContent = 'Preparing brief...';
+  try {
+    const res = await fetch(`/api/design-plans/${encodeURIComponent(planId)}/report`);
+    if (!res.ok) throw new Error(`Report failed with HTTP ${res.status}`);
+    const text = await res.text();
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/markdown' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `haus-concept-${planId}.md`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    statusLine.textContent = 'Brief downloaded.';
+  } catch (err) {
+    statusLine.textContent = err.message || String(err);
+    appendMessage('error', statusLine.textContent);
+    persistTranscript('error', statusLine.textContent);
+  }
+}
+
 function parseSightlineBlockers(action) {
   if (action.tool !== 'check_sightline') return [];
   const text = String(action.result || '');
@@ -391,13 +577,8 @@ async function send() {
   if (!text) return;
 
   const keys = getKeys();
-  const provider = providerSel.value;
-  const apiKey = keys[provider];
-  if (!provider || !apiKey) {
-    appendMessage('error', 'No API key configured for this provider. Open Settings to add one.');
-    persistTranscript('error', 'No API key configured for this provider. Open Settings to add one.');
-    return;
-  }
+  const provider = providerSel.value || '';
+  const apiKey = provider ? keys[provider] || '' : '';
 
   const model = modelInput.value.trim();
   const transcriptText = attachmentTranscript(text, attachmentsForSend);
@@ -457,6 +638,10 @@ async function send() {
     const responseText = data.response || '';
     appendMessage('assistant', responseText);
     persistTranscript('assistant', responseText);
+
+    if (data.pending_plan) {
+      appendPlanCard(data.pending_plan);
+    }
 
     history = Array.isArray(data.history) ? data.history : [];
     saveJson(HISTORY_STORAGE, history);
