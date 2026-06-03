@@ -15,6 +15,7 @@ from typing import Any
 
 from mcp.server import FastMCP
 
+from .agent_loop import RoomPlan, plan_flat, plan_room
 from .logging_utils import configure_logging
 
 LAYOUT_PATH = Path(os.environ.get("HAUS_LAYOUT_PATH", "viewer/mcp-layout.json"))
@@ -712,6 +713,178 @@ def _simulate_candidates(
     return candidates[: max(1, max_candidates)], None
 
 
+def _snap_value(value: float, grid_size: float = 0.25) -> float:
+    return round(value / grid_size) * grid_size
+
+
+def _resolve_design_origin(
+    data: dict[str, Any],
+    room_id: str,
+    origin_x: float | None,
+    origin_z: float | None,
+) -> tuple[float, float, str | None]:
+    if (origin_x is None) != (origin_z is None):
+        return 0.0, 0.0, "Error: origin_x and origin_z must be provided together."
+
+    if origin_x is not None and origin_z is not None:
+        return _snap_value(origin_x), _snap_value(origin_z), None
+
+    if room_id:
+        ext = _room_extents(data, room_id)
+        if ext is not None:
+            return _snap_value((ext[0] + ext[2]) / 2), _snap_value((ext[1] + ext[3]) / 2), None
+
+    x_min, z_min, x_max, z_max = _layout_bounds(data)
+    return _snap_value((x_min + x_max) / 2), _snap_value((z_min + z_max) / 2), None
+
+
+def _design_collision(
+    candidate: dict[str, Any],
+    existing_items: list[dict[str, Any]],
+    pending_items: list[dict[str, Any]],
+) -> bool:
+    candidate_poly = _item_polygon(candidate, padding=0.03)
+    for other in existing_items + pending_items:
+        if not other.get("visible", True):
+            continue
+        if other.get("type") == "model_part":
+            continue
+        if _polygons_intersect(candidate_poly, _item_polygon(other, padding=0.03)):
+            return True
+    return False
+
+
+def _with_clear_design_position(
+    item: dict[str, Any],
+    existing_items: list[dict[str, Any]],
+    pending_items: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    base_x = item["pos"][0]
+    base_z = item["pos"][2]
+    nudges = [
+        (0.0, 0.0),
+        (0.25, 0.0),
+        (-0.25, 0.0),
+        (0.0, 0.25),
+        (0.0, -0.25),
+        (0.5, 0.0),
+        (-0.5, 0.0),
+        (0.0, 0.5),
+        (0.0, -0.5),
+        (0.5, 0.5),
+        (-0.5, 0.5),
+        (0.5, -0.5),
+        (-0.5, -0.5),
+    ]
+    for dx, dz in nudges:
+        candidate = json.loads(json.dumps(item))
+        candidate["pos"][0] = _snap_value(base_x + dx)
+        candidate["pos"][2] = _snap_value(base_z + dz)
+        if not _design_collision(candidate, existing_items, pending_items):
+            return candidate
+    return None
+
+
+def _apply_room_plan(
+    data: dict[str, Any],
+    plan: RoomPlan,
+    trace: list[dict[str, Any]],
+) -> tuple[list[int], list[str]]:
+    applied_indices: list[int] = []
+    skipped: list[str] = []
+    pending: list[dict[str, Any]] = []
+
+    trace.append({
+        "tool": "choose_furniture_set",
+        "args": {
+            "room_id": plan.room_id,
+            "room_kind": plan.room_kind,
+            "style_prompt": plan.style_prompt,
+            "constraints": plan.constraints,
+        },
+        "result": plan.rationale,
+    })
+
+    for spec in plan.items:
+        x = _snap_value(plan.origin_x + spec.dx)
+        z = _snap_value(plan.origin_z + spec.dz)
+        item = _build_furniture_item(spec.furniture_type, x, z, spec.rotation_deg)
+        item["room"] = plan.room_id
+        item["name"] = f"{plan.room_id} {spec.name or spec.furniture_type}"
+        placed = _with_clear_design_position(item, data["items"], pending)
+
+        args = {
+            "furniture_type": spec.furniture_type,
+            "x": x,
+            "z": z,
+            "rotation_deg": spec.rotation_deg,
+        }
+        if placed is None:
+            skipped.append(spec.furniture_type)
+            trace.append({
+                "tool": "add_furniture",
+                "args": args,
+                "result": "skipped: no collision-free snapped position found",
+            })
+            continue
+
+        pending.append(placed)
+        new_index = len(data["items"]) + len(pending) - 1
+        applied_indices.append(new_index)
+        trace.append({
+            "tool": "add_furniture",
+            "args": {
+                **args,
+                "x": placed["pos"][0],
+                "z": placed["pos"][2],
+            },
+            "result": f"planned item [{new_index}] tagged as room '{plan.room_id}'",
+        })
+
+    data["items"].extend(pending)
+    if applied_indices:
+        trace.append({
+            "tool": "snap_to_grid",
+            "args": {"indices": applied_indices, "grid_size": 0.25},
+            "result": f"{len(applied_indices)} item(s) snapped to 0.25m grid",
+        })
+        trace.append({
+            "tool": "tag_room",
+            "args": {"indices": applied_indices, "room_name": plan.room_id},
+            "result": f"Tagged {len(applied_indices)} object(s) as '{plan.room_id}'.",
+        })
+    return applied_indices, skipped
+
+
+def _format_design_result(
+    *,
+    plans: list[RoomPlan],
+    applied_by_room: dict[str, list[int]],
+    skipped_by_room: dict[str, list[str]],
+    trace: list[dict[str, Any]],
+) -> str:
+    total = sum(len(indices) for indices in applied_by_room.values())
+    lines = [
+        "Design summary:",
+        f"  Rooms designed: {len(plans)}",
+        f"  Objects added: {total}",
+    ]
+    for plan in plans:
+        applied = applied_by_room.get(plan.room_id, [])
+        skipped = skipped_by_room.get(plan.room_id, [])
+        lines.append(
+            f"  {plan.room_id}: {plan.room_kind.replace('_', ' ')} "
+            f"at ({plan.origin_x:.2f}, {plan.origin_z:.2f}), added {len(applied)}"
+            + (f", skipped {', '.join(skipped)}" if skipped else "")
+        )
+
+    lines.append("Tool-call trace:")
+    for i, entry in enumerate(trace, start=1):
+        args = json.dumps(entry["args"], sort_keys=True)
+        lines.append(f"  {i}. {entry['tool']}({args}) -> {entry['result']}")
+    return "\n".join(lines)
+
+
 @mcp.tool()
 def list_furniture_catalog() -> str:
     """List all available furniture types with their dimensions."""
@@ -719,6 +892,106 @@ def list_furniture_catalog() -> str:
     for name, spec in FURNITURE_CATALOG.items():
         lines.append(f"  {name}: {spec['w']}m x {spec['d']}m (height {spec['h']}m)")
     return "Available furniture types:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def design_room(
+    room_id: str = "",
+    style_prompt: str = "minimalist HDB",
+    constraints: str = "",
+    origin_x: float | None = None,
+    origin_z: float | None = None,
+) -> str:
+    """Furnish one room from a high-level style prompt and constraints.
+
+    The tool reads the current layout, infers a room kit, places furniture,
+    snaps placements to a 0.25m grid, tags placed items with *room_id*, and
+    returns a concise design summary plus a transparent tool-call trace.
+    Provide both *origin_x* and *origin_z* to force the room center; otherwise
+    an existing room tag or the layout center is used.
+    """
+    data = _load_layout()
+    origin_x_resolved, origin_z_resolved, err = _resolve_design_origin(data, room_id, origin_x, origin_z)
+    if err:
+        return err
+
+    trace: list[dict[str, Any]] = [
+        {
+            "tool": "get_layout_summary",
+            "args": {},
+            "result": f"read {len(data['items'])} existing layout item(s)",
+        }
+    ]
+    plan = plan_room(
+        room_id=room_id,
+        style_prompt=style_prompt,
+        constraints=constraints,
+        origin_x=origin_x_resolved,
+        origin_z=origin_z_resolved,
+    )
+    applied, skipped = _apply_room_plan(data, plan, trace)
+    save_err = _save_layout(data)
+    if save_err:
+        return save_err
+
+    return _format_design_result(
+        plans=[plan],
+        applied_by_room={plan.room_id: applied},
+        skipped_by_room={plan.room_id: skipped},
+        trace=trace,
+    )
+
+
+@mcp.tool()
+def design_flat(
+    style_prompt: str = "minimalist 4-room family flat",
+    constraints: str = "",
+    target: str = "whole_flat",
+) -> str:
+    """Furnish a whole flat from a high-level style prompt.
+
+    *target* currently accepts whole-flat wording such as "whole_flat",
+    "flat", "home", "apartment", "hdb", or "bto". The tool reads the layout
+    bounds, plans multiple room zones, places and tags furniture, and returns
+    a summary with a transparent trace.
+    """
+    normalized_target = target.strip().lower().replace("-", "_").replace(" ", "_") or "whole_flat"
+    if normalized_target not in {"whole_flat", "flat", "home", "apartment", "hdb", "bto"}:
+        return "Error: target must be a whole-flat target such as 'whole_flat', 'flat', 'hdb', or 'bto'."
+
+    data = _load_layout()
+    bounds = _layout_bounds(data)
+    trace: list[dict[str, Any]] = [
+        {
+            "tool": "get_layout_summary",
+            "args": {},
+            "result": f"read {len(data['items'])} existing layout item(s), bounds={bounds}",
+        }
+    ]
+    plans = plan_flat(
+        style_prompt=style_prompt,
+        constraints=constraints,
+        target=target,
+        bounds=bounds,
+    )
+
+    applied_by_room: dict[str, list[int]] = {}
+    skipped_by_room: dict[str, list[str]] = {}
+    for plan in plans:
+        applied, skipped = _apply_room_plan(data, plan, trace)
+        applied_by_room[plan.room_id] = applied
+        skipped_by_room[plan.room_id] = skipped
+
+    save_err = _save_layout(data)
+    if save_err:
+        return save_err
+
+    return _format_design_result(
+        plans=plans,
+        applied_by_room=applied_by_room,
+        skipped_by_room=skipped_by_room,
+        trace=trace,
+    )
 
 
 @mcp.tool()
