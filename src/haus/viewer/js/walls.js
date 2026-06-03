@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { S, fn, WALL_COLOR } from './state.js';
+import { createSceneMaterial, prepareMeshForScene } from './scene.js';
 export function initWalls() {
   fn.enterWallMode = enterWallMode;
   fn.exitWallMode = exitWallMode;
@@ -37,12 +38,11 @@ function buildWallMesh(p1, p2, thickness, height) {
   if (length < 0.01) return null;
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(length, height, thickness),
-    new THREE.MeshLambertMaterial({ color: WALL_COLOR })
+    createSceneMaterial('wall', WALL_COLOR)
   );
   mesh.position.set((p1.x + p2.x) / 2, height / 2, (p1.z + p2.z) / 2);
   mesh.rotation.y = -Math.atan2(dz, dx);
-  mesh.castShadow = true; mesh.receiveShadow = true;
-  return mesh;
+  return prepareMeshForScene(mesh, 'wall', WALL_COLOR, { replaceMaterial: false });
 }
 function updateWallPreview(endPt) {
   if (S.wallPreview) S.scene.remove(S.wallPreview);
@@ -51,7 +51,7 @@ function updateWallPreview(endPt) {
   if (!mesh) return;
   S.scene.add(mesh);
   const blocked = S.collisionEnabled && fn.checkCollision(mesh);
-  mesh.material = new THREE.MeshLambertMaterial({ color: blocked ? 0xdd4444 : 0x44ddaa, transparent: true, opacity: 0.5 });
+  mesh.material = createSceneMaterial('ghost', blocked ? 0xdd4444 : 0x44ddaa, { opacity: 0.5 });
   S.wallPreview = mesh;
 }
 function placeWall(endPt) {

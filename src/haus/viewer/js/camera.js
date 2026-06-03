@@ -9,6 +9,7 @@ const RUN_SPEED = 8.0;
 let prevTime = 0;
 let running = false;
 export function initCamera() {
+  fn.frameScene = frameScene;
   fn.frameSelected = frameSelected;
   fn.setCameraView = setCameraView;
   fn.toggleOrtho = toggleOrtho;
@@ -30,7 +31,36 @@ export function initCamera() {
 function frameBounds(box) {
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
-  return { center, dist: Math.max(size.x, size.y, size.z, 1) * 1.5 };
+  return { center, size, dist: Math.max(size.x, size.y, size.z, 1) * 1.5 };
+}
+function frameScene() {
+  const box = new THREE.Box3();
+  const visible = S.draggables.filter((m) => m.visible);
+  if (visible.length > 0) {
+    box.makeEmpty();
+    for (const m of visible) box.expandByObject(m);
+  } else {
+    box.setFromCenterAndSize(new THREE.Vector3(0, 0.8, 0), new THREE.Vector3(4.5, 2.6, 3.6));
+  }
+
+  const { center, size } = frameBounds(box);
+  const footprint = Math.max(size.x, size.z, 3.5);
+  const height = Math.max(size.y, 2.6);
+  const dist = Math.max(footprint * 1.85, height * 3.2, 7.5);
+  const target = center.clone();
+  target.y = Math.max(0.75, Math.min(center.y + height * 0.16, 1.4));
+
+  S.orbit.target.copy(target);
+  S.camera.position.set(
+    target.x + dist * 0.72,
+    target.y + dist * 0.54,
+    target.z + dist * 0.82,
+  );
+  if (S.camera.fov !== 45) {
+    S.camera.fov = 45;
+    S.camera.updateProjectionMatrix();
+  }
+  S.orbit.update();
 }
 function frameSelected() {
   const box = new THREE.Box3();

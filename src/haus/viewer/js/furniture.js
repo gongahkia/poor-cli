@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { S, fn } from './state.js';
+import { createSceneMaterial, prepareMeshForScene } from './scene.js';
 export const FURNITURE = {
   bed_single:      { w: 0.9,  h: 0.5,  d: 1.9, color: 0x88bbee },
   bed_queen:       { w: 1.5,  h: 0.55, d: 2.0, color: 0x77aadd },
@@ -53,7 +54,7 @@ function enterPlaceMode(type) {
   S.placeMode = true; S.placeType = type;
   const f = FURNITURE[type];
   const geo = new THREE.BoxGeometry(f.w, f.h, f.d);
-  const mat = new THREE.MeshLambertMaterial({ color: f.color, transparent: true, opacity: 0.45 });
+  const mat = createSceneMaterial('ghost', f.color, { opacity: 0.45 });
   S.placeGhost = new THREE.Mesh(geo, mat);
   S.placeGhost.position.set(0, f.h / 2, 0);
   const edges = new THREE.EdgesGeometry(geo);
@@ -71,8 +72,8 @@ function cancelPlaceMode() {
 function confirmPlacement() {
   if (!S.placeGhost || S.placeBlocked) { if (S.placeBlocked) fn.showCollisionFlash(); return; }
   const f = FURNITURE[S.placeType];
-  const mesh = new THREE.Mesh(new THREE.BoxGeometry(f.w, f.h, f.d), new THREE.MeshLambertMaterial({ color: f.color }));
-  mesh.castShadow = true; mesh.receiveShadow = true;
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(f.w, f.h, f.d), createSceneMaterial('furniture', f.color));
+  prepareMeshForScene(mesh, 'furniture', f.color, { replaceMaterial: false });
   mesh.position.copy(S.placeGhost.position);
   mesh.userData = { draggable: true, baseY: f.h / 2, furnitureType: S.placeType };
   S.scene.add(mesh); S.draggables.push(mesh);

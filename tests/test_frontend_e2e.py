@@ -156,8 +156,11 @@ def test_chat_transcript_persists_across_reload(browser_page, viewer_base_url: s
         """
         localStorage.setItem("haus_api_keys", JSON.stringify({ openai: "test-key" }));
         localStorage.setItem("haus_chat_provider", "openai");
-        localStorage.removeItem("haus_chat_history");
-        localStorage.removeItem("haus_chat_transcript");
+        if (!sessionStorage.getItem("haus_chat_e2e_seeded")) {
+          localStorage.removeItem("haus_chat_history");
+          localStorage.removeItem("haus_chat_transcript");
+          sessionStorage.setItem("haus_chat_e2e_seeded", "1");
+        }
         """
     )
     browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
@@ -171,9 +174,14 @@ def test_chat_transcript_persists_across_reload(browser_page, viewer_base_url: s
     assert "Move sofa 0.5m right" in transcript_before
     assert "Applied safely." in transcript_before
 
-    browser_page.reload()
+    browser_page.reload(wait_until="networkidle")
     browser_page.click("#chat-btn")
-    browser_page.wait_for_timeout(250)
+    browser_page.wait_for_function(
+        """
+        () => document.querySelector("#chat-panel")?.classList.contains("open")
+          && document.querySelector("#chat-messages")?.innerText.includes("Applied safely.")
+        """
+    )
 
     transcript_after = browser_page.locator("#chat-messages").inner_text()
     assert "Move sofa 0.5m right" in transcript_after

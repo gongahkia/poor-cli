@@ -3,6 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 import { S, fn } from './state.js';
 import { FURNITURE } from './furniture.js';
+import { createSceneMaterial, prepareMeshForScene } from './scene.js';
 const loader = new GLTFLoader();
 export function initIO() {
   const glbParam = new URLSearchParams(location.search).get('glb');
@@ -43,27 +44,57 @@ function clearModelParts() {
   }
   S.modelParts.length = 0;
 }
+function materialKindForItem(item) {
+  if (item.type === 'wall') return 'wall';
+  if (item.type === 'model_part') return 'model';
+  return 'furniture';
+}
+function buildMeshFromLayoutItem(item) {
+  if (!item.geo || !item.pos || item.geo.length < 3 || item.pos.length < 3) {
+    console.warn('Skipping malformed layout item', item);
+    return null;
+  }
+
+  const kind = materialKindForItem(item);
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]),
+    createSceneMaterial(kind, item.color)
+  );
+  prepareMeshForScene(mesh, kind, item.color, { replaceMaterial: false });
+  mesh.position.set(item.pos[0], item.pos[1], item.pos[2]);
+  mesh.rotation.y = item.rot;
+  mesh.userData.draggable = true;
+  mesh.visible = item.visible !== false;
+
+  if (item.type === 'wall') {
+    mesh.userData.isWall = true;
+    mesh.userData.baseY = item.geo[1] / 2;
+    S.userWalls.push(mesh);
+  } else if (item.type === 'model_part') {
+    mesh.userData.isModelPart = true;
+    S.modelParts.push(mesh);
+  } else {
+    mesh.userData.baseY = item.geo[1] / 2;
+    if (item.furnitureType) mesh.userData.furnitureType = item.furnitureType;
+  }
+  if (item.name) mesh.userData.name = item.name;
+  if (item.room) mesh.userData.room = item.room;
+  return mesh;
+}
 function ingestGLB(gltf) {
   clearModelParts();
   const meshes = [];
   gltf.scene.updateMatrixWorld(true);
   gltf.scene.traverse((child) => { if (child.isMesh) meshes.push(child); });
-  const tempBox = new THREE.Box3();
   for (const mesh of meshes) {
     const m = mesh.clone();
     m.applyMatrix4(mesh.matrixWorld);
-    m.castShadow = true; m.receiveShadow = true;
+    const color = m.material?.color?.getHex?.() ?? 0xb8b8b8;
+    prepareMeshForScene(m, 'model', color);
     m.userData.draggable = true; m.userData.isModelPart = true; m.userData.baseY = undefined;
     S.scene.add(m); S.draggables.push(m); S.modelParts.push(m);
   }
-  if (S.modelParts.length > 0) {
-    tempBox.makeEmpty();
-    for (const m of S.modelParts) tempBox.expandByObject(m);
-    const center = tempBox.getCenter(new THREE.Vector3());
-    S.orbit.target.copy(center);
-    S.camera.position.set(center.x + 10, center.y + 8, center.z + 10);
-    S.orbit.update();
-  }
+  if (S.modelParts.length > 0 && fn.frameScene) fn.frameScene();
   fn.refreshSceneList();
   if (fn.pushLayoutToServer) fn.pushLayoutToServer();
 }
@@ -78,6 +109,7 @@ function exportGLB() {
     if (!m.visible) continue;
     const clone = m.clone();
     const ol = clone.getObjectByName('_outline'); if (ol) clone.remove(ol);
+    const cs = clone.getObjectByName('_contact_shadow'); if (cs) clone.remove(cs);
     exportScene.add(clone);
   }
   const exporter = new GLTFExporter();
@@ -135,7 +167,7 @@ function startMcpSync() {
       if (data._stamp && data._stamp === lastPushStamp) return;
       if (data._stamp && data._stamp === lastPullStamp) return;
       lastPullStamp = data._stamp || 0;
-      applyLayoutData(data);
+      applyLayoutData(data, { frame: false });
       pullFailureCount = 0;
     } catch (err) {
       pullFailureCount += 1;
@@ -195,7 +227,7 @@ async function clearLayoutAndSync({ confirmWithMcp = true } = {}) {
     await pushLayoutPayload(payload);
   } catch (err) {
     console.warn('Clear layout sync failed, restoring previous local scene', err);
-    applyLayoutData(snapshot);
+    applyLayoutData(snapshot, { recordUndo: false, frame: false });
     return { ok: false, error: err.message || String(err) };
   }
 
@@ -214,7 +246,7 @@ async function clearLayoutAndSync({ confirmWithMcp = true } = {}) {
     return { ok: true, mcp: { ok: false, error: err.message || String(err) } };
   }
 }
-function applyLayoutData(data) {
+function applyLayoutData(data, { recordUndo = true, frame = true } = {}) {
   if (!Array.isArray(data.items)) {
     console.warn('Ignoring malformed MCP layout payload: items missing array');
     return;
@@ -226,26 +258,12 @@ function applyLayoutData(data) {
   fn.deselectFurniture();
   if (fn.clearSightlineOverlay) fn.clearSightlineOverlay();
   for (const item of data.items) {
-    if (!item.geo || !item.pos || item.geo.length < 3 || item.pos.length < 3) {
-      console.warn('Skipping malformed layout item', item);
-      continue;
-    }
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]),
-      new THREE.MeshLambertMaterial({ color: item.color })
-    );
-    mesh.position.set(item.pos[0], item.pos[1], item.pos[2]);
-    mesh.rotation.y = item.rot;
-    mesh.castShadow = true; mesh.receiveShadow = true;
-    mesh.userData.draggable = true; mesh.visible = item.visible !== false;
-    if (item.type === 'wall') { mesh.userData.isWall = true; mesh.userData.baseY = item.geo[1] / 2; S.userWalls.push(mesh); }
-    else if (item.type === 'model_part') { mesh.userData.isModelPart = true; S.modelParts.push(mesh); }
-    else { mesh.userData.baseY = item.geo[1] / 2; if (item.furnitureType) mesh.userData.furnitureType = item.furnitureType; }
-    if (item.name) mesh.userData.name = item.name;
-    if (item.room) mesh.userData.room = item.room;
+    const mesh = buildMeshFromLayoutItem(item);
+    if (!mesh) continue;
     S.scene.add(mesh); S.draggables.push(mesh);
   }
-  if (prev.items.length > 0) fn.pushUndo({ type: 'mcp_sync', snapshot: prev });
+  if (recordUndo && prev.items.length > 0) fn.pushUndo({ type: 'mcp_sync', snapshot: prev });
+  if (frame && S.draggables.length > 0 && fn.frameScene) fn.frameScene();
   fn.refreshSceneList();
 }
 function importJSON(e) {
@@ -265,35 +283,11 @@ function importJSON(e) {
       fn.deselectFurniture();
       if (fn.clearSightlineOverlay) fn.clearSightlineOverlay();
       for (const item of data.items) {
-        if (!item.geo || !item.pos || item.geo.length < 3 || item.pos.length < 3) {
-          console.warn('Skipping malformed imported item', item);
-          continue;
-        }
-        const mesh = new THREE.Mesh(
-          new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]),
-          new THREE.MeshLambertMaterial({ color: item.color })
-        );
-        mesh.position.set(item.pos[0], item.pos[1], item.pos[2]);
-        mesh.rotation.y = item.rot;
-        mesh.castShadow = true; mesh.receiveShadow = true;
-        mesh.userData.draggable = true; mesh.visible = item.visible !== false;
-        if (item.type === 'wall') { mesh.userData.isWall = true; mesh.userData.baseY = item.geo[1] / 2; S.userWalls.push(mesh); }
-        else if (item.type === 'model_part') { mesh.userData.isModelPart = true; S.modelParts.push(mesh); }
-        else { mesh.userData.baseY = item.geo[1] / 2; if (item.furnitureType) mesh.userData.furnitureType = item.furnitureType; }
-        if (item.name) mesh.userData.name = item.name;
-        if (item.room) mesh.userData.room = item.room;
+        const mesh = buildMeshFromLayoutItem(item);
+        if (!mesh) continue;
         S.scene.add(mesh); S.draggables.push(mesh);
       }
-      if (S.draggables.length > 0) {
-        const box = new THREE.Box3(); box.makeEmpty();
-        for (const m of S.draggables) box.expandByObject(m);
-        const center = box.getCenter(new THREE.Vector3());
-        const size = box.getSize(new THREE.Vector3());
-        const dist = Math.max(size.x, size.y, size.z, 1) * 1.5;
-        S.orbit.target.copy(center);
-        S.camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist * 0.7);
-        S.orbit.update();
-      }
+      if (S.draggables.length > 0 && fn.frameScene) fn.frameScene();
       fn.refreshSceneList();
     } catch (err) { console.error('JSON import failed', err); }
   };

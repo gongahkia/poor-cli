@@ -60,7 +60,7 @@ export function initBtoLibrary() {
 
       fn.applyLayoutData(data);
       if (fn.pushLayoutToServer) await fn.pushLayoutToServer();
-      if (fn.frameSelected) fn.frameSelected();
+      if (fn.frameScene) fn.frameScene();
     } catch (err) {
       console.error('Failed loading BTO layout', selected, err);
       window.alert(`Failed to load ${selected.name}: ${err.message || err}`);
