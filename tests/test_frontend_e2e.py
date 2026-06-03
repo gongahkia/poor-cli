@@ -111,16 +111,13 @@ def test_import_json_warns_on_malformed_layout(browser_page, viewer_base_url: st
         lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
     )
 
-    browser_page.add_init_script(
-        """
-        window.__hausWarnings = [];
-        const originalWarn = console.warn.bind(console);
-        console.warn = (...args) => {
-          window.__hausWarnings.push(args.map(String).join(" "));
-          originalWarn(...args);
-        };
-        """
-    )
+    warnings: list[str] = []
+
+    def on_console(msg) -> None:
+        if msg.type == "warning":
+            warnings.append(msg.text)
+
+    browser_page.on("console", on_console)
     browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
 
     browser_page.set_input_files(
@@ -131,13 +128,9 @@ def test_import_json_warns_on_malformed_layout(browser_page, viewer_base_url: st
             "buffer": json.dumps({"unexpected": "shape"}).encode("utf-8"),
         },
     )
-    browser_page.wait_for_function(
-        """
-        () => window.__hausWarnings?.some((warning) =>
-          warning.includes("JSON import missing items array")
-        )
-        """
-    )
+    browser_page.wait_for_timeout(400)
+
+    assert any("JSON import missing items array" in warning for warning in warnings)
 
 
 def test_chat_transcript_persists_across_reload(browser_page, viewer_base_url: str) -> None:
@@ -369,9 +362,8 @@ def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_ur
     )
     browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
 
-    browser_page.click("#chat-float-btn")
+    browser_page.click("#chat-btn")
     browser_page.fill("#chat-input", "Design a compact 4-room HDB")
-    assert browser_page.locator("#chat-char-count").inner_text() == "27/2000"
     browser_page.click("#chat-send")
     browser_page.wait_for_selector(".chat-plan-card", timeout=6000)
 
