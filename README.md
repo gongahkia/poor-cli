@@ -68,12 +68,13 @@ $ make all # run linter, tests and build script
 
 ## MCP server
 
-`Haus`' MCP server exposes [30 tools](#mcp-tool-reference) that integrates with the AI Chat within its web editor. It's pretty rudimentary for now and just CRUDS to `viewer/mcp-layout.json`, which the web editor polls every 2 seconds.
+`Haus`' MCP server exposes [a broad tool surface](#mcp-tool-reference) that integrates with the AI Chat within its web editor. It writes to `viewer/mcp-layout.json`, which the web editor polls every 2 seconds.
 
 ## MCP tool reference
 
 | Category | Tools |
 |---|---|
+| **High-level design** | `design_room`, `design_flat` |
 | **Catalog** | `list_furniture_catalog` |
 | **Layout queries** | `list_objects`, `get_object_details`, `get_layout_summary`, `get_layout_json` |
 | **Spatial** | `measure_distance`, `find_nearest`, `check_overlap`, `find_objects_in_area` |

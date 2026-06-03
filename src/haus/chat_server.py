@@ -37,6 +37,8 @@ from .mcp_server import (
     check_sightline,
     clear_layout,
     compute_room_area,
+    design_flat,
+    design_room,
     distribute_objects,
     duplicate_object,
     find_by_name,
@@ -79,6 +81,8 @@ _SYSTEM = (
     "IMPORTANT RULES:\n"
     "- Before any DESTRUCTIVE action (removing, clearing, or replacing objects), "
     "FIRST describe what you plan to do and ASK for confirmation.\n"
+    "- For whole-room or whole-flat design requests, prefer design_room or design_flat "
+    "before falling back to primitive add/move tools.\n"
     "- For vague intents (e.g., best sofa placement with clear TV view), "
     "use simulation tools: suggest_furniture_placement, auto_place_furniture, "
     "simulate_layout_options, apply_simulated_option, and check_sightline.\n"
@@ -94,6 +98,32 @@ _SYSTEM = (
 )
 
 _TOOLS_SPEC = [
+    {
+        "name": "design_room",
+        "description": "High-level tool: furnish one room from a style prompt and constraints.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "room_id": {"type": "string", "default": ""},
+                "style_prompt": {"type": "string", "default": "minimalist HDB"},
+                "constraints": {"type": "string", "default": ""},
+                "origin_x": {"type": "number"},
+                "origin_z": {"type": "number"},
+            },
+        },
+    },
+    {
+        "name": "design_flat",
+        "description": "High-level tool: furnish a whole flat from a style prompt and constraints.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "style_prompt": {"type": "string", "default": "minimalist 4-room family flat"},
+                "constraints": {"type": "string", "default": ""},
+                "target": {"type": "string", "default": "whole_flat"},
+            },
+        },
+    },
     {
         "name": "list_furniture_catalog",
         "description": "List all available furniture types with dimensions.",
@@ -485,6 +515,8 @@ _TOOLS_SPEC = [
 ]
 
 _DISPATCH_RAW: dict[str, Callable[[dict[str, Any]], str]] = {
+    "design_room": lambda a: design_room(**a),
+    "design_flat": lambda a: design_flat(**a),
     "list_furniture_catalog": lambda a: list_furniture_catalog(),
     "list_objects": lambda a: list_objects(),
     "add_furniture": lambda a: add_furniture(**a),

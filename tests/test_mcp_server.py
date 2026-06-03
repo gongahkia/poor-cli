@@ -226,6 +226,61 @@ def test_suggest_placement_json_returns_structured(isolated_layout: Path) -> Non
     assert "accessibility_component" in bd
 
 
+def test_design_room_adds_tagged_furniture_with_trace(isolated_layout: Path) -> None:
+    assert mcp_server._save_layout({"version": 1, "items": []}) is None
+
+    result = mcp_server.design_room(
+        room_id="Study",
+        style_prompt="minimalist work from home",
+        constraints="leave circulation clear",
+    )
+
+    assert "Design summary:" in result
+    assert "Tool-call trace:" in result
+    assert "choose_furniture_set" in result
+    assert "add_furniture" in result
+
+    rooms = mcp_server.list_rooms()
+    assert "Study" in rooms
+    objects = mcp_server.list_objects()
+    assert "desk" in objects.lower()
+
+
+def test_design_flat_adds_multiple_rooms(isolated_layout: Path) -> None:
+    assert mcp_server._save_layout({"version": 1, "items": []}) is None
+
+    result = mcp_server.design_flat(
+        style_prompt="minimalist 4-room family flat",
+        constraints="family friendly, clear walkways",
+    )
+
+    assert "Rooms designed: 5" in result
+    assert "Living" in result
+    assert "Kitchen" in result
+    assert "Master Bedroom" in result
+
+    rooms = mcp_server.list_rooms()
+    assert "Living" in rooms
+    assert "Kitchen" in rooms
+    assert "Master Bedroom" in rooms
+
+
+def test_design_flat_rejects_non_whole_flat_target(isolated_layout: Path) -> None:
+    assert mcp_server._save_layout({"version": 1, "items": []}) is None
+
+    result = mcp_server.design_flat(target="one bathroom")
+
+    assert result.startswith("Error:")
+
+
+def test_design_room_rejects_partial_origin(isolated_layout: Path) -> None:
+    assert mcp_server._save_layout({"version": 1, "items": []}) is None
+
+    result = mcp_server.design_room(room_id="Study", origin_x=1.0)
+
+    assert result.startswith("Error:")
+
+
 def test_corrupt_layout_is_recovered_without_crash(isolated_layout: Path) -> None:
     isolated_layout.write_text("{ this is invalid json", encoding="utf-8")
 
