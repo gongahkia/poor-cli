@@ -122,6 +122,8 @@ MCP registry/listing metadata lives in [`mcp-manifest.json`](./mcp-manifest.json
 | [OpenAI](https://openai.com/) | `OPENAI_API_KEY` | `gpt-4o` | `uv pip install -e ".[openai]"` |
 | [Google Gemini](https://ai.google.dev/) | `GEMINI_API_KEY` | `gemini-2.0-flash` | `uv pip install -e ".[gemini]"` |
 
+For a fixed-prompt comparison of free/API routes that can drive the MCP workflow, see [`BENCHMARKS.md`](./BENCHMARKS.md).
+
 ## Architecture
 
 ![](./asset/reference/architecture.png)
