@@ -33,6 +33,14 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+haus = [
+  "viewer/*.html",
+  "viewer/*.json",
+  "viewer/css/*.css",
+  "viewer/js/*.js",
+]
+
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]

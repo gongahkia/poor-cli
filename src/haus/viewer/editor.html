@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>haus — Floor Plan Editor</title>
+<link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+<div id="toolbar">
+  <label>Load GLB <input type="file" id="glb-input" accept=".glb"></label>
+  <button id="delete-btn" title="Delete selected (X)">Delete</button>
+  <button id="wall-btn" title="Draw wall (W)">Draw Wall</button>
+  <button id="wall-cancel-btn" style="display:none;" title="Cancel wall (Esc)">Cancel</button>
+  <button id="measure-btn" title="Measure distance (M)">Measure</button>
+  <button id="fps-btn" title="First-person view (P)">FPS View</button>
+  <button id="screenshot-btn" title="Capture screenshot">Screenshot</button>
+  <button id="export-glb-btn" title="Export scene as GLB">Export GLB</button>
+  <button id="export-json-btn" title="Export layout as JSON">Export JSON</button>
+  <button id="export-svg-btn" title="Export 2D floor plan as SVG">Export SVG</button>
+  <label>Load JSON <input type="file" id="json-input" accept=".json"></label>
+  <label>Floor Plan <input type="file" id="overlay-input" accept="image/*"></label>
+  <button id="chat-btn" title="AI Chat">Chat</button>
+  <button id="theme-btn" title="Toggle light/dark theme">Light</button>
+  <button id="help-btn" title="Keyboard shortcuts (?)">?</button>
+</div>
+<div id="chat-panel">
+  <div id="chat-header">
+    <span>AI Chat Planner</span>
+    <div style="display:flex;gap:4px;align-items:center;">
+      <select id="chat-provider" title="Provider"></select>
+      <input type="text" id="chat-model" placeholder="Auto model" title="Optional model override">
+      <button id="chat-clear-btn" title="Clear conversation">Clear</button>
+      <button id="chat-settings-btn" title="API Key Settings">Settings</button>
+    </div>
+  </div>
+  <div id="chat-suggestions">
+    <button class="chat-chip">Place a sofa where TV view is clear</button>
+    <button class="chat-chip">Simulate 3 living room layout options</button>
+    <button class="chat-chip">Auto-place desk near natural circulation path</button>
+  </div>
+  <div id="chat-settings" style="display:none;">
+    <div class="chat-key-row">
+      <label>Provider</label>
+      <select id="chat-key-provider">
+        <option value="anthropic">Anthropic</option>
+        <option value="openai">OpenAI</option>
+        <option value="gemini">Gemini</option>
+      </select>
+    </div>
+    <div class="chat-key-row">
+      <label>API Key</label>
+      <input type="password" id="chat-key-input" placeholder="sk-..." autocomplete="off">
+    </div>
+    <div class="chat-key-row">
+      <button id="chat-key-save">Save</button>
+      <span id="chat-key-status"></span>
+    </div>
+  </div>
+  <div id="chat-status"></div>
+  <div id="chat-messages"></div>
+  <div id="chat-input-row">
+    <input type="text" id="chat-input" placeholder="Describe changes..." autocomplete="off">
+    <button id="chat-send">Send</button>
+  </div>
+</div>
+<div id="cmd-palette">
+  <div id="cmd-palette-inner">
+    <input type="text" id="cmd-input" placeholder="Type a command..." autocomplete="off">
+    <div id="cmd-list"></div>
+  </div>
+</div>
+<div id="context-menu">
+  <div data-action="copy">Copy</div>
+  <div data-action="paste">Paste</div>
+  <div data-action="duplicate">Duplicate</div>
+  <div data-action="rotate">Rotate 90°</div>
+  <div data-action="hide">Hide</div>
+  <div data-action="delete">Delete</div>
+  <div data-action="frame">Frame</div>
+  <div data-action="select-all">Deselect / Frame All</div>
+</div>
+<div id="wall-status">Click to place wall start point...</div>
+<div id="collision-flash">Blocked — collision</div>
+<div id="fps-crosshair">+</div>
+<div id="fps-hint">WASD walk · Shift run · Mouse look · ESC exit</div>
+<div id="screenshot-flash"></div>
+<div id="sidebar">
+  <div class="section">
+    <h3>Grid & Snap</h3>
+    <div class="toggle-row"><label for="grid-toggle">Show grid</label><input type="checkbox" id="grid-toggle" checked></div>
+    <div class="toggle-row"><label for="snap-toggle">Snap to grid</label><input type="checkbox" id="snap-toggle" checked></div>
+    <div class="toggle-row"><label for="collision-toggle">Collisions</label><input type="checkbox" id="collision-toggle" checked></div>
+    <div class="toggle-row">
+      <label for="snap-size">Grid size</label>
+      <input type="range" id="snap-size" min="1" max="10" value="4" step="1">
+      <span class="snap-val" id="snap-val-label">0.25m</span>
+    </div>
+  </div>
+  <div class="section">
+    <h3>View</h3>
+    <div class="toggle-row"><label for="wireframe-toggle">Wireframe</label><input type="checkbox" id="wireframe-toggle"></div>
+    <div class="toggle-row"><label for="shadows-toggle">Shadows</label><input type="checkbox" id="shadows-toggle" checked></div>
+  </div>
+  <div class="section" id="overlay-controls" style="display:none;">
+    <h3>Floor Plan Overlay</h3>
+    <div class="toggle-row">
+      <label for="overlay-scale">Scale</label>
+      <input type="range" id="overlay-scale" min="10" max="500" value="100" step="5">
+      <span class="snap-val" id="overlay-scale-label">1.00x</span>
+    </div>
+    <div class="toggle-row">
+      <label for="overlay-opacity">Opacity</label>
+      <input type="range" id="overlay-opacity" min="5" max="100" value="50" step="5">
+      <span class="snap-val" id="overlay-opacity-label">50%</span>
+    </div>
+    <button class="furniture-btn" id="overlay-clear">Remove Overlay</button>
+  </div>
+  <div class="section">
+    <h3>Walls</h3>
+    <div class="toggle-row">
+      <label for="wall-height-slider">Height</label>
+      <input type="range" id="wall-height-slider" min="1" max="40" value="26" step="1">
+      <span class="snap-val" id="wall-height-label">2.6m</span>
+    </div>
+    <div class="toggle-row">
+      <label for="wall-thick-slider">Thickness</label>
+      <input type="range" id="wall-thick-slider" min="1" max="10" value="3" step="1">
+      <span class="snap-val" id="wall-thick-label">0.15m</span>
+    </div>
+    <div class="toggle-row" style="font-size:11px;color:#888;"><span><kbd>W</kbd> draw | <kbd>Esc</kbd> cancel</span></div>
+  </div>
+  <div class="section">
+    <h3>Bedroom</h3>
+    <button class="furniture-btn" data-type="bed_single">Single Bed (0.9 x 1.9m)</button>
+    <button class="furniture-btn" data-type="bed_queen">Queen Bed (1.5 x 2.0m)</button>
+    <button class="furniture-btn" data-type="bed_king">King Bed (1.8 x 2.0m)</button>
+    <button class="furniture-btn" data-type="wardrobe">Wardrobe (1.8 x 0.6m)</button>
+    <button class="furniture-btn" data-type="wardrobe_s">Wardrobe S (0.9 x 0.6m)</button>
+    <button class="furniture-btn" data-type="bedside">Bedside Table (0.5 x 0.4m)</button>
+    <button class="furniture-btn" data-type="dresser">Dresser (1.2 x 0.5m)</button>
+  </div>
+  <div class="section">
+    <h3>Living / Dining</h3>
+    <button class="furniture-btn" data-type="sofa_2">2-Seat Sofa (1.5 x 0.8m)</button>
+    <button class="furniture-btn" data-type="sofa_3">3-Seat Sofa (2.2 x 0.9m)</button>
+    <button class="furniture-btn" data-type="sofa_l">L-Sofa (2.2 x 1.6m)</button>
+    <button class="furniture-btn" data-type="coffee">Coffee Table (1.0 x 0.5m)</button>
+    <button class="furniture-btn" data-type="tv_console">TV Console (1.5 x 0.4m)</button>
+    <button class="furniture-btn" data-type="dining_4">Dining 4-seat (1.2 x 0.8m)</button>
+    <button class="furniture-btn" data-type="dining_6">Dining 6-seat (1.6 x 0.9m)</button>
+    <button class="furniture-btn" data-type="shoe_rack">Shoe Rack (0.8 x 0.3m)</button>
+  </div>
+  <div class="section">
+    <h3>Kitchen / Bath</h3>
+    <button class="furniture-btn" data-type="fridge">Fridge (0.7 x 0.7m)</button>
+    <button class="furniture-btn" data-type="washer">Washer (0.6 x 0.6m)</button>
+    <button class="furniture-btn" data-type="kitchen_counter">Counter (1.2 x 0.6m)</button>
+    <button class="furniture-btn" data-type="sink">Sink Cabinet (0.8 x 0.6m)</button>
+    <button class="furniture-btn" data-type="toilet">Toilet (0.4 x 0.7m)</button>
+    <button class="furniture-btn" data-type="shower">Shower (0.9 x 0.9m)</button>
+  </div>
+  <div class="section">
+    <h3>Study / Work</h3>
+    <button class="furniture-btn" data-type="desk">Desk (1.2 x 0.6m)</button>
+    <button class="furniture-btn" data-type="desk_l">L-Desk (1.6 x 1.2m)</button>
+    <button class="furniture-btn" data-type="bookshelf">Bookshelf (0.8 x 0.3m)</button>
+    <button class="furniture-btn" data-type="chair">Office Chair (0.5 x 0.5m)</button>
+  </div>
+  <div class="section">
+    <h3>On Scene <span id="scene-count"></span></h3>
+    <div id="scene-list"></div>
+  </div>
+  <div class="section" id="selected-info" style="display:none;">
+    <h3>Selected</h3>
+    <div class="toggle-row"><label>Color</label><input type="color" id="sel-color" value="#888888"></div>
+    <div class="toggle-row"><label>Pos</label><span id="sel-pos">0, 0, 0</span></div>
+    <div class="toggle-row">
+      <label for="sel-width">W</label>
+      <input type="range" id="sel-width" min="1" max="100" value="10" step="1">
+      <input type="number" class="dim-input" id="sel-width-num" min="0.05" max="20" step="0.05" value="1.0">
+    </div>
+    <div class="toggle-row">
+      <label for="sel-height">H</label>
+      <input type="range" id="sel-height" min="1" max="100" value="10" step="1">
+      <input type="number" class="dim-input" id="sel-height-num" min="0.05" max="20" step="0.05" value="1.0">
+    </div>
+    <div class="toggle-row">
+      <label for="sel-depth">D</label>
+      <input type="range" id="sel-depth" min="1" max="100" value="10" step="1">
+      <input type="number" class="dim-input" id="sel-depth-num" min="0.05" max="20" step="0.05" value="1.0">
+    </div>
+    <div class="toggle-row" style="font-size:10px;color:#666;">
+      <span><kbd>R</kbd> 90° <kbd>Shift+R</kbd> 15° <kbd>X</kbd> del <kbd>Cmd+D</kbd> dup <kbd>H</kbd> hide <kbd>F</kbd> frame</span>
+    </div>
+  </div>
+</div>
+<div id="info">
+  <kbd>G</kbd> grid <kbd>S</kbd> snap <kbd>C</kbd> collisions <kbd>W</kbd> wall <kbd>M</kbd> measure <kbd>P</kbd> FPS
+  <kbd>R</kbd> rotate <kbd>X</kbd> delete <kbd>D</kbd> duplicate <kbd>H</kbd> hide <kbd>Alt+H</kbd> unhide
+  <kbd>F</kbd> frame <kbd>1</kbd>/<kbd>3</kbd>/<kbd>7</kbd> views <kbd>5</kbd> ortho
+  <kbd>Ctrl+C</kbd>/<kbd>V</kbd> copy/paste <kbd>Ctrl+Z</kbd>/<kbd>Y</kbd> undo/redo <kbd>Cmd+K</kbd> commands <kbd>?</kbd> help
+</div>
+<div id="help-modal">
+  <div id="help-content">
+    <h2>Keyboard Shortcuts</h2>
+    <table>
+      <tr><td><kbd>G</kbd></td><td>Toggle grid</td></tr>
+      <tr><td><kbd>S</kbd></td><td>Toggle snap to grid</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Toggle collision detection</td></tr>
+      <tr><td><kbd>W</kbd></td><td>Enter/exit wall drawing mode</td></tr>
+      <tr><td><kbd>P</kbd></td><td>Toggle first-person (FPS) view</td></tr>
+      <tr><td><kbd>R</kbd></td><td>Rotate selected 90°</td></tr>
+      <tr><td><kbd>Shift+R</kbd></td><td>Rotate selected 15°</td></tr>
+      <tr><td><kbd>X</kbd> / <kbd>Del</kbd></td><td>Delete selected</td></tr>
+      <tr><td><kbd>Cmd/Ctrl+D</kbd></td><td>Duplicate selected</td></tr>
+      <tr><td><kbd>H</kbd></td><td>Hide selected</td></tr>
+      <tr><td><kbd>Alt+H</kbd></td><td>Unhide all</td></tr>
+      <tr><td><kbd>F</kbd></td><td>Frame selected / all</td></tr>
+      <tr><td><kbd>A</kbd></td><td>Deselect / frame all</td></tr>
+      <tr><td><kbd>1</kbd> / <kbd>3</kbd> / <kbd>7</kbd></td><td>Front / Right / Top view</td></tr>
+      <tr><td><kbd>5</kbd></td><td>Toggle orthographic</td></tr>
+      <tr><td><kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
+      <tr><td><kbd>Ctrl+Y</kbd> / <kbd>Ctrl+Shift+Z</kbd></td><td>Redo</td></tr>
+      <tr><td><kbd>Shift+Click</kbd></td><td>Multi-select (add/remove)</td></tr>
+      <tr><td><kbd>Ctrl+C</kbd></td><td>Copy selected</td></tr>
+      <tr><td><kbd>Ctrl+V</kbd></td><td>Paste</td></tr>
+      <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Capture screenshot</td></tr>
+      <tr><td>Right-click</td><td>Context menu</td></tr>
+      <tr><td><kbd>Cmd/Ctrl+K</kbd></td><td>Command palette</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Measure distance (click 2 points)</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Cancel current mode</td></tr>
+    </table>
+    <h2 style="margin-top:16px;">FPS Mode</h2>
+    <table>
+      <tr><td><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></td><td>Walk forward/left/back/right</td></tr>
+      <tr><td><kbd>Shift</kbd></td><td>Hold to run</td></tr>
+      <tr><td>Mouse</td><td>Look around</td></tr>
+      <tr><td><kbd>Esc</kbd></td><td>Exit FPS mode</td></tr>
+    </table>
+    <button id="help-close">Close</button>
+  </div>
+</div>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

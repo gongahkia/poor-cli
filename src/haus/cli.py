@@ -1,15 +1,91 @@
 from __future__ import annotations
 
 import argparse
+import os
 import json
+import shutil
 import sys
+from importlib import resources
 from pathlib import Path
+from typing import NamedTuple
 
 from .logging_utils import configure_logging
 from .pipeline import run_vectorize
 from .types import VectorizeConfig
 
 log = configure_logging("haus.cli")
+
+
+class ViewEnvironment(NamedTuple):
+    serve_root: Path
+    viewer_dir: Path
+    out_dir: Path
+    source_checkout: bool
+
+
+def _source_project_root() -> Path:
+    return Path(__file__).resolve().parent.parent.parent
+
+
+def _runtime_root() -> Path:
+    configured = os.environ.get("HAUS_RUNTIME_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path.home() / ".haus").resolve()
+
+
+def _ensure_empty_layout(viewer_dir: Path) -> None:
+    layout_path = viewer_dir / "mcp-layout.json"
+    if not layout_path.exists():
+        layout_path.write_text(json.dumps({"version": 1, "items": []}, indent=2), encoding="utf-8")
+
+
+def _copy_packaged_viewer(runtime_viewer: Path) -> None:
+    package_viewer = resources.files("haus").joinpath("viewer")
+    with resources.as_file(package_viewer) as packaged_path:
+        packaged = Path(packaged_path)
+        if not packaged.exists():
+            raise FileNotFoundError("Packaged viewer assets were not found.")
+
+        runtime_viewer.mkdir(parents=True, exist_ok=True)
+        for child in packaged.iterdir():
+            if child.name == "mcp-layout.json":
+                continue
+            dest = runtime_viewer / child.name
+            if child.is_dir():
+                shutil.copytree(child, dest, dirs_exist_ok=True)
+            else:
+                shutil.copy2(child, dest)
+
+
+def _resolve_view_environment() -> ViewEnvironment:
+    """Resolve static files and writable state for `haus view`.
+
+    Source checkouts serve the repository root so generated `out/` assets keep
+    working. Installed packages copy bundled viewer assets into `~/.haus`, which
+    gives the MCP/chat sync loop a writable `viewer/mcp-layout.json`.
+    """
+    source_root = _source_project_root()
+    source_viewer = source_root / "viewer"
+    if source_viewer.exists():
+        _ensure_empty_layout(source_viewer)
+        return ViewEnvironment(
+            serve_root=source_root,
+            viewer_dir=source_viewer,
+            out_dir=source_root / "out",
+            source_checkout=True,
+        )
+
+    runtime_root = _runtime_root()
+    runtime_viewer = runtime_root / "viewer"
+    _copy_packaged_viewer(runtime_viewer)
+    _ensure_empty_layout(runtime_viewer)
+    return ViewEnvironment(
+        serve_root=runtime_root,
+        viewer_dir=runtime_viewer,
+        out_dir=runtime_root / "out",
+        source_checkout=False,
+    )
 
 
 def _build_manifest(out_dir: Path, project_root: Path) -> list[dict]:
@@ -69,7 +145,13 @@ def _build_parser() -> argparse.ArgumentParser:
     clean.add_argument("--image", required=True, type=Path, help="Path to floor plan image")
     clean.add_argument("--out", required=True, type=Path, help="Output cleaned image path")
 
-    subparsers.add_parser("mcp", help="Start MCP server for AI-assisted editing")
+    mcp = subparsers.add_parser("mcp", help="Start MCP server for AI-assisted editing")
+    mcp.add_argument(
+        "--layout",
+        type=Path,
+        default=None,
+        help="Layout JSON path for standalone MCP mode (default: HAUS_LAYOUT_PATH or viewer/mcp-layout.json)",
+    )
 
     view = subparsers.add_parser("view", help="Launch 3D viewer for a GLB file")
     view.add_argument("--glb", required=False, type=Path, default=None, help="Path to GLB file (opens editor directly)")
@@ -116,18 +198,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Cleaned image saved to {args.out}", file=sys.stderr)
             return 0
         if args.command == "mcp":
+            if args.layout is not None:
+                from . import mcp_server
+                mcp_server.LAYOUT_PATH = args.layout
             from .mcp_server import run_server
             run_server()
             return 0
         if args.command == "view":
-            import shutil
             import webbrowser
-            project_root = Path(__file__).resolve().parent.parent.parent
-            viewer_dir = project_root / "viewer"
-            out_dir = project_root / "out"
-            if not viewer_dir.exists():
-                print(f"error: viewer directory not found: {viewer_dir}", file=sys.stderr)
-                return 2
+            env = _resolve_view_environment()
+            project_root = env.serve_root
+            viewer_dir = env.viewer_dir
+            out_dir = env.out_dir
             port = args.port
             if args.glb:
                 if not args.glb.exists():
@@ -137,11 +219,14 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 manifest = _build_manifest(out_dir, project_root)
                 (viewer_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+            from . import mcp_server
+            layout_path = viewer_dir / "mcp-layout.json"
+            mcp_server.LAYOUT_PATH = layout_path
             from .chat_server import run_server as run_chat_server
             open_url = f"http://localhost:{port}/viewer/editor.html"
             print(f"Starting server at http://localhost:{port}", file=sys.stderr)
             webbrowser.open(open_url)
-            run_chat_server(str(project_root), port)
+            run_chat_server(str(project_root), port, layout_path=str(layout_path))
             return 0
         parser.error(f"Unsupported command: {args.command}")
     except Exception as e:

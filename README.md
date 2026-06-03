@@ -8,6 +8,22 @@
 > [!IMPORTANT]
 > See [here](#credits) for attribution!
 
+## Quick start
+
+Run `Haus` without cloning the repository:
+
+```console
+$ uvx --from git+https://github.com/gongahkia/haus haus view
+```
+
+This installs `haus`, launches the bundled browser editor, and opens an MCP-ready layout file under `~/.haus/viewer/mcp-layout.json`. To start the standalone stdio MCP server against that same layout:
+
+```console
+$ uvx --from git+https://github.com/gongahkia/haus haus mcp --layout ~/.haus/viewer/mcp-layout.json
+```
+
+`uvx haus view` and `pipx install haus` are the intended short forms after a PyPI release; until then, use the GitHub `uvx --from` command above.
+
 ## Stack
 
 * *Frontend*: [JavaScript](https://developer.mozilla.org/en-US/docs/Web/JavaScript), [Three.js](https://threejs.org/) 
@@ -26,9 +42,9 @@
 ![](./asset/reference/6.png)
 ![](./asset/reference/3.png)
 
-## Usage
+## Source checkout usage
 
-The below instructions are for locally hosting `Haus`.
+The below instructions are for developing `Haus` from a local checkout.
 
 1. First run the below instructions to install `Haus` on your machine and install dependancies.
 
@@ -42,7 +58,7 @@ $ make setup
 ```console
 $ make build # process all corpus images
 $ make view # launch web editor 
-$ make vectorizez # run vectorization script only 
+$ make vectorize # run vectorization script only
 $ make mcp # run standalone MCP server on stdio only
 $ make test # run pytest suite only
 $ make lint # run ruff linter only
