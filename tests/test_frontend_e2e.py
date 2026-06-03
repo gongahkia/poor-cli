@@ -59,6 +59,14 @@ def _mock_editor_backend(page) -> None:
                     "providers_with_env_keys": [],
                     "supported_providers": ["openai", "anthropic", "gemini"],
                     "default_models": {"openai": "gpt-4o"},
+                    "capabilities": {
+                        "web_search": True,
+                        "web_fetch": True,
+                        "image_references": True,
+                        "max_image_attachments": 3,
+                        "max_image_attachment_mb": 5,
+                        "image_mime_types": ["image/png", "image/jpeg", "image/webp", "image/gif"],
+                    },
                 }
             ),
         ),
@@ -186,3 +194,67 @@ def test_chat_transcript_persists_across_reload(browser_page, viewer_base_url: s
     transcript_after = browser_page.locator("#chat-messages").inner_text()
     assert "Move sofa 0.5m right" in transcript_after
     assert "Applied safely." in transcript_after
+
+
+def test_chat_sends_image_reference_attachment(browser_page, viewer_base_url: str) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+
+    captured: dict[str, object] = {}
+
+    def chat_handler(route) -> None:
+        payload = json.loads(route.request.post_data or "{}")
+        captured["payload"] = payload
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "response": "Reference applied.",
+                    "history": [{"role": "assistant", "content": [{"type": "text", "text": "Reference applied."}]}],
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "actions": [],
+                    "request_id": "chat-e2e-image-1",
+                }
+            ),
+        )
+
+    browser_page.route("**/api/chat", chat_handler)
+    browser_page.add_init_script(
+        """
+        localStorage.setItem("haus_api_keys", JSON.stringify({ openai: "test-key" }));
+        localStorage.setItem("haus_chat_provider", "openai");
+        localStorage.removeItem("haus_chat_history");
+        localStorage.removeItem("haus_chat_transcript");
+        """
+    )
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+
+    browser_page.click("#chat-btn")
+    browser_page.set_input_files(
+        "#chat-image-input",
+        {
+            "name": "reference.png",
+            "mimeType": "image/png",
+            "buffer": b"\x89PNG\r\n\x1a\nreference",
+        },
+    )
+    browser_page.fill("#chat-input", "Replicate this vibe")
+    browser_page.click("#chat-send")
+    browser_page.wait_for_selector(".chat-assistant", timeout=6000)
+
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload["message"] == "Replicate this vibe"
+    assert len(payload["attachments"]) == 1
+    assert payload["attachments"][0]["name"] == "reference.png"
+    assert payload["attachments"][0]["mime_type"] == "image/png"
+    assert payload["attachments"][0]["data_url"].startswith("data:image/png;base64,")
+
+    transcript = browser_page.locator("#chat-messages").inner_text()
+    assert "Attached 1 image reference: reference.png" in transcript
+    assert "Reference applied." in transcript

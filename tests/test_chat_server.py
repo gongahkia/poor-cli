@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,10 @@ def chat_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     app = chat_server.create_app(str(Path.cwd()))
     with TestClient(app) as client:
         yield client
+
+
+def _encoded_image(data: bytes = b"sample-image") -> str:
+    return base64.b64encode(data).decode("ascii")
 
 
 def test_chat_routes_provider_and_default_model(
@@ -48,6 +54,18 @@ def test_chat_routes_provider_and_default_model(
     assert body["model"] == chat_server._DEFAULT_MODELS["openai"]
     assert captured["api_key"] == "test-key"
     assert captured["model"] == chat_server._DEFAULT_MODELS["openai"]
+
+
+def test_chat_status_reports_reference_capabilities(chat_client: TestClient) -> None:
+    res = chat_client.get("/api/chat/status")
+    assert res.status_code == 200
+
+    capabilities = res.json()["capabilities"]
+    assert capabilities["web_search"] is True
+    assert capabilities["web_fetch"] is True
+    assert capabilities["image_references"] is True
+    assert capabilities["max_image_attachments"] == 3
+    assert "image/png" in capabilities["image_mime_types"]
 
 
 def test_chat_routes_provider_with_model_override(
@@ -155,3 +173,109 @@ def test_chat_returns_action_log_payload_shape(
     assert action["args"] == {}
     assert isinstance(action["result"], str)
     assert isinstance(action["elapsed_ms"], int)
+
+
+def test_chat_passes_image_references_and_redacts_returned_history(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+    image_data = _encoded_image(b"reference-image-bytes")
+
+    def fake_provider(
+        api_key: str,
+        messages: list[dict[str, object]],
+        model: str,
+        dispatch,
+    ) -> tuple[str, list[dict[str, object]]]:
+        captured["messages"] = messages
+        return "replicated", messages + [{"role": "assistant", "content": [{"type": "text", "text": "replicated"}]}]
+
+    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+
+    res = chat_client.post(
+        "/api/chat",
+        json={
+            "message": "make it look like this",
+            "provider": "openai",
+            "api_key": "test-key",
+            "attachments": [
+                {
+                    "name": "living-room.png",
+                    "mime_type": "image/png",
+                    "data_base64": image_data,
+                }
+            ],
+        },
+    )
+    assert res.status_code == 200
+
+    messages = captured["messages"]
+    assert isinstance(messages, list)
+    content = messages[-1]["content"]  # type: ignore[index]
+    assert isinstance(content, list)
+    assert content[0]["type"] == "text"
+    assert "living-room.png" in content[0]["text"]
+    assert content[1]["type"] == "image"
+    assert content[1]["source"]["media_type"] == "image/png"
+    assert content[1]["source"]["data"] == image_data
+
+    body = res.json()
+    assert body["response"] == "replicated"
+    assert image_data not in json.dumps(body["history"])
+
+
+def test_chat_rejects_invalid_image_reference(chat_client: TestClient) -> None:
+    res = chat_client.post(
+        "/api/chat",
+        json={
+            "message": "use this",
+            "provider": "openai",
+            "api_key": "test-key",
+            "attachments": [
+                {
+                    "name": "bad.txt",
+                    "mime_type": "text/plain",
+                    "data_base64": _encoded_image(),
+                }
+            ],
+        },
+    )
+    assert res.status_code == 400
+    assert "must be one of" in res.json()["error"]
+
+
+def test_chat_dispatches_web_search_tool(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_search(query: str, max_results: int = 5) -> str:
+        return f"Web search results for: {query}\n[1] HDB storage\nURL: https://example.com"
+
+    def fake_provider(
+        api_key: str,
+        messages: list[dict[str, object]],
+        model: str,
+        dispatch,
+    ) -> tuple[str, list[dict[str, object]]]:
+        dispatch("web_search", {"query": "current HDB storage ideas", "max_results": 1})
+        return "used sources", messages
+
+    monkeypatch.setattr(chat_server, "_web_search", fake_search)
+    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+
+    res = chat_client.post(
+        "/api/chat",
+        json={"message": "find live storage references", "provider": "openai", "api_key": "test-key"},
+    )
+    assert res.status_code == 200
+
+    action = res.json()["actions"][0]
+    assert action["tool"] == "web_search"
+    assert action["args"]["query"] == "current HDB storage ideas"
+    assert "https://example.com" in action["result"]
+
+
+def test_fetch_web_page_rejects_private_network_url() -> None:
+    result = chat_server._fetch_web_page("http://127.0.0.1:8080/internal")
+    assert "Private network URLs are not allowed" in result

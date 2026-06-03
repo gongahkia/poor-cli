@@ -11,10 +11,17 @@ import importlib
 import json
 import mimetypes
 import os
+import base64
+import ipaddress
+import socket
 import time
 from collections.abc import Callable
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, cast
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote_plus, unquote, urlparse
+from urllib.request import Request as UrlRequest, urlopen
 
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -70,10 +77,18 @@ log = configure_logging("haus.chat")
 mimetypes.add_type("model/gltf-binary", ".glb")
 
 _MAX_TOOL_STEPS = 12
+_MAX_CHAT_ATTACHMENTS = 3
+_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
+_ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+_WEB_TIMEOUT_SECONDS = 8
+_MAX_WEB_RESPONSE_BYTES = 1_000_000
+_WEB_SEARCH_ENABLED = os.environ.get("HAUS_ENABLE_WEB_SEARCH", "1").lower() not in {"0", "false", "no"}
 
 _SYSTEM = (
     "You are an AI assistant for the haus floor plan editor. "
     "You ONLY help with floor plan editing — arranging furniture, walls, and layout. "
+    "You may use live web references when they support interior design, furniture, HDB/BTO, "
+    "renovation, accessibility, materials, or product-dimension decisions. "
     "If the user asks something unrelated (general knowledge, coding, etc), "
     "politely decline and remind them you only handle floor plan tasks.\n\n"
     "Coordinate system: X is left-right, Z is forward-back. Positions are in meters.\n"
@@ -88,6 +103,14 @@ _SYSTEM = (
     "simulate_layout_options, apply_simulated_option, and check_sightline.\n"
     "- remove_objects_by_type is safer than repeated remove_object when deleting many.\n"
     "- batch_move uses relative offsets (dx, dz), not absolute positions.\n\n"
+    "Reference workflow:\n"
+    "- Use web_search for current design/product/HDB references when the user asks for current, "
+    "specific, sourced, or live reference guidance.\n"
+    "- Use fetch_web_page when the user provides a URL or a search result needs more detail.\n"
+    "- Cite source URLs in the final answer whenever web tools influenced the plan.\n"
+    "- If the user attaches images, treat them as visual references to replicate with available "
+    "Haus furniture, walls, colors, and room tags. Explain approximations when exact objects "
+    "or materials are unavailable.\n\n"
     "Workflow:\n"
     "1. get_layout_summary() for high-level state\n"
     "2. list_objects() / get_object_details(index) for specifics\n"
@@ -128,6 +151,36 @@ _TOOLS_SPEC = [
         "name": "list_furniture_catalog",
         "description": "List all available furniture types with dimensions.",
         "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "web_search",
+        "description": (
+            "Search the live web for current interior design, furniture, HDB/BTO, renovation, "
+            "accessibility, material, or product-dimension references. Returns source URLs."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query focused on the design task."},
+                "max_results": {"type": "integer", "default": 5},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "fetch_web_page",
+        "description": (
+            "Fetch visible text from a specific public http(s) URL for a design reference. "
+            "Use this after a user provides a URL or a web_search result needs more detail."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "Public http(s) URL to fetch."},
+                "max_chars": {"type": "integer", "default": 4000},
+            },
+            "required": ["url"],
+        },
     },
     {
         "name": "list_objects",
@@ -514,10 +567,284 @@ _TOOLS_SPEC = [
     },
 ]
 
+
+class _DuckDuckGoResultParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.results: list[dict[str, str]] = []
+        self._capture_title = False
+        self._capture_snippet = False
+        self._title_parts: list[str] = []
+        self._snippet_parts: list[str] = []
+        self._pending_href = ""
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr = {k: v or "" for k, v in attrs}
+        cls = attr.get("class", "")
+        if tag == "a" and "result__a" in cls:
+            self._capture_title = True
+            self._title_parts = []
+            self._pending_href = attr.get("href", "")
+        elif "result__snippet" in cls:
+            self._capture_snippet = True
+            self._snippet_parts = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._capture_title:
+            self._capture_title = False
+            title = _collapse_ws(" ".join(self._title_parts))
+            url = _normalize_result_url(self._pending_href)
+            if title and url:
+                self.results.append({"title": title, "url": url, "snippet": ""})
+        elif self._capture_snippet and tag in {"a", "div"}:
+            self._capture_snippet = False
+            snippet = _collapse_ws(" ".join(self._snippet_parts))
+            if snippet and self.results:
+                self.results[-1]["snippet"] = snippet
+
+    def handle_data(self, data: str) -> None:
+        if self._capture_title:
+            self._title_parts.append(data)
+        elif self._capture_snippet:
+            self._snippet_parts.append(data)
+
+
+class _VisibleTextParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.title = ""
+        self.text_parts: list[str] = []
+        self._skip_depth = 0
+        self._capture_title = False
+        self._title_parts: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in {"script", "style", "noscript", "svg"}:
+            self._skip_depth += 1
+        elif tag == "title":
+            self._capture_title = True
+            self._title_parts = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style", "noscript", "svg"} and self._skip_depth > 0:
+            self._skip_depth -= 1
+        elif tag == "title" and self._capture_title:
+            self._capture_title = False
+            self.title = _collapse_ws(" ".join(self._title_parts))
+
+    def handle_data(self, data: str) -> None:
+        if self._capture_title:
+            self._title_parts.append(data)
+        elif self._skip_depth == 0:
+            text = _collapse_ws(data)
+            if text:
+                self.text_parts.append(text)
+
+
+def _collapse_ws(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _normalize_result_url(url: str) -> str:
+    if url.startswith("//"):
+        url = f"https:{url}"
+    parsed = urlparse(url)
+    if "duckduckgo.com" in parsed.netloc and parsed.query:
+        uddg = parse_qs(parsed.query).get("uddg", [""])[0]
+        if uddg:
+            return unquote(uddg)
+    return url
+
+
+def _read_public_url(url: str, *, timeout: int = _WEB_TIMEOUT_SECONDS) -> tuple[str, str]:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("Only public http(s) URLs can be fetched.")
+    host = parsed.hostname or ""
+    if host.lower() == "localhost":
+        raise ValueError("Localhost URLs are not allowed for web references.")
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        ip = None
+    if ip and (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved):
+        raise ValueError("Private network URLs are not allowed for web references.")
+    if ip is None:
+        try:
+            for address in socket.getaddrinfo(host, None):
+                resolved_ip = ipaddress.ip_address(address[4][0])
+                if (
+                    resolved_ip.is_private
+                    or resolved_ip.is_loopback
+                    or resolved_ip.is_link_local
+                    or resolved_ip.is_reserved
+                ):
+                    raise ValueError("Private network URLs are not allowed for web references.")
+        except socket.gaierror:
+            pass
+
+    req = UrlRequest(
+        url,
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Haus/0.1"
+            )
+        },
+    )
+    with urlopen(req, timeout=timeout) as response:  # noqa: S310 - URL is validated above.
+        content_type = response.headers.get("content-type", "")
+        body = response.read(_MAX_WEB_RESPONSE_BYTES + 1)
+    if len(body) > _MAX_WEB_RESPONSE_BYTES:
+        raise ValueError("Web reference response was too large.")
+    encoding = "utf-8"
+    if "charset=" in content_type:
+        encoding = content_type.split("charset=", 1)[1].split(";", 1)[0].strip() or encoding
+    return body.decode(encoding, errors="replace"), content_type
+
+
+def _web_search(query: str, max_results: int = 5) -> str:
+    if not _WEB_SEARCH_ENABLED:
+        return "Web search is disabled by HAUS_ENABLE_WEB_SEARCH=0."
+
+    query = _collapse_ws(query)
+    if not query:
+        return "Error: web_search requires a non-empty query."
+
+    limit = max(1, min(int(max_results or 5), 8))
+    search_url = f"https://duckduckgo.com/html/?q={quote_plus(query)}"
+    try:
+        html, _ = _read_public_url(search_url)
+    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+        return f"Error: web_search failed: {exc}"
+
+    parser = _DuckDuckGoResultParser()
+    parser.feed(html)
+    results = parser.results[:limit]
+    if not results:
+        return f"No web search results found for: {query}"
+
+    lines = [f"Web search results for: {query}"]
+    for idx, result in enumerate(results, start=1):
+        lines.append(f"[{idx}] {result['title']}")
+        lines.append(f"URL: {result['url']}")
+        if result.get("snippet"):
+            lines.append(f"Snippet: {result['snippet']}")
+    return "\n".join(lines)
+
+
+def _fetch_web_page(url: str, max_chars: int = 4000) -> str:
+    if not _WEB_SEARCH_ENABLED:
+        return "Web fetch is disabled by HAUS_ENABLE_WEB_SEARCH=0."
+
+    limit = max(500, min(int(max_chars or 4000), 12000))
+    try:
+        html, content_type = _read_public_url(url)
+    except (HTTPError, URLError, TimeoutError, ValueError) as exc:
+        return f"Error: fetch_web_page failed: {exc}"
+
+    if "html" not in content_type.lower():
+        text = _collapse_ws(html)
+        excerpt = text[:limit]
+        return f"Fetched {url}\nContent-Type: {content_type}\n\n{excerpt}"
+
+    parser = _VisibleTextParser()
+    parser.feed(html)
+    text = _collapse_ws(" ".join(parser.text_parts))
+    excerpt = text[:limit]
+    title = f"Title: {parser.title}\n" if parser.title else ""
+    return f"Fetched {url}\n{title}\n{excerpt}"
+
+
+def _normalize_attachments(raw: Any) -> tuple[list[dict[str, str]], str | None]:
+    if raw in (None, ""):
+        return [], None
+    if not isinstance(raw, list):
+        return [], "Attachments must be a list."
+    if len(raw) > _MAX_CHAT_ATTACHMENTS:
+        return [], f"At most {_MAX_CHAT_ATTACHMENTS} image references can be attached."
+
+    attachments: list[dict[str, str]] = []
+    for idx, item in enumerate(raw, start=1):
+        if not isinstance(item, dict):
+            return [], f"Attachment {idx} must be an object."
+
+        name = _collapse_ws(str(item.get("name", f"reference-{idx}")))[:120] or f"reference-{idx}"
+        media_type = str(item.get("mime_type") or item.get("mimeType") or "").lower().strip()
+        data = str(item.get("data_base64") or item.get("data") or "").strip()
+        data_url = str(item.get("data_url") or item.get("dataUrl") or "").strip()
+
+        if data_url:
+            if not data_url.startswith("data:") or ";base64," not in data_url:
+                return [], f"Attachment {idx} data_url must be a base64 data URL."
+            header, data = data_url.split(",", 1)
+            media_type = header.removeprefix("data:").split(";", 1)[0].lower().strip()
+
+        if media_type not in _ALLOWED_IMAGE_MIME_TYPES:
+            allowed = ", ".join(sorted(_ALLOWED_IMAGE_MIME_TYPES))
+            return [], f"Attachment {idx} must be one of: {allowed}."
+        if not data:
+            return [], f"Attachment {idx} is missing base64 image data."
+
+        try:
+            decoded = base64.b64decode(data, validate=True)
+        except Exception:
+            return [], f"Attachment {idx} contains invalid base64 image data."
+        if len(decoded) > _MAX_ATTACHMENT_BYTES:
+            return [], f"Attachment {idx} is larger than {_MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB."
+
+        attachments.append({"name": name, "media_type": media_type, "data": data})
+
+    return attachments, None
+
+
+def _build_user_content(user_msg: str, attachments: list[dict[str, str]]) -> str | list[dict[str, Any]]:
+    if not attachments:
+        return user_msg
+
+    lines = [user_msg, "", "Attached visual references to replicate or adapt:"]
+    for item in attachments:
+        lines.append(f"- {item['name']} ({item['media_type']})")
+    lines.append("Use these images as visual references for layout, style, colors, and furniture placement.")
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": "\n".join(lines)}]
+    for item in attachments:
+        content.append(
+            {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": item["media_type"],
+                    "data": item["data"],
+                },
+            }
+        )
+    return content
+
+
+def _redact_history_for_client(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    redacted: list[dict[str, Any]] = []
+    for msg in messages:
+        content = msg.get("content")
+        if not isinstance(content, list):
+            redacted.append(dict(msg))
+            continue
+
+        blocks = []
+        for block in content:
+            if not isinstance(block, dict) or block.get("type") == "image":
+                continue
+            blocks.append(block)
+        redacted.append({**msg, "content": blocks})
+    return redacted
+
+
 _DISPATCH_RAW: dict[str, Callable[[dict[str, Any]], str]] = {
     "design_room": lambda a: design_room(**a),
     "design_flat": lambda a: design_flat(**a),
     "list_furniture_catalog": lambda a: list_furniture_catalog(),
+    "web_search": lambda a: _web_search(**a),
+    "fetch_web_page": lambda a: _fetch_web_page(**a),
     "list_objects": lambda a: list_objects(),
     "add_furniture": lambda a: add_furniture(**a),
     "add_wall": lambda a: add_wall(**a),
@@ -678,6 +1005,37 @@ def _openai_tools() -> list[dict[str, Any]]:
     ]
 
 
+def _image_data_url(block: dict[str, Any]) -> str:
+    source = block.get("source")
+    if not isinstance(source, dict):
+        return ""
+    media_type = str(source.get("media_type", "")).strip()
+    data = str(source.get("data", "")).strip()
+    if not media_type or not data:
+        return ""
+    return f"data:{media_type};base64,{data}"
+
+
+def _to_oai_user_content(content: list[dict[str, Any]]) -> str | list[dict[str, Any]]:
+    blocks: list[dict[str, Any]] = []
+    has_image = False
+    for block in content:
+        block_type = block.get("type")
+        if block_type == "text":
+            text = str(block.get("text", ""))
+            if text:
+                blocks.append({"type": "text", "text": text})
+        elif block_type == "image":
+            data_url = _image_data_url(block)
+            if data_url:
+                has_image = True
+                blocks.append({"type": "image_url", "image_url": {"url": data_url, "detail": "low"}})
+
+    if not has_image:
+        return "\n".join(str(block.get("text", "")) for block in blocks if block.get("type") == "text")
+    return blocks
+
+
 def _to_oai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
     oai: list[dict[str, Any]] = [{"role": "system", "content": _SYSTEM}]
 
@@ -725,8 +1083,11 @@ def _to_oai_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 )
             continue
 
-        texts = [b.get("text", "") for b in content if b.get("type") == "text"]
-        oai.append({"role": role, "content": "\n".join(texts) if texts else ""})
+        if role == "user":
+            oai.append({"role": role, "content": _to_oai_user_content(content)})
+        else:
+            texts = [b.get("text", "") for b in content if b.get("type") == "text"]
+            oai.append({"role": role, "content": "\n".join(texts) if texts else ""})
 
     return oai
 
@@ -863,13 +1224,41 @@ def _chat_gemini(
     tool_config = genai.protos.Tool(function_declarations=func_decls)
     gmodel = genai.GenerativeModel(model, system_instruction=_SYSTEM, tools=[tool_config])
 
-    history = []
+    def gemini_parts(content: Any) -> list[Any]:
+        if isinstance(content, str):
+            return [content]
+        if not isinstance(content, list):
+            return []
+
+        parts: list[Any] = []
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            if block.get("type") == "text":
+                text = str(block.get("text", ""))
+                if text:
+                    parts.append(text)
+            elif block.get("type") == "image":
+                source = block.get("source")
+                if not isinstance(source, dict):
+                    continue
+                data = str(source.get("data", ""))
+                media_type = str(source.get("media_type", ""))
+                if data and media_type:
+                    parts.append({"mime_type": media_type, "data": base64.b64decode(data)})
+        return parts
+
+    history: list[dict[str, Any]] = []
     for msg in messages:
-        if isinstance(msg.get("content"), str):
-            history.append({"role": "user" if msg["role"] == "user" else "model", "parts": [msg["content"]]})
+        content = msg.get("content")
+        if isinstance(content, list) and content and content[0].get("type") == "tool_result":
+            continue
+        parts = gemini_parts(content)
+        if parts:
+            history.append({"role": "user" if msg["role"] == "user" else "model", "parts": parts})
 
     chat = gmodel.start_chat(history=history[:-1] if len(history) > 1 else [])
-    last_msg = history[-1]["parts"][0] if history else ""
+    last_msg = history[-1]["parts"] if history else ""
 
     for _ in range(_MAX_TOOL_STEPS):
         response = chat.send_message(last_msg)
@@ -932,8 +1321,15 @@ def _sanitize_history(raw: Any) -> list[dict[str, Any]]:
             continue
         role = str(msg.get("role", "user"))
         content = msg.get("content")
-        if isinstance(content, (str, list)):
+        if isinstance(content, str):
             out.append({"role": role, "content": content})
+        elif isinstance(content, list):
+            blocks = []
+            for block in content:
+                if not isinstance(block, dict) or block.get("type") == "image":
+                    continue
+                blocks.append(block)
+            out.append({"role": role, "content": blocks})
     return out
 
 
@@ -945,6 +1341,14 @@ async def _chat_status(request: Request) -> JSONResponse:
             "providers_with_env_keys": providers,
             "supported_providers": list(_CHAT_FNS.keys()),
             "default_models": _DEFAULT_MODELS,
+            "capabilities": {
+                "web_search": _WEB_SEARCH_ENABLED,
+                "web_fetch": _WEB_SEARCH_ENABLED,
+                "image_references": True,
+                "max_image_attachments": _MAX_CHAT_ATTACHMENTS,
+                "max_image_attachment_mb": _MAX_ATTACHMENT_BYTES // (1024 * 1024),
+                "image_mime_types": sorted(_ALLOWED_IMAGE_MIME_TYPES),
+            },
         }
     )
 
@@ -962,9 +1366,12 @@ async def _chat(request: Request) -> JSONResponse:
     provider = str(body.get("provider", "")).strip().lower()
     model_override = str(body.get("model", "")).strip()
     client_key = str(body.get("api_key", "")).strip()
+    attachments, attachment_error = _normalize_attachments(body.get("attachments", []))
 
     if not user_msg:
         return JSONResponse({"error": "Message must not be empty.", "request_id": request_id}, 400)
+    if attachment_error:
+        return JSONResponse({"error": attachment_error, "request_id": request_id}, 400)
 
     if provider not in _CHAT_FNS:
         return JSONResponse(
@@ -988,7 +1395,7 @@ async def _chat(request: Request) -> JSONResponse:
 
     model = model_override or _DEFAULT_MODELS[provider]
     tool_log: list[dict[str, Any]] = []
-    messages = history + [{"role": "user", "content": user_msg}]
+    messages = history + [{"role": "user", "content": _build_user_content(user_msg, attachments)}]
 
     def dispatch(name: str, args: dict[str, Any]) -> str:
         return _dispatch(name, args, request_id=request_id, tool_log=tool_log)
@@ -1000,7 +1407,7 @@ async def _chat(request: Request) -> JSONResponse:
         return JSONResponse(
             {
                 "response": text,
-                "history": updated_history,
+                "history": _redact_history_for_client(updated_history),
                 "provider": provider,
                 "model": model,
                 "actions": tool_log,

@@ -30,6 +30,8 @@ In the browser, open **Chat**, save an Anthropic/OpenAI/Gemini key in **Settings
 design a minimalist 4-room family flat
 ```
 
+The chat can also use live web references for interior-design/HDB research and accept attached room images as visual references to replicate in the current layout. Set `HAUS_ENABLE_WEB_SEARCH=0` before `haus view` if you want to disable live web lookup.
+
 To connect an MCP client to the same live layout:
 
 ```console

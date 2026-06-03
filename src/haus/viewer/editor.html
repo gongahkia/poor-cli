@@ -41,6 +41,8 @@
     <button class="chat-chip">Place a sofa where TV view is clear</button>
     <button class="chat-chip">Simulate 3 living room layout options</button>
     <button class="chat-chip">Auto-place desk near natural circulation path</button>
+    <button class="chat-chip">Search current HDB storage references</button>
+    <button class="chat-chip">Replicate the attached room image</button>
   </div>
   <div id="chat-settings" style="display:none;">
     <div class="chat-key-row">
@@ -62,7 +64,10 @@
   </div>
   <div id="chat-status"></div>
   <div id="chat-messages"></div>
+  <div id="chat-attachments"></div>
   <div id="chat-input-row">
+    <button id="chat-attach-btn" title="Attach visual reference image">Image</button>
+    <input type="file" id="chat-image-input" accept="image/*" multiple>
     <input type="text" id="chat-input" placeholder="Describe changes..." autocomplete="off">
     <button id="chat-send">Send</button>
   </div>
