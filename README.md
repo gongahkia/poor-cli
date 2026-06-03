@@ -1,5 +1,6 @@
 [![](https://img.shields.io/badge/haus_1.0.0-passing-green)](https://github.com/gongahkia/haus/releases/tag/1.0.0)
 ![](https://github.com/gongahkia/haus/actions/workflows/ci.yml/badge.svg)
+<!-- mcp-name: io.github.gongahkia/haus -->
 
 # `Haus`
 
@@ -70,6 +71,8 @@ $ make all # run linter, tests and build script
 
 `Haus`' MCP server exposes [a broad tool surface](#mcp-tool-reference) that integrates with the AI Chat within its web editor. It writes to `viewer/mcp-layout.json`, which the web editor polls every 2 seconds.
 
+MCP registry/listing metadata lives in [`mcp-manifest.json`](./mcp-manifest.json), [`server.json`](./server.json), and [`MCP_REGISTRY_LISTINGS.md`](./MCP_REGISTRY_LISTINGS.md).
+
 ## MCP tool reference
 
 | Category | Tools |
@@ -84,6 +87,9 @@ $ make all # run linter, tests and build script
 | **Duplicate/Swap** | `duplicate_object`, `swap_furniture` |
 | **Remove** | `remove_object`, `remove_objects_by_type`, `clear_layout` |
 | **Naming/Rooms** | `rename_object`, `find_by_name`, `tag_room`, `list_rooms`, `compute_room_area` |
+| **Sightlines/Access** | `check_sightline`, `score_doorway_accessibility`, `score_walkway` |
+| **Placement simulation** | `suggest_furniture_placement`, `auto_place_furniture`, `suggest_placement_json`, `simulate_layout_options`, `apply_simulated_option` |
+| **Room templates** | `list_room_templates`, `apply_room_template` |
 
 ## Providers
 
