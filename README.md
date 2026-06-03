@@ -4,7 +4,9 @@
 
 # `Haus`
 
-[SVG](https://en.wikipedia.org/wiki/SVG) and [GLB](https://cadexchanger.com/glb/#:~:text=GLB%20is%20a%20standardized%20file,(JavaScript%20Object%20Notation)%20encoding.) editor pipeline for [HDB BTO Flat floor plans](https://en.wikipedia.org/wiki/Build-to-Order_(Singapore)#:~:text=Under%20the%20scheme%2C%20Singaporeans%20select,flats%20in%20advance%20of%20demand.).
+AI-agent interior design for Singapore HDB/BTO flats, powered by MCP.
+
+`Haus` turns real public-housing floor plans into a browser-based 3D layout editor that agents can operate with tools: place furniture, tag rooms, check walkways and sightlines, then export JSON, SVG, or GLB layouts.
 
 <div align="center">
   <a href="./asset/demo/hero.mp4">
@@ -14,18 +16,21 @@
   <sub>Prompt: <code>design a minimalist 4-room family flat</code>. Click the demo for the 1080p MP4.</sub>
 </div>
 
-> [!IMPORTANT]
-> See [here](#credits) for attribution!
+## Try the demo
 
-## Quick start
-
-Run `Haus` without cloning the repository:
+One-command launch, no source checkout:
 
 ```console
 $ uvx --from git+https://github.com/gongahkia/haus haus view
 ```
 
-This installs `haus`, launches the bundled browser editor, and opens an MCP-ready layout file under `~/.haus/viewer/mcp-layout.json`. To start the standalone stdio MCP server against that same layout:
+In the browser, open **Chat**, save an Anthropic/OpenAI/Gemini key in **Settings**, then try:
+
+```text
+design a minimalist 4-room family flat
+```
+
+To connect an MCP client to the same live layout:
 
 ```console
 $ uvx --from git+https://github.com/gongahkia/haus haus mcp --layout ~/.haus/viewer/mcp-layout.json
@@ -33,29 +38,19 @@ $ uvx --from git+https://github.com/gongahkia/haus haus mcp --layout ~/.haus/vie
 
 `uvx haus view` and `pipx install haus` are the intended short forms after a PyPI release; until then, use the GitHub `uvx --from` command above.
 
-## Stack
+**HDB/BTO glossary:** HDB is Singapore public housing; BTO means Build-To-Order, a flat sold from floor-plan brochures before construction.
 
-* *Frontend*: [JavaScript](https://developer.mozilla.org/en-US/docs/Web/JavaScript), [Three.js](https://threejs.org/) 
-* *Backend*: [Python](https://www.python.org/), [Starlette](https://www.starlette.io/), [Uvicorn](https://www.uvicorn.org/), [FastMCP](https://github.com/jlowin/fastmcp)
-* *Preprocessing*: [OpenCV](https://opencv.org/), [NumPy](https://numpy.org/), [Pillow](https://pillow.readthedocs.io/)
-* *3D*: [Trimesh](https://trimesh.org/), [Shapely](https://shapely.readthedocs.io/)
-* *Tests*: [pytest](https://docs.pytest.org/), [ruff](https://docs.astral.sh/ruff/), [pyright](https://github.com/microsoft/pyright)
-* *Package manager*: [uv](https://docs.astral.sh/uv/)
+## Why it matters
 
-## Screenshots
-
-![](./asset/reference/1.png)
-![](./asset/reference/2.png)
-![](./asset/reference/4.png)
-![](./asset/reference/5.png)
-![](./asset/reference/6.png)
-![](./asset/reference/3.png)
+* **Agent-native layout editing:** AI clients call MCP tools against real room objects instead of returning a static image.
+* **Singapore-specific floor plans:** the corpus is built around HDB/BTO apartment layouts, not generic showrooms.
+* **Exportable design state:** the editor keeps measurable 3D geometry that can be saved as JSON, SVG, or GLB.
 
 ## Source checkout usage
 
 The below instructions are for developing `Haus` from a local checkout.
 
-1. First run the below instructions to install `Haus` on your machine and install dependancies.
+1. First run the below instructions to install `Haus` on your machine and install dependencies.
 
 ```console
 $ git clone https://github.com/gongahkia/haus && cd haus
@@ -66,14 +61,23 @@ $ make setup
 
 ```console
 $ make build # process all corpus images
-$ make view # launch web editor 
+$ make view # launch web editor
 $ make vectorize # run vectorization script only
 $ make mcp # run standalone MCP server on stdio only
 $ make test # run pytest suite only
 $ make lint # run ruff linter only
-$ make clean # remove build artifacts 
+$ make clean # remove build artifacts
 $ make all # run linter, tests and build script
 ```
+
+## Screenshots
+
+![](./asset/reference/1.png)
+![](./asset/reference/2.png)
+![](./asset/reference/4.png)
+![](./asset/reference/5.png)
+![](./asset/reference/6.png)
+![](./asset/reference/3.png)
 
 ## MCP server
 
@@ -98,6 +102,15 @@ MCP registry/listing metadata lives in [`mcp-manifest.json`](./mcp-manifest.json
 | **Sightlines/Access** | `check_sightline`, `score_doorway_accessibility`, `score_walkway` |
 | **Placement simulation** | `suggest_furniture_placement`, `auto_place_furniture`, `suggest_placement_json`, `simulate_layout_options`, `apply_simulated_option` |
 | **Room templates** | `list_room_templates`, `apply_room_template` |
+
+## Stack
+
+* *Frontend*: [JavaScript](https://developer.mozilla.org/en-US/docs/Web/JavaScript), [Three.js](https://threejs.org/)
+* *Backend*: [Python](https://www.python.org/), [Starlette](https://www.starlette.io/), [Uvicorn](https://www.uvicorn.org/), [FastMCP](https://github.com/jlowin/fastmcp)
+* *Preprocessing*: [OpenCV](https://opencv.org/), [NumPy](https://numpy.org/), [Pillow](https://pillow.readthedocs.io/)
+* *3D*: [Trimesh](https://trimesh.org/), [Shapely](https://shapely.readthedocs.io/)
+* *Tests*: [pytest](https://docs.pytest.org/), [ruff](https://docs.astral.sh/ruff/), [pyright](https://github.com/microsoft/pyright)
+* *Package manager*: [uv](https://docs.astral.sh/uv/)
 
 ## Providers
 
