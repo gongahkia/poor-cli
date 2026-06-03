@@ -40,22 +40,30 @@ def _ensure_empty_layout(viewer_dir: Path) -> None:
         layout_path.write_text(json.dumps({"version": 1, "items": []}, indent=2), encoding="utf-8")
 
 
-def _copy_packaged_viewer(runtime_viewer: Path) -> None:
-    package_viewer = resources.files("haus").joinpath("viewer")
-    with resources.as_file(package_viewer) as packaged_path:
+def _copy_resource_tree(resource_path: str, destination: Path, skip_names: set[str] | None = None) -> None:
+    packaged_resource = resources.files("haus").joinpath(resource_path)
+    with resources.as_file(packaged_resource) as packaged_path:
         packaged = Path(packaged_path)
         if not packaged.exists():
-            raise FileNotFoundError("Packaged viewer assets were not found.")
+            raise FileNotFoundError(f"Packaged resource was not found: {resource_path}")
 
-        runtime_viewer.mkdir(parents=True, exist_ok=True)
+        destination.mkdir(parents=True, exist_ok=True)
         for child in packaged.iterdir():
-            if child.name == "mcp-layout.json":
+            if skip_names and child.name in skip_names:
                 continue
-            dest = runtime_viewer / child.name
+            dest = destination / child.name
             if child.is_dir():
                 shutil.copytree(child, dest, dirs_exist_ok=True)
             else:
                 shutil.copy2(child, dest)
+
+
+def _copy_packaged_viewer(runtime_viewer: Path) -> None:
+    _copy_resource_tree("viewer", runtime_viewer, skip_names={"mcp-layout.json"})
+
+
+def _copy_packaged_bto_library(runtime_root: Path) -> None:
+    _copy_resource_tree("corpus/library", runtime_root / "corpus" / "library")
 
 
 def _resolve_view_environment() -> ViewEnvironment:
@@ -79,6 +87,7 @@ def _resolve_view_environment() -> ViewEnvironment:
     runtime_root = _runtime_root()
     runtime_viewer = runtime_root / "viewer"
     _copy_packaged_viewer(runtime_viewer)
+    _copy_packaged_bto_library(runtime_root)
     _ensure_empty_layout(runtime_viewer)
     return ViewEnvironment(
         serve_root=runtime_root,

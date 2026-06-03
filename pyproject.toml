@@ -35,6 +35,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 haus = [
+  "corpus/library/*.json",
   "viewer/*.html",
   "viewer/*.json",
   "viewer/css/*.css",

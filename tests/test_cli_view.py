@@ -23,6 +23,7 @@ def test_resolve_view_environment_uses_packaged_assets(
     assert not env.source_checkout
     assert (env.viewer_dir / "editor.html").exists()
     assert (env.viewer_dir / "js" / "main.js").exists()
+    assert (runtime_root / "corpus" / "library" / "1.json").exists()
     assert json.loads((env.viewer_dir / "mcp-layout.json").read_text(encoding="utf-8")) == {
         "version": 1,
         "items": [],
