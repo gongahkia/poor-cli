@@ -23,6 +23,7 @@ from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 import uvicorn
 
+from . import mcp_server as _mcp_server
 from .logging_utils import configure_logging, new_request_id
 from .mcp_server import (
     _save_layout,
@@ -1030,8 +1031,11 @@ def create_app(root_dir: str) -> Starlette:
     )
 
 
-def run_server(root_dir: str, port: int = 8080) -> None:
+def run_server(root_dir: str, port: int = 8080, layout_path: str | None = None) -> None:
     os.environ["_HAUS_ROOT"] = root_dir
+    if layout_path is not None:
+        os.environ["_HAUS_LAYOUT_PATH"] = layout_path
+        _mcp_server.LAYOUT_PATH = Path(layout_path)
     configure_logging("haus.chat")
     uvicorn.run(
         "haus.chat_server:_reload_app",
@@ -1044,4 +1048,7 @@ def run_server(root_dir: str, port: int = 8080) -> None:
 
 
 def _reload_app() -> Starlette:
+    layout_path = os.environ.get("_HAUS_LAYOUT_PATH")
+    if layout_path:
+        _mcp_server.LAYOUT_PATH = Path(layout_path)
     return create_app(os.environ["_HAUS_ROOT"])

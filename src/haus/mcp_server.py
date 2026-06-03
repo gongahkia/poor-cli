@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import time
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,7 @@ from mcp.server import FastMCP
 
 from .logging_utils import configure_logging
 
-LAYOUT_PATH = Path("viewer/mcp-layout.json")
+LAYOUT_PATH = Path(os.environ.get("HAUS_LAYOUT_PATH", "viewer/mcp-layout.json"))
 
 FURNITURE_CATALOG = {
     "bed_single": {"w": 0.9, "h": 0.5, "d": 1.9, "color": 0x88BBEE},
