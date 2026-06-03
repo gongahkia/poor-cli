@@ -59,10 +59,14 @@ def _mock_editor_backend(page) -> None:
                     "providers_with_env_keys": [],
                     "supported_providers": ["openai", "anthropic", "gemini"],
                     "default_models": {"openai": "gpt-4o"},
+                    "search_providers_configured": ["duckduckgo"],
+                    "search_providers_available": ["duckduckgo"],
+                    "search_fallback_provider": "duckduckgo",
                     "capabilities": {
                         "web_search": True,
                         "web_fetch": True,
                         "image_references": True,
+                        "design_plans": True,
                         "max_image_attachments": 3,
                         "max_image_attachment_mb": 5,
                         "image_mime_types": ["image/png", "image/jpeg", "image/webp", "image/gif"],
@@ -258,3 +262,121 @@ def test_chat_sends_image_reference_attachment(browser_page, viewer_base_url: st
     transcript = browser_page.locator("#chat-messages").inner_text()
     assert "Attached 1 image reference: reference.png" in transcript
     assert "Reference applied." in transcript
+
+
+def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_url: str) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+
+    plan = {
+        "id": "plan-e2e-1",
+        "title": "Whole-flat concept plan",
+        "brief": "Design a compact 4-room HDB",
+        "scope": "whole_flat",
+        "status": "draft",
+        "web_references": [
+            {
+                "title": "HDB design reference",
+                "url": "https://example.com/hdb",
+                "snippet": "Reference",
+                "source_provider": "serper",
+                "published_date": None,
+                "retrieved_at": "2026-06-03T00:00:00Z",
+            }
+        ],
+        "zones": [
+            {
+                "name": "Living",
+                "intent": "family living",
+                "target_center": {"x": 0, "z": 0},
+                "planned_furniture": [
+                    {"label": "lounge sofa", "furniture_type": "sofa_l"},
+                    {"label": "tv console", "furniture_type": "tv_console"},
+                ],
+                "estimated_area_m2": 10.5,
+                "circulation_notes": "Keep a clear primary walkway.",
+            }
+        ],
+        "planned_items": [],
+        "metrics": {
+            "zone_count": 1,
+            "planned_item_count": 2,
+            "walkway_target_m": 0.9,
+            "reference_count": 1,
+        },
+        "assumptions": [],
+        "validation_targets": [],
+        "rationale": [],
+    }
+
+    def chat_handler(route) -> None:
+        payload = json.loads(route.request.post_data or "{}")
+        assert payload.get("api_key", "") == ""
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "response": "Drafted a concept plan.",
+                    "history": [{"role": "assistant", "content": [{"type": "text", "text": "Drafted a concept plan."}]}],
+                    "provider": "haus-planner",
+                    "model": "deterministic-concept-planner",
+                    "actions": [],
+                    "pending_plan": plan,
+                    "references": plan["web_references"],
+                    "request_id": "chat-plan-e2e",
+                }
+            ),
+        )
+
+    apply_calls = {"count": 0}
+
+    def apply_handler(route) -> None:
+        apply_calls["count"] += 1
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "ok": True,
+                    "summary": "Applied plan plan-e2e-1: added 2 item(s) across 1 zone(s).",
+                    "plan": {**plan, "status": "applied"},
+                    "actions": [{"tool": "tag_room", "args": {"indices": [0, 1]}, "result": "Tagged 2 object(s)."}],
+                    "validation": {"layout_summary": "Total objects: 2"},
+                }
+            ),
+        )
+
+    browser_page.route("**/api/chat", chat_handler)
+    browser_page.route("**/api/design-plans/plan-e2e-1/apply", apply_handler)
+    browser_page.add_init_script(
+        """
+        localStorage.removeItem("haus_api_keys");
+        localStorage.removeItem("haus_chat_provider");
+        localStorage.removeItem("haus_chat_history");
+        localStorage.removeItem("haus_chat_transcript");
+        """
+    )
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+
+    browser_page.click("#chat-btn")
+    browser_page.fill("#chat-input", "Design a compact 4-room HDB")
+    browser_page.click("#chat-send")
+    browser_page.wait_for_selector(".chat-plan-card", timeout=6000)
+
+    card_text = browser_page.locator(".chat-plan-card").inner_text()
+    assert "Whole-flat concept plan" in card_text
+    assert "0.9m" in card_text
+    assert "HDB design reference" in card_text
+
+    browser_page.get_by_role("button", name="Revise").click()
+    assert browser_page.locator("#chat-input").input_value() == "Revise plan plan-e2e-1: "
+
+    browser_page.get_by_role("button", name="Apply").click()
+    browser_page.wait_for_function(
+        "() => document.querySelector('#chat-messages')?.innerText.includes('Applied plan plan-e2e-1')"
+    )
+    assert apply_calls["count"] == 1
