@@ -33,6 +33,7 @@ export function initIO() {
   document.getElementById('export-json-btn').addEventListener('click', exportJSON);
   document.getElementById('json-input').addEventListener('change', importJSON);
   fn.clearLayoutAndSync = clearLayoutAndSync;
+  fn.applyLayoutData = applyLayoutData;
   startMcpSync();
 }
 function clearModelParts() {

@@ -15,3 +15,6 @@ Alternatively, use the CLI:
 ```bash
 haus view --glb /path/to/model.glb
 ```
+
+Use the `Load real layout` dropdown in the editor toolbar to load one of the
+pre-vectorized BTO layouts from `corpus/library/` without running preprocessing.
