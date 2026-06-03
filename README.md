@@ -6,6 +6,14 @@
 
 [SVG](https://en.wikipedia.org/wiki/SVG) and [GLB](https://cadexchanger.com/glb/#:~:text=GLB%20is%20a%20standardized%20file,(JavaScript%20Object%20Notation)%20encoding.) editor pipeline for [HDB BTO Flat floor plans](https://en.wikipedia.org/wiki/Build-to-Order_(Singapore)#:~:text=Under%20the%20scheme%2C%20Singaporeans%20select,flats%20in%20advance%20of%20demand.).
 
+<div align="center">
+  <a href="./asset/demo/hero.mp4">
+    <img src="./asset/demo/hero.gif" alt="Demo: prompt Haus to design a minimalist 4-room family flat while MCP tools furnish the BTO layout." width="720">
+  </a>
+  <br>
+  <sub>Prompt: <code>design a minimalist 4-room family flat</code>. Click the demo for the 1080p MP4.</sub>
+</div>
+
 > [!IMPORTANT]
 > See [here](#credits) for attribution!
 
