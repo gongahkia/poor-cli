@@ -29,8 +29,11 @@
 </div>
 <div id="chat-panel">
   <div id="chat-header">
-    <span>AI Chat Planner</span>
-    <div style="display:flex;gap:4px;align-items:center;">
+    <div class="chat-title">
+      <span class="chat-live-dot"></span>
+      <span>Haus AI Planner</span>
+    </div>
+    <div class="chat-header-actions">
       <select id="chat-provider" title="Provider"></select>
       <input type="text" id="chat-model" placeholder="Auto model" title="Optional model override">
       <button id="chat-clear-btn" title="Clear conversation">Clear</button>
@@ -66,12 +69,20 @@
   <div id="chat-messages"></div>
   <div id="chat-attachments"></div>
   <div id="chat-input-row">
-    <button id="chat-attach-btn" title="Attach visual reference image">Image</button>
+    <button id="chat-attach-btn" title="Attach visual reference image" aria-label="Attach visual reference image">Image</button>
     <input type="file" id="chat-image-input" accept="image/*" multiple>
-    <input type="text" id="chat-input" placeholder="Describe changes..." autocomplete="off">
-    <button id="chat-send">Send</button>
+    <textarea id="chat-input" rows="3" maxlength="2000" placeholder="Describe a room, renovation workflow, floor plan, or visual change..." autocomplete="off"></textarea>
+    <button id="chat-send" title="Send message">Send</button>
+  </div>
+  <div id="chat-composer-footer">
+    <span>Shift + Enter for a new line</span>
+    <span id="chat-char-count">0/2000</span>
   </div>
 </div>
+<button id="chat-float-btn" class="floating-ai-button" title="Haus AI Planner" aria-label="Open Haus AI Planner">
+  <span class="chat-float-core">AI</span>
+  <span class="chat-float-glow"></span>
+</button>
 <div id="cmd-palette">
   <div id="cmd-palette-inner">
     <input type="text" id="cmd-input" placeholder="Type a command..." autocomplete="off">

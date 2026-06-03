@@ -8,9 +8,12 @@ let statusEl;
 let attachmentsEl;
 let attachBtn;
 let imageInput;
+let chatBtn;
+let floatBtn;
 let providerSel;
 let modelInput;
 let clearBtn;
+let charCountEl;
 
 let settingsEl;
 let settingsBtn;
@@ -31,6 +34,7 @@ const HISTORY_STORAGE = 'haus_chat_history';
 const TRANSCRIPT_STORAGE = 'haus_chat_transcript';
 const DEFAULT_MAX_ATTACHMENTS = 3;
 const DEFAULT_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const MAX_CHAT_CHARS = 2000;
 
 export function initChat() {
   fn.toggleChat = toggleChat;
@@ -43,9 +47,12 @@ export function initChat() {
   attachmentsEl = document.getElementById('chat-attachments');
   attachBtn = document.getElementById('chat-attach-btn');
   imageInput = document.getElementById('chat-image-input');
+  chatBtn = document.getElementById('chat-btn');
+  floatBtn = document.getElementById('chat-float-btn');
   providerSel = document.getElementById('chat-provider');
   modelInput = document.getElementById('chat-model');
   clearBtn = document.getElementById('chat-clear-btn');
+  charCountEl = document.getElementById('chat-char-count');
 
   settingsEl = document.getElementById('chat-settings');
   settingsBtn = document.getElementById('chat-settings-btn');
@@ -54,7 +61,8 @@ export function initChat() {
   keySaveBtn = document.getElementById('chat-key-save');
   keyStatusEl = document.getElementById('chat-key-status');
 
-  document.getElementById('chat-btn').addEventListener('click', toggleChat);
+  chatBtn.addEventListener('click', toggleChat);
+  if (floatBtn) floatBtn.addEventListener('click', toggleChat);
   sendBtn.addEventListener('click', () => send());
   attachBtn.addEventListener('click', () => imageInput.click());
   imageInput.addEventListener('change', () => {
@@ -68,6 +76,7 @@ export function initChat() {
       send();
     }
   });
+  inputEl.addEventListener('input', updateCharCount);
 
   modelInput.addEventListener('change', () => {
     localStorage.setItem(MODEL_STORAGE, modelInput.value.trim());
@@ -92,12 +101,14 @@ export function initChat() {
   for (const chip of document.querySelectorAll('.chat-chip')) {
     chip.addEventListener('click', () => {
       inputEl.value = chip.textContent || '';
+      updateCharCount();
       inputEl.focus();
     });
   }
 
   history = loadJson(HISTORY_STORAGE, []);
   renderTranscript();
+  updateCharCount();
 
   const storedModel = localStorage.getItem(MODEL_STORAGE);
   if (storedModel) modelInput.value = storedModel;
@@ -202,8 +213,27 @@ function hydrateModelPlaceholder() {
 }
 
 function toggleChat() {
-  panelEl.classList.toggle('open');
-  if (panelEl.classList.contains('open')) inputEl.focus();
+  setChatOpen(!panelEl.classList.contains('open'));
+}
+
+function setChatOpen(isOpen) {
+  panelEl.classList.toggle('open', isOpen);
+  chatBtn.classList.toggle('active', isOpen);
+  if (floatBtn) {
+    floatBtn.classList.toggle('open', isOpen);
+    floatBtn.setAttribute('aria-label', isOpen ? 'Close Haus AI Planner' : 'Open Haus AI Planner');
+    floatBtn.title = isOpen ? 'Close Haus AI Planner' : 'Haus AI Planner';
+    const core = floatBtn.querySelector('.chat-float-core');
+    if (core) core.textContent = isOpen ? 'x' : 'AI';
+  }
+  if (isOpen) inputEl.focus();
+}
+
+function updateCharCount() {
+  if (!charCountEl) return;
+  const count = inputEl.value.length;
+  charCountEl.textContent = `${count}/${MAX_CHAT_CHARS}`;
+  charCountEl.classList.toggle('near-limit', count > MAX_CHAT_CHARS * 0.85);
 }
 
 function setStatus(text, isError = false) {
@@ -421,6 +451,7 @@ function appendPlanCard(plan) {
   reviseBtn.textContent = 'Revise';
   reviseBtn.addEventListener('click', () => {
     inputEl.value = `Revise plan ${plan.id}: `;
+    updateCharCount();
     inputEl.focus();
     inputEl.setSelectionRange(inputEl.value.length, inputEl.value.length);
   });
@@ -584,6 +615,7 @@ async function send() {
   const transcriptText = attachmentTranscript(text, attachmentsForSend);
 
   inputEl.value = '';
+  updateCharCount();
   clearAttachments();
   appendMessage('user', transcriptText);
   persistTranscript('user', transcriptText);
