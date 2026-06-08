@@ -67,6 +67,7 @@ def _mock_editor_backend(page) -> None:
                         "web_fetch": True,
                         "image_references": True,
                         "design_plans": True,
+                        "planner_requires_api_key": True,
                         "max_image_attachments": 3,
                         "max_image_attachment_mb": 5,
                         "image_mime_types": ["image/png", "image/jpeg", "image/webp", "image/gif"],
@@ -272,6 +273,29 @@ def test_chat_sends_image_reference_attachment(browser_page, viewer_base_url: st
     assert "Reference applied." in transcript
 
 
+def test_chat_blocks_planner_without_key(browser_page, viewer_base_url: str) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+    browser_page.add_init_script(
+        """
+        localStorage.removeItem("haus_api_keys");
+        localStorage.removeItem("haus_chat_provider");
+        localStorage.removeItem("haus_chat_history");
+        localStorage.removeItem("haus_chat_transcript");
+        """
+    )
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+
+    browser_page.fill("#chat-input", "Design a compact 4-room HDB")
+    browser_page.click("#chat-send")
+    browser_page.wait_for_function(
+        "() => document.querySelector('#chat-messages')?.innerText.includes('Add an Anthropic')"
+    )
+
+
 def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_url: str) -> None:
     _mock_editor_backend(browser_page)
     browser_page.route(
@@ -322,7 +346,7 @@ def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_ur
 
     def chat_handler(route) -> None:
         payload = json.loads(route.request.post_data or "{}")
-        assert payload.get("api_key", "") == ""
+        assert payload.get("api_key", "") == "test-key"
         route.fulfill(
             status=200,
             content_type="application/json",
@@ -362,8 +386,8 @@ def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_ur
     browser_page.route("**/api/design-plans/plan-e2e-1/apply", apply_handler)
     browser_page.add_init_script(
         """
-        localStorage.removeItem("haus_api_keys");
-        localStorage.removeItem("haus_chat_provider");
+        localStorage.setItem("haus_api_keys", JSON.stringify({ openai: "test-key" }));
+        localStorage.setItem("haus_chat_provider", "openai");
         localStorage.removeItem("haus_chat_history");
         localStorage.removeItem("haus_chat_transcript");
         """

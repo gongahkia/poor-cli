@@ -54,7 +54,7 @@ export function initChat() {
   keySaveBtn = document.getElementById('chat-key-save');
   keyStatusEl = document.getElementById('chat-key-status');
 
-  document.getElementById('chat-btn').addEventListener('click', toggleChat);
+  document.getElementById('chat-btn').addEventListener('click', openChat);
   sendBtn.addEventListener('click', () => send());
   attachBtn.addEventListener('click', () => imageInput.click());
   imageInput.addEventListener('change', () => {
@@ -104,6 +104,7 @@ export function initChat() {
 
   refreshProviders();
   fetchStatus();
+  openChat();
 }
 
 function loadJson(key, fallback) {
@@ -164,8 +165,11 @@ function refreshProviders() {
   const providersFromServer = Array.isArray(serverStatus?.supported_providers)
     ? serverStatus.supported_providers
     : ['anthropic', 'openai', 'gemini'];
+  const envProviders = new Set(Array.isArray(serverStatus?.providers_with_env_keys)
+    ? serverStatus.providers_with_env_keys
+    : []);
 
-  const availableProviders = providersFromServer.filter((p) => keys[p]);
+  const availableProviders = providersFromServer.filter((p) => keys[p] || envProviders.has(p));
   providerSel.innerHTML = '';
 
   for (const provider of availableProviders) {
@@ -185,7 +189,7 @@ function refreshProviders() {
 
   if (availableProviders.length === 0) {
     providerSel.style.display = 'none';
-    setStatus('Describe a design plan to use Haus Planner, or add an LLM key in Settings for general chat.', false);
+    setStatus('Add an Anthropic, OpenAI, or Gemini key in Settings before drafting design plans.', false);
   } else {
     providerSel.style.display = '';
     setStatus('');
@@ -201,9 +205,23 @@ function hydrateModelPlaceholder() {
   modelInput.placeholder = `Auto (${model})`;
 }
 
+function openChat() {
+  panelEl.classList.add('open');
+  inputEl.focus();
+}
+
 function toggleChat() {
   panelEl.classList.toggle('open');
   if (panelEl.classList.contains('open')) inputEl.focus();
+}
+
+function providerHasCredential(provider, keys) {
+  if (!provider) return false;
+  if (keys[provider]) return true;
+  const envProviders = Array.isArray(serverStatus?.providers_with_env_keys)
+    ? serverStatus.providers_with_env_keys
+    : [];
+  return envProviders.includes(provider);
 }
 
 function setStatus(text, isError = false) {
@@ -579,6 +597,15 @@ async function send() {
   const keys = getKeys();
   const provider = providerSel.value || '';
   const apiKey = provider ? keys[provider] || '' : '';
+  if (!providerHasCredential(provider, keys)) {
+    const errText = 'Add an Anthropic, OpenAI, or Gemini key in Settings before sending planner requests.';
+    appendMessage('error', errText);
+    persistTranscript('error', errText);
+    settingsEl.style.display = '';
+    if (provider) keyProviderSel.value = provider;
+    loadKeyField();
+    return;
+  }
 
   const model = modelInput.value.trim();
   const transcriptText = attachmentTranscript(text, attachmentsForSend);

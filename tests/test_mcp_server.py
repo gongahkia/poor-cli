@@ -265,6 +265,45 @@ def test_design_flat_adds_multiple_rooms(isolated_layout: Path) -> None:
     assert "Master Bedroom" in rooms
 
 
+def test_design_flat_uses_curated_room_zones(isolated_layout: Path) -> None:
+    layout = {
+        "version": 1,
+        "rooms": [
+            {
+                "id": "living",
+                "label": "Living",
+                "kind": "living",
+                "bounds": {"x_min": 0.0, "z_min": 0.0, "x_max": 5.0, "z_max": 4.0},
+            }
+        ],
+        "items": [],
+    }
+    assert mcp_server._save_layout(layout) is None
+
+    result = mcp_server.design_flat(style_prompt="minimalist living room", constraints="keep circulation clear")
+
+    assert "Rooms designed: 1" in result
+    assert "zone=curated" in result
+
+    data = mcp_server._load_layout()
+    furniture = [item for item in data["items"] if item.get("type") == "furniture"]
+    assert furniture
+    for item in furniture:
+        rect = mcp_server._item_rect(item)
+        assert rect[0] >= 0.0
+        assert rect[1] <= 5.0
+        assert rect[2] >= 0.0
+        assert rect[3] <= 4.0
+
+
+def test_layout_without_rooms_gets_inferred_room_zones(isolated_layout: Path) -> None:
+    assert mcp_server._save_layout({"version": 1, "items": []}) is None
+
+    result = mcp_server.design_flat(style_prompt="minimalist 4-room family flat")
+
+    assert "zone=inferred" in result
+
+
 def test_design_flat_rejects_non_whole_flat_target(isolated_layout: Path) -> None:
     assert mcp_server._save_layout({"version": 1, "items": []}) is None
 

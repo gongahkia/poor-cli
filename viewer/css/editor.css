@@ -1,4 +1,5 @@
 :root {
+  --planner-w: 440px;
   --bg: #1a1a1a; --fg: #eee; --fg-dim: #ccc; --fg-muted: #888; --fg-faint: #666; --fg-accent: #5a9;
   --panel: rgba(30,30,30,0.95); --panel-solid: #2a2a2a; --panel-hover: #3a3a3a;
   --border: #333; --border-light: #444; --border-mid: #555;
@@ -36,11 +37,13 @@ body.light {
 body { overflow: hidden; font-family: system-ui, sans-serif; background: var(--bg); color: var(--fg); }
 canvas { display: block; }
 #sidebar {
-  position: fixed; top: 0; right: 0; width: 220px; height: 100%;
+  position: fixed; top: 0; right: -220px; width: 220px; height: 100%;
   background: var(--panel); padding: 12px; z-index: 10;
   border-left: 1px solid var(--border); overflow-y: auto;
   display: flex; flex-direction: column; gap: 12px;
+  transition: right 0.18s ease;
 }
+#sidebar.open { right: 0; }
 #sidebar h3 {
   font-size: 11px; margin: 0; color: var(--fg-faint); text-transform: uppercase;
   letter-spacing: 1px; border-bottom: 1px solid var(--border); padding-bottom: 4px;
@@ -65,8 +68,9 @@ canvas { display: block; }
 }
 .dim-input:focus { border-color: var(--input-focus); outline: none; }
 #toolbar {
-  position: fixed; top: 12px; left: 12px; z-index: 10;
-  display: flex; gap: 8px; align-items: center; flex-wrap: wrap; max-width: calc(100% - 250px);
+  position: fixed; top: 12px; left: calc(var(--planner-w) + 12px); z-index: 10;
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  max-width: calc(100% - var(--planner-w) - 72px);
 }
 #toolbar label, #toolbar button, #toolbar select {
   display: inline-block; padding: 6px 14px; background: var(--btn-bg); border: 1px solid var(--border-mid);
@@ -77,8 +81,8 @@ canvas { display: block; }
 #toolbar input[type="file"] { display: none; }
 #toolbar button.active { background: var(--btn-active-bg); border-color: var(--btn-active-border); color: var(--fg); }
 #info {
-  position: fixed; bottom: 12px; left: 12px; z-index: 10;
-  font-size: 11px; color: var(--fg-faint); max-width: calc(100% - 250px);
+  position: fixed; bottom: 12px; left: calc(var(--planner-w) + 12px); z-index: 10;
+  font-size: 11px; color: var(--fg-faint); max-width: calc(100% - var(--planner-w) - 32px);
 }
 kbd {
   background: var(--kbd-bg); border: 1px solid var(--kbd-border); border-radius: 3px;
@@ -174,9 +178,9 @@ kbd {
 #context-menu > div:hover { background: var(--ctx-hover); color: var(--fg); }
 /* chat panel */
 #chat-panel {
-  position: fixed; bottom: 0; right: 230px; width: 430px; height: 440px;
-  background: var(--panel); border: 1px solid var(--border-light); border-bottom: none;
-  border-radius: 8px 8px 0 0; z-index: 150; display: none;
+  position: fixed; top: 0; left: 0; width: var(--planner-w); height: 100%;
+  background: var(--panel); border-right: 1px solid var(--border-light);
+  border-radius: 0; z-index: 150; display: flex;
   flex-direction: column; font-size: 12px;
 }
 #chat-panel.open { display: flex; }
@@ -368,6 +372,13 @@ kbd {
 }
 #chat-key-save:hover { background: var(--btn-hover); }
 #chat-key-status { font-size: 10px; color: var(--fg-accent); }
+#tools-toggle {
+  position: fixed; top: 12px; right: 12px; z-index: 40;
+  background: var(--btn-active-bg); border: 1px solid var(--btn-active-border);
+  color: var(--fg); border-radius: 4px; padding: 6px 12px;
+  cursor: pointer; font-size: 12px;
+}
+#tools-toggle:hover { background: var(--btn-hover); }
 /* command palette */
 #cmd-palette {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -397,3 +408,14 @@ kbd {
 .cmd-row:hover, .cmd-row.active { background: var(--ctx-hover); color: var(--fg); }
 .cmd-name { flex: 1; }
 .cmd-keys { font-size: 11px; color: var(--fg-muted); font-family: monospace; }
+@media (max-width: 900px) {
+  :root { --planner-w: 100vw; }
+  #chat-panel {
+    top: auto; bottom: 0; width: 100vw; height: 52vh;
+    border-right: none; border-top: 1px solid var(--border-light);
+  }
+  #toolbar {
+    left: 8px; top: 8px; max-width: calc(100% - 72px);
+  }
+  #info { display: none; }
+}
