@@ -13,6 +13,20 @@ class PlannedItem:
 
 
 @dataclass(frozen=True)
+class RoomZone:
+    room_id: str
+    label: str
+    kind: str
+    bounds: tuple[float, float, float, float]
+    source: str = "inferred"
+
+    @property
+    def center(self) -> tuple[float, float]:
+        x_min, z_min, x_max, z_max = self.bounds
+        return ((x_min + x_max) / 2, (z_min + z_max) / 2)
+
+
+@dataclass(frozen=True)
 class RoomPlan:
     room_id: str
     room_kind: str
@@ -22,6 +36,8 @@ class RoomPlan:
     origin_z: float
     items: list[PlannedItem]
     rationale: str
+    bounds: tuple[float, float, float, float] | None = None
+    zone_source: str = "inferred"
 
 
 ROOM_KITS: dict[str, list[PlannedItem]] = {
@@ -92,6 +108,8 @@ def plan_room(
     constraints: str,
     origin_x: float,
     origin_z: float,
+    bounds: tuple[float, float, float, float] | None = None,
+    zone_source: str = "inferred",
 ) -> RoomPlan:
     clean_room = room_id.strip() or infer_room_kind(room_id, style_prompt, constraints).replace("_", " ").title()
     clean_style = style_prompt.strip() or "minimalist HDB"
@@ -111,6 +129,8 @@ def plan_room(
         origin_z=origin_z,
         items=items,
         rationale=rationale,
+        bounds=bounds,
+        zone_source=zone_source,
     )
 
 
@@ -120,7 +140,25 @@ def plan_flat(
     constraints: str,
     target: str,
     bounds: tuple[float, float, float, float],
+    room_zones: list[RoomZone] | None = None,
 ) -> list[RoomPlan]:
+    if room_zones:
+        plans: list[RoomPlan] = []
+        for zone in room_zones:
+            origin_x, origin_z = zone.center
+            plans.append(
+                plan_room(
+                    room_id=zone.label,
+                    style_prompt=f"{style_prompt} {zone.kind.replace('_', ' ')}",
+                    constraints=constraints,
+                    origin_x=origin_x,
+                    origin_z=origin_z,
+                    bounds=zone.bounds,
+                    zone_source=zone.source,
+                )
+            )
+        return plans
+
     x_min, z_min, x_max, z_max = bounds
     width = max(4.0, x_max - x_min)
     depth = max(4.0, z_max - z_min)
@@ -160,6 +198,13 @@ def plan_flat(
                 constraints=constraints,
                 origin_x=origin_x,
                 origin_z=origin_z,
+                bounds=(
+                    origin_x - width * 0.22,
+                    origin_z - depth * 0.22,
+                    origin_x + width * 0.22,
+                    origin_z + depth * 0.22,
+                ),
+                zone_source="inferred",
             )
         )
     return plans

@@ -15,7 +15,7 @@ from typing import Any
 
 from mcp.server import FastMCP
 
-from .agent_loop import RoomPlan, plan_flat, plan_room
+from .agent_loop import RoomPlan, RoomZone, plan_flat, plan_room
 from .logging_utils import configure_logging
 
 LAYOUT_PATH = Path(os.environ.get("HAUS_LAYOUT_PATH", "viewer/mcp-layout.json"))
@@ -148,6 +148,45 @@ def _normalize_item(raw: Any) -> dict[str, Any] | None:
     return item
 
 
+def _normalize_room(raw: Any, default_source: str = "curated") -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+
+    bounds_raw = raw.get("bounds")
+    if isinstance(bounds_raw, dict):
+        bounds = {
+            "x_min": _coerce_float(bounds_raw.get("x_min"), 0.0),
+            "z_min": _coerce_float(bounds_raw.get("z_min"), 0.0),
+            "x_max": _coerce_float(bounds_raw.get("x_max"), 0.0),
+            "z_max": _coerce_float(bounds_raw.get("z_max"), 0.0),
+        }
+    elif isinstance(bounds_raw, (list, tuple)) and len(bounds_raw) >= 4:
+        bounds = {
+            "x_min": _coerce_float(bounds_raw[0], 0.0),
+            "z_min": _coerce_float(bounds_raw[1], 0.0),
+            "x_max": _coerce_float(bounds_raw[2], 0.0),
+            "z_max": _coerce_float(bounds_raw[3], 0.0),
+        }
+    else:
+        return None
+
+    if bounds["x_max"] <= bounds["x_min"] or bounds["z_max"] <= bounds["z_min"]:
+        return None
+
+    label = str(raw.get("label") or raw.get("name") or raw.get("id") or "Room").strip()
+    room_id = str(raw.get("id") or label.lower().replace(" ", "_")).strip()
+    kind = str(raw.get("kind") or label).strip().lower().replace(" ", "_")
+    source = str(raw.get("source") or default_source).strip() or default_source
+
+    return {
+        "id": room_id,
+        "label": label,
+        "kind": kind,
+        "bounds": bounds,
+        "source": source,
+    }
+
+
 def _normalize_layout(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict):
         return _empty_layout()
@@ -161,7 +200,20 @@ def _normalize_layout(raw: Any) -> dict[str, Any]:
             if item is not None:
                 normalized_items.append(item)
 
-    layout = {"version": _coerce_int(raw.get("version", 1), 1), "items": normalized_items}
+    layout: dict[str, Any] = {"version": _coerce_int(raw.get("version", 1), 1), "items": normalized_items}
+    if isinstance(raw.get("metadata"), dict):
+        layout["metadata"] = raw["metadata"]
+
+    rooms_raw = raw.get("rooms", [])
+    normalized_rooms: list[dict[str, Any]] = []
+    if isinstance(rooms_raw, list):
+        for entry in rooms_raw:
+            room = _normalize_room(entry)
+            if room is not None:
+                normalized_rooms.append(room)
+    if normalized_rooms:
+        layout["rooms"] = normalized_rooms
+
     if "_stamp" in raw:
         layout["_stamp"] = _coerce_int(raw.get("_stamp", 0), 0)
 
@@ -510,6 +562,84 @@ def _layout_bounds(data: dict[str, Any]) -> tuple[float, float, float, float]:
     return (min(x_mins), min(z_mins), max(x_maxs), max(z_maxs))
 
 
+def _room_bounds_tuple(room: dict[str, Any]) -> tuple[float, float, float, float]:
+    bounds = room["bounds"]
+    return (
+        _coerce_float(bounds.get("x_min"), 0.0),
+        _coerce_float(bounds.get("z_min"), 0.0),
+        _coerce_float(bounds.get("x_max"), 0.0),
+        _coerce_float(bounds.get("z_max"), 0.0),
+    )
+
+
+def _zone_key(text: str) -> str:
+    return text.strip().lower().replace("_", " ").replace("-", " ")
+
+
+def _fallback_room_zones(data: dict[str, Any]) -> list[RoomZone]:
+    x_min, z_min, x_max, z_max = _layout_bounds(data)
+    width = max(4.0, x_max - x_min)
+    depth = max(4.0, z_max - z_min)
+    center_x = (x_min + x_max) / 2
+    center_z = (z_min + z_max) / 2
+    left_x = center_x - width * 0.24
+    right_x = center_x + width * 0.24
+    front_z = center_z - depth * 0.24
+    back_z = center_z + depth * 0.24
+    half_w = width * 0.23
+    half_d = depth * 0.23
+    specs = [
+        ("living", "Living", "family_living", left_x, front_z),
+        ("dining", "Dining", "dining", right_x, front_z),
+        ("kitchen", "Kitchen", "kitchen", right_x, center_z),
+        ("master_bedroom", "Master Bedroom", "bedroom", left_x, back_z),
+        ("study", "Study", "office", right_x, back_z),
+    ]
+    return [
+        RoomZone(
+            room_id=room_id,
+            label=label,
+            kind=kind,
+            bounds=(cx - half_w, cz - half_d, cx + half_w, cz + half_d),
+            source="inferred",
+        )
+        for room_id, label, kind, cx, cz in specs
+    ]
+
+
+def _layout_room_zones(data: dict[str, Any]) -> list[RoomZone]:
+    zones: list[RoomZone] = []
+    for room in data.get("rooms", []):
+        normalized = _normalize_room(room)
+        if normalized is None:
+            continue
+        zones.append(
+            RoomZone(
+                room_id=str(normalized["id"]),
+                label=str(normalized["label"]),
+                kind=str(normalized["kind"]),
+                bounds=_room_bounds_tuple(normalized),
+                source=str(normalized.get("source", "curated")),
+            )
+        )
+    return zones or _fallback_room_zones(data)
+
+
+def _find_room_zone(data: dict[str, Any], room_id: str) -> RoomZone | None:
+    wanted = _zone_key(room_id)
+    if not wanted:
+        return None
+    for zone in _layout_room_zones(data):
+        candidates = {
+            _zone_key(zone.room_id),
+            _zone_key(zone.label),
+            _zone_key(zone.kind),
+        }
+        if wanted in candidates:
+            return zone
+    return None
+
+
 def _room_extents(data: dict[str, Any], room: str) -> tuple[float, float, float, float] | None:
     x_min = float("inf")
     z_min = float("inf")
@@ -558,6 +688,9 @@ def _resolve_search_bounds(
         ext = _room_extents(data, room_name)
         if ext is not None:
             return (ext[0] - 0.2, ext[1] - 0.2, ext[2] + 0.2, ext[3] + 0.2)
+        zone = _find_room_zone(data, room_name)
+        if zone is not None:
+            return zone.bounds
 
     if near_index is not None and 0 <= near_index < len(data["items"]):
         near = data["items"][near_index]["pos"]
@@ -621,7 +754,15 @@ def _simulate_candidates(
     if face_index is not None and (msg := _validate_index(data, face_index)):
         return [], msg
 
-    bounds = _resolve_search_bounds(data, room_name, near_index, max_distance)
+    room_bounds: tuple[float, float, float, float] | None = None
+    if room_name:
+        room_bounds = _room_extents(data, room_name)
+        if room_bounds is None:
+            zone = _find_room_zone(data, room_name)
+            if zone is not None:
+                room_bounds = zone.bounds
+
+    bounds = room_bounds or _resolve_search_bounds(data, room_name, near_index, max_distance)
     points = _iter_grid_points(bounds, grid_size)
     face_item = data["items"][face_index] if face_index is not None else None
     near_item = data["items"][near_index] if near_index is not None else None
@@ -631,6 +772,8 @@ def _simulate_candidates(
     for x, z in points:
         rot_deg = _best_candidate_rot_deg(x, z, face_item)
         candidate = _build_furniture_item(furniture_type, x, z, rot_deg)
+        if room_bounds is not None and not _item_inside_bounds(candidate, room_bounds, inset=0.02):
+            continue
         cand_polygon = _item_polygon(candidate, padding=0.02)
 
         overlap = False
@@ -733,6 +876,10 @@ def _resolve_design_origin(
         ext = _room_extents(data, room_id)
         if ext is not None:
             return _snap_value((ext[0] + ext[2]) / 2), _snap_value((ext[1] + ext[3]) / 2), None
+        zone = _find_room_zone(data, room_id)
+        if zone is not None:
+            center_x, center_z = zone.center
+            return _snap_value(center_x), _snap_value(center_z), None
 
     x_min, z_min, x_max, z_max = _layout_bounds(data)
     return _snap_value((x_min + x_max) / 2), _snap_value((z_min + z_max) / 2), None
@@ -754,35 +901,90 @@ def _design_collision(
     return False
 
 
+def _item_inside_bounds(
+    item: dict[str, Any],
+    bounds: tuple[float, float, float, float],
+    inset: float = 0.05,
+) -> bool:
+    rect = _item_rect(item)
+    return (
+        rect[0] >= bounds[0] + inset
+        and rect[1] <= bounds[2] - inset
+        and rect[2] >= bounds[1] + inset
+        and rect[3] <= bounds[3] - inset
+    )
+
+
+def _candidate_clearance(
+    candidate: dict[str, Any],
+    existing_items: list[dict[str, Any]],
+    pending_items: list[dict[str, Any]],
+) -> float | None:
+    candidate_poly = _item_polygon(candidate, padding=0.02)
+    nearest = float("inf")
+    for other in existing_items + pending_items:
+        if not other.get("visible", True):
+            continue
+        if other.get("type") == "model_part":
+            continue
+        nearest = min(nearest, _polygon_distance(candidate_poly, _item_polygon(other, padding=0.02)))
+    return nearest if nearest < float("inf") else None
+
+
+def _candidate_room_inset_score(
+    candidate: dict[str, Any],
+    bounds: tuple[float, float, float, float],
+) -> float:
+    rect = _item_rect(candidate)
+    nearest_edge = min(rect[0] - bounds[0], bounds[2] - rect[1], rect[2] - bounds[1], bounds[3] - rect[3])
+    return max(0.0, min(nearest_edge, 0.75) / 0.75)
+
+
+def _design_candidate_bounds(
+    item: dict[str, Any],
+    room_bounds: tuple[float, float, float, float] | None,
+) -> tuple[float, float, float, float]:
+    if room_bounds is not None:
+        return room_bounds
+    base_x = item["pos"][0]
+    base_z = item["pos"][2]
+    return (base_x - 2.0, base_z - 2.0, base_x + 2.0, base_z + 2.0)
+
+
 def _with_clear_design_position(
     item: dict[str, Any],
     existing_items: list[dict[str, Any]],
     pending_items: list[dict[str, Any]],
+    room_bounds: tuple[float, float, float, float] | None,
 ) -> dict[str, Any] | None:
     base_x = item["pos"][0]
     base_z = item["pos"][2]
-    nudges = [
-        (0.0, 0.0),
-        (0.25, 0.0),
-        (-0.25, 0.0),
-        (0.0, 0.25),
-        (0.0, -0.25),
-        (0.5, 0.0),
-        (-0.5, 0.0),
-        (0.0, 0.5),
-        (0.0, -0.5),
-        (0.5, 0.5),
-        (-0.5, 0.5),
-        (0.5, -0.5),
-        (-0.5, -0.5),
-    ]
-    for dx, dz in nudges:
+    bounds = _design_candidate_bounds(item, room_bounds)
+    points = _iter_grid_points(bounds, 0.25)
+    points.append((_snap_value(base_x), _snap_value(base_z)))
+
+    scored: list[tuple[float, dict[str, Any]]] = []
+    for x, z in points:
         candidate = json.loads(json.dumps(item))
-        candidate["pos"][0] = _snap_value(base_x + dx)
-        candidate["pos"][2] = _snap_value(base_z + dz)
-        if not _design_collision(candidate, existing_items, pending_items):
-            return candidate
-    return None
+        candidate["pos"][0] = _snap_value(x)
+        candidate["pos"][2] = _snap_value(z)
+        if room_bounds is not None and not _item_inside_bounds(candidate, room_bounds):
+            continue
+        if _design_collision(candidate, existing_items, pending_items):
+            continue
+
+        target_dist = math.hypot(candidate["pos"][0] - base_x, candidate["pos"][2] - base_z)
+        target_component = max(0.0, 1.0 - target_dist / 3.0)
+        clearance = _candidate_clearance(candidate, existing_items, pending_items)
+        clearance_component = min(clearance, 1.2) / 1.2 if clearance is not None else 1.0
+        inset_component = _candidate_room_inset_score(candidate, bounds)
+        score = target_component * 0.55 + clearance_component * 0.30 + inset_component * 0.15
+        scored.append((score, candidate))
+
+    if not scored:
+        return None
+    scored.sort(key=lambda entry: entry[0], reverse=True)
+    return scored[0][1]
 
 
 def _apply_room_plan(
@@ -801,6 +1003,8 @@ def _apply_room_plan(
             "room_kind": plan.room_kind,
             "style_prompt": plan.style_prompt,
             "constraints": plan.constraints,
+            "room_zone_source": plan.zone_source,
+            "room_bounds": plan.bounds,
         },
         "result": plan.rationale,
     })
@@ -811,20 +1015,22 @@ def _apply_room_plan(
         item = _build_furniture_item(spec.furniture_type, x, z, spec.rotation_deg)
         item["room"] = plan.room_id
         item["name"] = f"{plan.room_id} {spec.name or spec.furniture_type}"
-        placed = _with_clear_design_position(item, data["items"], pending)
+        placed = _with_clear_design_position(item, data["items"], pending, plan.bounds)
 
         args = {
             "furniture_type": spec.furniture_type,
             "x": x,
             "z": z,
             "rotation_deg": spec.rotation_deg,
+            "room": plan.room_id,
+            "room_zone_source": plan.zone_source,
         }
         if placed is None:
             skipped.append(spec.furniture_type)
             trace.append({
                 "tool": "add_furniture",
                 "args": args,
-                "result": "skipped: no collision-free snapped position found",
+                "result": "skipped: no collision-free room-bounded snapped position found",
             })
             continue
 
@@ -874,7 +1080,8 @@ def _format_design_result(
         skipped = skipped_by_room.get(plan.room_id, [])
         lines.append(
             f"  {plan.room_id}: {plan.room_kind.replace('_', ' ')} "
-            f"at ({plan.origin_x:.2f}, {plan.origin_z:.2f}), added {len(applied)}"
+            f"at ({plan.origin_x:.2f}, {plan.origin_z:.2f}), "
+            f"zone={plan.zone_source}, added {len(applied)}"
             + (f", skipped {', '.join(skipped)}" if skipped else "")
         )
 
@@ -914,6 +1121,10 @@ def design_room(
     origin_x_resolved, origin_z_resolved, err = _resolve_design_origin(data, room_id, origin_x, origin_z)
     if err:
         return err
+    zone = _find_room_zone(data, room_id)
+    tagged_extents = _room_extents(data, room_id) if room_id and zone is None else None
+    plan_bounds = zone.bounds if zone is not None else tagged_extents
+    zone_source = zone.source if zone is not None else ("tagged" if tagged_extents is not None else "inferred")
 
     trace: list[dict[str, Any]] = [
         {
@@ -928,6 +1139,8 @@ def design_room(
         constraints=constraints,
         origin_x=origin_x_resolved,
         origin_z=origin_z_resolved,
+        bounds=plan_bounds,
+        zone_source=zone_source,
     )
     applied, skipped = _apply_room_plan(data, plan, trace)
     save_err = _save_layout(data)
@@ -961,11 +1174,15 @@ def design_flat(
 
     data = _load_layout()
     bounds = _layout_bounds(data)
+    zones = _layout_room_zones(data)
     trace: list[dict[str, Any]] = [
         {
             "tool": "get_layout_summary",
             "args": {},
-            "result": f"read {len(data['items'])} existing layout item(s), bounds={bounds}",
+            "result": (
+                f"read {len(data['items'])} existing layout item(s), bounds={bounds}, "
+                f"room_zones={len(zones)}"
+            ),
         }
     ]
     plans = plan_flat(
@@ -973,6 +1190,7 @@ def design_flat(
         constraints=constraints,
         target=target,
         bounds=bounds,
+        room_zones=zones,
     )
 
     applied_by_room: dict[str, list[int]] = {}
@@ -2148,6 +2366,37 @@ def score_doorway_accessibility(
     return "\n".join(lines)
 
 
+def _walkway_corridor_polygon(
+    x1: float,
+    z1: float,
+    x2: float,
+    z2: float,
+    width: float,
+) -> list[tuple[float, float]]:
+    dx = x2 - x1
+    dz = z2 - z1
+    length = math.hypot(dx, dz)
+    if length <= 1e-9:
+        return []
+    nx = -dz / length * width / 2
+    nz = dx / length * width / 2
+    return [
+        (x1 + nx, z1 + nz),
+        (x2 + nx, z2 + nz),
+        (x2 - nx, z2 - nz),
+        (x1 - nx, z1 - nz),
+    ]
+
+
+def _distance_point_to_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> float:
+    if _point_in_polygon(point, polygon):
+        return 0.0
+    return min(
+        _distance_point_to_segment(point, edge_a, edge_b)
+        for edge_a, edge_b in _polygon_edges(polygon)
+    )
+
+
 @mcp.tool()
 def score_walkway(
     x1: float,
@@ -2173,26 +2422,27 @@ def score_walkway(
     if length < 0.01:
         return "Error: walkway start and end are the same point."
 
+    corridor = _walkway_corridor_polygon(x1, z1, x2, z2, min_width)
     steps = max(2, int(length / 0.25))
     narrowest = float("inf")
     narrowest_pos: tuple[float, float] = (x1, z1)
     obstructions: list[str] = []
 
-    half_w = min_width / 2
+    polygons: list[tuple[int, dict[str, Any], list[tuple[float, float]]]] = []
+    for i, item in enumerate(items):
+        if item.get("visible", True):
+            polygons.append((i, item, _item_polygon(item)))
+
     for s in range(steps + 1):
         t = s / steps
         px = x1 + dx * t
         pz = z1 + dz * t
         local_min = float("inf")
-        for i, item in enumerate(items):
-            if not item.get("visible", True):
-                continue
-            poly = _item_polygon(item)
-            for edge_a, edge_b in _polygon_edges(poly):
-                d = _distance_point_to_segment((px, pz), edge_a, edge_b)
-                if d < local_min:
-                    local_min = d
-            if local_min < half_w:
+        for i, item, poly in polygons:
+            d = _distance_point_to_polygon((px, pz), poly)
+            if d < local_min:
+                local_min = d
+            if corridor and _polygons_intersect(corridor, poly):
                 label = f"[{i}] {_item_label(item)}"
                 if label not in obstructions:
                     obstructions.append(label)
@@ -2206,6 +2456,7 @@ def score_walkway(
     lines = [
         f"Walkway ({x1:.2f},{z1:.2f}) -> ({x2:.2f},{z2:.2f}), length={length:.2f}m",
         f"Required width: {min_width:.2f}m",
+        "Method: swept corridor polygon with sampled centerline clearance",
         f"Narrowest gap: {effective_width:.2f}m at ({narrowest_pos[0]:.2f}, {narrowest_pos[1]:.2f})" if narrowest < float("inf") else "No obstructions detected",
         f"Walkway score: {score}",
     ]

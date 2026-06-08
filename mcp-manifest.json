@@ -9,7 +9,7 @@
   "language": "Python",
   "runtime": {
     "name": "uvx",
-    "requires_python": ">=3.9"
+    "requires_python": ">=3.10"
   },
   "transport": {
     "type": "stdio",

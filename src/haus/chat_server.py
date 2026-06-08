@@ -1230,6 +1230,12 @@ def _layout_bounds_dict(bounds: tuple[float, float, float, float]) -> dict[str, 
     }
 
 
+def _bounds_dict(bounds: tuple[float, float, float, float] | None) -> dict[str, float] | None:
+    if bounds is None:
+        return None
+    return _layout_bounds_dict(bounds)
+
+
 def _planned_furniture(plan: RoomPlan) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for spec in plan.items:
@@ -1274,9 +1280,11 @@ def _room_plan_to_zone(plan: RoomPlan) -> dict[str, Any]:
         "name": plan.room_id,
         "intent": plan.room_kind.replace("_", " "),
         "target_center": {"x": round(plan.origin_x, 3), "z": round(plan.origin_z, 3)},
+        "bounds": _bounds_dict(plan.bounds),
+        "zone_source": plan.zone_source,
         "planned_furniture": planned,
         "estimated_area_m2": _estimate_zone_area(plan),
-        "circulation_notes": "Keep a 0.9m primary walkway and preserve direct access to seating, storage, and work surfaces.",
+        "circulation_notes": "Keep a 0.75m primary walkway and preserve direct access to seating, storage, and work surfaces.",
     }
 
 
@@ -1301,26 +1309,41 @@ def _draft_room_plans(brief: str, scope: str) -> tuple[list[RoomPlan], tuple[flo
     data = _mcp_server._load_layout()
     bounds = _mcp_server._layout_bounds(data)
     if scope == "whole_flat":
+        room_zones = _mcp_server._layout_room_zones(data)
         return (
             plan_flat(
                 style_prompt=brief,
-                constraints="Concept plan only; maintain accessible circulation and avoid collisions on apply.",
+                constraints="Concept plan only; maintain 0.75m circulation and avoid collisions on apply.",
                 target="whole_flat",
                 bounds=bounds,
+                room_zones=room_zones,
             ),
             bounds,
             len(data["items"]),
         )
 
     x_min, z_min, x_max, z_max = bounds
+    room_id = _room_id_from_brief(brief)
+    zone = _mcp_server._find_room_zone(data, room_id)
+    origin_x = (x_min + x_max) / 2
+    origin_z = (z_min + z_max) / 2
+    room_bounds = None
+    zone_source = "inferred"
+    if zone is not None:
+        origin_x, origin_z = zone.center
+        room_bounds = zone.bounds
+        zone_source = zone.source
+
     return (
         [
             plan_room(
-                room_id=_room_id_from_brief(brief),
+                room_id=room_id,
                 style_prompt=brief,
-                constraints="Concept plan only; maintain accessible circulation and avoid collisions on apply.",
-                origin_x=(x_min + x_max) / 2,
-                origin_z=(z_min + z_max) / 2,
+                constraints="Concept plan only; maintain 0.75m circulation and avoid collisions on apply.",
+                origin_x=origin_x,
+                origin_z=origin_z,
+                bounds=room_bounds,
+                zone_source=zone_source,
             )
         ],
         bounds,
@@ -1385,14 +1408,14 @@ def _draft_design_plan(
             "zone_count": len(zones),
             "zone_areas_m2": {zone["name"]: zone["estimated_area_m2"] for zone in zones},
             "estimated_furniture_footprint_m2": _furniture_footprint_m2(room_plans),
-            "walkway_target_m": 0.9,
+            "walkway_target_m": 0.75,
             "layout_bounds": _layout_bounds_dict(bounds),
             "reference_count": len(refs),
             "visual_reference_count": len(visual_refs),
             "overlap_risk": "checked during apply with collision-aware placement and post-apply overlap checks",
         },
         "validation_targets": [
-            "score_walkway across the planned envelope using a 0.9m target",
+            "score_walkway across the planned envelope using a 0.75m target",
             "check_overlap on newly applied furniture pairs",
             "check_sightline where a sofa and TV console are planned in the same zone",
             "compute_room_area for every tagged zone after apply",
@@ -1420,7 +1443,7 @@ def _design_plan_response_text(plan: dict[str, Any]) -> str:
         f"Drafted {plan['title']} as a concept plan. "
         f"Zones: {zone_names}. "
         f"Planned {metrics.get('planned_item_count', 0)} item(s) with a "
-        f"{metrics.get('walkway_target_m', 0.9)}m circulation target. "
+        f"{metrics.get('walkway_target_m', 0.75)}m circulation target. "
         "Review or revise the plan, then apply it to update the layout."
     )
 
@@ -1460,7 +1483,7 @@ def _post_apply_validation(
     x_min, z_min, x_max, z_max = _mcp_server._layout_bounds(data)
     walkway = "No walkway check available."
     if abs(x_max - x_min) > 0.01 or abs(z_max - z_min) > 0.01:
-        walkway = score_walkway(x_min, z_min, x_max, z_max, min_width=0.9)
+        walkway = score_walkway(x_min, z_min, x_max, z_max, min_width=0.75)
 
     return {
         "layout_summary": get_layout_summary(),
@@ -2106,6 +2129,7 @@ async def _chat_status(request: Request) -> JSONResponse:
                 "web_fetch": _web_search_enabled(),
                 "image_references": True,
                 "design_plans": True,
+                "planner_requires_api_key": True,
                 "max_image_attachments": _MAX_CHAT_ATTACHMENTS,
                 "max_image_attachment_mb": _MAX_ATTACHMENT_BYTES // (1024 * 1024),
                 "image_mime_types": sorted(_ALLOWED_IMAGE_MIME_TYPES),
@@ -2213,6 +2237,28 @@ async def _chat(request: Request) -> JSONResponse:
         return JSONResponse({"error": attachment_error, "request_id": request_id}, 400)
 
     revision_request = _parse_revision_request(user_msg)
+    concept_request = _is_concept_request(user_msg, attachments)
+
+    if revision_request is not None or concept_request:
+        if provider not in _CHAT_FNS:
+            return JSONResponse(
+                {
+                    "error": "Choose a supported provider and add an API key before drafting design plans.",
+                    "supported": list(_CHAT_FNS.keys()),
+                    "request_id": request_id,
+                },
+                400,
+            )
+        api_key = client_key or os.environ.get(_ENV_KEYS[provider], "")
+        if not api_key:
+            return JSONResponse(
+                {
+                    "error": f"No API key for {provider}. Add one in chat settings.",
+                    "request_id": request_id,
+                },
+                400,
+            )
+
     if revision_request is not None:
         plan_id, revision = revision_request
         return _revision_chat_payload(
@@ -2223,7 +2269,7 @@ async def _chat(request: Request) -> JSONResponse:
             request_id=request_id,
         )
 
-    if _is_concept_request(user_msg, attachments):
+    if concept_request:
         return _design_chat_payload(user_msg=user_msg, history=history, attachments=attachments, request_id=request_id)
 
     if provider not in _CHAT_FNS:
