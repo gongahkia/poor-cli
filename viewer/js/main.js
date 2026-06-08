@@ -29,6 +29,13 @@ initSceneList();
 initCamera();
 initIO();
 initBtoLibrary();
+const toolsToggle = document.getElementById('tools-toggle');
+const sidebar = document.getElementById('sidebar');
+if (toolsToggle && sidebar) {
+  toolsToggle.addEventListener('click', () => {
+    sidebar.classList.toggle('open');
+  });
+}
 initShortcuts();
 initContextMenu();
 initOverlay();

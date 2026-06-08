@@ -12,6 +12,26 @@
     "column_count": 0,
     "opening_count": 1
   },
+  "rooms": [
+    {
+      "id": "living",
+      "label": "Living",
+      "kind": "living",
+      "bounds": {"x_min": -0.35, "z_min": 0.25, "x_max": 2.25, "z_max": 2.2}
+    },
+    {
+      "id": "kitchen",
+      "label": "Kitchen",
+      "kind": "kitchen",
+      "bounds": {"x_min": 2.15, "z_min": 0.25, "x_max": 4.0, "z_max": 1.7}
+    },
+    {
+      "id": "bedroom",
+      "label": "Bedroom",
+      "kind": "bedroom",
+      "bounds": {"x_min": 1.6, "z_min": 1.6, "x_max": 4.05, "z_max": 3.35}
+    }
+  ],
   "items": [
     {
       "type": "wall",

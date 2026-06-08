@@ -12,6 +12,44 @@
     "column_count": 0,
     "opening_count": 0
   },
+  "rooms": [
+    {
+      "id": "living",
+      "label": "Living",
+      "kind": "living",
+      "bounds": {"x_min": -1.2, "z_min": 0.45, "x_max": 2.8, "z_max": 3.4}
+    },
+    {
+      "id": "dining",
+      "label": "Dining",
+      "kind": "dining",
+      "bounds": {"x_min": 2.7, "z_min": 0.45, "x_max": 4.8, "z_max": 3.2}
+    },
+    {
+      "id": "kitchen",
+      "label": "Kitchen",
+      "kind": "kitchen",
+      "bounds": {"x_min": 4.7, "z_min": 0.45, "x_max": 9.3, "z_max": 3.2}
+    },
+    {
+      "id": "master_bedroom",
+      "label": "Master Bedroom",
+      "kind": "bedroom",
+      "bounds": {"x_min": -1.2, "z_min": 3.2, "x_max": 2.8, "z_max": 6.4}
+    },
+    {
+      "id": "bedroom_2",
+      "label": "Bedroom 2",
+      "kind": "bedroom",
+      "bounds": {"x_min": 2.9, "z_min": 3.2, "x_max": 5.6, "z_max": 6.4}
+    },
+    {
+      "id": "study",
+      "label": "Study",
+      "kind": "office",
+      "bounds": {"x_min": 5.7, "z_min": 3.2, "x_max": 9.3, "z_max": 6.4}
+    }
+  ],
   "items": [
     {
       "type": "wall",

@@ -17,6 +17,14 @@ def test_bto_layout_library_has_four_editor_json_layouts() -> None:
         assert data["metadata"]["source"].startswith("corpus/cleaned/")
         assert data["metadata"]["wall_count"] > 0
         assert len(data["items"]) == data["metadata"]["wall_count"]
+        assert data["rooms"]
+        for room in data["rooms"]:
+            assert room["id"]
+            assert room["label"]
+            assert room["kind"]
+            bounds = room["bounds"]
+            assert bounds["x_min"] < bounds["x_max"]
+            assert bounds["z_min"] < bounds["z_max"]
 
         first = data["items"][0]
         assert first["type"] == "wall"

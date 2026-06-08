@@ -13,6 +13,7 @@ export const S = {
   placeMode: false, placeGhost: null, placeType: null, placeBlocked: false,
   fpsMode: false, measureMode: false, measureStart: null, measureLine: null, measureLabel: null,
   clipboard: null,
+  layoutMetadata: null, layoutRooms: [],
   raycaster: new THREE.Raycaster(), mouse: new THREE.Vector2(),
   dragPlane: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
 };

@@ -140,7 +140,10 @@ function serializeLayout() {
     if (m.userData.room) entry.room = m.userData.room;
     items.push(entry);
   }
-  return { version: 1, items };
+  const layout = { version: 1, items };
+  if (S.layoutMetadata) layout.metadata = S.layoutMetadata;
+  if (Array.isArray(S.layoutRooms) && S.layoutRooms.length > 0) layout.rooms = S.layoutRooms;
+  return layout;
 }
 function exportJSON() {
   downloadBlob(new Blob([JSON.stringify(serializeLayout(), null, 2)], { type: 'application/json' }), 'haus-layout.json');
@@ -210,6 +213,8 @@ function clearLocalLayout({ recordUndo = true } = {}) {
   while (S.draggables.length) S.scene.remove(S.draggables.pop());
   S.userWalls.length = 0;
   S.hiddenObjects.length = 0;
+  S.layoutMetadata = null;
+  S.layoutRooms = [];
   S.redoStack.length = 0;
   fn.refreshSceneList();
 
@@ -252,6 +257,8 @@ function applyLayoutData(data, { recordUndo = true, frame = true } = {}) {
     return;
   }
   const prev = serializeLayout();
+  S.layoutMetadata = data.metadata && typeof data.metadata === 'object' ? data.metadata : null;
+  S.layoutRooms = Array.isArray(data.rooms) ? data.rooms : [];
   clearModelParts();
   while (S.draggables.length) S.scene.remove(S.draggables.pop());
   S.userWalls.length = 0; S.redoStack.length = 0;
@@ -277,6 +284,8 @@ function importJSON(e) {
         console.warn('JSON import missing items array');
         return;
       }
+      S.layoutMetadata = data.metadata && typeof data.metadata === 'object' ? data.metadata : null;
+      S.layoutRooms = Array.isArray(data.rooms) ? data.rooms : [];
       clearModelParts();
       while (S.draggables.length) S.scene.remove(S.draggables.pop());
       S.userWalls.length = 0; S.undoStack.length = 0; S.redoStack.length = 0;
