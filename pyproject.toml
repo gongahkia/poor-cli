@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Vectorize raster floor plan images into clean wall-polygon PNGs"
 readme = "README.md"
 requires-python = ">=3.10"
+license = {text = "MIT"}
 authors = [{ name = "Codex" }]
+classifiers = ["License :: OSI Approved :: MIT License"]
 dependencies = [
   "numpy>=1.26",
   "opencv-python-headless>=4.10",

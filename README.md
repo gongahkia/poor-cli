@@ -105,6 +105,10 @@ MCP registry/listing metadata lives in [`mcp-manifest.json`](./mcp-manifest.json
 | **Placement simulation** | `suggest_furniture_placement`, `auto_place_furniture`, `suggest_placement_json`, `simulate_layout_options`, `apply_simulated_option` |
 | **Room templates** | `list_room_templates`, `apply_room_template` |
 
+## Demo fixture
+
+The UiPath AgentHack pivot pins one floor plan as the canonical demo: `tests/fixtures/bto_3room_orange.jpg` (vectorized at `corpus/library/3.json`). See [`SPEC-HTTP-CASE.md`](./SPEC-HTTP-CASE.md#1-demo-fixture-pin) for the single source of truth.
+
 ## Stack
 
 * *Frontend*: [JavaScript](https://developer.mozilla.org/en-US/docs/Web/JavaScript), [Three.js](https://threejs.org/)
