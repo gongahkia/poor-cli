@@ -1,5 +1,8 @@
 import * as THREE from 'three';
 export const SIDEBAR_W = 220;
+export function sceneViewportWidth() {
+  return Math.max(1, innerWidth <= 900 ? innerWidth : innerWidth - SIDEBAR_W);
+}
 export const MAX_UNDO = 50;
 export const WALL_COLOR = 0x666666;
 export const S = {

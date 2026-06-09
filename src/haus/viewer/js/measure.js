@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { S, fn, SIDEBAR_W } from './state.js';
+import { S, fn, sceneViewportWidth } from './state.js';
 const lineMat = new THREE.LineBasicMaterial({ color: 0xa78bfa, linewidth: 2, depthTest: false });
 const dotGeo = new THREE.SphereGeometry(0.06, 8, 8);
 const dotMat = new THREE.MeshBasicMaterial({ color: 0xa78bfa, depthTest: false });
@@ -50,7 +50,7 @@ function addDot(pt) {
 }
 function measureClick(e) {
   const mouse = new THREE.Vector2(
-    (e.clientX / (innerWidth - SIDEBAR_W)) * 2 - 1,
+    (e.clientX / sceneViewportWidth()) * 2 - 1,
     -(e.clientY / innerHeight) * 2 + 1
   );
   S.raycaster.setFromCamera(mouse, S.camera);
@@ -80,7 +80,7 @@ function measureClick(e) {
   // position label at midpoint in screen space
   const mid = new THREE.Vector3((start.x + end.x) / 2, 0.3, (start.z + end.z) / 2);
   const screen = mid.project(S.camera);
-  const hw = (innerWidth - SIDEBAR_W) / 2, hh = innerHeight / 2;
+  const hw = sceneViewportWidth() / 2, hh = innerHeight / 2;
   labelEl.textContent = dist.toFixed(3) + 'm';
   labelEl.style.left = (screen.x * hw + hw) + 'px';
   labelEl.style.top = (-screen.y * hh + hh) + 'px';

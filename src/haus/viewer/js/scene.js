@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { S, SIDEBAR_W } from './state.js';
+import { S, sceneViewportWidth } from './state.js';
 
 const THEMES = {
   dark: {
@@ -141,11 +141,11 @@ export function initScene() {
   S.scene = new THREE.Scene();
   const isLight = localStorage.getItem('haus-theme') === 'light';
   if (isLight) document.body.classList.add('light');
-  S.camera = new THREE.PerspectiveCamera(45, (innerWidth - SIDEBAR_W) / innerHeight, 0.1, 500);
+  S.camera = new THREE.PerspectiveCamera(45, sceneViewportWidth() / innerHeight, 0.1, 500);
   S.camera.position.set(8.5, 6.2, 9.5);
   S.camera.lookAt(0, 0.7, 0);
   S.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
-  S.renderer.setSize(innerWidth - SIDEBAR_W, innerHeight);
+  S.renderer.setSize(sceneViewportWidth(), innerHeight);
   S.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   S.renderer.shadowMap.enabled = true;
   S.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -200,9 +200,9 @@ export function initScene() {
     S.renderer.shadowMap.needsUpdate = true;
   });
   window.addEventListener('resize', () => {
-    S.camera.aspect = (innerWidth - SIDEBAR_W) / innerHeight;
+    S.camera.aspect = sceneViewportWidth() / innerHeight;
     S.camera.updateProjectionMatrix();
-    S.renderer.setSize(innerWidth - SIDEBAR_W, innerHeight);
+    S.renderer.setSize(sceneViewportWidth(), innerHeight);
   });
   const themeBtn = document.getElementById('theme-btn');
   if (isLight) themeBtn.textContent = 'Dark';

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PointerLockControls } from 'three/addons/controls/PointerLockControls.js';
-import { S, fn, SIDEBAR_W } from './state.js';
+import { S, fn } from './state.js';
 let plControls = null;
 const moveState = { forward: false, backward: false, left: false, right: false };
 const EYE_HEIGHT = 1.6;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { S, fn, SIDEBAR_W } from './state.js';
+import { S, fn, sceneViewportWidth } from './state.js';
 const outlineMat = new THREE.LineBasicMaterial({ color: 0x44ddaa, linewidth: 2 });
 const multiOutlineMat = new THREE.LineBasicMaterial({ color: 0x44aadd, linewidth: 2 });
 let resizeOldDims = null;
@@ -148,7 +148,7 @@ function unhideAll() {
   fn.refreshSceneList();
 }
 function getGroundPoint(e) {
-  S.mouse.x = (e.clientX / (innerWidth - SIDEBAR_W)) * 2 - 1;
+  S.mouse.x = (e.clientX / sceneViewportWidth()) * 2 - 1;
   S.mouse.y = -(e.clientY / innerHeight) * 2 + 1;
   S.raycaster.setFromCamera(S.mouse, S.camera);
   const pt = new THREE.Vector3();
@@ -265,7 +265,7 @@ function setupDragHandlers() {
       return;
     }
     if (S.measureMode) { fn.measureClick(e); return; }
-    S.mouse.x = (e.clientX / (innerWidth - SIDEBAR_W)) * 2 - 1;
+    S.mouse.x = (e.clientX / sceneViewportWidth()) * 2 - 1;
     S.mouse.y = -(e.clientY / innerHeight) * 2 + 1;
     S.raycaster.setFromCamera(S.mouse, S.camera);
     const hits = S.raycaster.intersectObjects(S.draggables);
@@ -305,7 +305,7 @@ function setupDragHandlers() {
     if (S.placeMode && S.placeGhost) { fn.updatePlaceGhost(e); return; }
     if (S.wallMode && S.wallStart) { fn.updateWallPreview(getGroundPoint(e)); return; }
     if (!S.dragTarget) return;
-    S.mouse.x = (e.clientX / (innerWidth - SIDEBAR_W)) * 2 - 1;
+    S.mouse.x = (e.clientX / sceneViewportWidth()) * 2 - 1;
     S.mouse.y = -(e.clientY / innerHeight) * 2 + 1;
     S.raycaster.setFromCamera(S.mouse, S.camera);
     const ix = new THREE.Vector3();
