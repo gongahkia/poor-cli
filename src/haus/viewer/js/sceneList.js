@@ -13,7 +13,7 @@ function getLabel(mesh) {
 }
 function getColor(mesh) {
   if (mesh.material && mesh.material.color) return '#' + mesh.material.color.getHexString();
-  return '#888';
+  return '#b3b3b3';
 }
 function frameBounds(box) {
   const center = box.getCenter(new THREE.Vector3());
