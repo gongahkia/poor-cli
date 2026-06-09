@@ -26,6 +26,12 @@ from .revise_loop import (
     step_revise,
     patch_approval,
 )
+from .vendor_handoff import (
+    DEFAULT_VENDOR_CACHE_KEY,
+    VendorCacheError,
+    VendorHandoffAgent,
+    step_handoff,
+)
 
 __all__ = [
     "load_case_from_library",
@@ -43,4 +49,8 @@ __all__ = [
     "step_compliance",
     "step_revise",
     "patch_approval",
+    "DEFAULT_VENDOR_CACHE_KEY",
+    "VendorCacheError",
+    "VendorHandoffAgent",
+    "step_handoff",
 ]

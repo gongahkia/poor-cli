@@ -63,7 +63,7 @@ mcp:
 	$(VENV)/haus mcp
 
 case-server:
-	$(VENV)/haus case-server --port $(CASE_PORT)
+	$(VENV)/haus case-server --port $(CASE_PORT) --proposals-dir tests/fixtures/proposals --vendor-cache-dir tests/fixtures/vendors
 
 clean:
 	rm -rf $(OUT) viewer/mcp-layout.json

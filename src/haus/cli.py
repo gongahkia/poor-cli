@@ -179,6 +179,18 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Directory containing pinned proposal JSON files",
     )
     case_server.add_argument(
+        "--vendor-cache-dir",
+        type=Path,
+        default=None,
+        help="Directory containing cached vendor JSON files",
+    )
+    case_server.add_argument(
+        "--handoff-root",
+        type=Path,
+        default=None,
+        help="Directory where generated handoff packets are written",
+    )
+    case_server.add_argument(
         "--max-revise-attempts",
         type=int,
         default=None,
@@ -266,6 +278,8 @@ def main(argv: list[str] | None = None) -> int:
                 host=args.host,
                 port=args.port,
                 proposals_dir=args.proposals_dir,
+                vendor_cache_dir=args.vendor_cache_dir,
+                handoff_root=args.handoff_root,
                 max_revise=args.max_revise_attempts,
             )
             return 0

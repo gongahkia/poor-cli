@@ -73,10 +73,10 @@ $ make clean # remove build artifacts
 $ make all # run linter, tests and build script
 ```
 
-The AgentHack Stage-1 HTTP service exposes the case lifecycle from [`SPEC-HTTP-CASE.md`](./SPEC-HTTP-CASE.md):
+The AgentHack Stage-1 HTTP service exposes the case lifecycle from [`SPEC-HTTP-CASE.md`](./SPEC-HTTP-CASE.md), including the cached contractor handoff stub:
 
 ```console
-$ haus case-server --port 8090 --proposals-dir tests/fixtures/proposals
+$ haus case-server --port 8090 --proposals-dir tests/fixtures/proposals --vendor-cache-dir tests/fixtures/vendors
 ```
 
 ## Screenshots

@@ -29,6 +29,7 @@ from .revise_loop import (
     step_design,
     step_revise,
 )
+from .vendor_handoff import VendorCacheError, VendorHandoffAgent, step_handoff
 
 
 ERROR_STATUS = {
@@ -109,6 +110,10 @@ def _get_agent(request: Request) -> DesignAgent:
 
 def _get_max_revise(request: Request) -> int:
     return request.app.state.max_revise
+
+
+def _get_handoff_agent(request: Request) -> VendorHandoffAgent:
+    return request.app.state.handoff_agent
 
 
 def _response(case: dict[str, Any], status_code: int = 200) -> JSONResponse:
@@ -272,6 +277,38 @@ async def _approval_case(request: Request) -> JSONResponse:
     return _response(case)
 
 
+async def _handoff_case(request: Request) -> JSONResponse:
+    try:
+        body = await _read_json_body(request, default={})
+        case = _get_store(request).get(_case_id(request))
+    except ValueError as exc:
+        return _error("validation_failed", str(exc))
+    except CaseNotFound:
+        return _error("case_not_found", f"Case not found: {_case_id(request)}")
+
+    vendor_cache_key = body.get("vendor_cache_key")
+    if vendor_cache_key is not None and not isinstance(vendor_cache_key, str):
+        return _error("validation_failed", "vendor_cache_key must be a string or null.")
+    vendor_id = body.get("vendor_id")
+    if vendor_id is not None and not isinstance(vendor_id, str):
+        return _error("validation_failed", "vendor_id must be a string or null.")
+
+    try:
+        case = step_handoff(
+            case,
+            handoff_agent=_get_handoff_agent(request),
+            vendor_cache_key=vendor_cache_key,
+            vendor_id=vendor_id,
+        )
+    except InvalidStateTransition as exc:
+        return _error("invalid_state_transition", str(exc))
+    except VendorCacheError as exc:
+        return _error("internal_error", "Vendor cache could not be used.", hint=str(exc))
+
+    _get_store(request).replace(case)
+    return _response(case)
+
+
 def _env_int(name: str, default: int) -> int:
     raw = os.environ.get(name)
     if raw is None:
@@ -291,9 +328,29 @@ def _default_proposals_dir() -> Path | None:
     return default if default.exists() else None
 
 
+def _default_vendor_cache_dir() -> Path | None:
+    configured = os.environ.get("HAUS_VENDOR_CACHE_DIR")
+    if configured:
+        return Path(configured)
+    fixture = Path("tests/fixtures/vendors")
+    if fixture.exists():
+        return fixture
+    runtime = Path.home() / ".haus" / "vendors"
+    return runtime if runtime.exists() else None
+
+
+def _default_handoff_root() -> Path:
+    configured = os.environ.get("HAUS_HANDOFF_ROOT")
+    if configured:
+        return Path(configured)
+    return Path.home() / ".haus" / "handoffs"
+
+
 def create_app(
     *,
     proposals_dir: str | Path | None = None,
+    vendor_cache_dir: str | Path | None = None,
+    handoff_root: str | Path | None = None,
     max_revise: int | None = None,
     store: CaseStore | None = None,
 ) -> Starlette:
@@ -305,11 +362,20 @@ def create_app(
             Route("/case/{case_id}/compliance", _compliance_case, methods=["POST"]),
             Route("/case/{case_id}/revise", _revise_case, methods=["POST"]),
             Route("/case/{case_id}/approval", _approval_case, methods=["PATCH"]),
+            Route("/case/{case_id}/handoff", _handoff_case, methods=["POST"]),
         ]
     )
     resolved_proposals = Path(proposals_dir) if proposals_dir is not None else _default_proposals_dir()
+    resolved_vendor_cache = (
+        Path(vendor_cache_dir) if vendor_cache_dir is not None else _default_vendor_cache_dir()
+    )
+    resolved_handoff_root = Path(handoff_root) if handoff_root is not None else _default_handoff_root()
     app.state.case_store = store or CaseStore()
     app.state.design_agent = DesignAgent(proposals_dir=resolved_proposals)
+    app.state.handoff_agent = VendorHandoffAgent(
+        vendor_cache_dir=resolved_vendor_cache,
+        handoff_root=resolved_handoff_root,
+    )
     app.state.max_revise = max_revise or _env_int(
         "MAX_REVISE_ATTEMPTS",
         DEFAULT_MAX_REVISE_ATTEMPTS,
@@ -322,10 +388,16 @@ def run_server(
     host: str = "127.0.0.1",
     port: int = 8090,
     proposals_dir: str | Path | None = None,
+    vendor_cache_dir: str | Path | None = None,
+    handoff_root: str | Path | None = None,
     max_revise: int | None = None,
 ) -> None:
     if proposals_dir is not None:
         os.environ["HAUS_CASE_PROPOSALS_DIR"] = str(proposals_dir)
+    if vendor_cache_dir is not None:
+        os.environ["HAUS_VENDOR_CACHE_DIR"] = str(vendor_cache_dir)
+    if handoff_root is not None:
+        os.environ["HAUS_HANDOFF_ROOT"] = str(handoff_root)
     if max_revise is not None:
         os.environ["MAX_REVISE_ATTEMPTS"] = str(max_revise)
     uvicorn.run(

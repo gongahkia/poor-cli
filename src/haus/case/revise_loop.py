@@ -98,7 +98,13 @@ def step_revise(
     _require(case, _REVISE_PRESTATES, "revise")
     if increment_count:
         case["revise_count"] = case.get("revise_count", 0) + 1
-    hints = [f.get("machine_hint") for f in findings if isinstance(f, dict) and f.get("machine_hint")]
+    hints: list[dict[str, Any]] = []
+    for finding in findings:
+        if not isinstance(finding, dict):
+            continue
+        hint = finding.get("machine_hint")
+        if isinstance(hint, dict):
+            hints.append(hint)
     case = design_agent.propose(case, hints=hints)
     return case
 
@@ -175,7 +181,8 @@ class ReviseLoop:
         increment_count: bool = True,
     ) -> dict[str, Any]:
         if findings is None:
-            findings = case.get("compliance_findings", [])
+            raw_findings = case.get("compliance_findings", [])
+            findings = raw_findings if isinstance(raw_findings, list) else []
         return step_revise(
             case,
             findings=findings,

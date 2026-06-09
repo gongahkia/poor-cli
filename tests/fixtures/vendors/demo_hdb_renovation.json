@@ -1,0 +1,38 @@
+{
+  "cache_key": "demo_hdb_renovation",
+  "description": "Deterministic offline vendor cache for the AgentHack Stage-1 demo.",
+  "retrieved_at": "2026-06-09T00:00:00Z",
+  "vendors": [
+    {
+      "vendor_id": "vendor_haus_001",
+      "vendor_name": "Keystone HDB Renovation Pte Ltd",
+      "specialties": [
+        "HDB renovation",
+        "BTO space planning",
+        "compliance handoff",
+        "carpentry coordination"
+      ],
+      "service_area": "Singapore",
+      "contact": {
+        "email": "handoff@keystone-reno.example",
+        "phone": "+65 6000 0001"
+      },
+      "packet_template": "Coordinate the approved 3-room BTO layout, preserve protected structural/shelter walls, review compliance findings, and prepare contractor measurements from the attached Haus layout."
+    },
+    {
+      "vendor_id": "vendor_haus_002",
+      "vendor_name": "Northstar Interior Works",
+      "specialties": [
+        "HDB carpentry",
+        "work-from-home fit-outs",
+        "accessibility clearances"
+      ],
+      "service_area": "Singapore",
+      "contact": {
+        "email": "projects@northstar-interior.example",
+        "phone": "+65 6000 0002"
+      },
+      "packet_template": "Prepare a quotation-ready review of the approved layout, focusing on walkway clearances, loose furniture coordination, and built-in storage constraints."
+    }
+  ]
+}
