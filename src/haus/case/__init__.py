@@ -9,6 +9,38 @@ Implements the Stage-1 contract from SPEC-HTTP-CASE.md:
 See SPEC-HTTP-CASE.md sections 2-5 for the contract this implements.
 """
 
-from .ingest import load_case_from_library
+from .ingest import load_case_from_library, touch
+from .compliance import (
+    run_compliance,
+    has_errors,
+    rule_structural_wall_protected,
+    rule_walkway_accessibility,
+)
+from .design_agent import DesignAgent, PinnedProposalNotFound
+from .revise_loop import (
+    ReviseLoop,
+    InvalidStateTransition,
+    DEFAULT_MAX_REVISE_ATTEMPTS,
+    step_design,
+    step_compliance,
+    step_revise,
+    patch_approval,
+)
 
-__all__ = ["load_case_from_library"]
+__all__ = [
+    "load_case_from_library",
+    "touch",
+    "run_compliance",
+    "has_errors",
+    "rule_structural_wall_protected",
+    "rule_walkway_accessibility",
+    "DesignAgent",
+    "PinnedProposalNotFound",
+    "ReviseLoop",
+    "InvalidStateTransition",
+    "DEFAULT_MAX_REVISE_ATTEMPTS",
+    "step_design",
+    "step_compliance",
+    "step_revise",
+    "patch_approval",
+]

@@ -17,7 +17,7 @@ from typing import Any
 # Polygon helpers live in mcp_server.py as battle-tested private utilities. Importing
 # them couples to FastMCP instance creation at import time (one-time cost; acceptable
 # for v0). Refactoring to a shared geometry module is out of scope here.
-from ..mcp_server import _item_polygon, _distance_point_to_polygon, _walkway_corridor_polygon
+from ..mcp_server import _item_polygon, _distance_point_to_polygon
 
 
 SEVERITY_ERROR = "error"
