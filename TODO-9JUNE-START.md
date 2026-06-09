@@ -16,7 +16,31 @@ We are **pivoting Haus** from "furnish a BTO flat" into one deep vertical slice 
 
 **Build order is risk-driven:** build the entire Haus-side multi-agent flow as a **standalone HTTP service first** (works end-to-end with zero UiPath), then wrap it in Maestro Case + Action Center once Labs access lands. If access is late, we still have a working, demoable system.
 
-Read sections 1–3 for context, **4 for the architecture**, **5 for the staged build plan (your actual work)**, 6 for open investigation tasks, and 7 for submission prep.
+Read sections 1–3 for context, **4 for the architecture**, **5 for the staged build plan (your actual work)**, 6 for open investigation tasks, and 7 for submission prep. **Before reading further, scan §0.1 for what already landed.**
+
+---
+
+## 0.1. Progress (as of 2026-06-09)
+
+What has been done since the plan was written. Cross-references to artifacts.
+
+### Landed
+- **LICENSE.** MIT, copyright "Gabriel Ong", at repo root. `pyproject.toml` carries `license = {text = "MIT"}` + MIT classifier.
+- **Demo fixture pinned.** `tests/fixtures/bto_3room_orange.jpg` + `corpus/library/3.json` (113 walls, 15 structural + 3 shelter + 10 partition + 85 ferrolite; 5 rooms). Money-shot target: `wall_28` (shelter, geo `[2.3226, 2.6, 0.3]`, color 7874600). Backup: `wall_82`. Fallback: doorway block. Pin recorded in `SPEC-HTTP-CASE.md` §1 + a pointer in `README.md`.
+- **Stage 1 contract (`SPEC-HTTP-CASE.md` at repo root).** Locks: case payload schema (extends `corpus/library/*.json` shape with `case_id`, `case_schema_version`, `design_status` enum, `revise_count`, `compliance_findings[]` with `machine_hint`, `approval_state`, `vendor_handoff`, reserved keys `pinned_proposal_id` + `vendor_cache_key`); 5 HTTP endpoints with state transitions; revise-loop policy (N=3 default); two compliance rules (`structural_wall_protected`, `walkway_accessibility`); the `hdb_type` propagation gap as a callout prerequisite; Appendix A 10-step round-trip.
+- **`hdb_type` library-side enrichment.** `src/haus/case/ingest.py` inverts `mesh._COLOR_BY_HDB` so wall items in ingested Cases carry an explicit `hdb_type`. The mesh/pipeline-side fix (for the raster ingest path) is still open — see new §9 item.
+- **Compliance Agent v0** (`src/haus/case/compliance.py`). Two rules emitting SPEC §2.4 findings: `structural_wall_protected` (diffs current items[] vs baseline snapshot; v0 detects removal only — move/resize deferred), `walkway_accessibility` (adjacent-room pairs from `rooms[].bounds`, corridor sampling; reuses private polygon helpers from `mcp_server`).
+- **Design Agent v0** (`src/haus/case/design_agent.py`). Pinned-proposal path (deep-copy items from `{proposal_id}.json` in a proposals dir) + deterministic fallback (`agent_loop.plan_room` + `mcp_server._build_furniture_item`). **Real LLM integration is deferred**; the provider abstractions in `chat_server.py` (`_CHAT_FNS`, `_provider_available`) are not yet wired. Pinned proposals are the v0 demo path.
+- **Revise loop + N-failure escalation** (`src/haus/case/revise_loop.py`). `step_design`/`step_compliance`/`step_revise`/`patch_approval` matching the SPEC §4 endpoint surface; `ReviseLoop` orchestrator; `run_to_human` driver. `InvalidStateTransition` enforces pre-states.
+- **Demo pinned proposals.** `tests/fixtures/proposals/demo_3room_remove_wall_28.json` (money-shot: removes wall_28 → triggers `structural_wall_protected` every revise → N escalation) and `demo_3room_keep_walls.json` (clean path → goes straight to `awaiting_human_approval` with no escalation_reason).
+- **Tests.** 31 new tests across `tests/test_case_{ingest,compliance,design_agent,revise_loop}.py` — all passing. Includes the SPEC Appendix A 10-step round-trip as an integration test. Full repo suite: 83 passed, 1 skipped, 1 xfailed. Ruff clean.
+
+### Honest scoping notes (read these before continuing)
+- **No HTTP server yet.** The contract is frozen and the four step functions match the endpoint surface 1:1, but the Starlette/Uvicorn layer that wraps them is the immediate next task.
+- **No vendor agent.** Reserved key `vendor_cache_key` exists in SPEC §2.8; the cached directory + handoff packet generator are not started.
+- **No real LLM wiring.** The Design Agent has a deterministic fallback + pinned-proposal path. The demo currently relies on pinned proposals; a real LLM call in the recorded demo would need provider wiring (the abstractions exist in `chat_server.py`).
+- **No Three.js editor wiring.** The editor still consumes `viewer/mcp-layout.json`; it does not yet render the Case payload's before/after for the demo money-shot.
+- **`hdb_type` raster-ingest path** still missing. Library-side enrichment works; rasters built via `pipeline.py`/`mesh.py` don't emit `hdb_type` on items yet (SPEC §3 callout).
 
 ---
 

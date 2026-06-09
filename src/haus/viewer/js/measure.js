@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { S, fn, SIDEBAR_W } from './state.js';
-const lineMat = new THREE.LineBasicMaterial({ color: 0xff6644, linewidth: 2, depthTest: false });
+const lineMat = new THREE.LineBasicMaterial({ color: 0xa78bfa, linewidth: 2, depthTest: false });
 const dotGeo = new THREE.SphereGeometry(0.06, 8, 8);
-const dotMat = new THREE.MeshBasicMaterial({ color: 0xff6644, depthTest: false });
+const dotMat = new THREE.MeshBasicMaterial({ color: 0xa78bfa, depthTest: false });
 let labelEl = null;
 let dots = [];
 export function initMeasure() {
@@ -11,7 +11,7 @@ export function initMeasure() {
   fn.measureClick = measureClick;
   labelEl = document.createElement('div');
   labelEl.id = 'measure-label';
-  labelEl.style.cssText = 'position:fixed;z-index:60;font-size:13px;font-weight:600;color:#ff6644;background:rgba(0,0,0,0.6);padding:2px 8px;border-radius:4px;pointer-events:none;display:none;';
+  labelEl.style.cssText = 'position:fixed;z-index:60;font-size:13px;font-weight:600;color:#a78bfa;background:rgba(15,15,15,0.72);padding:2px 8px;border-radius:4px;pointer-events:none;display:none;';
   document.body.appendChild(labelEl);
   document.getElementById('measure-btn').addEventListener('click', toggleMeasure);
 }
