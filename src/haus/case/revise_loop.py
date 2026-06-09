@@ -6,7 +6,7 @@ ReviseLoop binds a DesignAgent + N together for end-to-end runs and tests.
 Status transitions (the source of truth is SPEC Appendix A — the round-trip table —
 which slightly tightens the loose-language paragraph in section 4.2):
 
-  step_design     : <intake|revising> -> compliance_pending
+  step_design     : <intake|designing|revising> -> compliance_pending
   step_compliance : compliance_pending -> revising | awaiting_human_approval
   step_revise     : revising -> compliance_pending      (always, when increment runs design)
   patch_approval  : awaiting_human_approval -> approved | rejected   (Stage-1 stub; SPEC 4.4)
@@ -32,7 +32,7 @@ class InvalidStateTransition(Exception):
     """Raised when a mutating step is called against the wrong design_status (SPEC 4.2/4.3)."""
 
 
-_DESIGN_PRESTATES = {"intake", "revising"}
+_DESIGN_PRESTATES = {"intake", "designing", "revising"}
 _COMPLIANCE_PRESTATES = {"compliance_pending"}
 _REVISE_PRESTATES = {"revising"}
 _APPROVAL_PRESTATES = {"awaiting_human_approval"}
@@ -47,7 +47,7 @@ def _require(case: dict[str, Any], allowed: set[str], op: str) -> None:
 
 
 def step_design(case: dict[str, Any], design_agent: DesignAgent) -> dict[str, Any]:
-    """POST /case/{id}/design. Pre-state intake|revising -> compliance_pending."""
+    """POST /case/{id}/design. Pre-state intake|designing|revising -> compliance_pending."""
     _require(case, _DESIGN_PRESTATES, "design")
     case["design_status"] = "designing"  # transient marker during the call
     case = design_agent.propose(case)

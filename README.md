@@ -66,10 +66,17 @@ $ make build # process all corpus images
 $ make view # launch web editor
 $ make vectorize # run vectorization script only
 $ make mcp # run standalone MCP server on stdio only
+$ make case-server # run Stage-1 Renovation Design Case HTTP service
 $ make test # run pytest suite only
 $ make lint # run ruff linter only
 $ make clean # remove build artifacts
 $ make all # run linter, tests and build script
+```
+
+The AgentHack Stage-1 HTTP service exposes the case lifecycle from [`SPEC-HTTP-CASE.md`](./SPEC-HTTP-CASE.md):
+
+```console
+$ haus case-server --port 8090 --proposals-dir tests/fixtures/proposals
 ```
 
 ## Screenshots

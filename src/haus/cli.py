@@ -166,6 +166,25 @@ def _build_parser() -> argparse.ArgumentParser:
     view.add_argument("--glb", required=False, type=Path, default=None, help="Path to GLB file (opens editor directly)")
     view.add_argument("--port", type=int, default=8080, help="HTTP server port (default: 8080)")
 
+    case_server = subparsers.add_parser(
+        "case-server",
+        help="Start the Stage-1 Renovation Design Case HTTP service",
+    )
+    case_server.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
+    case_server.add_argument("--port", type=int, default=8090, help="HTTP server port (default: 8090)")
+    case_server.add_argument(
+        "--proposals-dir",
+        type=Path,
+        default=None,
+        help="Directory containing pinned proposal JSON files",
+    )
+    case_server.add_argument(
+        "--max-revise-attempts",
+        type=int,
+        default=None,
+        help="Override MAX_REVISE_ATTEMPTS for the revise loop",
+    )
+
     return parser
 
 
@@ -236,6 +255,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Starting server at http://localhost:{port}", file=sys.stderr)
             webbrowser.open(open_url)
             run_chat_server(str(project_root), port, layout_path=str(layout_path))
+            return 0
+        if args.command == "case-server":
+            from .case.http_server import run_server
+            print(
+                f"Starting case HTTP service at http://{args.host}:{args.port}",
+                file=sys.stderr,
+            )
+            run_server(
+                host=args.host,
+                port=args.port,
+                proposals_dir=args.proposals_dir,
+                max_revise=args.max_revise_attempts,
+            )
             return 0
         parser.error(f"Unsupported command: {args.command}")
     except Exception as e:
