@@ -16,6 +16,8 @@ def chat_client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> TestClient:
     monkeypatch.setattr(mcp_server, "LAYOUT_PATH", tmp_path / "mcp-layout.json")
     chat_server._DESIGN_PLAN_CACHE.clear()
     chat_server._DESIGN_PLAN_ORDER.clear()
+    chat_server._TOOL_CONFIRMATION_CACHE.clear()
+    chat_server._TOOL_CONFIRMATION_ORDER.clear()
     app = chat_server.create_app(str(Path.cwd()))
     with TestClient(app) as client:
         yield client
@@ -67,7 +69,11 @@ def test_chat_status_reports_reference_capabilities(chat_client: TestClient) -> 
     assert capabilities["web_fetch"] is True
     assert capabilities["image_references"] is True
     assert capabilities["design_plans"] is True
-    assert capabilities["planner_requires_api_key"] is True
+    assert capabilities["planner_requires_api_key"] is False
+    assert capabilities["destructive_confirmation"] is True
+    assert capabilities["strict_tool_validation"] is True
+    assert "llm_reviewed" in capabilities["planner_modes"]
+    assert "accessible" in capabilities["standards_profiles"]
     assert capabilities["max_image_attachments"] == 3
     assert "image/png" in capabilities["image_mime_types"]
 
@@ -406,18 +412,23 @@ def test_concept_chat_drafts_plan_without_mutating_layout(
     body = res.json()
 
     assert body["provider"] == "haus-planner"
+    assert body["model"] == "llm_reviewed-concept-planner"
     assert body["pending_plan"]["status"] == "draft"
     assert body["pending_plan"]["scope"] == "whole_flat"
+    assert body["pending_plan"]["planner"]["mode"] == "llm_reviewed"
+    assert body["pending_plan"]["standards_profile"]["id"] == "compact_hdb"
     assert body["pending_plan"]["metrics"]["planned_item_count"] > 0
     assert body["references"][0]["url"] == "https://example.com/hdb-living"
     assert mcp_server._load_layout()["items"] == []
 
 
-def test_concept_chat_requires_provider_key(chat_client: TestClient) -> None:
+def test_concept_chat_without_provider_key_uses_deterministic_planner(chat_client: TestClient) -> None:
     res = chat_client.post("/api/chat", json={"message": "Design a whole 4-room HDB flat"})
 
-    assert res.status_code == 400
-    assert "API key" in res.json()["error"]
+    assert res.status_code == 200
+    body = res.json()
+    assert body["model"] == "deterministic-concept-planner"
+    assert body["pending_plan"]["planner"]["mode"] == "deterministic"
 
 
 def test_apply_design_plan_mutates_layout_and_tags_rooms(
@@ -445,6 +456,8 @@ def test_apply_design_plan_mutates_layout_and_tags_rooms(
     assert body["plan"]["status"] == "applied"
     assert body["applied_by_room"]["Living"]
     assert "layout_summary" in body["validation"]
+    assert body["validation"]["quality_profile"] == "compact_hdb"
+    assert "Layout profile:" in body["validation"]["layout_quality"]
 
     layout = mcp_server._load_layout()
     assert len(layout["items"]) > 0
@@ -491,3 +504,76 @@ def test_revise_design_plan_preserves_id_and_updates_report(
     assert report.status_code == 200
     assert "## Metrics" in report.text
     assert "https://example.com/study" in report.text
+
+
+def test_destructive_tool_requires_backend_confirmation(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert mcp_server._save_layout(
+        {
+            "version": 1,
+            "items": [
+                {
+                    "type": "furniture",
+                    "furnitureType": "chair",
+                    "pos": [0.0, 0.225, 0.0],
+                    "rot": 0.0,
+                    "visible": True,
+                    "geo": [0.5, 0.45, 0.5],
+                    "color": 0x333333,
+                }
+            ],
+        }
+    ) is None
+
+    def fake_provider(
+        api_key: str,
+        messages: list[dict[str, object]],
+        model: str,
+        dispatch,
+    ) -> tuple[str, list[dict[str, object]]]:
+        dispatch("remove_object", {"index": 0})
+        return "confirm first", messages
+
+    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+
+    res = chat_client.post(
+        "/api/chat",
+        json={"message": "remove the chair", "provider": "openai", "api_key": "test-key"},
+    )
+    assert res.status_code == 200
+    action = res.json()["actions"][0]
+    assert action["result_json"]["requires_confirmation"] is True
+    assert len(mcp_server._load_layout()["items"]) == 1
+
+    token = action["result_json"]["confirmation"]["token"]
+    confirmed = chat_client.post(f"/api/tool-confirmations/{token}/confirm")
+    assert confirmed.status_code == 200
+    assert confirmed.json()["ok"] is True
+    assert mcp_server._load_layout()["items"] == []
+
+
+def test_tool_args_reject_unknown_fields_without_executing(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_provider(
+        api_key: str,
+        messages: list[dict[str, object]],
+        model: str,
+        dispatch,
+    ) -> tuple[str, list[dict[str, object]]]:
+        dispatch("add_furniture", {"furniture_type": "chair", "x": 0, "z": 0, "surprise": True})
+        return "done", messages
+
+    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+
+    res = chat_client.post(
+        "/api/chat",
+        json={"message": "add a chair", "provider": "openai", "api_key": "test-key"},
+    )
+    assert res.status_code == 200
+    action = res.json()["actions"][0]
+    assert "invalid arguments" in action["result"]
+    assert mcp_server._load_layout()["items"] == []

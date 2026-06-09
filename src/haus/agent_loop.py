@@ -19,6 +19,8 @@ class RoomZone:
     kind: str
     bounds: tuple[float, float, float, float]
     source: str = "inferred"
+    polygon: tuple[tuple[float, float], ...] | None = None
+    openings: tuple[dict[str, object], ...] = ()
 
     @property
     def center(self) -> tuple[float, float]:
@@ -38,6 +40,7 @@ class RoomPlan:
     rationale: str
     bounds: tuple[float, float, float, float] | None = None
     zone_source: str = "inferred"
+    room_polygon: tuple[tuple[float, float], ...] | None = None
 
 
 ROOM_KITS: dict[str, list[PlannedItem]] = {
@@ -110,6 +113,7 @@ def plan_room(
     origin_z: float,
     bounds: tuple[float, float, float, float] | None = None,
     zone_source: str = "inferred",
+    room_polygon: tuple[tuple[float, float], ...] | None = None,
 ) -> RoomPlan:
     clean_room = room_id.strip() or infer_room_kind(room_id, style_prompt, constraints).replace("_", " ").title()
     clean_style = style_prompt.strip() or "minimalist HDB"
@@ -131,6 +135,7 @@ def plan_room(
         rationale=rationale,
         bounds=bounds,
         zone_source=zone_source,
+        room_polygon=room_polygon,
     )
 
 
@@ -155,6 +160,7 @@ def plan_flat(
                     origin_z=origin_z,
                     bounds=zone.bounds,
                     zone_source=zone.source,
+                    room_polygon=zone.polygon,
                 )
             )
         return plans

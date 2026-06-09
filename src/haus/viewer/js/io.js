@@ -105,11 +105,16 @@ function downloadBlob(blob, filename) {
 }
 function exportGLB() {
   const exportScene = new THREE.Scene();
-  for (const m of S.draggables) {
+  for (const [index, m] of S.draggables.entries()) {
     if (!m.visible) continue;
     const clone = m.clone();
     const ol = clone.getObjectByName('_outline'); if (ol) clone.remove(ol);
     const cs = clone.getObjectByName('_contact_shadow'); if (cs) clone.remove(cs);
+    clone.userData = {
+      ...clone.userData,
+      hausSemantic: semanticRecordForMesh(m, index),
+      units: 'meters',
+    };
     exportScene.add(clone);
   }
   const exporter = new GLTFExporter();
@@ -119,7 +124,8 @@ function exportGLB() {
 }
 function serializeLayout() {
   const items = [];
-  for (const m of S.draggables) {
+  const semanticObjects = [];
+  for (const [index, m] of S.draggables.entries()) {
     const entry = { pos: [m.position.x, m.position.y, m.position.z], rot: m.rotation.y, visible: m.visible };
     if (m.userData.isWall) {
       entry.type = 'wall';
@@ -139,11 +145,55 @@ function serializeLayout() {
     if (m.userData.name) entry.name = m.userData.name;
     if (m.userData.room) entry.room = m.userData.room;
     items.push(entry);
+    semanticObjects.push(semanticRecordForMesh(m, index));
   }
   const layout = { version: 1, items };
   if (S.layoutMetadata) layout.metadata = S.layoutMetadata;
   if (Array.isArray(S.layoutRooms) && S.layoutRooms.length > 0) layout.rooms = S.layoutRooms;
+  layout.semantic = {
+    schema: 'haus.semantic_layout.v1',
+    units: 'meters',
+    objects: semanticObjects,
+    export_notes: [
+      'GLB/JSON exports preserve Haus object semantics for visualization and future BIM mapping.',
+      'This is not an IFC export or code-compliance certificate.',
+    ],
+  };
   return layout;
+}
+
+function semanticKindForMesh(m) {
+  if (m.userData.isWall) return 'wall';
+  if (m.userData.isModelPart) return 'model_part';
+  const type = m.userData.furnitureType || '';
+  if (['sink', 'toilet', 'shower'].includes(type)) return 'fixture';
+  if (['fridge', 'washer', 'kitchen_counter'].includes(type)) return 'appliance';
+  return 'furniture';
+}
+
+function meshDimensions(m) {
+  if (m.geometry?.parameters?.width) {
+    return {
+      width: m.geometry.parameters.width,
+      height: m.geometry.parameters.height,
+      depth: m.geometry.parameters.depth,
+    };
+  }
+  const size = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
+  return { width: size.x, height: size.y, depth: size.z };
+}
+
+function semanticRecordForMesh(m, index) {
+  return {
+    index,
+    semantic_kind: semanticKindForMesh(m),
+    furniture_type: m.userData.furnitureType || null,
+    name: m.userData.name || null,
+    room: m.userData.room || null,
+    position_m: { x: m.position.x, y: m.position.y, z: m.position.z },
+    rotation_y_rad: m.rotation.y,
+    dimensions_m: meshDimensions(m),
+  };
 }
 function exportJSON() {
   downloadBlob(new Blob([JSON.stringify(serializeLayout(), null, 2)], { type: 'application/json' }), 'haus-layout.json');

@@ -94,13 +94,19 @@ Singapore-only + global HN audience is a trade-off. Specificity wins on HN *only
 
 ## Launch checklist
 
-- [ ] Hero GIF recorded + embedded in README
-- [ ] `design_room` + `design_flat` tools implemented and stable
-- [ ] Pre-vectorized BTO library shipped in repo
-- [ ] README rewritten with value prop above the fold
-- [ ] One-command install verified on clean macOS + Linux
-- [ ] Editor lighting/materials polish pass complete
-- [ ] BENCHMARKS.md with provider showdown
+- [x] Hero GIF/video assets recorded and embedded in README
+- [x] `design_room` + `design_flat` tools implemented with room-bounded collision-aware placement
+- [x] Pre-vectorized BTO library shipped in repo
+- [x] README rewritten with value prop above the fold
+- [x] One-command local viewer path implemented through `haus view`
+- [x] Editor lighting/materials polish pass complete
+- [x] BENCHMARKS.md with provider showdown
+- [x] Chat-first planner implemented as the default visible interface
+- [x] Backend destructive-tool confirmation gate implemented
+- [x] Strict server-side tool argument validation implemented
+- [x] Planner modes labelled honestly: deterministic, LLM-reviewed, LLM-structured
+- [x] Standards profiles added for compact, comfortable, accessible, kitchen, bedroom, and bathroom screening
+- [x] Polygon room geometry and semantic export/BIM-readiness report added
 - [ ] Listed on mcp.so + mcp.pizza + pulsemcp + smithery + Anthropic registry
 - [ ] HN draft title + first comment prewritten
 - [ ] SG tech amplification network primed
@@ -114,13 +120,18 @@ Singapore-only + global HN audience is a trade-off. Specificity wins on HN *only
 
 ## Concrete next actions (this week)
 
-1. Implement `design_room` / `design_flat` MCP tools (Tier 1, item 2).
-2. Pre-vectorize 4–6 real BTO units into JSON; build dropdown (Tier 1, item 3).
-3. Lighting/material polish pass on the editor (Tier 2, item 8).
-4. Record hero demo once items 1–3 land (Tier 1, item 1).
-5. Rewrite README hero (Tier 1, item 4).
-6. Wire `uvx haus` install path (Tier 1, item 5).
-7. Then directories + benchmarks + launch.
+1. Run a clean install smoke test on macOS and Linux for `haus view`.
+2. Record a fresh chat-first demo that shows draft → warnings/profile → apply → validation.
+3. Write HN title, first comment, and a short "what is HDB/BTO?" explanation.
+4. Submit/update MCP directory listings.
+5. Add more curated room polygons/openings to the BTO library so polygon-aware placement is visible in demos.
+6. Expand benchmark prompts for destructive prompt injection, accessible-profile warnings, and kitchen/bedroom ergonomics.
+
+## Current implementation status
+
+- Chat is functional and now safer: provider tool calls are validated, destructive actions require backend confirmation, concept drafts no longer require an API key, and plan cards expose planner mode, profile, confidence, and readiness.
+- Modelling is useful for concept planning: furniture placement is room-bounded and collision-aware, walkway scoring is profile-driven, room polygons are supported, and semantic JSON/BIM-readiness reports exist.
+- Still not done for professional/compliance use: no full IFC export, no construction drawings, no code-compliance certification, limited furniture/product catalog, limited door/window semantics, and no persistent multi-user project database.
 
 ## Honest expectations
 

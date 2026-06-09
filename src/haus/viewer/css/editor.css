@@ -189,12 +189,15 @@ kbd {
   padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--fg-accent);
   font-weight: 600; font-size: 12px;
 }
-#chat-provider {
+#chat-header > div {
+  flex-wrap: wrap; justify-content: flex-end; max-width: 310px;
+}
+#chat-provider, #chat-planner-mode, #chat-standards-profile {
   background: var(--input-bg); border: 1px solid var(--border-mid); color: var(--fg-dim); border-radius: 3px;
-  font-size: 11px; padding: 2px 4px; min-width: 84px;
+  font-size: 11px; padding: 2px 4px; min-width: 84px; max-width: 126px;
 }
 #chat-model {
-  width: 120px; background: var(--input-bg); border: 1px solid var(--border-mid); color: var(--fg-dim);
+  width: 92px; background: var(--input-bg); border: 1px solid var(--border-mid); color: var(--fg-dim);
   border-radius: 3px; font-size: 11px; padding: 2px 6px; outline: none;
 }
 #chat-model:focus { border-color: var(--fg-accent); }
@@ -234,6 +237,20 @@ kbd {
   font-family: monospace; font-size: 10px; white-space: pre-wrap;
   border-left: 2px solid var(--chat-tool-border); opacity: 0.85;
 }
+.chat-tool-details summary { cursor: pointer; font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; }
+.chat-tool-details pre {
+  margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.chat-confirm-card {
+  align-self: stretch; max-width: 100%; background: var(--chat-err-bg); color: var(--chat-err-fg);
+  border: 1px solid var(--border-mid); border-left: 2px solid #c77; border-radius: 6px;
+  padding: 10px; display: flex; flex-direction: column; gap: 8px;
+}
+.chat-confirm-card p { margin: 0; line-height: 1.4; }
+.chat-confirm-card pre {
+  margin: 0; padding: 6px; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 4px; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--fg-dim);
+}
 .chat-plan-card {
   align-self: stretch; max-width: 100%;
   background: var(--panel-solid); border: 1px solid var(--border-mid);
@@ -255,6 +272,13 @@ kbd {
 }
 .chat-plan-brief {
   margin: 0; color: var(--fg-dim); font-size: 11px; line-height: 1.4;
+}
+.chat-plan-meta {
+  color: var(--fg-accent); font-size: 10px; line-height: 1.35;
+}
+.chat-plan-warning {
+  color: var(--fg-dim); background: var(--input-bg); border: 1px solid var(--border);
+  border-left: 2px solid #c7a24a; border-radius: 4px; padding: 6px; font-size: 10px; line-height: 1.35;
 }
 .chat-plan-metrics {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
@@ -291,6 +315,12 @@ kbd {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .chat-plan-refs a:hover { text-decoration: underline; }
+.chat-plan-review {
+  background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 6px; color: var(--fg-dim); font-size: 10px; line-height: 1.4;
+}
+.chat-plan-review summary { cursor: pointer; color: var(--fg-accent); }
+.chat-plan-review p { margin: 6px 0 0; }
 .chat-plan-actions {
   display: flex; flex-wrap: wrap; gap: 6px;
 }
@@ -366,11 +396,12 @@ kbd {
   border-radius: 3px; padding: 4px 6px; font-size: 11px; outline: none;
 }
 .chat-key-row input[type="password"]:focus { border-color: var(--fg-accent); }
-#chat-key-save {
+#chat-key-save, #chat-key-forget {
   background: var(--btn-active-bg); border: 1px solid var(--btn-active-border); color: var(--fg); border-radius: 3px;
   padding: 3px 12px; cursor: pointer; font-size: 11px;
 }
-#chat-key-save:hover { background: var(--btn-hover); }
+#chat-key-forget { background: var(--btn-bg); border-color: var(--border-mid); color: var(--fg-dim); }
+#chat-key-save:hover, #chat-key-forget:hover { background: var(--btn-hover); }
 #chat-key-status { font-size: 10px; color: var(--fg-accent); }
 #tools-toggle {
   position: fixed; top: 12px; right: 12px; z-index: 40;

@@ -67,7 +67,19 @@ def _mock_editor_backend(page) -> None:
                         "web_fetch": True,
                         "image_references": True,
                         "design_plans": True,
-                        "planner_requires_api_key": True,
+                        "planner_requires_api_key": False,
+                        "planner_modes": ["auto", "deterministic", "llm_reviewed", "llm_structured"],
+                        "default_planner_mode": "auto",
+                        "destructive_confirmation": True,
+                        "strict_tool_validation": True,
+                        "standards_profiles": [
+                            "compact_hdb",
+                            "comfortable_home",
+                            "accessible",
+                            "kitchen_basic",
+                            "bedroom_basic",
+                            "bathroom_basic",
+                        ],
                         "max_image_attachments": 3,
                         "max_image_attachment_mb": 5,
                         "image_mime_types": ["image/png", "image/jpeg", "image/webp", "image/gif"],
@@ -271,14 +283,37 @@ def test_chat_sends_image_reference_attachment(browser_page, viewer_base_url: st
     transcript = browser_page.locator("#chat-messages").inner_text()
     assert "Attached 1 image reference: reference.png" in transcript
     assert "Reference applied." in transcript
+    stored_transcript = browser_page.evaluate("() => localStorage.getItem('haus_chat_transcript')")
+    assert "data:image/png;base64" not in stored_transcript
 
 
-def test_chat_blocks_planner_without_key(browser_page, viewer_base_url: str) -> None:
+def test_chat_allows_deterministic_planner_without_key(browser_page, viewer_base_url: str) -> None:
     _mock_editor_backend(browser_page)
     browser_page.route(
         "**/api/sync-layout",
         lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
     )
+    captured: dict[str, object] = {}
+
+    def chat_handler(route) -> None:
+        payload = json.loads(route.request.post_data or "{}")
+        captured["payload"] = payload
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "response": "Drafted deterministic plan.",
+                    "history": [{"role": "assistant", "content": [{"type": "text", "text": "Drafted deterministic plan."}]}],
+                    "provider": "haus-planner",
+                    "model": "deterministic-concept-planner",
+                    "actions": [],
+                    "request_id": "chat-no-key",
+                }
+            ),
+        )
+
+    browser_page.route("**/api/chat", chat_handler)
     browser_page.add_init_script(
         """
         localStorage.removeItem("haus_api_keys");
@@ -291,9 +326,10 @@ def test_chat_blocks_planner_without_key(browser_page, viewer_base_url: str) -> 
 
     browser_page.fill("#chat-input", "Design a compact 4-room HDB")
     browser_page.click("#chat-send")
-    browser_page.wait_for_function(
-        "() => document.querySelector('#chat-messages')?.innerText.includes('Add an Anthropic')"
-    )
+    browser_page.wait_for_selector(".chat-assistant", timeout=6000)
+    assert captured["payload"]["api_key"] == ""
+    assert captured["payload"]["planner_mode"] == "auto"
+    assert "Drafted deterministic plan." in browser_page.locator("#chat-messages").inner_text()
 
 
 def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_url: str) -> None:
@@ -339,6 +375,14 @@ def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_ur
             "walkway_target_m": 0.9,
             "reference_count": 1,
         },
+        "planner": {"mode": "llm_reviewed", "label": "LLM-reviewed Haus planner"},
+        "confidence": "medium-high",
+        "standards_profile": {
+            "id": "comfortable_home",
+            "label": "Comfortable home circulation",
+            "notes": "Everyday comfort target for repeated use.",
+        },
+        "apply_readiness": "ready_to_apply",
         "assumptions": [],
         "validation_targets": [],
         "rationale": [],
@@ -402,6 +446,8 @@ def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_ur
     card_text = browser_page.locator(".chat-plan-card").inner_text()
     assert "Whole-flat concept plan" in card_text
     assert "0.9m" in card_text
+    assert "LLM-reviewed Haus planner" in card_text
+    assert "Comfortable home circulation" in card_text
     assert "HDB design reference" in card_text
 
     browser_page.get_by_role("button", name="Revise").click()
@@ -412,3 +458,89 @@ def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_ur
         "() => document.querySelector('#chat-messages')?.innerText.includes('Applied plan plan-e2e-1')"
     )
     assert apply_calls["count"] == 1
+
+
+def test_chat_renders_and_confirms_destructive_tool_card(browser_page, viewer_base_url: str) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+    browser_page.route(
+        "**/api/chat",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "response": "Confirm before removing.",
+                    "history": [{"role": "assistant", "content": [{"type": "text", "text": "Confirm before removing."}]}],
+                    "provider": "openai",
+                    "model": "gpt-4o",
+                    "actions": [
+                        {
+                            "tool": "remove_object",
+                            "args": {"index": 0},
+                            "result": json.dumps(
+                                {
+                                    "ok": False,
+                                    "requires_confirmation": True,
+                                    "confirmation": {
+                                        "token": "confirm-e2e",
+                                        "tool": "remove_object",
+                                        "args": {"index": 0},
+                                        "summary": "Remove object index 0 from the current layout.",
+                                    },
+                                }
+                            ),
+                            "result_json": {
+                                "ok": False,
+                                "requires_confirmation": True,
+                                "confirmation": {
+                                    "token": "confirm-e2e",
+                                    "tool": "remove_object",
+                                    "args": {"index": 0},
+                                    "summary": "Remove object index 0 from the current layout.",
+                                },
+                            },
+                            "elapsed_ms": 2,
+                        }
+                    ],
+                    "request_id": "chat-confirm-card",
+                }
+            ),
+        ),
+    )
+    browser_page.route(
+        "**/api/tool-confirmations/confirm-e2e/confirm",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "ok": True,
+                    "summary": "Removed [0] chair.",
+                    "actions": [{"tool": "remove_object", "args": {"index": 0}, "result": "Removed [0] chair.", "elapsed_ms": 1}],
+                }
+            ),
+        ),
+    )
+    browser_page.add_init_script(
+        """
+        localStorage.setItem("haus_api_keys", JSON.stringify({ openai: "test-key" }));
+        localStorage.setItem("haus_chat_provider", "openai");
+        localStorage.removeItem("haus_chat_history");
+        localStorage.removeItem("haus_chat_transcript");
+        """
+    )
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+
+    browser_page.fill("#chat-input", "Remove object 0")
+    browser_page.click("#chat-send")
+    browser_page.wait_for_selector(".chat-confirm-card", timeout=6000)
+    assert "Confirmation required" in browser_page.locator(".chat-confirm-card").inner_text()
+
+    browser_page.get_by_role("button", name="Confirm").click()
+    browser_page.wait_for_function(
+        "() => document.querySelector('#chat-messages')?.innerText.includes('Removed [0] chair.')"
+    )

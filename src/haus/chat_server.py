@@ -65,6 +65,7 @@ from .mcp_server import (
     rename_object,
     resize_object,
     rotate_object,
+    score_layout,
     set_color,
     set_visibility,
     simulate_layout_options,
@@ -73,6 +74,8 @@ from .mcp_server import (
     suggest_furniture_placement,
     swap_furniture,
     tag_room,
+    get_semantic_layout_json,
+    bim_readiness_report,
 )
 
 log = configure_logging("haus.chat")
@@ -86,6 +89,8 @@ _ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif
 _WEB_TIMEOUT_SECONDS = 8
 _MAX_WEB_RESPONSE_BYTES = 1_000_000
 _SEARCH_PROVIDER_DEFAULTS = ("serper", "exa", "tinyfish", "duckduckgo")
+_PLANNER_MODES = {"auto", "deterministic", "llm_reviewed", "llm_structured"}
+_DEFAULT_STANDARDS_PROFILE = "compact_hdb"
 _SEARCH_PROVIDER_KEY_ENV = {
     "serper": "SERPER_API_KEY",
     "exa": "EXA_API_KEY",
@@ -102,6 +107,10 @@ _TRACKING_QUERY_PARAMS = {
 _MAX_DESIGN_PLANS = 20
 _DESIGN_PLAN_CACHE: dict[str, dict[str, Any]] = {}
 _DESIGN_PLAN_ORDER: list[str] = []
+_MAX_TOOL_CONFIRMATIONS = 20
+_TOOL_CONFIRMATION_TTL_SECONDS = 10 * 60
+_TOOL_CONFIRMATION_CACHE: dict[str, dict[str, Any]] = {}
+_TOOL_CONFIRMATION_ORDER: list[str] = []
 
 _CONCEPT_ACTION_RE = re.compile(
     r"\b(build|create|design|draft|generate|layout|make|plan|renovate|replicate|rework|style)\b",
@@ -600,7 +609,168 @@ _TOOLS_SPEC = [
             "properties": {"option_index": {"type": "integer", "default": 1}},
         },
     },
+    {
+        "name": "score_walkway",
+        "description": "Score a primary walkway/corridor between two XZ points.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "x1": {"type": "number"},
+                "z1": {"type": "number"},
+                "x2": {"type": "number"},
+                "z2": {"type": "number"},
+                "min_width": {"type": "number", "default": 0.9},
+            },
+            "required": ["x1", "z1", "x2", "z2"],
+        },
+    },
+    {
+        "name": "score_layout",
+        "description": "Score the full layout against a usability standards profile.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "profile": {
+                    "type": "string",
+                    "default": "compact_hdb",
+                    "description": "One of compact_hdb, comfortable_home, accessible, kitchen_basic, bedroom_basic, bathroom_basic.",
+                }
+            },
+        },
+    },
+    {
+        "name": "get_semantic_layout_json",
+        "description": "Return semantic JSON for future BIM/IFC mapping and export validation.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "bim_readiness_report",
+        "description": "Report what is and is not ready for BIM/IFC-style interoperability.",
+        "parameters": {"type": "object", "properties": {}},
+    },
 ]
+
+_TOOL_SAFETY: dict[str, str] = {
+    "design_room": "mutating",
+    "design_flat": "mutating",
+    "add_furniture": "mutating",
+    "add_wall": "mutating",
+    "move_object": "mutating",
+    "rotate_object": "mutating",
+    "resize_object": "mutating",
+    "set_color": "mutating",
+    "set_visibility": "mutating",
+    "duplicate_object": "mutating",
+    "batch_move": "mutating",
+    "align_objects": "mutating",
+    "distribute_objects": "mutating",
+    "snap_to_grid": "mutating",
+    "rename_object": "mutating",
+    "tag_room": "mutating",
+    "swap_furniture": "mutating",
+    "auto_place_furniture": "mutating",
+    "apply_simulated_option": "mutating",
+    "remove_object": "destructive",
+    "remove_objects_by_type": "destructive",
+    "clear_layout": "destructive",
+}
+
+
+def _tool_safety(name: str) -> str:
+    return _TOOL_SAFETY.get(name, "read")
+
+
+def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    strict = json.loads(json.dumps(schema))
+
+    def visit(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        if node.get("type") == "object":
+            node.setdefault("additionalProperties", False)
+            for child in node.get("properties", {}).values():
+                visit(child)
+        if node.get("type") == "array":
+            visit(node.get("items"))
+
+    visit(strict)
+    return strict
+
+
+def _strict_tool_spec(tool: dict[str, Any]) -> dict[str, Any]:
+    return {**tool, "parameters": _strict_schema(cast(dict[str, Any], tool["parameters"]))}
+
+
+_TOOLS_SPEC = [_strict_tool_spec(tool) for tool in _TOOLS_SPEC]
+_TOOL_SPEC_BY_NAME = {str(tool["name"]): tool for tool in _TOOLS_SPEC}
+
+
+def _schema_type_error(path: str, expected: str, value: Any) -> str | None:
+    if expected == "string":
+        ok = isinstance(value, str)
+    elif expected == "number":
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+    elif expected == "integer":
+        ok = isinstance(value, int) and not isinstance(value, bool)
+    elif expected == "boolean":
+        ok = isinstance(value, bool)
+    elif expected == "array":
+        ok = isinstance(value, list)
+    elif expected == "object":
+        ok = isinstance(value, dict)
+    else:
+        ok = True
+    if ok:
+        return None
+    return f"{path} must be {expected}, got {type(value).__name__}."
+
+
+def _validate_schema_value(schema: dict[str, Any], value: Any, path: str) -> str | None:
+    expected = schema.get("type")
+    if isinstance(expected, str):
+        if err := _schema_type_error(path, expected, value):
+            return err
+
+    if expected == "array":
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            for idx, item in enumerate(value):
+                if err := _validate_schema_value(item_schema, item, f"{path}[{idx}]"):
+                    return err
+
+    if expected == "object":
+        if not isinstance(value, dict):
+            return f"{path} must be object."
+        properties = schema.get("properties", {})
+        if isinstance(properties, dict) and schema.get("additionalProperties") is False:
+            unknown = sorted(set(value) - set(properties))
+            if unknown:
+                return f"{path} has unknown field(s): {', '.join(unknown)}."
+        required = schema.get("required", [])
+        if isinstance(required, list):
+            missing = [str(key) for key in required if key not in value]
+            if missing:
+                return f"{path} missing required field(s): {', '.join(missing)}."
+        if isinstance(properties, dict):
+            for key, child_schema in properties.items():
+                if key in value and isinstance(child_schema, dict):
+                    if err := _validate_schema_value(child_schema, value[key], f"{path}.{key}"):
+                        return err
+    return None
+
+
+def _validate_tool_args(name: str, args: Any) -> tuple[dict[str, Any], str | None]:
+    if not isinstance(args, dict):
+        return {}, "Tool arguments must be a JSON object."
+    tool = _TOOL_SPEC_BY_NAME.get(name)
+    if tool is None:
+        return dict(args), None
+    schema = cast(dict[str, Any], tool["parameters"])
+    required = set(str(item) for item in schema.get("required", []) if isinstance(item, str))
+    args = {key: value for key, value in args.items() if value is not None or key in required}
+    if err := _validate_schema_value(schema, args, "args"):
+        return {}, err
+    return dict(args), None
 
 
 class _DuckDuckGoResultParser(HTMLParser):
@@ -1281,10 +1451,11 @@ def _room_plan_to_zone(plan: RoomPlan) -> dict[str, Any]:
         "intent": plan.room_kind.replace("_", " "),
         "target_center": {"x": round(plan.origin_x, 3), "z": round(plan.origin_z, 3)},
         "bounds": _bounds_dict(plan.bounds),
+        "polygon": [{"x": round(x, 3), "z": round(z, 3)} for x, z in plan.room_polygon or ()],
         "zone_source": plan.zone_source,
         "planned_furniture": planned,
         "estimated_area_m2": _estimate_zone_area(plan),
-        "circulation_notes": "Keep a 0.75m primary walkway and preserve direct access to seating, storage, and work surfaces.",
+        "circulation_notes": "Keep the selected profile's primary walkway target and preserve direct access to seating, storage, and work surfaces.",
     }
 
 
@@ -1344,6 +1515,7 @@ def _draft_room_plans(brief: str, scope: str) -> tuple[list[RoomPlan], tuple[flo
                 origin_z=origin_z,
                 bounds=room_bounds,
                 zone_source=zone_source,
+                room_polygon=zone.polygon if zone is not None else None,
             )
         ],
         bounds,
@@ -1371,6 +1543,74 @@ def _design_search_query(brief: str) -> str:
     return f"{brief} interior design floor plan furniture dimensions circulation"
 
 
+def _resolve_planner_mode(requested: str, provider: str, api_key: str) -> tuple[str, str | None]:
+    mode = requested.strip().lower().replace("-", "_").replace(" ", "_") or "auto"
+    if mode not in _PLANNER_MODES:
+        mode = "auto"
+    if mode == "auto":
+        return ("llm_reviewed", None) if provider in _CHAT_FNS and api_key else ("deterministic", None)
+    if mode.startswith("llm") and (provider not in _CHAT_FNS or not api_key):
+        return "deterministic", f"Requested {mode}, but no provider credential was available; used deterministic planner."
+    return mode, None
+
+
+def _planner_label(mode: str) -> str:
+    labels = {
+        "deterministic": "Deterministic Haus room-kit planner",
+        "llm_reviewed": "LLM-reviewed Haus planner",
+        "llm_structured": "LLM-structured draft with Haus validation",
+    }
+    return labels.get(mode, labels["deterministic"])
+
+
+def _extract_json_object(text: str) -> dict[str, Any] | None:
+    start = text.find("{")
+    end = text.rfind("}")
+    if start < 0 or end <= start:
+        return None
+    try:
+        parsed = json.loads(text[start : end + 1])
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _run_plan_llm_review(
+    *,
+    provider: str,
+    api_key: str,
+    model: str,
+    mode: str,
+    plan: dict[str, Any],
+) -> dict[str, Any]:
+    prompt = (
+        "Review this Haus interior layout concept for real-user usability. "
+        "Do not call tools. Be direct about unsupported requests, circulation risks, "
+        "room-fit issues, and next revisions. "
+        "For llm_structured mode, return concise JSON first if possible, then prose.\n\n"
+        f"Planner mode: {mode}\n"
+        f"Plan JSON:\n{json.dumps(_public_design_plan(plan), indent=2)}"
+    )
+    messages = [{"role": "user", "content": prompt}]
+
+    def disabled_dispatch(name: str, args: dict[str, Any]) -> str:
+        return f"Tool '{name}' is disabled during plan review; review the supplied JSON only."
+
+    try:
+        text, _ = _CHAT_FNS[provider](api_key, messages, model, disabled_dispatch)
+    except Exception as exc:
+        log.warning("planner LLM review failed: %s", exc)
+        return {"status": "unavailable", "text": f"LLM review unavailable: {exc}", "structured_suggestion": None}
+
+    return {
+        "status": "reviewed",
+        "provider": provider,
+        "model": model,
+        "text": _collapse_ws(text)[:4000],
+        "structured_suggestion": _extract_json_object(text) if mode == "llm_structured" else None,
+    }
+
+
 def _draft_design_plan(
     brief: str,
     *,
@@ -1379,6 +1619,9 @@ def _draft_design_plan(
     plan_id: str | None = None,
     status: str = "draft",
     revision_of: str | None = None,
+    planner_mode: str = "deterministic",
+    standards_profile: str = _DEFAULT_STANDARDS_PROFILE,
+    fallback_reason: str | None = None,
 ) -> dict[str, Any]:
     clean_brief = _collapse_ws(brief)
     scope = _design_scope_from_brief(clean_brief)
@@ -1387,6 +1630,7 @@ def _draft_design_plan(
     planned_items = _planned_item_records(room_plans)
     refs = references if references is not None else search_references(_design_search_query(clean_brief), max_results=5)
     visual_refs = attachments or []
+    profile_name, profile_spec = _mcp_server._profile(standards_profile)
 
     generated_id = plan_id or new_request_id("plan")
     plan: dict[str, Any] = {
@@ -1394,10 +1638,27 @@ def _draft_design_plan(
         "title": f"{'Whole-flat' if scope == 'whole_flat' else zones[0]['name']} concept plan",
         "brief": clean_brief,
         "scope": scope,
+        "planner": {
+            "mode": planner_mode,
+            "label": _planner_label(planner_mode),
+            "applyable_source": "Haus deterministic geometry validator",
+            "fallback_reason": fallback_reason,
+        },
+        "confidence": "medium" if planner_mode == "deterministic" else "medium-high",
+        "standards_profile": {
+            "id": profile_name,
+            "label": profile_spec["label"],
+            "min_walkway_m": profile_spec["min_walkway_m"],
+            "notes": profile_spec["notes"],
+        },
+        "apply_readiness": "ready_to_apply",
+        "validation_status": "ready_to_apply",
+        "warnings": [],
         "assumptions": [
             "Concept-level output for spatial planning, not construction drawings or code compliance.",
             "Furniture uses the current Haus catalog and snaps to the existing 0.25m layout grid on apply.",
             "Existing layout bounds are treated as the available planning envelope.",
+            f"Using {profile_spec['label']} targets; {profile_spec['notes']}",
         ],
         "web_references": refs,
         "zones": zones,
@@ -1408,17 +1669,20 @@ def _draft_design_plan(
             "zone_count": len(zones),
             "zone_areas_m2": {zone["name"]: zone["estimated_area_m2"] for zone in zones},
             "estimated_furniture_footprint_m2": _furniture_footprint_m2(room_plans),
-            "walkway_target_m": 0.75,
+            "walkway_target_m": profile_spec["min_walkway_m"],
             "layout_bounds": _layout_bounds_dict(bounds),
             "reference_count": len(refs),
             "visual_reference_count": len(visual_refs),
+            "planner_mode": planner_mode,
+            "standards_profile": profile_name,
             "overlap_risk": "checked during apply with collision-aware placement and post-apply overlap checks",
         },
         "validation_targets": [
-            "score_walkway across the planned envelope using a 0.75m target",
+            f"score_walkway across the planned envelope using a {profile_spec['min_walkway_m']}m target",
             "check_overlap on newly applied furniture pairs",
             "check_sightline where a sofa and TV console are planned in the same zone",
             "compute_room_area for every tagged zone after apply",
+            f"score_layout(profile='{profile_name}') after apply",
         ],
         "rationale": [
             "Uses deterministic Haus room kits so the draft can be applied directly and repeatably.",
@@ -1444,6 +1708,7 @@ def _design_plan_response_text(plan: dict[str, Any]) -> str:
         f"Zones: {zone_names}. "
         f"Planned {metrics.get('planned_item_count', 0)} item(s) with a "
         f"{metrics.get('walkway_target_m', 0.75)}m circulation target. "
+        f"Planner: {plan.get('planner', {}).get('label', 'Haus planner') if isinstance(plan.get('planner'), dict) else 'Haus planner'}. "
         "Review or revise the plan, then apply it to update the layout."
     )
 
@@ -1456,6 +1721,7 @@ def _post_apply_validation(
     data: dict[str, Any],
     room_plans: list[RoomPlan],
     applied_by_room: dict[str, list[int]],
+    standards_profile: str = _DEFAULT_STANDARDS_PROFILE,
 ) -> dict[str, Any]:
     room_areas = {plan.room_id: compute_room_area(plan.room_id) for plan in room_plans}
     applied_indices = [idx for indices in applied_by_room.values() for idx in indices]
@@ -1482,14 +1748,17 @@ def _post_apply_validation(
 
     x_min, z_min, x_max, z_max = _mcp_server._layout_bounds(data)
     walkway = "No walkway check available."
+    profile_name, profile_spec = _mcp_server._profile(standards_profile)
     if abs(x_max - x_min) > 0.01 or abs(z_max - z_min) > 0.01:
-        walkway = score_walkway(x_min, z_min, x_max, z_max, min_width=0.75)
+        walkway = score_walkway(x_min, z_min, x_max, z_max, min_width=float(profile_spec["min_walkway_m"]))
 
     return {
         "layout_summary": get_layout_summary(),
         "rooms": list_rooms(),
         "room_areas": room_areas,
         "walkway": walkway,
+        "quality_profile": profile_name,
+        "layout_quality": score_layout(profile_name),
         "overlap_checks": overlap_checks,
         "sightlines": sightlines,
     }
@@ -1525,7 +1794,9 @@ def _apply_design_plan(plan_id: str) -> tuple[dict[str, Any], int]:
     if save_err:
         return {"ok": False, "error": save_err}, 500
 
-    validation = _post_apply_validation(data, room_plans, applied_by_room)
+    profile = plan.get("standards_profile", {})
+    standards_profile = str(profile.get("id", _DEFAULT_STANDARDS_PROFILE)) if isinstance(profile, dict) else _DEFAULT_STANDARDS_PROFILE
+    validation = _post_apply_validation(data, room_plans, applied_by_room, standards_profile=standards_profile)
     total_applied = sum(len(indices) for indices in applied_by_room.values())
     plan["status"] = "applied"
     plan["applied_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -1553,12 +1824,18 @@ def _revise_design_plan(plan_id: str, revision: str) -> tuple[dict[str, Any], in
     old_brief = str(plan.get("brief", ""))
     revised_brief = _collapse_ws(f"{old_brief} Revision: {revision}")
     references = search_references(_design_search_query(revised_brief), max_results=5) or list(plan.get("web_references", []))
+    planner = plan.get("planner", {})
+    profile = plan.get("standards_profile", {})
+    planner_mode = str(planner.get("mode", "deterministic")) if isinstance(planner, dict) else "deterministic"
+    standards_profile = str(profile.get("id", _DEFAULT_STANDARDS_PROFILE)) if isinstance(profile, dict) else _DEFAULT_STANDARDS_PROFILE
     public_plan = _draft_design_plan(
         revised_brief,
         references=references,
         plan_id=plan_id,
         status="revised_draft",
         revision_of=str(plan.get("revision_of") or plan_id),
+        planner_mode=planner_mode,
+        standards_profile=standards_profile,
     )
     return {"ok": True, "plan": public_plan, "summary": f"Revised plan {plan_id}."}, 200
 
@@ -1570,6 +1847,8 @@ def _design_plan_report(plan: dict[str, Any]) -> str:
         f"Plan ID: {plan['id']}",
         f"Status: {plan['status']}",
         f"Scope: {plan['scope']}",
+        f"Planner: {plan.get('planner', {}).get('label', 'Deterministic Haus room-kit planner') if isinstance(plan.get('planner'), dict) else 'Deterministic Haus room-kit planner'}",
+        f"Standards profile: {plan.get('standards_profile', {}).get('label', 'Compact HDB circulation') if isinstance(plan.get('standards_profile'), dict) else 'Compact HDB circulation'}",
         "",
         "## Brief",
         plan["brief"],
@@ -1608,6 +1887,9 @@ def _design_plan_report(plan: dict[str, Any]) -> str:
         lines.append("- No live references were available for this draft.")
     lines.extend(["", "## Rationale"])
     lines.extend(f"- {item}" for item in plan.get("rationale", []))
+    review = plan.get("llm_review")
+    if isinstance(review, dict):
+        lines.extend(["", "## LLM Review", review.get("text", "No review text available.")])
     return "\n".join(lines) + "\n"
 
 
@@ -1650,7 +1932,67 @@ _DISPATCH_RAW: dict[str, Callable[[dict[str, Any]], str]] = {
     "auto_place_furniture": lambda a: auto_place_furniture(**a),
     "simulate_layout_options": lambda a: simulate_layout_options(**a),
     "apply_simulated_option": lambda a: apply_simulated_option(**a),
+    "score_walkway": lambda a: score_walkway(**a),
+    "score_layout": lambda a: score_layout(**a),
+    "get_semantic_layout_json": lambda a: get_semantic_layout_json(),
+    "bim_readiness_report": lambda a: bim_readiness_report(),
 }
+
+
+def _confirmation_summary(name: str, args: dict[str, Any]) -> str:
+    if name == "clear_layout":
+        return "Remove every object from the current layout."
+    if name == "remove_object":
+        return f"Remove object index {args.get('index')} from the current layout."
+    if name == "remove_objects_by_type":
+        return f"Remove every object matching type '{args.get('object_type')}'."
+    return f"Run destructive tool {name}."
+
+
+def _prune_tool_confirmations() -> None:
+    now = time.time()
+    expired = [
+        token
+        for token in list(_TOOL_CONFIRMATION_ORDER)
+        if now - float(_TOOL_CONFIRMATION_CACHE.get(token, {}).get("created_at", 0.0)) > _TOOL_CONFIRMATION_TTL_SECONDS
+    ]
+    for token in expired:
+        _TOOL_CONFIRMATION_CACHE.pop(token, None)
+        if token in _TOOL_CONFIRMATION_ORDER:
+            _TOOL_CONFIRMATION_ORDER.remove(token)
+    while len(_TOOL_CONFIRMATION_ORDER) > _MAX_TOOL_CONFIRMATIONS:
+        old = _TOOL_CONFIRMATION_ORDER.pop(0)
+        _TOOL_CONFIRMATION_CACHE.pop(old, None)
+
+
+def _cache_tool_confirmation(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    _prune_tool_confirmations()
+    token = new_request_id("confirm")
+    confirmation = {
+        "token": token,
+        "tool": name,
+        "args": args,
+        "safety": "destructive",
+        "summary": _confirmation_summary(name, args),
+        "created_at": time.time(),
+        "expires_in_seconds": _TOOL_CONFIRMATION_TTL_SECONDS,
+    }
+    _TOOL_CONFIRMATION_CACHE[token] = confirmation
+    _TOOL_CONFIRMATION_ORDER.append(token)
+    _prune_tool_confirmations()
+    return confirmation
+
+
+def _confirmation_required_result(name: str, args: dict[str, Any]) -> str:
+    confirmation = _cache_tool_confirmation(name, args)
+    return json.dumps(
+        {
+            "ok": False,
+            "requires_confirmation": True,
+            "message": f"Confirmation required before executing destructive tool '{name}'.",
+            "confirmation": confirmation,
+        }
+    )
 
 
 def _dispatch(
@@ -1659,6 +2001,7 @@ def _dispatch(
     *,
     request_id: str,
     tool_log: list[dict[str, Any]],
+    confirmation_token: str | None = None,
 ) -> str:
     fn = _DISPATCH_RAW.get(name)
     start = time.perf_counter()
@@ -1666,12 +2009,30 @@ def _dispatch(
     if fn is None:
         result = f"Error: unknown tool '{name}'."
     else:
-        try:
-            result = fn(args)
-        except Exception as exc:  # pragma: no cover - defensive for runtime tool failures
-            log.exception("[%s] tool failure: %s", request_id, name)
-            result = f"Error: tool '{name}' failed: {exc}"
-
+        args, validation_error = _validate_tool_args(name, args)
+        if validation_error:
+            result = f"Error: invalid arguments for '{name}': {validation_error}"
+        elif _tool_safety(name) == "destructive" and not confirmation_token:
+            result = _confirmation_required_result(name, args)
+        else:
+            if confirmation_token:
+                cached = _TOOL_CONFIRMATION_CACHE.pop(confirmation_token, None)
+                if confirmation_token in _TOOL_CONFIRMATION_ORDER:
+                    _TOOL_CONFIRMATION_ORDER.remove(confirmation_token)
+                if not cached or cached.get("tool") != name or cached.get("args") != args:
+                    result = f"Error: confirmation token is invalid or expired for '{name}'."
+                else:
+                    try:
+                        result = fn(args)
+                    except Exception as exc:  # pragma: no cover - defensive for runtime tool failures
+                        log.exception("[%s] tool failure: %s", request_id, name)
+                        result = f"Error: tool '{name}' failed: {exc}"
+            else:
+                try:
+                    result = fn(args)
+                except Exception as exc:  # pragma: no cover - defensive for runtime tool failures
+                    log.exception("[%s] tool failure: %s", request_id, name)
+                    result = f"Error: tool '{name}' failed: {exc}"
     elapsed_ms = int((time.perf_counter() - start) * 1000)
     entry = {
         "tool": name,
@@ -1769,6 +2130,30 @@ def _chat_anthropic(
     raise RuntimeError("Too many tool iterations")
 
 
+def _openai_strict_parameters(schema: dict[str, Any]) -> dict[str, Any]:
+    strict = json.loads(json.dumps(schema))
+
+    def visit(node: Any) -> None:
+        if not isinstance(node, dict):
+            return
+        if node.get("type") == "object":
+            properties = node.get("properties", {})
+            original_required = set(str(item) for item in node.get("required", []) if isinstance(item, str))
+            if isinstance(properties, dict):
+                node["required"] = list(properties.keys())
+                for key, child in properties.items():
+                    if isinstance(child, dict):
+                        if key not in original_required and isinstance(child.get("type"), str):
+                            child["type"] = [child["type"], "null"]
+                        visit(child)
+            node["additionalProperties"] = False
+        elif node.get("type") == "array":
+            visit(node.get("items"))
+
+    visit(strict)
+    return strict
+
+
 def _openai_tools() -> list[dict[str, Any]]:
     return [
         {
@@ -1776,7 +2161,8 @@ def _openai_tools() -> list[dict[str, Any]]:
             "function": {
                 "name": t["name"],
                 "description": t["description"],
-                "parameters": t["parameters"],
+                "parameters": _openai_strict_parameters(cast(dict[str, Any], t["parameters"])),
+                "strict": True,
             },
         }
         for t in _TOOLS_SPEC
@@ -2129,7 +2515,12 @@ async def _chat_status(request: Request) -> JSONResponse:
                 "web_fetch": _web_search_enabled(),
                 "image_references": True,
                 "design_plans": True,
-                "planner_requires_api_key": True,
+                "planner_requires_api_key": False,
+                "planner_modes": ["auto", "deterministic", "llm_reviewed", "llm_structured"],
+                "default_planner_mode": "auto",
+                "destructive_confirmation": True,
+                "strict_tool_validation": True,
+                "standards_profiles": list(_mcp_server.STANDARD_PROFILES.keys()),
                 "max_image_attachments": _MAX_CHAT_ATTACHMENTS,
                 "max_image_attachment_mb": _MAX_ATTACHMENT_BYTES // (1024 * 1024),
                 "image_mime_types": sorted(_ALLOWED_IMAGE_MIME_TYPES),
@@ -2144,10 +2535,32 @@ def _design_chat_payload(
     history: list[dict[str, Any]],
     attachments: list[dict[str, str]],
     request_id: str,
+    provider: str,
+    api_key: str,
+    model: str,
+    planner_mode: str,
+    standards_profile: str,
+    fallback_reason: str | None = None,
 ) -> JSONResponse:
     start = time.perf_counter()
     references = search_references(_design_search_query(user_msg), max_results=5)
-    plan = _draft_design_plan(user_msg, references=references, attachments=attachments)
+    plan = _draft_design_plan(
+        user_msg,
+        references=references,
+        attachments=attachments,
+        planner_mode=planner_mode,
+        standards_profile=standards_profile,
+        fallback_reason=fallback_reason,
+    )
+    raw_plan = _find_plan(str(plan["id"]))
+    if raw_plan is not None and planner_mode in {"llm_reviewed", "llm_structured"}:
+        review = _run_plan_llm_review(provider=provider, api_key=api_key, model=model, mode=planner_mode, plan=raw_plan)
+        raw_plan["llm_review"] = review
+        if review["status"] == "reviewed":
+            raw_plan["rationale"].append("Provider review was attached, but Haus geometry validation remains the source of applyable placements.")
+        if planner_mode == "llm_structured" and review.get("structured_suggestion"):
+            raw_plan["structured_suggestion"] = review["structured_suggestion"]
+        plan = _public_design_plan(raw_plan)
     text = _design_plan_response_text(plan)
     messages = history + [
         {"role": "user", "content": _build_user_content(user_msg, attachments)},
@@ -2156,7 +2569,12 @@ def _design_chat_payload(
     elapsed_ms = int((time.perf_counter() - start) * 1000)
     action = {
         "tool": "draft_design_plan",
-        "args": {"brief": user_msg, "reference_count": len(references)},
+        "args": {
+            "brief": user_msg,
+            "reference_count": len(references),
+            "planner_mode": planner_mode,
+            "standards_profile": standards_profile,
+        },
         "result": f"Drafted concept plan {plan['id']}.",
         "result_json": plan,
         "elapsed_ms": elapsed_ms,
@@ -2166,7 +2584,7 @@ def _design_chat_payload(
             "response": text,
             "history": _redact_history_for_client(messages),
             "provider": "haus-planner",
-            "model": "deterministic-concept-planner",
+            "model": f"{planner_mode}-concept-planner",
             "actions": [action],
             "pending_plan": plan,
             "references": references,
@@ -2229,6 +2647,8 @@ async def _chat(request: Request) -> JSONResponse:
     provider = str(body.get("provider", "")).strip().lower()
     model_override = str(body.get("model", "")).strip()
     client_key = str(body.get("api_key", "")).strip()
+    planner_mode_requested = str(body.get("planner_mode") or body.get("plannerMode") or "auto")
+    standards_profile = str(body.get("standards_profile") or body.get("standardsProfile") or _DEFAULT_STANDARDS_PROFILE)
     attachments, attachment_error = _normalize_attachments(body.get("attachments", []))
 
     if not user_msg:
@@ -2239,25 +2659,13 @@ async def _chat(request: Request) -> JSONResponse:
     revision_request = _parse_revision_request(user_msg)
     concept_request = _is_concept_request(user_msg, attachments)
 
-    if revision_request is not None or concept_request:
-        if provider not in _CHAT_FNS:
-            return JSONResponse(
-                {
-                    "error": "Choose a supported provider and add an API key before drafting design plans.",
-                    "supported": list(_CHAT_FNS.keys()),
-                    "request_id": request_id,
-                },
-                400,
-            )
-        api_key = client_key or os.environ.get(_ENV_KEYS[provider], "")
-        if not api_key:
-            return JSONResponse(
-                {
-                    "error": f"No API key for {provider}. Add one in chat settings.",
-                    "request_id": request_id,
-                },
-                400,
-            )
+    concept_api_key = client_key or os.environ.get(_ENV_KEYS.get(provider, ""), "") if provider in _CHAT_FNS else ""
+    concept_model = model_override or (_DEFAULT_MODELS[provider] if provider in _CHAT_FNS else "deterministic")
+    resolved_planner_mode, planner_fallback_reason = _resolve_planner_mode(
+        planner_mode_requested,
+        provider,
+        concept_api_key,
+    )
 
     if revision_request is not None:
         plan_id, revision = revision_request
@@ -2270,7 +2678,18 @@ async def _chat(request: Request) -> JSONResponse:
         )
 
     if concept_request:
-        return _design_chat_payload(user_msg=user_msg, history=history, attachments=attachments, request_id=request_id)
+        return _design_chat_payload(
+            user_msg=user_msg,
+            history=history,
+            attachments=attachments,
+            request_id=request_id,
+            provider=provider,
+            api_key=concept_api_key,
+            model=concept_model,
+            planner_mode=resolved_planner_mode,
+            standards_profile=standards_profile,
+            fallback_reason=planner_fallback_reason,
+        )
 
     if provider not in _CHAT_FNS:
         return JSONResponse(
@@ -2351,6 +2770,34 @@ async def _design_plan_report_route(request: Request) -> PlainTextResponse | JSO
     return PlainTextResponse(_design_plan_report(_public_design_plan(plan)), media_type="text/markdown")
 
 
+async def _tool_confirmation_apply(request: Request) -> JSONResponse:
+    request_id = new_request_id("confirm-tool")
+    token = str(request.path_params.get("token", "")).strip()
+    _prune_tool_confirmations()
+    confirmation = _TOOL_CONFIRMATION_CACHE.get(token)
+    if confirmation is None:
+        return JSONResponse({"ok": False, "error": "Confirmation token was not found or has expired.", "request_id": request_id}, 404)
+
+    tool_log: list[dict[str, Any]] = []
+    result = _dispatch(
+        str(confirmation["tool"]),
+        cast(dict[str, Any], confirmation["args"]),
+        request_id=request_id,
+        tool_log=tool_log,
+        confirmation_token=token,
+    )
+    ok = not result.startswith("Error:")
+    return JSONResponse(
+        {
+            "ok": ok,
+            "summary": result,
+            "actions": tool_log,
+            "request_id": request_id,
+        },
+        200 if ok else 400,
+    )
+
+
 async def _sync_layout(request: Request) -> JSONResponse:
     request_id = new_request_id("sync")
 
@@ -2398,6 +2845,7 @@ def create_app(root_dir: str) -> Starlette:
             Route("/api/design-plans/{plan_id}/apply", _design_plan_apply, methods=["POST"]),
             Route("/api/design-plans/{plan_id}/revise", _design_plan_revise, methods=["POST"]),
             Route("/api/design-plans/{plan_id}/report", _design_plan_report_route, methods=["GET"]),
+            Route("/api/tool-confirmations/{token}/confirm", _tool_confirmation_apply, methods=["POST"]),
             Route("/api/sync-layout", _sync_layout, methods=["POST"]),
             Route("/api/mcp/clear-layout", _mcp_clear_layout, methods=["POST"]),
             Mount("/", StaticFiles(directory=root_dir, html=True)),

@@ -10,23 +10,30 @@ let attachBtn;
 let imageInput;
 let providerSel;
 let modelInput;
+let plannerModeSel;
+let standardsProfileSel;
 let clearBtn;
 
 let settingsEl;
 let settingsBtn;
 let keyProviderSel;
 let keyInput;
+let keyPersistEl;
 let keySaveBtn;
+let keyForgetBtn;
 let keyStatusEl;
 
 let history = [];
 let serverStatus = null;
 let sending = false;
 let pendingAttachments = [];
+let sessionKeys = {};
 
 const KEYS_STORAGE = 'haus_api_keys';
 const PROVIDER_STORAGE = 'haus_chat_provider';
 const MODEL_STORAGE = 'haus_chat_model';
+const PLANNER_MODE_STORAGE = 'haus_chat_planner_mode';
+const PROFILE_STORAGE = 'haus_chat_standards_profile';
 const HISTORY_STORAGE = 'haus_chat_history';
 const TRANSCRIPT_STORAGE = 'haus_chat_transcript';
 const DEFAULT_MAX_ATTACHMENTS = 3;
@@ -45,13 +52,17 @@ export function initChat() {
   imageInput = document.getElementById('chat-image-input');
   providerSel = document.getElementById('chat-provider');
   modelInput = document.getElementById('chat-model');
+  plannerModeSel = document.getElementById('chat-planner-mode');
+  standardsProfileSel = document.getElementById('chat-standards-profile');
   clearBtn = document.getElementById('chat-clear-btn');
 
   settingsEl = document.getElementById('chat-settings');
   settingsBtn = document.getElementById('chat-settings-btn');
   keyProviderSel = document.getElementById('chat-key-provider');
   keyInput = document.getElementById('chat-key-input');
+  keyPersistEl = document.getElementById('chat-key-persist');
   keySaveBtn = document.getElementById('chat-key-save');
+  keyForgetBtn = document.getElementById('chat-key-forget');
   keyStatusEl = document.getElementById('chat-key-status');
 
   document.getElementById('chat-btn').addEventListener('click', openChat);
@@ -77,6 +88,12 @@ export function initChat() {
     localStorage.setItem(PROVIDER_STORAGE, providerSel.value);
     hydrateModelPlaceholder();
   });
+  plannerModeSel.addEventListener('change', () => {
+    localStorage.setItem(PLANNER_MODE_STORAGE, plannerModeSel.value);
+  });
+  standardsProfileSel.addEventListener('change', () => {
+    localStorage.setItem(PROFILE_STORAGE, standardsProfileSel.value);
+  });
 
   clearBtn.addEventListener('click', clearConversation);
 
@@ -88,6 +105,7 @@ export function initChat() {
 
   keyProviderSel.addEventListener('change', loadKeyField);
   keySaveBtn.addEventListener('click', saveKey);
+  keyForgetBtn.addEventListener('click', forgetKey);
 
   for (const chip of document.querySelectorAll('.chat-chip')) {
     chip.addEventListener('click', () => {
@@ -101,6 +119,10 @@ export function initChat() {
 
   const storedModel = localStorage.getItem(MODEL_STORAGE);
   if (storedModel) modelInput.value = storedModel;
+  const storedPlannerMode = localStorage.getItem(PLANNER_MODE_STORAGE);
+  if (storedPlannerMode) plannerModeSel.value = storedPlannerMode;
+  const storedProfile = localStorage.getItem(PROFILE_STORAGE);
+  if (storedProfile) standardsProfileSel.value = storedProfile;
 
   refreshProviders();
   fetchStatus();
@@ -121,30 +143,55 @@ function saveJson(key, value) {
 }
 
 function getKeys() {
-  return loadJson(KEYS_STORAGE, {});
+  return { ...loadJson(KEYS_STORAGE, {}), ...sessionKeys };
 }
 
-function setKeys(keys) {
+function setStoredKeys(keys) {
   saveJson(KEYS_STORAGE, keys);
 }
 
 function loadKeyField() {
   const keys = getKeys();
+  const storedKeys = loadJson(KEYS_STORAGE, {});
   const provider = keyProviderSel.value;
   keyInput.value = keys[provider] || '';
-  keyStatusEl.textContent = keys[provider] ? 'Key loaded from browser storage' : '';
+  keyPersistEl.checked = Boolean(storedKeys[provider]);
+  if (storedKeys[provider]) keyStatusEl.textContent = 'Key loaded from browser storage';
+  else if (sessionKeys[provider]) keyStatusEl.textContent = 'Key available for this tab only';
+  else keyStatusEl.textContent = '';
 }
 
 function saveKey() {
-  const keys = getKeys();
+  const storedKeys = loadJson(KEYS_STORAGE, {});
   const provider = keyProviderSel.value;
   const value = keyInput.value.trim();
 
-  if (value) keys[provider] = value;
-  else delete keys[provider];
+  delete storedKeys[provider];
+  delete sessionKeys[provider];
 
-  setKeys(keys);
-  keyStatusEl.textContent = value ? 'Saved' : 'Removed';
+  if (value && keyPersistEl.checked) {
+    storedKeys[provider] = value;
+    keyStatusEl.textContent = 'Saved in this browser. Browser storage can be read by scripts on this page.';
+  } else if (value) {
+    sessionKeys[provider] = value;
+    keyStatusEl.textContent = 'Saved for this tab only.';
+  } else {
+    keyStatusEl.textContent = 'Removed';
+  }
+
+  setStoredKeys(storedKeys);
+  refreshProviders();
+}
+
+function forgetKey() {
+  const storedKeys = loadJson(KEYS_STORAGE, {});
+  const provider = keyProviderSel.value;
+  delete storedKeys[provider];
+  delete sessionKeys[provider];
+  setStoredKeys(storedKeys);
+  keyInput.value = '';
+  keyPersistEl.checked = false;
+  keyStatusEl.textContent = 'Forgot key';
   refreshProviders();
 }
 
@@ -154,6 +201,7 @@ async function fetchStatus() {
     if (!res.ok) throw new Error(`status ${res.status}`);
     serverStatus = await res.json();
     refreshProviders();
+    refreshPlannerControls();
   } catch (err) {
     console.warn('chat status unavailable', err);
     setStatus('Chat backend status unavailable. You can still try sending messages.', true);
@@ -189,13 +237,56 @@ function refreshProviders() {
 
   if (availableProviders.length === 0) {
     providerSel.style.display = 'none';
-    setStatus('Add an Anthropic, OpenAI, or Gemini key in Settings before drafting design plans.', false);
+    setStatus('Deterministic planner available. Add a provider key for LLM-reviewed plans.', false);
   } else {
     providerSel.style.display = '';
     setStatus('');
   }
 
   hydrateModelPlaceholder();
+}
+
+function refreshPlannerControls() {
+  const caps = serverStatus?.capabilities || {};
+  const modes = Array.isArray(caps.planner_modes)
+    ? caps.planner_modes
+    : ['auto', 'deterministic', 'llm_reviewed', 'llm_structured'];
+  const modeLabels = {
+    auto: 'Auto planner',
+    deterministic: 'Deterministic',
+    llm_reviewed: 'LLM reviewed',
+    llm_structured: 'LLM structured',
+  };
+  const selectedMode = localStorage.getItem(PLANNER_MODE_STORAGE) || plannerModeSel.value || 'auto';
+  plannerModeSel.innerHTML = '';
+  for (const mode of modes) {
+    const opt = document.createElement('option');
+    opt.value = mode;
+    opt.textContent = modeLabels[mode] || mode;
+    plannerModeSel.appendChild(opt);
+  }
+  plannerModeSel.value = modes.includes(selectedMode) ? selectedMode : 'auto';
+
+  const profiles = Array.isArray(caps.standards_profiles)
+    ? caps.standards_profiles
+    : ['compact_hdb', 'comfortable_home', 'accessible'];
+  const profileLabels = {
+    compact_hdb: 'Compact HDB',
+    comfortable_home: 'Comfortable home',
+    accessible: 'Accessible',
+    kitchen_basic: 'Kitchen',
+    bedroom_basic: 'Bedroom',
+    bathroom_basic: 'Bathroom',
+  };
+  const selectedProfile = localStorage.getItem(PROFILE_STORAGE) || standardsProfileSel.value || 'compact_hdb';
+  standardsProfileSel.innerHTML = '';
+  for (const profile of profiles) {
+    const opt = document.createElement('option');
+    opt.value = profile;
+    opt.textContent = profileLabels[profile] || profile;
+    standardsProfileSel.appendChild(opt);
+  }
+  standardsProfileSel.value = profiles.includes(selectedProfile) ? selectedProfile : 'compact_hdb';
 }
 
 function hydrateModelPlaceholder() {
@@ -343,9 +434,82 @@ function appendMessage(role, text) {
 
 function appendTool(action) {
   maybeShowSightlineOverlay(action);
+  if (action.result_json?.requires_confirmation) {
+    appendConfirmationCard(action.result_json.confirmation);
+    return;
+  }
+
   const args = action.args && Object.keys(action.args).length > 0 ? ` ${JSON.stringify(action.args)}` : '';
   const elapsed = action.elapsed_ms !== undefined ? ` (${action.elapsed_ms}ms)` : '';
-  appendMessage('tool', `${action.tool}${args} -> ${action.result}${elapsed}`);
+  const details = document.createElement('details');
+  details.className = 'chat-msg chat-tool chat-tool-details';
+
+  const summary = document.createElement('summary');
+  summary.textContent = `${action.tool}${elapsed}`;
+
+  const body = document.createElement('pre');
+  body.textContent = `${args ? `Args: ${args}\n` : ''}${action.result}`;
+
+  details.appendChild(summary);
+  details.appendChild(body);
+  messagesEl.appendChild(details);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+function appendConfirmationCard(confirmation) {
+  if (!confirmation || !confirmation.token) return;
+  const card = document.createElement('div');
+  card.className = 'chat-confirm-card';
+
+  const title = document.createElement('strong');
+  title.textContent = 'Confirmation required';
+
+  const summary = document.createElement('p');
+  summary.textContent = confirmation.summary || `Run ${confirmation.tool}`;
+
+  const args = document.createElement('pre');
+  args.textContent = JSON.stringify(confirmation.args || {}, null, 2);
+
+  const actions = document.createElement('div');
+  actions.className = 'chat-plan-actions';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button';
+  confirmBtn.textContent = 'Confirm';
+  const statusLine = document.createElement('div');
+  statusLine.className = 'chat-plan-status';
+  confirmBtn.addEventListener('click', () => confirmToolAction(confirmation.token, statusLine, confirmBtn));
+
+  actions.appendChild(confirmBtn);
+  card.appendChild(title);
+  card.appendChild(summary);
+  card.appendChild(args);
+  card.appendChild(actions);
+  card.appendChild(statusLine);
+  messagesEl.appendChild(card);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+async function confirmToolAction(token, statusLine, confirmBtn) {
+  confirmBtn.disabled = true;
+  statusLine.textContent = 'Confirming...';
+  try {
+    const res = await fetch(`/api/tool-confirmations/${encodeURIComponent(token)}/confirm`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok || data.ok === false) throw new Error(data.error || `Confirm failed with HTTP ${res.status}`);
+    statusLine.textContent = data.summary || 'Action completed.';
+    appendMessage('assistant', data.summary || 'Action completed.');
+    persistTranscript('assistant', data.summary || 'Action completed.');
+    if (Array.isArray(data.actions)) {
+      for (const action of data.actions) appendTool(action);
+    }
+    await refreshLayoutFromServer();
+  } catch (err) {
+    statusLine.textContent = err.message || String(err);
+    appendMessage('error', statusLine.textContent);
+    persistTranscript('error', statusLine.textContent);
+    confirmBtn.disabled = false;
+  }
 }
 
 function appendPlanCard(plan) {
@@ -373,6 +537,29 @@ function appendPlanCard(plan) {
   brief.className = 'chat-plan-brief';
   brief.textContent = plan.brief || '';
   card.appendChild(brief);
+
+  const meta = document.createElement('div');
+  meta.className = 'chat-plan-meta';
+  const planner = plan.planner || {};
+  const profile = plan.standards_profile || {};
+  const readiness = (plan.apply_readiness || plan.validation_status || 'needs_review').replaceAll('_', ' ');
+  meta.textContent = `${readiness} · ${planner.label || planner.mode || 'Haus planner'} · ${profile.label || 'Compact HDB'} · confidence ${plan.confidence || 'medium'}`;
+  card.appendChild(meta);
+
+  if (profile.notes) {
+    const note = document.createElement('div');
+    note.className = 'chat-plan-warning';
+    note.textContent = profile.notes;
+    card.appendChild(note);
+  }
+
+  const warnings = Array.isArray(plan.warnings) ? plan.warnings : [];
+  for (const warning of warnings.slice(0, 3)) {
+    const warningEl = document.createElement('div');
+    warningEl.className = 'chat-plan-warning';
+    warningEl.textContent = warning;
+    card.appendChild(warningEl);
+  }
 
   const metrics = plan.metrics || {};
   const metricsGrid = document.createElement('div');
@@ -421,6 +608,18 @@ function appendPlanCard(plan) {
       refList.appendChild(link);
     }
     card.appendChild(refList);
+  }
+
+  if (plan.llm_review?.text) {
+    const review = document.createElement('details');
+    review.className = 'chat-plan-review';
+    const summary = document.createElement('summary');
+    summary.textContent = 'LLM review';
+    const text = document.createElement('p');
+    text.textContent = plan.llm_review.text;
+    review.appendChild(summary);
+    review.appendChild(text);
+    card.appendChild(review);
   }
 
   const statusLine = document.createElement('div');
@@ -564,8 +763,14 @@ function maybeShowSightlineOverlay(action) {
 
 function persistTranscript(role, text) {
   const transcript = loadJson(TRANSCRIPT_STORAGE, []);
-  transcript.push({ role, text });
+  transcript.push({ role, text: sanitizeTranscriptText(text) });
   saveJson(TRANSCRIPT_STORAGE, transcript.slice(-250));
+}
+
+function sanitizeTranscriptText(text) {
+  return String(text || '')
+    .replace(/data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+/gi, '[redacted image data]')
+    .replace(/\b(sk-[A-Za-z0-9_-]{12,}|AIza[A-Za-z0-9_-]{20,}|ant-[A-Za-z0-9_-]{12,})\b/g, '[redacted key]');
 }
 
 function renderTranscript() {
@@ -597,17 +802,10 @@ async function send() {
   const keys = getKeys();
   const provider = providerSel.value || '';
   const apiKey = provider ? keys[provider] || '' : '';
-  if (!providerHasCredential(provider, keys)) {
-    const errText = 'Add an Anthropic, OpenAI, or Gemini key in Settings before sending planner requests.';
-    appendMessage('error', errText);
-    persistTranscript('error', errText);
-    settingsEl.style.display = '';
-    if (provider) keyProviderSel.value = provider;
-    loadKeyField();
-    return;
-  }
 
   const model = modelInput.value.trim();
+  const plannerMode = plannerModeSel.value || 'auto';
+  const standardsProfile = standardsProfileSel.value || 'compact_hdb';
   const transcriptText = attachmentTranscript(text, attachmentsForSend);
 
   inputEl.value = '';
@@ -635,6 +833,8 @@ async function send() {
         provider,
         model,
         api_key: apiKey,
+        planner_mode: plannerMode,
+        standards_profile: standardsProfile,
         attachments: attachmentsForSend,
       }),
     });

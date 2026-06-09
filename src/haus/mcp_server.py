@@ -48,6 +48,51 @@ FURNITURE_CATALOG = {
     "chair": {"w": 0.5, "h": 0.45, "d": 0.5, "color": 0x333333},
 }
 
+STANDARD_PROFILES: dict[str, dict[str, Any]] = {
+    "compact_hdb": {
+        "label": "Compact HDB circulation",
+        "min_walkway_m": 0.75,
+        "clearance_m": 0.45,
+        "turning_space_m": None,
+        "notes": "Practical compact planning target; not accessibility compliance.",
+    },
+    "comfortable_home": {
+        "label": "Comfortable home circulation",
+        "min_walkway_m": 0.90,
+        "clearance_m": 0.60,
+        "turning_space_m": None,
+        "notes": "Everyday comfort target for repeated use.",
+    },
+    "accessible": {
+        "label": "Accessibility-oriented circulation",
+        "min_walkway_m": 0.915,
+        "clearance_m": 0.90,
+        "turning_space_m": 1.50,
+        "notes": "Screening target inspired by accessible-route conventions; not a code-compliance certificate.",
+    },
+    "kitchen_basic": {
+        "label": "Kitchen basic ergonomics",
+        "min_walkway_m": 0.90,
+        "clearance_m": 0.90,
+        "turning_space_m": None,
+        "notes": "Checks appliance/counter conflicts and working clearances.",
+    },
+    "bedroom_basic": {
+        "label": "Bedroom basic ergonomics",
+        "min_walkway_m": 0.75,
+        "clearance_m": 0.60,
+        "turning_space_m": None,
+        "notes": "Checks access around beds, wardrobes, desks, and chairs.",
+    },
+    "bathroom_basic": {
+        "label": "Bathroom basic ergonomics",
+        "min_walkway_m": 0.80,
+        "clearance_m": 0.75,
+        "turning_space_m": None,
+        "notes": "Checks fixture conflicts and compact wet-room circulation.",
+    },
+}
+
 mcp = FastMCP(
     "haus-editor",
     instructions=(
@@ -148,12 +193,42 @@ def _normalize_item(raw: Any) -> dict[str, Any] | None:
     return item
 
 
+def _normalize_polygon_points(raw: Any) -> list[tuple[float, float]] | None:
+    if not isinstance(raw, list):
+        return None
+
+    points: list[tuple[float, float]] = []
+    for entry in raw:
+        if isinstance(entry, dict):
+            x_raw = entry.get("x")
+            z_raw = entry.get("z")
+        elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
+            x_raw, z_raw = entry[0], entry[1]
+        else:
+            return None
+        points.append((_coerce_float(x_raw), _coerce_float(z_raw)))
+
+    if len(points) < 3:
+        return None
+    return points
+
+
+def _bounds_from_polygon(polygon: list[tuple[float, float]]) -> tuple[float, float, float, float]:
+    xs = [point[0] for point in polygon]
+    zs = [point[1] for point in polygon]
+    return (min(xs), min(zs), max(xs), max(zs))
+
+
 def _normalize_room(raw: Any, default_source: str = "curated") -> dict[str, Any] | None:
     if not isinstance(raw, dict):
         return None
 
+    polygon = _normalize_polygon_points(raw.get("polygon"))
     bounds_raw = raw.get("bounds")
-    if isinstance(bounds_raw, dict):
+    if polygon is not None:
+        x_min, z_min, x_max, z_max = _bounds_from_polygon(polygon)
+        bounds = {"x_min": x_min, "z_min": z_min, "x_max": x_max, "z_max": z_max}
+    elif isinstance(bounds_raw, dict):
         bounds = {
             "x_min": _coerce_float(bounds_raw.get("x_min"), 0.0),
             "z_min": _coerce_float(bounds_raw.get("z_min"), 0.0),
@@ -178,13 +253,18 @@ def _normalize_room(raw: Any, default_source: str = "curated") -> dict[str, Any]
     kind = str(raw.get("kind") or label).strip().lower().replace(" ", "_")
     source = str(raw.get("source") or default_source).strip() or default_source
 
-    return {
+    room = {
         "id": room_id,
         "label": label,
         "kind": kind,
         "bounds": bounds,
         "source": source,
     }
+    if polygon is not None:
+        room["polygon"] = [{"x": round(x, 4), "z": round(z, 4)} for x, z in polygon]
+    if isinstance(raw.get("openings"), list):
+        room["openings"] = [entry for entry in raw["openings"] if isinstance(entry, dict)]
+    return room
 
 
 def _normalize_layout(raw: Any) -> dict[str, Any]:
@@ -477,6 +557,43 @@ def _segment_intersects_polygon(
     return any(_segments_intersect(start, end, edge_start, edge_end) for edge_start, edge_end in _polygon_edges(polygon))
 
 
+def _polygon_area(polygon: list[tuple[float, float]] | tuple[tuple[float, float], ...]) -> float:
+    if len(polygon) < 3:
+        return 0.0
+    total = 0.0
+    for i, (x1, z1) in enumerate(polygon):
+        x2, z2 = polygon[(i + 1) % len(polygon)]
+        total += x1 * z2 - x2 * z1
+    return abs(total) / 2
+
+
+def _item_inside_polygon(
+    item: dict[str, Any],
+    polygon: list[tuple[float, float]] | tuple[tuple[float, float], ...],
+    inset: float = 0.0,
+) -> bool:
+    if not polygon:
+        return True
+    item_polygon = _item_polygon(item, padding=max(0.0, inset))
+    room_polygon = list(polygon)
+    return all(_point_in_polygon(point, room_polygon) for point in item_polygon)
+
+
+def _zone_area(zone: RoomZone) -> float:
+    if zone.polygon:
+        return _polygon_area(zone.polygon)
+    x_min, z_min, x_max, z_max = zone.bounds
+    return max(0.0, x_max - x_min) * max(0.0, z_max - z_min)
+
+
+def _item_inside_room_zone(item: dict[str, Any], zone: RoomZone, inset: float = 0.05) -> bool:
+    if not _item_inside_bounds(item, zone.bounds, inset=inset):
+        return False
+    if zone.polygon:
+        return _item_inside_polygon(item, zone.polygon, inset=inset)
+    return True
+
+
 def _polygon_distance(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> float:
     if _polygons_intersect(a, b):
         return 0.0
@@ -572,6 +689,20 @@ def _room_bounds_tuple(room: dict[str, Any]) -> tuple[float, float, float, float
     )
 
 
+def _room_polygon_tuple(room: dict[str, Any]) -> tuple[tuple[float, float], ...] | None:
+    polygon = _normalize_polygon_points(room.get("polygon"))
+    if polygon is None:
+        return None
+    return tuple(polygon)
+
+
+def _room_openings_tuple(room: dict[str, Any]) -> tuple[dict[str, object], ...]:
+    raw = room.get("openings")
+    if not isinstance(raw, list):
+        return ()
+    return tuple(dict(entry) for entry in raw if isinstance(entry, dict))
+
+
 def _zone_key(text: str) -> str:
     return text.strip().lower().replace("_", " ").replace("-", " ")
 
@@ -620,6 +751,8 @@ def _layout_room_zones(data: dict[str, Any]) -> list[RoomZone]:
                 kind=str(normalized["kind"]),
                 bounds=_room_bounds_tuple(normalized),
                 source=str(normalized.get("source", "curated")),
+                polygon=_room_polygon_tuple(normalized),
+                openings=_room_openings_tuple(normalized),
             )
         )
     return zones or _fallback_room_zones(data)
@@ -755,11 +888,13 @@ def _simulate_candidates(
         return [], msg
 
     room_bounds: tuple[float, float, float, float] | None = None
+    room_zone: RoomZone | None = None
     if room_name:
         room_bounds = _room_extents(data, room_name)
         if room_bounds is None:
             zone = _find_room_zone(data, room_name)
             if zone is not None:
+                room_zone = zone
                 room_bounds = zone.bounds
 
     bounds = room_bounds or _resolve_search_bounds(data, room_name, near_index, max_distance)
@@ -772,7 +907,9 @@ def _simulate_candidates(
     for x, z in points:
         rot_deg = _best_candidate_rot_deg(x, z, face_item)
         candidate = _build_furniture_item(furniture_type, x, z, rot_deg)
-        if room_bounds is not None and not _item_inside_bounds(candidate, room_bounds, inset=0.02):
+        if room_zone is not None and not _item_inside_room_zone(candidate, room_zone, inset=0.02):
+            continue
+        if room_zone is None and room_bounds is not None and not _item_inside_bounds(candidate, room_bounds, inset=0.02):
             continue
         cand_polygon = _item_polygon(candidate, padding=0.02)
 
@@ -956,6 +1093,7 @@ def _with_clear_design_position(
     existing_items: list[dict[str, Any]],
     pending_items: list[dict[str, Any]],
     room_bounds: tuple[float, float, float, float] | None,
+    room_polygon: tuple[tuple[float, float], ...] | None = None,
 ) -> dict[str, Any] | None:
     base_x = item["pos"][0]
     base_z = item["pos"][2]
@@ -969,6 +1107,8 @@ def _with_clear_design_position(
         candidate["pos"][0] = _snap_value(x)
         candidate["pos"][2] = _snap_value(z)
         if room_bounds is not None and not _item_inside_bounds(candidate, room_bounds):
+            continue
+        if room_polygon is not None and not _item_inside_polygon(candidate, room_polygon, inset=0.02):
             continue
         if _design_collision(candidate, existing_items, pending_items):
             continue
@@ -1005,6 +1145,7 @@ def _apply_room_plan(
             "constraints": plan.constraints,
             "room_zone_source": plan.zone_source,
             "room_bounds": plan.bounds,
+            "room_polygon_points": len(plan.room_polygon or ()),
         },
         "result": plan.rationale,
     })
@@ -1015,7 +1156,7 @@ def _apply_room_plan(
         item = _build_furniture_item(spec.furniture_type, x, z, spec.rotation_deg)
         item["room"] = plan.room_id
         item["name"] = f"{plan.room_id} {spec.name or spec.furniture_type}"
-        placed = _with_clear_design_position(item, data["items"], pending, plan.bounds)
+        placed = _with_clear_design_position(item, data["items"], pending, plan.bounds, plan.room_polygon)
 
         args = {
             "furniture_type": spec.furniture_type,
@@ -1125,6 +1266,7 @@ def design_room(
     tagged_extents = _room_extents(data, room_id) if room_id and zone is None else None
     plan_bounds = zone.bounds if zone is not None else tagged_extents
     zone_source = zone.source if zone is not None else ("tagged" if tagged_extents is not None else "inferred")
+    room_polygon = zone.polygon if zone is not None else None
 
     trace: list[dict[str, Any]] = [
         {
@@ -1141,6 +1283,7 @@ def design_room(
         origin_z=origin_z_resolved,
         bounds=plan_bounds,
         zone_source=zone_source,
+        room_polygon=room_polygon,
     )
     applied, skipped = _apply_room_plan(data, plan, trace)
     save_err = _save_layout(data)
@@ -1790,11 +1933,23 @@ def list_rooms() -> str:
 
 @mcp.tool()
 def compute_room_area(room_name: str) -> str:
-    """Compute the bounding-box area of a room from tagged objects."""
+    """Compute room area from a curated room polygon/bounds or tagged-object bounds."""
     data = _load_layout()
+    zone = _find_room_zone(data, room_name)
+    if zone is not None:
+        area = _zone_area(zone)
+        source = "polygon" if zone.polygon else "bounds"
+        x_min, z_min, x_max, z_max = zone.bounds
+        return (
+            f"Room '{zone.label}' {source} area:\n"
+            f"  X: {x_min:.2f} to {x_max:.2f} ({x_max - x_min:.2f}m)\n"
+            f"  Z: {z_min:.2f} to {z_max:.2f} ({z_max - z_min:.2f}m)\n"
+            f"  Area: {area:.2f}m²"
+        )
+
     ext = _room_extents(data, room_name)
     if ext is None:
-        return f"Error: no objects tagged with room '{room_name}'."
+        return f"Error: no room zone or tagged objects found for room '{room_name}'."
 
     width = ext[2] - ext[0]
     depth = ext[3] - ext[1]
@@ -2466,6 +2621,254 @@ def score_walkway(
             lines.append(f"  {o}")
     else:
         lines.append("Walkway is clear.")
+    return "\n".join(lines)
+
+
+def _profile(profile: str) -> tuple[str, dict[str, Any]]:
+    normalized = profile.strip().lower().replace("-", "_").replace(" ", "_") or "compact_hdb"
+    if normalized not in STANDARD_PROFILES:
+        normalized = "compact_hdb"
+    return normalized, STANDARD_PROFILES[normalized]
+
+
+def _visible_layout_polygons(data: dict[str, Any]) -> list[tuple[int, dict[str, Any], list[tuple[float, float]]]]:
+    return [
+        (i, item, _item_polygon(item))
+        for i, item in enumerate(data["items"])
+        if item.get("visible", True) and item.get("type") != "model_part"
+    ]
+
+
+def _overlap_warnings(data: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    polygons = _visible_layout_polygons(data)
+    for pos, (left_idx, left, left_poly) in enumerate(polygons):
+        for right_idx, right, right_poly in polygons[pos + 1 :]:
+            if _polygons_intersect(left_poly, right_poly):
+                warnings.append(f"[{left_idx}] {_item_label(left)} overlaps [{right_idx}] {_item_label(right)}")
+    return warnings
+
+
+def _room_fit_warnings(data: dict[str, Any]) -> list[str]:
+    warnings: list[str] = []
+    for i, item in enumerate(data["items"]):
+        room_name = str(item.get("room") or "")
+        if not room_name:
+            continue
+        zone = _find_room_zone(data, room_name)
+        if zone is None:
+            continue
+        if not _item_inside_room_zone(item, zone, inset=0.02):
+            warnings.append(f"[{i}] {_item_label(item)} is outside room '{zone.label}'")
+    return warnings
+
+
+def _clearance_warnings(data: dict[str, Any], clearance_m: float, profile_name: str) -> list[str]:
+    warnings: list[str] = []
+    polygons = _visible_layout_polygons(data)
+    for pos, (left_idx, left, left_poly) in enumerate(polygons):
+        for right_idx, right, right_poly in polygons[pos + 1 :]:
+            distance = _polygon_distance(left_poly, right_poly)
+            if distance >= clearance_m:
+                continue
+            left_type = _item_label(left)
+            right_type = _item_label(right)
+            pair = {left_type, right_type}
+            furniture_pair = any(kind in pair for kind in {"bed_queen", "bed_king", "bed_single", "wardrobe", "desk", "chair"})
+            kitchen_pair = any(kind in pair for kind in {"fridge", "sink", "kitchen_counter", "washer"})
+            bathroom_pair = any(kind in pair for kind in {"toilet", "shower", "sink"})
+            if profile_name == "bedroom_basic" and not furniture_pair:
+                continue
+            if profile_name == "kitchen_basic" and not kitchen_pair:
+                continue
+            if profile_name == "bathroom_basic" and not bathroom_pair:
+                continue
+            warnings.append(
+                f"[{left_idx}] {left_type} and [{right_idx}] {right_type} have {distance:.2f}m clearance; target is {clearance_m:.2f}m"
+            )
+    return warnings
+
+
+def _walkway_summary_for_profile(data: dict[str, Any], min_width: float) -> tuple[float, str]:
+    x_min, z_min, x_max, z_max = _layout_bounds(data)
+    if abs(x_max - x_min) <= 0.01 and abs(z_max - z_min) <= 0.01:
+        return 1.0, "No walkway corridor available because the layout is empty or degenerate."
+    result = score_walkway(x_min, z_min, x_max, z_max, min_width=min_width)
+    match = None
+    for line in result.splitlines():
+        if line.startswith("Walkway score:"):
+            match = line.split(":", 1)[1].strip()
+            break
+    try:
+        score = float(match or "0")
+    except ValueError:
+        score = 0.0
+    return score, result
+
+
+def _layout_quality_assessment(profile: str = "compact_hdb") -> dict[str, Any]:
+    profile_name, spec = _profile(profile)
+    data = _load_layout()
+    min_walkway = float(spec["min_walkway_m"])
+    clearance = float(spec["clearance_m"])
+    walkway_score, walkway_text = _walkway_summary_for_profile(data, min_walkway)
+
+    warnings = []
+    warnings.extend(_overlap_warnings(data))
+    warnings.extend(_room_fit_warnings(data))
+    warnings.extend(_clearance_warnings(data, clearance, profile_name))
+
+    if walkway_score < 1.0:
+        warnings.append(f"Primary circulation is below the {min_walkway:.3f}m target.")
+    turning_space = spec.get("turning_space_m")
+    if turning_space and data["items"]:
+        x_min, z_min, x_max, z_max = _layout_bounds(data)
+        if (x_max - x_min) < turning_space or (z_max - z_min) < turning_space:
+            warnings.append(f"No obvious {turning_space:.2f}m turning-space envelope in current layout bounds.")
+
+    return {
+        "profile": profile_name,
+        "label": spec["label"],
+        "notes": spec["notes"],
+        "min_walkway_m": min_walkway,
+        "clearance_target_m": clearance,
+        "turning_space_m": turning_space,
+        "walkway_score": walkway_score,
+        "walkway": walkway_text,
+        "warning_count": len(warnings),
+        "warnings": warnings,
+        "status": "ready_to_apply" if not warnings else "needs_revision",
+    }
+
+
+@mcp.tool()
+def score_layout(profile: str = "compact_hdb") -> str:
+    """Score the current layout against a usability/standards profile."""
+    assessment = _layout_quality_assessment(profile)
+    lines = [
+        f"Layout profile: {assessment['label']} ({assessment['profile']})",
+        f"Status: {assessment['status'].replace('_', ' ')}",
+        f"Minimum clear route target: {assessment['min_walkway_m']:.3f}m",
+        f"Object clearance target: {assessment['clearance_target_m']:.2f}m",
+        f"Walkway score: {assessment['walkway_score']:.3f}",
+        f"Notes: {assessment['notes']}",
+    ]
+    if assessment["warnings"]:
+        lines.append("Warnings:")
+        lines.extend(f"  - {warning}" for warning in assessment["warnings"])
+    else:
+        lines.append("No warnings for this profile.")
+    return "\n".join(lines)
+
+
+def _semantic_kind(item: dict[str, Any]) -> str:
+    item_type = str(item.get("type", "object"))
+    furniture_type = str(item.get("furnitureType") or "")
+    if item_type == "wall":
+        return "wall"
+    if item_type == "model_part":
+        return "model_part"
+    if furniture_type in {"sink", "toilet", "shower"}:
+        return "fixture"
+    if furniture_type in {"fridge", "washer", "kitchen_counter"}:
+        return "appliance"
+    return "furniture"
+
+
+def _semantic_layout() -> dict[str, Any]:
+    data = _load_layout()
+    rooms = []
+    for zone in _layout_room_zones(data):
+        rooms.append(
+            {
+                "id": zone.room_id,
+                "label": zone.label,
+                "kind": zone.kind,
+                "source": zone.source,
+                "bounds": {
+                    "x_min": round(zone.bounds[0], 3),
+                    "z_min": round(zone.bounds[1], 3),
+                    "x_max": round(zone.bounds[2], 3),
+                    "z_max": round(zone.bounds[3], 3),
+                },
+                "polygon": [{"x": round(x, 3), "z": round(z, 3)} for x, z in zone.polygon or ()],
+                "openings": list(zone.openings),
+                "area_m2": round(_zone_area(zone), 3),
+            }
+        )
+
+    objects = []
+    for i, item in enumerate(data["items"]):
+        objects.append(
+            {
+                "index": i,
+                "semantic_kind": _semantic_kind(item),
+                "type": item.get("type"),
+                "furniture_type": item.get("furnitureType"),
+                "name": item.get("name"),
+                "room": item.get("room"),
+                "position_m": {"x": item["pos"][0], "y": item["pos"][1], "z": item["pos"][2]},
+                "rotation_y_rad": item.get("rot", 0.0),
+                "dimensions_m": {"width": item["geo"][0], "height": item["geo"][1], "depth": item["geo"][2]},
+            }
+        )
+
+    assessment = _layout_quality_assessment("compact_hdb")
+    return {
+        "schema": "haus.semantic_layout.v1",
+        "units": "meters",
+        "rooms": rooms,
+        "objects": objects,
+        "circulation_profiles": {
+            name: {
+                "label": spec["label"],
+                "min_walkway_m": spec["min_walkway_m"],
+                "clearance_m": spec["clearance_m"],
+                "notes": spec["notes"],
+            }
+            for name, spec in STANDARD_PROFILES.items()
+        },
+        "bim_readiness": {
+            "status": "ready_for_mapping" if rooms and objects else "incomplete",
+            "not_ifc": True,
+            "missing": [
+                "true wall/opening topology",
+                "door swings",
+                "window metadata",
+                "MEP/plumbing/electrical systems",
+                "code-compliance certification",
+            ],
+            "quality_status": assessment["status"],
+            "quality_warnings": assessment["warnings"],
+        },
+    }
+
+
+@mcp.tool()
+def get_semantic_layout_json() -> str:
+    """Return semantic layout JSON for future BIM/IFC mapping."""
+    return json.dumps(_semantic_layout(), indent=2)
+
+
+@mcp.tool()
+def bim_readiness_report() -> str:
+    """Report how ready the current layout is for BIM/IFC-style mapping."""
+    semantic = _semantic_layout()
+    readiness = semantic["bim_readiness"]
+    lines = [
+        "BIM readiness report",
+        f"Status: {readiness['status']}",
+        "This is not an IFC export or compliance certificate.",
+        f"Rooms: {len(semantic['rooms'])}",
+        f"Objects: {len(semantic['objects'])}",
+        f"Quality status: {readiness['quality_status']}",
+        "Missing for full BIM:",
+    ]
+    lines.extend(f"  - {item}" for item in readiness["missing"])
+    warnings = readiness["quality_warnings"]
+    if warnings:
+        lines.append("Quality warnings:")
+        lines.extend(f"  - {item}" for item in warnings)
     return "\n".join(lines)
 
 
