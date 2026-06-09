@@ -324,7 +324,7 @@ function setStatus(text, isError = false) {
 
   statusEl.textContent = text;
   statusEl.style.display = '';
-  statusEl.style.color = isError ? '#a66' : '#8a8';
+  statusEl.style.color = isError ? '#ef4444' : '#a78bfa';
 }
 
 function attachmentLimits() {

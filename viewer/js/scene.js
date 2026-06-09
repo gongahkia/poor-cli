@@ -4,21 +4,21 @@ import { S, SIDEBAR_W } from './state.js';
 
 const THEMES = {
   dark: {
-    background: 0x17191c,
-    fog: 0x17191c,
-    floor: 0x25282b,
+    background: 0x0f0f0f,
+    fog: 0x0f0f0f,
+    floor: 0x1f1f1f,
     ambient: 0.32,
-    hemiSky: 0xbfdcff,
-    hemiGround: 0x2f2a24,
+    hemiSky: 0xd8ccff,
+    hemiGround: 0x19141f,
     hemi: 0.48,
   },
   light: {
-    background: 0xf0eee8,
-    fog: 0xf0eee8,
-    floor: 0xd8d2c6,
+    background: 0xf4f1fb,
+    fog: 0xf4f1fb,
+    floor: 0xded8ea,
     ambient: 0.54,
-    hemiSky: 0xdfefff,
-    hemiGround: 0xb09a7a,
+    hemiSky: 0xf5f3ff,
+    hemiGround: 0xb3a8c8,
     hemi: 0.42,
   },
 };
@@ -160,7 +160,7 @@ export function initScene() {
   S.orbit.maxDistance = 55;
   ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
   S.scene.add(ambientLight);
-  hemisphereLight = new THREE.HemisphereLight(0xbfdcff, 0x2f2a24, 0.45);
+  hemisphereLight = new THREE.HemisphereLight(0xd8ccff, 0x19141f, 0.45);
   S.scene.add(hemisphereLight);
   S.dirLight = new THREE.DirectionalLight(0xfff7ed, 1.35);
   S.dirLight.position.set(-8, 18, 11);
@@ -178,12 +178,12 @@ export function initScene() {
     far: 55,
   });
   S.scene.add(S.dirLight);
-  const fillLight = new THREE.DirectionalLight(0x9fb7ff, 0.22);
+  const fillLight = new THREE.DirectionalLight(0x8b5cf6, 0.18);
   fillLight.position.set(12, 8, -10);
   S.scene.add(fillLight);
   floorMesh = new THREE.Mesh(
     new THREE.PlaneGeometry(120, 120),
-    new THREE.MeshStandardMaterial({ color: 0x25282b, roughness: 0.94, metalness: 0.0 })
+    new THREE.MeshStandardMaterial({ color: 0x1f1f1f, roughness: 0.94, metalness: 0.0 })
   );
   floorMesh.rotation.x = -Math.PI / 2;
   floorMesh.position.y = -0.02;
