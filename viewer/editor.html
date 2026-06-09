@@ -34,6 +34,17 @@
     <div style="display:flex;gap:4px;align-items:center;">
       <select id="chat-provider" title="Provider"></select>
       <input type="text" id="chat-model" placeholder="Auto model" title="Optional model override">
+      <select id="chat-planner-mode" title="Planner mode">
+        <option value="auto">Auto planner</option>
+        <option value="deterministic">Deterministic</option>
+        <option value="llm_reviewed">LLM reviewed</option>
+        <option value="llm_structured">LLM structured</option>
+      </select>
+      <select id="chat-standards-profile" title="Standards profile">
+        <option value="compact_hdb">Compact HDB</option>
+        <option value="comfortable_home">Comfortable home</option>
+        <option value="accessible">Accessible</option>
+      </select>
       <button id="chat-clear-btn" title="Clear conversation">Clear</button>
       <button id="chat-settings-btn" title="Provider settings">Settings</button>
     </div>
@@ -59,7 +70,12 @@
       <input type="password" id="chat-key-input" placeholder="sk-..." autocomplete="off">
     </div>
     <div class="chat-key-row">
+      <label>Storage</label>
+      <span><input type="checkbox" id="chat-key-persist"> Remember in browser</span>
+    </div>
+    <div class="chat-key-row">
       <button id="chat-key-save">Save</button>
+      <button id="chat-key-forget">Forget</button>
       <span id="chat-key-status"></span>
     </div>
   </div>

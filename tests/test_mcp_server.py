@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import json
 from pathlib import Path
 
 import pytest
@@ -294,6 +295,91 @@ def test_design_flat_uses_curated_room_zones(isolated_layout: Path) -> None:
         assert rect[1] <= 5.0
         assert rect[2] >= 0.0
         assert rect[3] <= 4.0
+
+
+def test_design_flat_respects_polygon_room_zone(isolated_layout: Path) -> None:
+    layout = {
+        "version": 1,
+        "rooms": [
+            {
+                "id": "living",
+                "label": "Living",
+                "kind": "living",
+                "polygon": [
+                    {"x": 0.0, "z": 0.0},
+                    {"x": 5.0, "z": 0.0},
+                    {"x": 5.0, "z": 2.0},
+                    {"x": 3.0, "z": 2.0},
+                    {"x": 3.0, "z": 4.0},
+                    {"x": 0.0, "z": 4.0},
+                ],
+            }
+        ],
+        "items": [],
+    }
+    assert mcp_server._save_layout(layout) is None
+
+    result = mcp_server.design_flat(style_prompt="minimalist living room", constraints="keep circulation clear")
+
+    assert "Rooms designed: 1" in result
+    data = mcp_server._load_layout()
+    zone = mcp_server._find_room_zone(data, "Living")
+    assert zone is not None
+    assert zone.polygon is not None
+    for item in data["items"]:
+        assert mcp_server._item_inside_room_zone(item, zone, inset=0.0)
+
+    area = mcp_server.compute_room_area("Living")
+    assert "polygon area" in area
+    assert "Area: 16.00m" in area
+
+
+def test_score_layout_profiles_distinguish_accessible_warning(isolated_layout: Path) -> None:
+    layout = {
+        "version": 1,
+        "items": [
+            _obj(item_type="furniture", furniture_type="wardrobe", x=0.4, z=1.0, w=1.8, h=2.0, d=0.6),
+        ],
+    }
+    assert mcp_server._save_layout(layout) is None
+
+    compact = mcp_server.score_layout("compact_hdb")
+    accessible = mcp_server.score_layout("accessible")
+
+    assert "Compact HDB circulation" in compact
+    assert "Accessibility-oriented circulation" in accessible
+    assert "0.915m" in accessible
+    assert "not a code-compliance certificate" in accessible
+
+
+def test_semantic_layout_json_and_bim_report(isolated_layout: Path) -> None:
+    layout = {
+        "version": 1,
+        "rooms": [
+            {
+                "id": "kitchen",
+                "label": "Kitchen",
+                "kind": "kitchen",
+                "bounds": {"x_min": 0.0, "z_min": 0.0, "x_max": 3.0, "z_max": 2.0},
+                "openings": [{"kind": "door", "x": 0.0, "z": 1.0, "width": 0.9}],
+            }
+        ],
+        "items": [
+            _obj(item_type="furniture", furniture_type="fridge", x=1.0, z=1.0, w=0.7, h=1.7, d=0.7),
+        ],
+    }
+    assert mcp_server._save_layout(layout) is None
+
+    semantic = json.loads(mcp_server.get_semantic_layout_json())
+    assert semantic["schema"] == "haus.semantic_layout.v1"
+    assert semantic["units"] == "meters"
+    assert semantic["rooms"][0]["openings"][0]["kind"] == "door"
+    assert semantic["objects"][0]["semantic_kind"] == "appliance"
+    assert semantic["bim_readiness"]["not_ifc"] is True
+
+    report = mcp_server.bim_readiness_report()
+    assert "not an IFC export" in report
+    assert "MEP/plumbing/electrical" in report
 
 
 def test_layout_without_rooms_gets_inferred_room_zones(isolated_layout: Path) -> None:
