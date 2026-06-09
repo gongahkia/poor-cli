@@ -10,3 +10,4 @@ corpus/*.png
 *.egg-info/
 CLAUDE.md
 AGENTS.md
+.playwright-cli
