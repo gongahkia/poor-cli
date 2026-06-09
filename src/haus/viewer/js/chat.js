@@ -797,7 +797,8 @@ async function send() {
   if (!text) return;
 
   const keys = getKeys();
-  const provider = providerSel.value || '';
+  const selectedProvider = providerSel.value || '';
+  const provider = providerHasCredential(selectedProvider, keys) ? selectedProvider : '';
   const apiKey = provider ? keys[provider] || '' : '';
 
   const model = modelInput.value.trim();
