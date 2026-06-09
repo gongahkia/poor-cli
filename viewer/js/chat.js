@@ -16,7 +16,6 @@ let clearBtn;
 
 let settingsEl;
 let settingsBtn;
-let keyProviderSel;
 let keyInput;
 let keyPersistEl;
 let keySaveBtn;
@@ -58,7 +57,6 @@ export function initChat() {
 
   settingsEl = document.getElementById('chat-settings');
   settingsBtn = document.getElementById('chat-settings-btn');
-  keyProviderSel = document.getElementById('chat-key-provider');
   keyInput = document.getElementById('chat-key-input');
   keyPersistEl = document.getElementById('chat-key-persist');
   keySaveBtn = document.getElementById('chat-key-save');
@@ -87,6 +85,8 @@ export function initChat() {
   providerSel.addEventListener('change', () => {
     localStorage.setItem(PROVIDER_STORAGE, providerSel.value);
     hydrateModelPlaceholder();
+    loadKeyField();
+    refreshProviderStatus();
   });
   plannerModeSel.addEventListener('change', () => {
     localStorage.setItem(PLANNER_MODE_STORAGE, plannerModeSel.value);
@@ -103,16 +103,8 @@ export function initChat() {
     if (!open) loadKeyField();
   });
 
-  keyProviderSel.addEventListener('change', loadKeyField);
   keySaveBtn.addEventListener('click', saveKey);
   keyForgetBtn.addEventListener('click', forgetKey);
-
-  for (const chip of document.querySelectorAll('.chat-chip')) {
-    chip.addEventListener('click', () => {
-      inputEl.value = chip.textContent || '';
-      inputEl.focus();
-    });
-  }
 
   history = loadJson(HISTORY_STORAGE, []);
   renderTranscript();
@@ -153,7 +145,7 @@ function setStoredKeys(keys) {
 function loadKeyField() {
   const keys = getKeys();
   const storedKeys = loadJson(KEYS_STORAGE, {});
-  const provider = keyProviderSel.value;
+  const provider = providerSel.value;
   keyInput.value = keys[provider] || '';
   keyPersistEl.checked = Boolean(storedKeys[provider]);
   if (storedKeys[provider]) keyStatusEl.textContent = 'Key loaded from browser storage';
@@ -163,7 +155,7 @@ function loadKeyField() {
 
 function saveKey() {
   const storedKeys = loadJson(KEYS_STORAGE, {});
-  const provider = keyProviderSel.value;
+  const provider = providerSel.value;
   const value = keyInput.value.trim();
 
   delete storedKeys[provider];
@@ -181,11 +173,12 @@ function saveKey() {
 
   setStoredKeys(storedKeys);
   refreshProviders();
+  refreshProviderStatus();
 }
 
 function forgetKey() {
   const storedKeys = loadJson(KEYS_STORAGE, {});
-  const provider = keyProviderSel.value;
+  const provider = providerSel.value;
   delete storedKeys[provider];
   delete sessionKeys[provider];
   setStoredKeys(storedKeys);
@@ -193,6 +186,7 @@ function forgetKey() {
   keyPersistEl.checked = false;
   keyStatusEl.textContent = 'Forgot key';
   refreshProviders();
+  refreshProviderStatus();
 }
 
 async function fetchStatus() {
@@ -217,33 +211,36 @@ function refreshProviders() {
     ? serverStatus.providers_with_env_keys
     : []);
 
-  const availableProviders = providersFromServer.filter((p) => keys[p] || envProviders.has(p));
   providerSel.innerHTML = '';
 
-  for (const provider of availableProviders) {
+  for (const provider of providersFromServer) {
     const opt = document.createElement('option');
     opt.value = provider;
-    opt.textContent = provider;
+    opt.textContent = providerLabel(provider);
     providerSel.appendChild(opt);
   }
 
   const storedProvider = localStorage.getItem(PROVIDER_STORAGE);
-  if (storedProvider && availableProviders.includes(storedProvider)) {
+  if (storedProvider && providersFromServer.includes(storedProvider)) {
     providerSel.value = storedProvider;
-  } else if (availableProviders.length > 0) {
-    providerSel.value = availableProviders[0];
+  } else if (providersFromServer.length > 0) {
+    providerSel.value = providersFromServer[0];
     localStorage.setItem(PROVIDER_STORAGE, providerSel.value);
   }
 
-  if (availableProviders.length === 0) {
-    providerSel.style.display = 'none';
-    setStatus('Deterministic planner available. Add a provider key for LLM-reviewed plans.', false);
-  } else {
-    providerSel.style.display = '';
-    setStatus('');
-  }
-
   hydrateModelPlaceholder();
+  loadKeyField();
+  refreshProviderStatus(keys, envProviders);
+}
+
+function providerLabel(provider) {
+  return { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini' }[provider] || provider;
+}
+
+function refreshProviderStatus(keys = getKeys(), envProviders = new Set(Array.isArray(serverStatus?.providers_with_env_keys) ? serverStatus.providers_with_env_keys : [])) {
+  const provider = providerSel.value;
+  if (!provider || keys[provider] || envProviders.has(provider)) setStatus('');
+  else setStatus('Deterministic planner available. Add a provider key for LLM-reviewed plans.', false);
 }
 
 function refreshPlannerControls() {
@@ -800,7 +797,8 @@ async function send() {
   if (!text) return;
 
   const keys = getKeys();
-  const provider = providerSel.value || '';
+  const selectedProvider = providerSel.value || '';
+  const provider = providerHasCredential(selectedProvider, keys) ? selectedProvider : '';
   const apiKey = provider ? keys[provider] || '' : '';
 
   const model = modelInput.value.trim();
