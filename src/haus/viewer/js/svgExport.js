@@ -55,7 +55,7 @@ function exportSvg() {
     const color = '#' + (m.material?.color?.getHexString() ?? '888888');
     const isWall = m.userData.isWall;
     const fillOpacity = isWall ? 0.7 : 0.35;
-    const strokeColor = isWall ? '#444' : '#333';
+    const strokeColor = isWall ? '#1f1f1f' : '#2b2140';
     const strokeW = isWall ? 1.5 : 0.8;
     parts.push(`<g transform="translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${rotDeg.toFixed(1)})">`);
     parts.push(`<rect x="${(-rw/2).toFixed(1)}" y="${(-rd/2).toFixed(1)}" width="${rw.toFixed(1)}" height="${rd.toFixed(1)}" fill="${color}" fill-opacity="${fillOpacity}" stroke="${strokeColor}" stroke-width="${strokeW}"/>`);
@@ -80,15 +80,15 @@ function exportSvg() {
   for (const [name, { xs, zs }] of Object.entries(rooms)) {
     const avgX = xs.reduce((a, b) => a + b, 0) / xs.length;
     const avgZ = zs.reduce((a, b) => a + b, 0) / zs.length;
-    parts.push(`<text x="${toX(avgX).toFixed(1)}" y="${toY(avgZ).toFixed(1)}" text-anchor="middle" font-size="14" font-weight="bold" font-family="system-ui, sans-serif" fill="#1a7a4a" opacity="0.7">${escXml(name)}</text>`);
+    parts.push(`<text x="${toX(avgX).toFixed(1)}" y="${toY(avgZ).toFixed(1)}" text-anchor="middle" font-size="14" font-weight="bold" font-family="system-ui, sans-serif" fill="#7c3aed" opacity="0.7">${escXml(name)}</text>`);
   }
   // scale bar (bottom-right)
   const barLen = 1 * pxPerM; // 1m bar
   const barX = svgW - barLen - 10, barY = svgH - 15;
-  parts.push(`<line x1="${barX}" y1="${barY}" x2="${barX + barLen}" y2="${barY}" stroke="#333" stroke-width="2"/>`);
-  parts.push(`<line x1="${barX}" y1="${barY - 4}" x2="${barX}" y2="${barY + 4}" stroke="#333" stroke-width="1.5"/>`);
-  parts.push(`<line x1="${barX + barLen}" y1="${barY - 4}" x2="${barX + barLen}" y2="${barY + 4}" stroke="#333" stroke-width="1.5"/>`);
-  parts.push(`<text x="${barX + barLen / 2}" y="${barY - 6}" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#333">1m</text>`);
+  parts.push(`<line x1="${barX}" y1="${barY}" x2="${barX + barLen}" y2="${barY}" stroke="#1f1f1f" stroke-width="2"/>`);
+  parts.push(`<line x1="${barX}" y1="${barY - 4}" x2="${barX}" y2="${barY + 4}" stroke="#1f1f1f" stroke-width="1.5"/>`);
+  parts.push(`<line x1="${barX + barLen}" y1="${barY - 4}" x2="${barX + barLen}" y2="${barY + 4}" stroke="#1f1f1f" stroke-width="1.5"/>`);
+  parts.push(`<text x="${barX + barLen / 2}" y="${barY - 6}" text-anchor="middle" font-size="10" font-family="system-ui, sans-serif" fill="#1f1f1f">1m</text>`);
   parts.push('</svg>');
   const blob = new Blob([parts.join('\n')], { type: 'image/svg+xml' });
   const url = URL.createObjectURL(blob);
