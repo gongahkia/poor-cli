@@ -150,7 +150,8 @@ def _viewer_href_for_path(path: Path, project_root: Path, viewer_dir: Path) -> s
 
 
 def _case_summary_line(label: str, case: dict) -> str:
-    findings = case.get("compliance_findings") if isinstance(case.get("compliance_findings"), list) else []
+    raw_findings = case.get("compliance_findings")
+    findings: list[dict] = [f for f in raw_findings if isinstance(f, dict)] if isinstance(raw_findings, list) else []
     errors = [f for f in findings if isinstance(f, dict) and f.get("severity") == "error"]
     rules = sorted({str(f.get("rule_id")) for f in findings if isinstance(f, dict) and f.get("rule_id")})
     suffix = f" rules={','.join(rules)}" if rules else ""

@@ -39,3 +39,39 @@ def test_mcp_layout_path_can_come_from_env(
 
     reloaded = importlib.reload(mcp_server)
     assert reloaded.LAYOUT_PATH == layout_path
+
+
+def test_case_demo_cli_runs_http_lifecycle(tmp_path: Path, capsys) -> None:
+    out = tmp_path / "case-demo.json"
+    rc = cli.main(
+        [
+            "case",
+            "demo",
+            "--fixture",
+            "corpus/library/3.json",
+            "--pinned",
+            "demo_3room_remove_wall_28",
+            "--proposals-dir",
+            "tests/fixtures/proposals",
+            "--vendor-cache-dir",
+            "tests/fixtures/vendors",
+            "--handoff-root",
+            str(tmp_path / "handoffs"),
+            "--max-revise-attempts",
+            "1",
+            "--out",
+            str(out),
+        ]
+    )
+
+    assert rc == 0
+    stdout = capsys.readouterr().out
+    assert "create: status=designing" in stdout
+    assert "compliance#2: status=awaiting_human_approval" in stdout
+    assert "approval: status=approved" in stdout
+    assert "handoff: status=handoff_complete" in stdout
+    assert out.exists()
+    case = json.loads(out.read_text(encoding="utf-8"))
+    assert case["design_status"] == "handoff_complete"
+    assert case["_baseline_items"]
+    assert case["vendor_handoff"]["packet_uri"]
