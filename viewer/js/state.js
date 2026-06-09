@@ -1,7 +1,13 @@
 import * as THREE from 'three';
-export const SIDEBAR_W = 220;
+export const PLANNER_W = 440;
+export function sceneViewportLeft() {
+  return innerWidth <= 900 ? 0 : Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--planner-w')) || PLANNER_W;
+}
 export function sceneViewportWidth() {
-  return Math.max(1, innerWidth <= 900 ? innerWidth : innerWidth - SIDEBAR_W);
+  return Math.max(1, innerWidth - sceneViewportLeft());
+}
+export function scenePointerX(clientX) {
+  return ((clientX - sceneViewportLeft()) / sceneViewportWidth()) * 2 - 1;
 }
 export const MAX_UNDO = 50;
 export const WALL_COLOR = 0x666666;
