@@ -8,7 +8,7 @@ import cv2
 import numpy as np
 
 from .extraction import extract_floor_plan
-from .mesh import extrude_floor_plan, export_glb
+from .mesh import extrude_floor_plan, export_glb, floor_plan_to_layout
 from .preprocess import clean_floor_plan
 from .render import render_vector_clean
 from .types import FloorPlanData, MetadataDict, VectorizeConfig
@@ -112,6 +112,26 @@ def run_vectorize(config: VectorizeConfig) -> MetadataDict:
     )
 
     metadata["output_glb"] = str(glb_path)
+
+    layout_metadata = {
+        "name": config.image_path.stem,
+        "source": str(config.image_path),
+        "image_shape_hw": list(data.image_shape_hw),
+        "scale_m_per_px": data.m_per_px,
+        "wall_count": len(data.walls),
+        "column_count": len(data.columns),
+        "opening_count": len(data.openings),
+    }
+    layout = floor_plan_to_layout(
+        data,
+        wall_height_m=config.wall_height,
+        scale_override=config.scale_override,
+        metadata=_to_serializable(layout_metadata),
+    )
+    layout_path = config.out_dir / "layout.json"
+    with layout_path.open("w", encoding="utf-8") as f:
+        json.dump(_to_serializable(layout), f, indent=2)
+    metadata["output_layout"] = str(layout_path)
 
     metadata_path = config.out_dir / "vector.metadata.json"
     with metadata_path.open("w", encoding="utf-8") as f:

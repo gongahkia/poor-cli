@@ -107,6 +107,25 @@ log = configure_logging("haus.mcp")
 
 _SIMULATION_CACHE: list[dict[str, Any]] = []
 
+_ITEM_STRING_FIELDS = ("hdb_type", "wall_type")
+_ITEM_NUMERIC_FIELDS = ("hdb_thickness_m", "thickness_m")
+_CASE_TOP_LEVEL_FIELDS = (
+    "case_schema_version",
+    "case_id",
+    "created_at",
+    "updated_at",
+    "design_status",
+    "revise_count",
+    "pinned_proposal_id",
+    "vendor_cache_key",
+    "brief",
+    "compliance_findings",
+    "approval_state",
+    "vendor_handoff",
+    "_baseline_protected_walls",
+    "_baseline_items",
+)
+
 
 def _empty_layout() -> dict[str, Any]:
     return {"version": 1, "items": []}
@@ -189,6 +208,14 @@ def _normalize_item(raw: Any) -> dict[str, Any] | None:
         item["name"] = str(raw["name"])
     if "room" in raw and raw.get("room"):
         item["room"] = str(raw["room"])
+    for key in _ITEM_STRING_FIELDS:
+        value = raw.get(key)
+        if value is not None:
+            item[key] = str(value)
+    for key in _ITEM_NUMERIC_FIELDS:
+        value = raw.get(key)
+        if value is not None and not isinstance(value, bool):
+            item[key] = _coerce_float(value, 0.0)
 
     return item
 
@@ -296,6 +323,10 @@ def _normalize_layout(raw: Any) -> dict[str, Any]:
 
     if "_stamp" in raw:
         layout["_stamp"] = _coerce_int(raw.get("_stamp", 0), 0)
+
+    for key in _CASE_TOP_LEVEL_FIELDS:
+        if key in raw:
+            layout[key] = raw[key]
 
     return layout
 

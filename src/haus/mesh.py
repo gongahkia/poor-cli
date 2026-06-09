@@ -9,7 +9,7 @@ import trimesh
 from shapely.geometry import Polygon as ShapelyPolygon
 from trimesh.visual import ColorVisuals
 
-from .types import FloorPlanData
+from .types import FloorPlanData, WallSegment
 
 _M_PER_PX_FALLBACK = 0.02
 _COLOR_BY_HDB = {
@@ -22,6 +22,78 @@ _COLOR_BY_WALL_TYPE = {
     "structural": (80, 80, 80, 255),
     "partition": (140, 140, 160, 255),
 }
+
+
+def _packed_rgb(color: tuple[int, int, int, int]) -> int:
+    r, g, b, _a = color
+    return (r << 16) | (g << 8) | b
+
+
+def _wall_color(wall: WallSegment) -> tuple[int, int, int, int]:
+    if wall.hdb_type is not None:
+        return _COLOR_BY_HDB.get(wall.hdb_type, (80, 80, 80, 255))
+    return _COLOR_BY_WALL_TYPE.get(wall.wall_type, (80, 80, 80, 255))
+
+
+def floor_plan_to_layout(
+    data: FloorPlanData,
+    *,
+    wall_height_m: float = 2.6,
+    scale_override: float | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Serialize extracted walls into the editor/Case layout item shape.
+
+    This is the raster-ingest counterpart to Case library enrichment:
+    `WallSegment.hdb_type` is emitted directly on every wall item that has it,
+    so classification survives editor export, MCP sync, and future Case intake.
+    """
+    m_per_px = scale_override or data.m_per_px or _M_PER_PX_FALLBACK
+    items: list[dict[str, Any]] = []
+
+    for i, wall in enumerate(data.walls):
+        x1, z1 = wall.x1 * m_per_px, wall.y1 * m_per_px
+        x2, z2 = wall.x2 * m_per_px, wall.y2 * m_per_px
+        dx, dz = x2 - x1, z2 - z1
+        length_m = float(np.hypot(dx, dz))
+        if length_m < 0.01:
+            continue
+
+        thickness_m = (
+            wall.hdb_thickness_m
+            or wall.thickness_m
+            or max(0.02, wall.thickness_px * m_per_px)
+        )
+        item: dict[str, Any] = {
+            "type": "wall",
+            "pos": [
+                round((x1 + x2) / 2.0, 4),
+                round(max(0.05, wall_height_m) / 2.0, 4),
+                round((z1 + z2) / 2.0, 4),
+            ],
+            "rot": round(-float(np.arctan2(dz, dx)), 6),
+            "visible": True,
+            "geo": [
+                round(max(0.05, length_m), 4),
+                round(max(0.05, wall_height_m), 4),
+                round(max(0.02, thickness_m), 4),
+            ],
+            "color": _packed_rgb(_wall_color(wall)),
+            "name": f"wall_{i}",
+            "wall_type": wall.wall_type,
+        }
+        if wall.thickness_m is not None:
+            item["thickness_m"] = round(wall.thickness_m, 4)
+        if wall.hdb_type is not None:
+            item["hdb_type"] = wall.hdb_type
+        if wall.hdb_thickness_m is not None:
+            item["hdb_thickness_m"] = wall.hdb_thickness_m
+        items.append(item)
+
+    layout: dict[str, Any] = {"version": 1, "items": items}
+    if metadata is not None:
+        layout["metadata"] = metadata
+    return layout
 
 
 def _paint_mesh(mesh: trimesh.Trimesh, color: tuple[int, int, int, int]) -> None:
@@ -58,11 +130,7 @@ def extrude_floor_plan(
         new_verts[:, 1] = verts[:, 2]  # Z -> Y (up)
         new_verts[:, 2] = verts[:, 1]  # Y -> Z (depth)
         mesh.vertices = new_verts
-        color = (
-            _COLOR_BY_HDB.get(w.hdb_type, (80, 80, 80, 255))
-            if w.hdb_type is not None
-            else _COLOR_BY_WALL_TYPE.get(w.wall_type, (80, 80, 80, 255))
-        )
+        color = _wall_color(w)
         _paint_mesh(mesh, color)
         scene.add_geometry(mesh, node_name=f"wall_{i}")
 

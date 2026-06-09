@@ -116,6 +116,28 @@ kbd {
 }
 .scene-item .si-btn:hover { color: var(--fg); }
 #scene-count { font-size: 10px; color: var(--fg-faint); }
+#case-review-summary {
+  color: var(--fg-accent); font-size: 11px; line-height: 1.35;
+  padding: 6px; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 4px;
+}
+#case-findings-list {
+  display: flex; flex-direction: column; gap: 4px; max-height: 140px; overflow-y: auto;
+}
+.case-finding-row {
+  display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left;
+  padding: 6px; background: var(--chat-err-bg); border: 1px solid var(--border-mid);
+  border-left: 2px solid #ef4444; border-radius: 4px; cursor: pointer;
+}
+.case-finding-row strong {
+  color: var(--chat-err-fg); font-size: 11px; line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.case-finding-row span {
+  color: var(--fg-muted); font-size: 10px; line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.case-finding-row:hover { background: var(--panel-hover); }
 #collision-flash {
   position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%);
   background: rgba(239,68,68,0.92); color: #fff; font-size: 13px;

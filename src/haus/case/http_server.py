@@ -15,6 +15,7 @@ from typing import Any
 
 import uvicorn
 from starlette.applications import Starlette
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
@@ -352,6 +353,10 @@ def create_app(
     vendor_cache_dir: str | Path | None = None,
     handoff_root: str | Path | None = None,
     max_revise: int | None = None,
+    design_mode: str | None = None,
+    design_provider: str | None = None,
+    design_model: str | None = None,
+    cache_live_proposals: bool | None = None,
     store: CaseStore | None = None,
 ) -> Starlette:
     app = Starlette(
@@ -365,13 +370,25 @@ def create_app(
             Route("/case/{case_id}/handoff", _handoff_case, methods=["POST"]),
         ]
     )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
+        allow_headers=["*"],
+    )
     resolved_proposals = Path(proposals_dir) if proposals_dir is not None else _default_proposals_dir()
     resolved_vendor_cache = (
         Path(vendor_cache_dir) if vendor_cache_dir is not None else _default_vendor_cache_dir()
     )
     resolved_handoff_root = Path(handoff_root) if handoff_root is not None else _default_handoff_root()
     app.state.case_store = store or CaseStore()
-    app.state.design_agent = DesignAgent(proposals_dir=resolved_proposals)
+    app.state.design_agent = DesignAgent(
+        proposals_dir=resolved_proposals,
+        mode=design_mode,
+        provider=design_provider,
+        model=design_model,
+        cache_live_proposals=cache_live_proposals,
+    )
     app.state.handoff_agent = VendorHandoffAgent(
         vendor_cache_dir=resolved_vendor_cache,
         handoff_root=resolved_handoff_root,
@@ -391,6 +408,10 @@ def run_server(
     vendor_cache_dir: str | Path | None = None,
     handoff_root: str | Path | None = None,
     max_revise: int | None = None,
+    design_mode: str | None = None,
+    design_provider: str | None = None,
+    design_model: str | None = None,
+    cache_live_proposals: bool | None = None,
 ) -> None:
     if proposals_dir is not None:
         os.environ["HAUS_CASE_PROPOSALS_DIR"] = str(proposals_dir)
@@ -400,6 +421,14 @@ def run_server(
         os.environ["HAUS_HANDOFF_ROOT"] = str(handoff_root)
     if max_revise is not None:
         os.environ["MAX_REVISE_ATTEMPTS"] = str(max_revise)
+    if design_mode is not None:
+        os.environ["HAUS_CASE_DESIGN_MODE"] = design_mode
+    if design_provider is not None:
+        os.environ["HAUS_CASE_LLM_PROVIDER"] = design_provider
+    if design_model is not None:
+        os.environ["HAUS_CASE_LLM_MODEL"] = design_model
+    if cache_live_proposals is not None:
+        os.environ["HAUS_CASE_CACHE_LIVE_PROPOSALS"] = "1" if cache_live_proposals else "0"
     uvicorn.run(
         "haus.case.http_server:_reload_app",
         factory=True,

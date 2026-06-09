@@ -54,6 +54,11 @@ def _enrich_wall_hdb_type(item: dict[str, Any]) -> dict[str, Any]:
     return item
 
 
+def enrich_wall_hdb_types(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return a copy of layout items with explicit hdb_type on wall items."""
+    return [_enrich_wall_hdb_type(dict(it)) for it in items if isinstance(it, dict)]
+
+
 def _baseline_protected_walls(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Snapshot of {name, hdb_type, pos, geo} for walls that compliance must protect."""
     baseline: list[dict[str, Any]] = []
@@ -100,7 +105,8 @@ def load_case_from_library(
     if not isinstance(raw, dict):
         raise ValueError(f"Library JSON root must be an object: {path}")
 
-    items = [_enrich_wall_hdb_type(dict(it)) for it in raw.get("items", []) if isinstance(it, dict)]
+    items = enrich_wall_hdb_types(raw.get("items", []))
+    baseline_items = json.loads(json.dumps(items))
 
     metadata = dict(raw.get("metadata", {}))
     metadata.setdefault("source_library", str(path))
@@ -123,6 +129,7 @@ def load_case_from_library(
         "compliance_findings": [],
         "approval_state": None,
         "vendor_handoff": None,
+        "_baseline_items": baseline_items,
         "_baseline_protected_walls": _baseline_protected_walls(items),
     }
     return case

@@ -8,12 +8,21 @@ import sys
 from importlib import resources
 from pathlib import Path
 from typing import NamedTuple
+from urllib.parse import quote
 
 from .logging_utils import configure_logging
 from .pipeline import run_vectorize
 from .types import VectorizeConfig
 
 log = configure_logging("haus.cli")
+
+DEFAULT_CASE_BRIEF = {
+    "flat_type": "3-room BTO",
+    "household_size": 2,
+    "style_prompt": "minimalist renovation concept",
+    "constraints": ["preserve HDB structural and shelter walls"],
+    "must_keep_rooms": [],
+}
 
 
 class ViewEnvironment(NamedTuple):
@@ -129,6 +138,153 @@ def _build_manifest(out_dir: Path, project_root: Path) -> list[dict]:
     return manifest
 
 
+def _viewer_href_for_path(path: Path, project_root: Path, viewer_dir: Path) -> str:
+    resolved = path.expanduser().resolve()
+    try:
+        return "/" + str(resolved.relative_to(project_root.resolve()))
+    except ValueError:
+        viewer_dir.mkdir(parents=True, exist_ok=True)
+        target = viewer_dir / resolved.name
+        shutil.copy2(resolved, target)
+        return "./" + target.name
+
+
+def _case_summary_line(label: str, case: dict) -> str:
+    findings = case.get("compliance_findings") if isinstance(case.get("compliance_findings"), list) else []
+    errors = [f for f in findings if isinstance(f, dict) and f.get("severity") == "error"]
+    rules = sorted({str(f.get("rule_id")) for f in findings if isinstance(f, dict) and f.get("rule_id")})
+    suffix = f" rules={','.join(rules)}" if rules else ""
+    packet = ""
+    handoff = case.get("vendor_handoff")
+    if isinstance(handoff, dict) and handoff.get("packet_uri"):
+        packet = f" packet={handoff['packet_uri']}"
+    return (
+        f"{label}: status={case.get('design_status')} "
+        f"revise_count={case.get('revise_count', 0)} "
+        f"findings={len(findings)} errors={len(errors)}{suffix}{packet}"
+    )
+
+
+def _parse_brief(raw: str | None) -> dict:
+    if raw is None:
+        return dict(DEFAULT_CASE_BRIEF)
+    path = Path(raw)
+    if path.exists():
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    else:
+        parsed = json.loads(raw)
+    if not isinstance(parsed, dict):
+        raise ValueError("brief must be a JSON object or a path to a JSON object")
+    return parsed
+
+
+def _case_demo(args: argparse.Namespace) -> int:
+    from starlette.testclient import TestClient
+
+    from .case.http_server import create_app
+
+    fixture = args.fixture
+    if not fixture.exists():
+        print(f"error: fixture does not exist: {fixture}", file=sys.stderr)
+        return 2
+
+    app = create_app(
+        proposals_dir=args.proposals_dir,
+        vendor_cache_dir=args.vendor_cache_dir,
+        handoff_root=args.handoff_root,
+        max_revise=args.max_revise_attempts,
+        design_mode=args.design_mode,
+        design_provider=args.design_provider,
+        design_model=args.design_model,
+        cache_live_proposals=args.cache_live_proposals,
+    )
+    brief = _parse_brief(args.brief)
+    transitions: list[str] = []
+
+    with TestClient(app) as client:
+        res = client.post(
+            "/case",
+            json={
+                "floor_plan_ref": str(fixture),
+                "brief": brief,
+                "pinned_proposal_id": args.pinned,
+                "vendor_cache_key": args.vendor_cache_key,
+            },
+        )
+        if res.status_code >= 400:
+            print(res.text, file=sys.stderr)
+            return 1
+        case = res.json()
+        case_id = case["case_id"]
+        transitions.append(_case_summary_line("create", case))
+
+        res = client.post(f"/case/{case_id}/design", json={})
+        if res.status_code >= 400:
+            print(res.text, file=sys.stderr)
+            return 1
+        case = res.json()
+        transitions.append(_case_summary_line("design", case))
+
+        compliance_runs = 0
+        while True:
+            compliance_runs += 1
+            res = client.post(f"/case/{case_id}/compliance", json={})
+            if res.status_code >= 400:
+                print(res.text, file=sys.stderr)
+                return 1
+            case = res.json()
+            transitions.append(_case_summary_line(f"compliance#{compliance_runs}", case))
+            if case["design_status"] != "revising":
+                break
+            res = client.post(
+                f"/case/{case_id}/revise",
+                json={"findings": case["compliance_findings"]},
+            )
+            if res.status_code >= 400:
+                print(res.text, file=sys.stderr)
+                return 1
+            case = res.json()
+            transitions.append(_case_summary_line(f"revise#{case['revise_count']}", case))
+
+        if case["design_status"] == "awaiting_human_approval" and not args.skip_approval:
+            res = client.patch(
+                f"/case/{case_id}/approval",
+                json={
+                    "decision": "approved",
+                    "reviewer": args.reviewer,
+                    "notes": args.approval_notes,
+                },
+            )
+            if res.status_code >= 400:
+                print(res.text, file=sys.stderr)
+                return 1
+            case = res.json()
+            transitions.append(_case_summary_line("approval", case))
+
+        if case["design_status"] == "approved" and not args.skip_handoff:
+            res = client.post(
+                f"/case/{case_id}/handoff",
+                json={"vendor_cache_key": args.vendor_cache_key},
+            )
+            if res.status_code >= 400:
+                print(res.text, file=sys.stderr)
+                return 1
+            case = res.json()
+            transitions.append(_case_summary_line("handoff", case))
+
+    for line in transitions:
+        print(line)
+
+    output_path = args.out
+    if output_path is None:
+        output_path = Path("viewer") / "case-demo.json" if Path("viewer").exists() else _runtime_root() / "cases" / "case-demo.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(case, indent=2), encoding="utf-8")
+    print(f"case_json={output_path}")
+    print(f"viewer_command=haus view --case {output_path}")
+    return 0
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="haus",
@@ -164,6 +320,7 @@ def _build_parser() -> argparse.ArgumentParser:
 
     view = subparsers.add_parser("view", help="Launch 3D viewer for a GLB file")
     view.add_argument("--glb", required=False, type=Path, default=None, help="Path to GLB file (opens editor directly)")
+    view.add_argument("--case", required=False, type=Path, default=None, help="Path to Case JSON for before/after review")
     view.add_argument("--port", type=int, default=8080, help="HTTP server port (default: 8080)")
 
     case_server = subparsers.add_parser(
@@ -195,6 +352,51 @@ def _build_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Override MAX_REVISE_ATTEMPTS for the revise loop",
+    )
+    case_server.add_argument(
+        "--design-mode",
+        choices=("deterministic", "live"),
+        default=None,
+        help="Design Agent mode for unpinned cases (default: deterministic)",
+    )
+    case_server.add_argument("--design-provider", default=None, help="Live Design Agent provider")
+    case_server.add_argument("--design-model", default=None, help="Live Design Agent model")
+    case_server.add_argument(
+        "--cache-live-proposals",
+        action="store_true",
+        default=None,
+        help="Write successful live Design Agent proposals into the proposals directory",
+    )
+
+    case = subparsers.add_parser("case", help="Run Renovation Design Case utilities")
+    case_subparsers = case.add_subparsers(dest="case_command", required=True)
+    demo = case_subparsers.add_parser("demo", help="Run the Stage-1 demo lifecycle through the HTTP app")
+    demo.add_argument("--fixture", type=Path, default=Path("corpus/library/3.json"), help="Case library JSON fixture")
+    demo.add_argument("--pinned", default="demo_3room_remove_wall_28", help="Pinned proposal id to replay")
+    demo.add_argument("--brief", default=None, help="Brief JSON string or path; defaults to the hackathon demo brief")
+    demo.add_argument("--proposals-dir", type=Path, default=Path("tests/fixtures/proposals"), help="Pinned proposals directory")
+    demo.add_argument("--vendor-cache-dir", type=Path, default=Path("tests/fixtures/vendors"), help="Vendor cache directory")
+    demo.add_argument("--vendor-cache-key", default="demo_hdb_renovation", help="Vendor cache key")
+    demo.add_argument("--handoff-root", type=Path, default=None, help="Handoff packet output root")
+    demo.add_argument("--max-revise-attempts", type=int, default=3, help="N-failure escalation threshold")
+    demo.add_argument("--reviewer", default="coordinator_alice", help="Stage-1 approval reviewer")
+    demo.add_argument("--approval-notes", default="Approved for contractor handoff demo.", help="Stage-1 approval notes")
+    demo.add_argument("--skip-approval", action="store_true", help="Stop at awaiting_human_approval")
+    demo.add_argument("--skip-handoff", action="store_true", help="Stop after approval")
+    demo.add_argument("--out", type=Path, default=None, help="Where to write the final Case JSON")
+    demo.add_argument(
+        "--design-mode",
+        choices=("deterministic", "live"),
+        default=None,
+        help="Design Agent mode for unpinned cases",
+    )
+    demo.add_argument("--design-provider", default=None, help="Live Design Agent provider")
+    demo.add_argument("--design-model", default=None, help="Live Design Agent model")
+    demo.add_argument(
+        "--cache-live-proposals",
+        action="store_true",
+        default=None,
+        help="Write successful live Design Agent proposals into the proposals directory",
     )
 
     return parser
@@ -263,7 +465,14 @@ def main(argv: list[str] | None = None) -> int:
             layout_path = viewer_dir / "mcp-layout.json"
             mcp_server.LAYOUT_PATH = layout_path
             from .chat_server import run_server as run_chat_server
-            open_url = f"http://localhost:{port}/viewer/editor.html"
+            query = ""
+            if args.case:
+                if not args.case.exists():
+                    print(f"error: Case JSON file does not exist: {args.case}", file=sys.stderr)
+                    return 2
+                case_href = _viewer_href_for_path(args.case, project_root, viewer_dir)
+                query = "?case=" + quote(case_href, safe="/:.")
+            open_url = f"http://localhost:{port}/viewer/editor.html{query}"
             print(f"Starting server at http://localhost:{port}", file=sys.stderr)
             webbrowser.open(open_url)
             run_chat_server(str(project_root), port, layout_path=str(layout_path))
@@ -281,8 +490,15 @@ def main(argv: list[str] | None = None) -> int:
                 vendor_cache_dir=args.vendor_cache_dir,
                 handoff_root=args.handoff_root,
                 max_revise=args.max_revise_attempts,
+                design_mode=args.design_mode,
+                design_provider=args.design_provider,
+                design_model=args.design_model,
+                cache_live_proposals=args.cache_live_proposals,
             )
             return 0
+        if args.command == "case":
+            if args.case_command == "demo":
+                return _case_demo(args)
         parser.error(f"Unsupported command: {args.command}")
     except Exception as e:
         log.exception("CLI command failed")
