@@ -53,6 +53,14 @@ def test_load_case_enriches_wall_28_with_shelter_hdb_type():
     assert wall_28["hdb_type"] == "shelter"
 
 
+def test_load_case_carries_full_baseline_items_for_viewer_diff():
+    case = load_case_from_library(LIBRARY_3, brief=BRIEF)
+    assert case["_baseline_items"] == case["items"]
+    assert case["_baseline_items"] is not case["items"]
+    baseline_wall_28 = next(it for it in case["_baseline_items"] if it.get("name") == "wall_28")
+    assert baseline_wall_28["hdb_type"] == "shelter"
+
+
 def test_baseline_protected_walls_matches_known_counts():
     case = load_case_from_library(LIBRARY_3, brief=BRIEF)
     baseline = case["_baseline_protected_walls"]

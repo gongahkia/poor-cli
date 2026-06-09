@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from pathlib import Path
 import cv2
 import pytest
@@ -37,12 +38,17 @@ def test_run_vectorize_produces_outputs(tmp_path):
     metadata = run_vectorize(cfg)
     assert (tmp_path / "out" / "vector_clean.png").exists()
     assert (tmp_path / "out" / "vector.metadata.json").exists()
+    assert (tmp_path / "out" / "layout.json").exists()
     assert (tmp_path / "debug" / "wall_mask.png").exists()
     assert (tmp_path / "debug" / "fill_mask.png").exists()
     assert (tmp_path / "debug" / "overlay.png").exists()
     assert "walls" in metadata
     assert "openings" in metadata
     assert "scale" in metadata
+    assert metadata["output_layout"] == str(tmp_path / "out" / "layout.json")
+    layout = json.loads((tmp_path / "out" / "layout.json").read_text(encoding="utf-8"))
+    wall_hdb_types = {item.get("hdb_type") for item in layout["items"] if item["type"] == "wall"}
+    assert wall_hdb_types & {"ferrolite", "partition", "structural", "shelter"}
 
 
 def test_scale_estimation_produces_plausible_value():

@@ -25,6 +25,9 @@ def test_pinned_proposal_loads_and_replaces_items():
     # wall_28 removed by the pinned proposal -> 112 items (was 113)
     assert len(case["items"]) == 112
     assert all(it.get("name") != "wall_28" for it in case["items"])
+    wall_0 = next(it for it in case["items"] if it.get("name") == "wall_0")
+    assert wall_0["hdb_type"] == "structural"
+    assert case["design_agent_trace"]["source"] == "pinned"
 
 
 def test_pinned_proposal_is_deterministic():
@@ -67,6 +70,49 @@ def test_deterministic_fallback_preserves_walls_and_adds_furniture():
     furniture = [it for it in case["items"] if it.get("type") == "furniture"]
     assert len(walls) == 113  # all walls preserved
     assert len(furniture) > 0  # plan_room produced items
+    assert case["design_agent_trace"]["source"] == "deterministic"
+
+
+def test_live_mode_applies_mocked_structured_operations(monkeypatch):
+    import haus.chat_server as chat_server
+
+    def fake_chat(api_key, messages, model, dispatch):
+        assert api_key == "test-key"
+        assert model == "mock-model"
+        assert "protected_walls" in messages[0]["content"]
+        return (
+            '{"operations":[{"action":"add_item","item":{'
+            '"type":"furniture","furnitureType":"desk","name":"live_desk",'
+            '"pos":[0,0.375,0],"rot":0,"visible":true,"geo":[1.2,0.75,0.6],'
+            '"color":8947848}}]}'
+        ), []
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(chat_server, "_CHAT_FNS", {**chat_server._CHAT_FNS, "openai": fake_chat})
+
+    case = load_case_from_library(LIBRARY_3, brief=BRIEF)
+    agent = DesignAgent(
+        proposals_dir=PROPOSALS_DIR,
+        mode="live",
+        provider="openai",
+        model="mock-model",
+    )
+    case = agent.propose(case)
+
+    assert any(item.get("name") == "live_desk" for item in case["items"])
+    assert case["design_agent_trace"]["source"] == "live"
+
+
+def test_live_mode_falls_back_to_deterministic_without_credentials(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    case = load_case_from_library(LIBRARY_3, brief=BRIEF)
+    agent = DesignAgent(proposals_dir=PROPOSALS_DIR, mode="live", provider="openai")
+    case = agent.propose(case)
+
+    assert case["design_agent_trace"]["source"] == "deterministic"
+    assert "OPENAI_API_KEY" in case["design_agent_trace"]["fallback_reason"]
+    assert any(item.get("type") == "furniture" for item in case["items"])
 
 
 def test_pinned_proposal_path_isolates_items_from_disk_payload():

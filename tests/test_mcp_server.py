@@ -414,3 +414,51 @@ def test_corrupt_layout_is_recovered_without_crash(isolated_layout: Path) -> Non
 
     backups = list(isolated_layout.parent.glob("mcp-layout.corrupt-*.json"))
     assert backups
+
+
+def test_layout_normalizer_preserves_case_and_wall_classification(isolated_layout: Path) -> None:
+    layout = {
+        "version": 1,
+        "case_id": "case-demo",
+        "design_status": "awaiting_human_approval",
+        "revise_count": 3,
+        "compliance_findings": [
+            {"rule_id": "structural_wall_protected", "element_name": "wall_28"}
+        ],
+        "_baseline_items": [
+            {
+                "type": "wall",
+                "name": "wall_28",
+                "pos": [1, 1.3, 1],
+                "rot": 0,
+                "visible": True,
+                "geo": [2, 2.6, 0.3],
+                "color": 7874600,
+                "hdb_type": "shelter",
+            }
+        ],
+        "items": [
+            {
+                "type": "wall",
+                "name": "wall_0",
+                "pos": [0, 1.3, 0],
+                "rot": 0,
+                "visible": True,
+                "geo": [1, 2.6, 0.15],
+                "color": 5263440,
+                "hdb_type": "structural",
+                "wall_type": "structural",
+                "hdb_thickness_m": 0.15,
+            }
+        ],
+    }
+
+    assert mcp_server._save_layout(layout) is None
+    loaded = mcp_server._load_layout()
+
+    assert loaded["case_id"] == "case-demo"
+    assert loaded["design_status"] == "awaiting_human_approval"
+    assert loaded["compliance_findings"][0]["element_name"] == "wall_28"
+    assert loaded["_baseline_items"][0]["hdb_type"] == "shelter"
+    assert loaded["items"][0]["hdb_type"] == "structural"
+    assert loaded["items"][0]["wall_type"] == "structural"
