@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="css/editor.css">
 </head>
 <body>
+<button id="actions-toggle" title="Toggle editor actions">Actions</button>
 <div id="toolbar">
   <label>Load GLB <input type="file" id="glb-input" accept=".glb"></label>
   <select id="bto-layout-picker" title="Load real BTO layout">
@@ -32,7 +33,6 @@
   <div id="chat-header">
     <span>Haus Planner</span>
     <div style="display:flex;gap:4px;align-items:center;">
-      <select id="chat-provider" title="Provider"></select>
       <input type="text" id="chat-model" placeholder="Auto model" title="Optional model override">
       <select id="chat-planner-mode" title="Planner mode">
         <option value="auto">Auto planner</option>
@@ -49,17 +49,10 @@
       <button id="chat-settings-btn" title="Provider settings">Settings</button>
     </div>
   </div>
-  <div id="chat-suggestions">
-    <button class="chat-chip">Place a sofa where TV view is clear</button>
-    <button class="chat-chip">Simulate 3 living room layout options</button>
-    <button class="chat-chip">Auto-place desk near natural circulation path</button>
-    <button class="chat-chip">Search current HDB storage references</button>
-    <button class="chat-chip">Replicate the attached room image</button>
-  </div>
   <div id="chat-settings" style="display:none;">
     <div class="chat-key-row">
       <label>Provider</label>
-      <select id="chat-key-provider">
+      <select id="chat-provider">
         <option value="anthropic">Anthropic</option>
         <option value="openai">OpenAI</option>
         <option value="gemini">Gemini</option>
@@ -219,12 +212,6 @@
       <span><kbd>R</kbd> 90° <kbd>Shift+R</kbd> 15° <kbd>X</kbd> del <kbd>Cmd+D</kbd> dup <kbd>H</kbd> hide <kbd>F</kbd> frame</span>
     </div>
   </div>
-</div>
-<div id="info">
-  <kbd>G</kbd> grid <kbd>S</kbd> snap <kbd>C</kbd> collisions <kbd>W</kbd> wall <kbd>M</kbd> measure <kbd>P</kbd> FPS
-  <kbd>R</kbd> rotate <kbd>X</kbd> delete <kbd>D</kbd> duplicate <kbd>H</kbd> hide <kbd>Alt+H</kbd> unhide
-  <kbd>F</kbd> frame <kbd>1</kbd>/<kbd>3</kbd>/<kbd>7</kbd> views <kbd>5</kbd> ortho
-  <kbd>Ctrl+C</kbd>/<kbd>V</kbd> copy/paste <kbd>Ctrl+Z</kbd>/<kbd>Y</kbd> undo/redo <kbd>Cmd+K</kbd> commands <kbd>?</kbd> help
 </div>
 <div id="help-modal">
   <div id="help-content">

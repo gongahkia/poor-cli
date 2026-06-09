@@ -70,10 +70,13 @@ canvas { display: block; position: fixed; top: 0; left: var(--planner-w); }
 }
 .dim-input:focus { border-color: var(--input-focus); outline: none; }
 #toolbar {
-  position: fixed; top: 12px; left: calc(var(--planner-w) + 12px); z-index: 10;
-  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  position: fixed; top: 56px; left: calc(var(--planner-w) + 12px); z-index: 40;
+  display: none; gap: 8px; align-items: center; flex-wrap: wrap;
   max-width: calc(100% - var(--planner-w) - 72px);
+  background: var(--panel); border: 1px solid var(--border-light);
+  border-radius: 8px; padding: 8px; box-shadow: 0 8px 32px var(--shadow-color-lg);
 }
+#toolbar.open { display: flex; }
 #toolbar label, #toolbar button, #toolbar select {
   display: inline-block; min-height: 36px; padding: 8px 14px; background: var(--btn-bg); border: 1px solid var(--border-mid);
   border-radius: 4px; cursor: pointer; font-size: 12px; line-height: 18px; color: var(--fg-dim); white-space: nowrap;
@@ -83,10 +86,6 @@ canvas { display: block; position: fixed; top: 0; left: var(--planner-w); }
 #toolbar input[type="file"] { display: none; }
 #toolbar button.active { background: var(--btn-active-bg); border-color: var(--btn-active-border); color: var(--fg); }
 #toolbar button.active:hover { background: var(--btn-active-hover); }
-#info {
-  position: fixed; bottom: 12px; left: calc(var(--planner-w) + 12px); z-index: 10;
-  font-size: 11px; color: var(--fg-faint); max-width: calc(100% - var(--planner-w) - 32px);
-}
 kbd {
   background: var(--kbd-bg); border: 1px solid var(--kbd-border); border-radius: 4px;
   padding: 1px 5px; font-size: 10px;
@@ -195,7 +194,7 @@ kbd {
 #chat-header > div {
   flex-wrap: wrap; justify-content: flex-end; max-width: 310px;
 }
-#chat-provider, #chat-planner-mode, #chat-standards-profile {
+#chat-planner-mode, #chat-standards-profile {
   background: var(--input-bg); border: 1px solid var(--border-mid); color: var(--fg-dim); border-radius: 4px;
   font-size: 11px; padding: 3px 5px; min-width: 84px; max-width: 126px;
 }
@@ -209,15 +208,6 @@ kbd {
   padding: 3px 8px; cursor: pointer; font-size: 11px;
 }
 #chat-clear-btn:hover { background: var(--btn-hover); color: var(--fg); }
-#chat-suggestions {
-  display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 10px 4px;
-  border-bottom: 1px solid var(--border);
-}
-.chat-chip {
-  background: var(--chip-bg); border: 1px solid rgba(167,139,250,0.22); color: var(--fg-accent);
-  border-radius: 9999px; font-size: 10px; line-height: 14px; padding: 4px 10px; cursor: pointer;
-}
-.chat-chip:hover { background: var(--primary); border-color: var(--primary-hover); color: var(--fg); }
 #chat-status {
   padding: 6px 12px; color: var(--fg-accent); font-size: 11px; display: none;
 }
@@ -409,13 +399,14 @@ kbd {
 #chat-key-save:hover { background: var(--btn-active-hover); }
 #chat-key-forget:hover { background: var(--btn-hover); color: var(--fg); }
 #chat-key-status { font-size: 10px; color: var(--fg-accent); }
-#tools-toggle {
+#actions-toggle, #tools-toggle {
   position: fixed; top: 12px; right: 12px; z-index: 40;
   background: var(--btn-active-bg); border: 1px solid var(--btn-active-border);
   color: var(--fg); border-radius: 8px; padding: 8px 14px;
   cursor: pointer; font-size: 12px;
 }
-#tools-toggle:hover { background: var(--btn-active-hover); }
+#actions-toggle { left: calc(var(--planner-w) + 12px); right: auto; }
+#actions-toggle:hover, #tools-toggle:hover { background: var(--btn-active-hover); }
 /* command palette */
 #cmd-palette {
   position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -453,7 +444,7 @@ kbd {
   }
   canvas { left: 0; }
   #toolbar {
-    left: 8px; top: 8px; max-width: calc(100% - 72px);
+    left: 8px; top: 56px; max-width: calc(100% - 16px);
   }
-  #info { display: none; }
+  #actions-toggle { left: 8px; right: auto; }
 }
