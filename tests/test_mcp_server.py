@@ -435,27 +435,11 @@ def test_corrupt_layout_is_recovered_without_crash(isolated_layout: Path) -> Non
     assert backups
 
 
-def test_layout_normalizer_preserves_case_and_wall_classification(isolated_layout: Path) -> None:
+def test_layout_normalizer_preserves_metadata_rooms_and_wall_classification(isolated_layout: Path) -> None:
     layout = {
         "version": 1,
-        "case_id": "case-demo",
-        "design_status": "awaiting_human_approval",
-        "revise_count": 3,
-        "compliance_findings": [
-            {"rule_id": "structural_wall_protected", "element_name": "wall_28"}
-        ],
-        "_baseline_items": [
-            {
-                "type": "wall",
-                "name": "wall_28",
-                "pos": [1, 1.3, 1],
-                "rot": 0,
-                "visible": True,
-                "geo": [2, 2.6, 0.3],
-                "color": 7874600,
-                "hdb_type": "shelter",
-            }
-        ],
+        "metadata": {"source_type": "upload", "source_filename": "plan.jpg"},
+        "rooms": [{"name": "living", "bounds": {"x_min": 0, "z_min": 0, "x_max": 3, "z_max": 4}}],
         "items": [
             {
                 "type": "wall",
@@ -475,9 +459,8 @@ def test_layout_normalizer_preserves_case_and_wall_classification(isolated_layou
     assert mcp_server._save_layout(layout) is None
     loaded = mcp_server._load_layout()
 
-    assert loaded["case_id"] == "case-demo"
-    assert loaded["design_status"] == "awaiting_human_approval"
-    assert loaded["compliance_findings"][0]["element_name"] == "wall_28"
-    assert loaded["_baseline_items"][0]["hdb_type"] == "shelter"
+    assert loaded["metadata"]["source_type"] == "upload"
+    assert loaded["metadata"]["source_filename"] == "plan.jpg"
+    assert loaded["rooms"][0]["label"] == "living"
     assert loaded["items"][0]["hdb_type"] == "structural"
     assert loaded["items"][0]["wall_type"] == "structural"

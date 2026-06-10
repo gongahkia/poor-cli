@@ -8,22 +8,12 @@ import sys
 from importlib import resources
 from pathlib import Path
 from typing import NamedTuple
-from urllib.parse import quote
 
 from .logging_utils import configure_logging
 from .pipeline import run_vectorize
 from .types import VectorizeConfig
 
 log = configure_logging("haus.cli")
-
-DEFAULT_CASE_BRIEF = {
-    "flat_type": "3-room BTO",
-    "household_size": 2,
-    "style_prompt": "minimalist renovation concept",
-    "constraints": ["preserve HDB structural and shelter walls"],
-    "must_keep_rooms": [],
-}
-
 
 class ViewEnvironment(NamedTuple):
     serve_root: Path
@@ -138,154 +128,6 @@ def _build_manifest(out_dir: Path, project_root: Path) -> list[dict]:
     return manifest
 
 
-def _viewer_href_for_path(path: Path, project_root: Path, viewer_dir: Path) -> str:
-    resolved = path.expanduser().resolve()
-    try:
-        return "/" + str(resolved.relative_to(project_root.resolve()))
-    except ValueError:
-        viewer_dir.mkdir(parents=True, exist_ok=True)
-        target = viewer_dir / resolved.name
-        shutil.copy2(resolved, target)
-        return "./" + target.name
-
-
-def _case_summary_line(label: str, case: dict) -> str:
-    raw_findings = case.get("compliance_findings")
-    findings: list[dict] = [f for f in raw_findings if isinstance(f, dict)] if isinstance(raw_findings, list) else []
-    errors = [f for f in findings if isinstance(f, dict) and f.get("severity") == "error"]
-    rules = sorted({str(f.get("rule_id")) for f in findings if isinstance(f, dict) and f.get("rule_id")})
-    suffix = f" rules={','.join(rules)}" if rules else ""
-    packet = ""
-    handoff = case.get("vendor_handoff")
-    if isinstance(handoff, dict) and handoff.get("packet_uri"):
-        packet = f" packet={handoff['packet_uri']}"
-    return (
-        f"{label}: status={case.get('design_status')} "
-        f"revise_count={case.get('revise_count', 0)} "
-        f"findings={len(findings)} errors={len(errors)}{suffix}{packet}"
-    )
-
-
-def _parse_brief(raw: str | None) -> dict:
-    if raw is None:
-        return dict(DEFAULT_CASE_BRIEF)
-    path = Path(raw)
-    if path.exists():
-        parsed = json.loads(path.read_text(encoding="utf-8"))
-    else:
-        parsed = json.loads(raw)
-    if not isinstance(parsed, dict):
-        raise ValueError("brief must be a JSON object or a path to a JSON object")
-    return parsed
-
-
-def _case_demo(args: argparse.Namespace) -> int:
-    from starlette.testclient import TestClient
-
-    from .case.http_server import create_app
-
-    fixture = args.fixture
-    if not fixture.exists():
-        print(f"error: fixture does not exist: {fixture}", file=sys.stderr)
-        return 2
-
-    app = create_app(
-        proposals_dir=args.proposals_dir,
-        vendor_cache_dir=args.vendor_cache_dir,
-        handoff_root=args.handoff_root,
-        max_revise=args.max_revise_attempts,
-        design_mode=args.design_mode,
-        design_provider=args.design_provider,
-        design_model=args.design_model,
-        cache_live_proposals=args.cache_live_proposals,
-    )
-    brief = _parse_brief(args.brief)
-    transitions: list[str] = []
-
-    with TestClient(app) as client:
-        res = client.post(
-            "/case",
-            json={
-                "floor_plan_ref": str(fixture),
-                "brief": brief,
-                "pinned_proposal_id": args.pinned,
-                "vendor_cache_key": args.vendor_cache_key,
-            },
-        )
-        if res.status_code >= 400:
-            print(res.text, file=sys.stderr)
-            return 1
-        case = res.json()
-        case_id = case["case_id"]
-        transitions.append(_case_summary_line("create", case))
-
-        res = client.post(f"/case/{case_id}/design", json={})
-        if res.status_code >= 400:
-            print(res.text, file=sys.stderr)
-            return 1
-        case = res.json()
-        transitions.append(_case_summary_line("design", case))
-
-        compliance_runs = 0
-        while True:
-            compliance_runs += 1
-            res = client.post(f"/case/{case_id}/compliance", json={})
-            if res.status_code >= 400:
-                print(res.text, file=sys.stderr)
-                return 1
-            case = res.json()
-            transitions.append(_case_summary_line(f"compliance#{compliance_runs}", case))
-            if case["design_status"] != "revising":
-                break
-            res = client.post(
-                f"/case/{case_id}/revise",
-                json={"findings": case["compliance_findings"]},
-            )
-            if res.status_code >= 400:
-                print(res.text, file=sys.stderr)
-                return 1
-            case = res.json()
-            transitions.append(_case_summary_line(f"revise#{case['revise_count']}", case))
-
-        if case["design_status"] == "awaiting_human_approval" and not args.skip_approval:
-            res = client.patch(
-                f"/case/{case_id}/approval",
-                json={
-                    "decision": "approved",
-                    "reviewer": args.reviewer,
-                    "notes": args.approval_notes,
-                },
-            )
-            if res.status_code >= 400:
-                print(res.text, file=sys.stderr)
-                return 1
-            case = res.json()
-            transitions.append(_case_summary_line("approval", case))
-
-        if case["design_status"] == "approved" and not args.skip_handoff:
-            res = client.post(
-                f"/case/{case_id}/handoff",
-                json={"vendor_cache_key": args.vendor_cache_key},
-            )
-            if res.status_code >= 400:
-                print(res.text, file=sys.stderr)
-                return 1
-            case = res.json()
-            transitions.append(_case_summary_line("handoff", case))
-
-    for line in transitions:
-        print(line)
-
-    output_path = args.out
-    if output_path is None:
-        output_path = Path("viewer") / "case-demo.json" if Path("viewer").exists() else _runtime_root() / "cases" / "case-demo.json"
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(case, indent=2), encoding="utf-8")
-    print(f"case_json={output_path}")
-    print(f"viewer_command=haus view --case {output_path}")
-    return 0
-
-
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="haus",
@@ -321,7 +163,6 @@ def _build_parser() -> argparse.ArgumentParser:
 
     view = subparsers.add_parser("view", help="Launch 3D viewer for a GLB file")
     view.add_argument("--glb", required=False, type=Path, default=None, help="Path to GLB file (opens editor directly)")
-    view.add_argument("--case", required=False, type=Path, default=None, help="Path to Case JSON for before/after review")
     view.add_argument("--port", type=int, default=8080, help="HTTP server port (default: 8080)")
 
     return parser
@@ -390,14 +231,7 @@ def main(argv: list[str] | None = None) -> int:
             layout_path = viewer_dir / "mcp-layout.json"
             mcp_server.LAYOUT_PATH = layout_path
             from .chat_server import run_server as run_chat_server
-            query = ""
-            if args.case:
-                if not args.case.exists():
-                    print(f"error: Case JSON file does not exist: {args.case}", file=sys.stderr)
-                    return 2
-                case_href = _viewer_href_for_path(args.case, project_root, viewer_dir)
-                query = "?case=" + quote(case_href, safe="/:.")
-            open_url = f"http://localhost:{port}/viewer/editor.html{query}"
+            open_url = f"http://localhost:{port}/viewer/editor.html"
             print(f"Starting server at http://localhost:{port}", file=sys.stderr)
             webbrowser.open(open_url)
             run_chat_server(str(project_root), port, layout_path=str(layout_path))

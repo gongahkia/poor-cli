@@ -137,22 +137,6 @@ _SIMULATION_CACHE: list[dict[str, Any]] = []
 
 _ITEM_STRING_FIELDS = ("hdb_type", "wall_type")
 _ITEM_NUMERIC_FIELDS = ("hdb_thickness_m", "thickness_m")
-_CASE_TOP_LEVEL_FIELDS = (
-    "case_schema_version",
-    "case_id",
-    "created_at",
-    "updated_at",
-    "design_status",
-    "revise_count",
-    "pinned_proposal_id",
-    "vendor_cache_key",
-    "brief",
-    "compliance_findings",
-    "approval_state",
-    "vendor_handoff",
-    "_baseline_protected_walls",
-    "_baseline_items",
-)
 
 
 def _empty_layout() -> dict[str, Any]:
@@ -361,10 +345,6 @@ def _normalize_layout(raw: Any) -> dict[str, Any]:
 
     if "_stamp" in raw:
         layout["_stamp"] = _coerce_int(raw.get("_stamp", 0), 0)
-
-    for key in _CASE_TOP_LEVEL_FIELDS:
-        if key in raw:
-            layout[key] = raw[key]
 
     return layout
 
