@@ -7,6 +7,7 @@ import type {
   ShieldAuditStatus,
   ShieldPolicyDecision,
   ShieldReplayMetadata,
+  ShieldRuntimeFinding,
   ToolErrorPayload,
 } from "@swee-sg/shared";
 import { resolveStatePath } from "@swee-sg/shared";
@@ -56,6 +57,8 @@ type AuditRow = {
   readonly duration_ms: number;
   readonly input_hash: string;
   readonly output_hash: string | null;
+  readonly raw_output_hash: string | null;
+  readonly runtime_findings_json: string | null;
   readonly sanitized_input_json: string;
   readonly error_json: string | null;
 };
@@ -72,9 +75,17 @@ const rowToRecord = (row: AuditRow): ShieldAuditRecord => ({
   durationMs: row.duration_ms,
   inputHash: row.input_hash,
   outputHash: row.output_hash,
+  rawOutputHash: row.raw_output_hash,
+  runtimeFindings: row.runtime_findings_json === null
+    ? []
+    : JSON.parse(row.runtime_findings_json) as readonly ShieldRuntimeFinding[],
   sanitizedInput: JSON.parse(row.sanitized_input_json) as unknown,
   ...(row.error_json === null ? {} : { error: JSON.parse(row.error_json) as ToolErrorPayload }),
 });
+
+type TableInfoRow = {
+  readonly name: string;
+};
 
 export class ShieldAuditStore {
   private readonly db: Database.Database;
@@ -98,6 +109,8 @@ export class ShieldAuditStore {
         duration_ms INTEGER NOT NULL,
         input_hash TEXT NOT NULL,
         output_hash TEXT,
+        raw_output_hash TEXT,
+        runtime_findings_json TEXT,
         sanitized_input_json TEXT NOT NULL,
         error_json TEXT
       );
@@ -106,6 +119,19 @@ export class ShieldAuditStore {
       CREATE INDEX IF NOT EXISTS idx_shield_audit_tool ON shield_audit(tool_name);
       CREATE INDEX IF NOT EXISTS idx_shield_audit_started ON shield_audit(started_at);
     `);
+    this.migrate();
+  }
+
+  private migrate(): void {
+    const columns = new Set(
+      (this.db.prepare("PRAGMA table_info(shield_audit)").all() as TableInfoRow[]).map((row) => row.name),
+    );
+    if (!columns.has("raw_output_hash")) {
+      this.db.exec("ALTER TABLE shield_audit ADD COLUMN raw_output_hash TEXT");
+    }
+    if (!columns.has("runtime_findings_json")) {
+      this.db.exec("ALTER TABLE shield_audit ADD COLUMN runtime_findings_json TEXT");
+    }
   }
 
   record(params: {
@@ -119,21 +145,24 @@ export class ShieldAuditStore {
     readonly durationMs: number;
     readonly input: unknown;
     readonly output?: unknown;
+    readonly rawOutput?: unknown;
+    readonly runtimeFindings?: readonly ShieldRuntimeFinding[];
     readonly error?: ToolErrorPayload;
   }): ShieldAuditRecord {
     const auditId = randomUUID();
     const sanitizedInput = sanitizeAuditValue(params.input);
     const inputHash = hashAuditValue(sanitizedInput);
     const outputHash = params.output === undefined ? null : hashAuditValue(sanitizeAuditValue(params.output));
+    const rawOutputHash = params.rawOutput === undefined ? null : hashAuditValue(params.rawOutput);
     this.db.prepare(`
       INSERT INTO shield_audit (
         audit_id, trace_id, request_id, tool_name, decision_json, status,
-        started_at, finished_at, duration_ms, input_hash, output_hash,
-        sanitized_input_json, error_json
+        started_at, finished_at, duration_ms, input_hash, output_hash, raw_output_hash,
+        runtime_findings_json, sanitized_input_json, error_json
       )
       VALUES (@auditId, @traceId, @requestId, @toolName, @decisionJson, @status,
-        @startedAt, @finishedAt, @durationMs, @inputHash, @outputHash,
-        @sanitizedInputJson, @errorJson)
+        @startedAt, @finishedAt, @durationMs, @inputHash, @outputHash, @rawOutputHash,
+        @runtimeFindingsJson, @sanitizedInputJson, @errorJson)
     `).run({
       auditId,
       traceId: params.traceId ?? null,
@@ -146,6 +175,8 @@ export class ShieldAuditStore {
       durationMs: params.durationMs,
       inputHash,
       outputHash,
+      rawOutputHash,
+      runtimeFindingsJson: JSON.stringify(params.runtimeFindings ?? []),
       sanitizedInputJson: JSON.stringify(sanitizedInput),
       errorJson: params.error === undefined ? null : JSON.stringify(sanitizeAuditValue(params.error)),
     });
@@ -192,6 +223,8 @@ export class ShieldAuditStore {
       decision: record.decision,
       status: record.status,
       outputHash: record.outputHash,
+      rawOutputHash: record.rawOutputHash,
+      runtimeFindings: record.runtimeFindings,
       durationMs: record.durationMs,
     };
   }

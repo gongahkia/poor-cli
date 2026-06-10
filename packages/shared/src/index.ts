@@ -252,6 +252,7 @@ export type {
   ShieldPolicyDecision,
   ShieldRiskLevel,
   ShieldReplayMetadata,
+  ShieldRuntimeFinding,
   ShieldScannerFinding,
   ShieldToolMetadata,
   PulseFreshness,

@@ -25,6 +25,8 @@ No AI key is required for the main dashboard. Live LTA routes require `SG_API_LT
 
 For split-origin local development, set `SWEE_WEB_ORIGIN_ALLOWLIST` on the REST gateway to the exact web origin, for example `http://localhost:5173`.
 
+Splunk Shield proxy tools are local-trial ready without changing the Pulse path. Set `SPLUNK_MCP_URL` to the Splunk MCP Streamable HTTP endpoint and `SPLUNK_MCP_TOKEN` to a bearer token, or store the token with `sg_key_set` using `apiName:"splunk_mcp"`. `SPLUNK_MCP_ALLOWED_INDEXES` optionally restricts `splunk_search` by explicit index. `NODE_TLS_REJECT_UNAUTHORIZED=0` is only for local self-signed Splunk trials.
+
 ## Useful Commands
 
 ```bash
@@ -52,6 +54,12 @@ Shield:
 
 - `swee_shield_audit_lookup`
 - `swee_shield_scan_tools`
+
+Splunk Shield proxy:
+
+- `splunk_search`
+- `splunk_list_indexes`
+- `splunk_list_saved_searches`
 
 Selected raw source adapters:
 

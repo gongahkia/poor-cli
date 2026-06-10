@@ -131,6 +131,16 @@ export const API_CATALOG: readonly ApiCatalogEntry[] = [
     preferredInterface: "swee_shield_audit_lookup",
   },
   {
+    name: "Splunk Shield Proxy",
+    description: "Least-privilege Splunk MCP proxy tools governed by Swee Shield policy, audit, and runtime output defense.",
+    tools: ["splunk_search", "splunk_list_indexes", "splunk_list_saved_searches"],
+    authRequired: true,
+    rateLimit: "bounded local gateway policy plus upstream Splunk RBAC",
+    positioning: "Security-track proxy surface for governed agent access to Splunk data.",
+    preferredInterface: "splunk_search",
+    scopeNotes: ["Requires SPLUNK_MCP_URL and SPLUNK_MCP_TOKEN or a splunk_mcp keystore entry."],
+  },
+  {
     name: "Mobility Sources",
     description: "Raw LTA and transport-adjacent source adapters.",
     tools: [
@@ -233,7 +243,7 @@ export const RECIPE_CATALOG: readonly RecipeCatalogEntry[] = [
 
 export const RUNTIME_CATALOG: RuntimeCatalog = {
   schemaVersion: "swee-runtime/v1",
-  scope: "Policy-governed Singapore public-data source adapters and city signals",
+  scope: "Policy-governed Singapore public-data source adapters, city signals, and Shield-governed Splunk MCP proxy tools",
   toolsetProfiles: TOOLSET_PROFILE_CATALOG,
   shieldModes: ["observe", "enforce", "kiasu"],
   pulseContract: "Signals are deterministic, source-backed, and include freshness, provenance, gaps, and recommended actions.",

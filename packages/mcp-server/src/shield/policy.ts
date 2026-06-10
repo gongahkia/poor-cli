@@ -79,15 +79,17 @@ export const buildShieldToolMetadata = (tool: {
     ? "swee-shield"
     : tool.name.startsWith("swee_pulse_")
       ? "swee-pulse"
-      : tool.name.startsWith("sg_lta_")
-        ? "lta"
-        : tool.name.startsWith("sg_nea_")
-          ? "nea"
-          : tool.name.startsWith("sg_onemap_")
-            ? "onemap"
-            : tool.name.startsWith("sg_")
-              ? "singapore-source"
-              : "unknown";
+      : tool.name.startsWith("splunk_")
+        ? "splunk"
+        : tool.name.startsWith("sg_lta_")
+          ? "lta"
+          : tool.name.startsWith("sg_nea_")
+            ? "nea"
+            : tool.name.startsWith("sg_onemap_")
+              ? "onemap"
+              : tool.name.startsWith("sg_")
+                ? "singapore-source"
+                : "unknown";
   const operational = tool.toolsets?.includes("ops") === true;
   const riskLevel: ShieldRiskLevel = tool.annotations?.destructiveHint === true
     ? "critical"
@@ -103,7 +105,7 @@ export const buildShieldToolMetadata = (tool: {
     riskLevel,
     readOnly,
     openWorld: tool.annotations?.openWorldHint === true,
-    authRequired: tool.name.startsWith("sg_lta_") || tool.name.startsWith("sg_ura_") || tool.name.startsWith("sg_onemap_"),
+    authRequired: tool.name.startsWith("splunk_") || tool.name.startsWith("sg_lta_") || tool.name.startsWith("sg_ura_") || tool.name.startsWith("sg_onemap_"),
     tags: tool.toolsets ?? [],
   };
 };

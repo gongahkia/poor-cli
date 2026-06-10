@@ -33,6 +33,9 @@ node packages/mcp-server/dist/index.js
 - `swee_pulse_explain`
 - `swee_shield_audit_lookup`
 - `swee_shield_scan_tools`
+- `splunk_search`
+- `splunk_list_indexes`
+- `splunk_list_saved_searches`
 
 ## Credentials
 
@@ -40,9 +43,12 @@ Core Pulse weather, source-health, Shield audit, and no-auth public adapters run
 
 - `SG_API_LTA_KEY` for credential-gated LTA DataMall sources.
 - `SG_API_ONEMAP_EMAIL` and `SG_API_ONEMAP_PASSWORD` for OneMap sources that require authentication.
+- `SPLUNK_MCP_URL` and `SPLUNK_MCP_TOKEN` for Shield-governed Splunk MCP proxy tools.
+- `SPLUNK_MCP_ALLOWED_INDEXES` to restrict `splunk_search` to explicit indexes.
 - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY` for optional explain-only AI.
 
 Use `sg_key_set` for local credential setup when you do not want to export environment variables.
+For Splunk, use `apiName=splunk_mcp`. `NODE_TLS_REJECT_UNAUTHORIZED=0` is local-trial-only for self-signed Splunk certificates.
 
 ## Release Readiness
 

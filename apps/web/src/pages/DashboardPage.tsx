@@ -46,7 +46,14 @@ type ShieldAuditRow = {
   readonly status: string;
   readonly startedAt: string;
   readonly durationMs: number;
-  readonly decision: { readonly decision: string; readonly riskLevel: string };
+  readonly decision: { readonly decision: string; readonly riskLevel: string; readonly reasonCodes?: readonly string[] };
+  readonly outputHash?: string | null;
+  readonly rawOutputHash?: string | null;
+  readonly runtimeFindings?: readonly {
+    readonly code: string;
+    readonly severity: string;
+    readonly action: string;
+  }[];
 };
 
 type PulseShield = {
@@ -79,6 +86,8 @@ const formatDateTime = (value: string | null): string => {
 
 const plural = (count: number, singular: string, pluralForm = `${singular}s`): string =>
   `${count} ${count === 1 ? singular : pluralForm}`;
+
+const shortId = (value: string): string => value.slice(0, 8);
 
 export function DashboardPage() {
   const [snapshot, setSnapshot] = useState<PulseSnapshot | null>(null);
@@ -363,17 +372,39 @@ function ShieldAuditTable({ audits }: { readonly audits: readonly ShieldAuditRow
   return (
     <table>
       <thead>
-        <tr><th>Tool</th><th>Decision</th><th>Status</th><th>Duration</th></tr>
+        <tr><th>Tool</th><th>Decision</th><th>Findings</th><th>Status</th><th>Audit</th></tr>
       </thead>
       <tbody>
-        {audits.map((audit) => (
-          <tr key={audit.auditId}>
-            <td>{audit.toolName}</td>
-            <td>{audit.decision.decision} / {audit.decision.riskLevel}</td>
-            <td>{audit.status}</td>
-            <td>{audit.durationMs}ms</td>
-          </tr>
-        ))}
+        {audits.map((audit) => {
+          const findings = audit.runtimeFindings ?? [];
+          const reasonCodes = audit.decision.reasonCodes ?? [];
+          const hashes = audit.outputHash === null || audit.outputHash === undefined
+            ? "no output hash"
+            : audit.rawOutputHash === null || audit.rawOutputHash === undefined
+              ? "post hash"
+              : "raw + post hash";
+          return (
+            <tr key={audit.auditId}>
+              <td>{audit.toolName}</td>
+              <td>
+                <strong>{audit.decision.decision} / {audit.decision.riskLevel}</strong>
+                <span>{reasonCodes.slice(0, 2).join(", ") || "default_allow"}</span>
+              </td>
+              <td>
+                <strong>{findings.length}</strong>
+                <span>{findings.slice(0, 2).map((finding) => finding.code).join(", ") || "none"}</span>
+              </td>
+              <td>
+                <strong>{audit.status}</strong>
+                <span>{audit.durationMs}ms · {hashes}</span>
+              </td>
+              <td>
+                <strong>{shortId(audit.auditId)}</strong>
+                <span>{formatDateTime(audit.startedAt)}</span>
+              </td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );

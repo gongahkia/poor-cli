@@ -35,6 +35,7 @@ import { sfaToolDefinitions } from "../tools/sfa-tools.js";
 import { shieldToolDefinitions } from "../tools/shield-tools.js";
 import { singstatToolDefinitions } from "../tools/singstat-tools.js";
 import { spfToolDefinitions } from "../tools/spf-tools.js";
+import { splunkToolDefinitions } from "../tools/splunk-tools.js";
 import { sportsgToolDefinitions } from "../tools/sportsg-tools.js";
 import { stbToolDefinitions } from "../tools/stb-tools.js";
 import { traceToolDefinitions } from "../tools/trace-tools.js";
@@ -73,6 +74,7 @@ const toolDefinitions = [
   ...sfaToolDefinitions,
   ...singstatToolDefinitions,
   ...spfToolDefinitions,
+  ...splunkToolDefinitions,
   ...sportsgToolDefinitions,
   ...stbToolDefinitions,
   ...uraToolDefinitions,

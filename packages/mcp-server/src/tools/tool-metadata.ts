@@ -101,6 +101,7 @@ const TITLE_TOKENS: Readonly<Record<string, string>> = {
   coe: "COE",
   ura: "URA",
   sg: "SG",
+  splunk: "Splunk",
   swee: "Swee",
   pulse: "Pulse",
   shield: "Shield",

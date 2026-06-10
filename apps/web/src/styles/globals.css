@@ -137,6 +137,17 @@ td:nth-child(4) {
   white-space: nowrap;
 }
 
+td strong,
+td span {
+  display: block;
+}
+
+td span {
+  color: #6b7280;
+  font-size: 0.82rem;
+  margin-top: 0.15rem;
+}
+
 pre {
   max-width: 100%;
   overflow: auto;

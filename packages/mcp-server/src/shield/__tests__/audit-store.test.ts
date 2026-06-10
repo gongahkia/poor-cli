@@ -43,8 +43,39 @@ describe("ShieldAuditStore", () => {
       decision,
       status: "success",
       outputHash: record.outputHash,
+      rawOutputHash: null,
+      runtimeFindings: [],
       durationMs: 1000,
     });
+  });
+
+  it("persists runtime findings and raw output hashes", () => {
+    const store = new ShieldAuditStore(":memory:");
+    const record = store.record({
+      toolName: "splunk_search",
+      decision: { ...decision, toolName: "splunk_search" },
+      status: "success",
+      startedAt: "2026-06-10T07:00:00.000Z",
+      finishedAt: "2026-06-10T07:00:00.100Z",
+      durationMs: 100,
+      input: { query: "index=main" },
+      rawOutput: { event: "token=abc1234567890" },
+      output: { event: "token=[redacted]" },
+      runtimeFindings: [{
+        severity: "high",
+        code: "SECRET_ASSIGNMENT_REDACTED",
+        message: "Credential-shaped output was redacted before returning to the caller.",
+        path: "$.event",
+        action: "redacted",
+        evidence: "credential-shaped assignment",
+      }],
+    });
+
+    expect(record.rawOutputHash).toHaveLength(64);
+    expect(record.outputHash).toHaveLength(64);
+    expect(record.rawOutputHash).not.toBe(record.outputHash);
+    expect(record.runtimeFindings).toHaveLength(1);
+    expect(store.getReplay(record.auditId)?.runtimeFindings[0]?.code).toBe("SECRET_ASSIGNMENT_REDACTED");
   });
 
   it("reopens persisted audit rows from disk", () => {
@@ -71,6 +102,7 @@ describe("ShieldAuditStore", () => {
         durationMs: 250,
       });
       expect(secondStore.getReplay(record.auditId)?.outputHash).toBe(record.outputHash);
+      expect(secondStore.getReplay(record.auditId)?.runtimeFindings).toEqual([]);
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

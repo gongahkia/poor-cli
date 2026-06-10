@@ -71,6 +71,8 @@ export type ShieldReplayMetadata = {
   readonly decision: ShieldPolicyDecision;
   readonly status: ShieldAuditStatus;
   readonly outputHash: string | null;
+  readonly rawOutputHash: string | null;
+  readonly runtimeFindings: readonly ShieldRuntimeFinding[];
   readonly durationMs: number;
 };
 
@@ -86,6 +88,8 @@ export type ShieldAuditRecord = {
   readonly durationMs: number;
   readonly inputHash: string;
   readonly outputHash: string | null;
+  readonly rawOutputHash: string | null;
+  readonly runtimeFindings: readonly ShieldRuntimeFinding[];
   readonly sanitizedInput: unknown;
   readonly error?: ToolErrorPayload;
 };
@@ -95,6 +99,15 @@ export type ShieldScannerFinding = {
   readonly severity: ShieldRiskLevel;
   readonly code: string;
   readonly message: string;
+  readonly evidence: string;
+};
+
+export type ShieldRuntimeFinding = {
+  readonly severity: ShieldRiskLevel;
+  readonly code: string;
+  readonly message: string;
+  readonly path: string;
+  readonly action: "redacted" | "neutralized" | "blocked";
   readonly evidence: string;
 };
 

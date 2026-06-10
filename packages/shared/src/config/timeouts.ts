@@ -8,6 +8,7 @@ export const TIMEOUTS: Readonly<Record<string, number>> = {
   datagov: 10000, // WHY: CKAN is generally responsive
   govfeeds: 10000, // WHY: upstream RSS feeds should respond quickly
   tinyfish: 10000, // WHY: search should fail quickly and fall back to official registry lookup
+  splunk_mcp: 15000, // WHY: Splunk searches can be slower than public source-adapter reads
 } as const;
 
 export const HARD_CAP_TIMEOUT = 30000; // WHY: no API call should ever take more than 30 seconds

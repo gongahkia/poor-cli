@@ -2,6 +2,7 @@ import type { RegisteredToolDefinition } from "../tools/tool-definition.js";
 import type { ShieldAuditRecord, ToolErrorPayload, ToolResult } from "@swee-sg/shared";
 import { buildShieldToolMetadata, evaluateShieldPolicy } from "./policy.js";
 import { getShieldAuditStore } from "./audit-store.js";
+import { scanToolResultForRuntimeFindings } from "./runtime-scanner.js";
 
 export class ShieldDeniedError extends Error {
   constructor(readonly audit: ShieldAuditRecord) {
@@ -56,27 +57,32 @@ export const invokeShieldedTool = async (
 
   try {
     const result = await tool.handler(input);
+    const rawOutput = result.structuredContent ?? result.content;
+    const runtimeScan = scanToolResultForRuntimeFindings(result);
+    const scannedResult = runtimeScan.result;
     const finishedAt = new Date().toISOString();
     const audit = getShieldAuditStore().record({
       ...(context.traceId === undefined ? {} : { traceId: context.traceId }),
       ...(context.requestId === undefined ? {} : { requestId: context.requestId }),
       toolName: tool.name,
       decision,
-      status: result.isError === true ? "error" : "success",
+      status: scannedResult.isError === true ? "error" : "success",
       startedAt,
       finishedAt,
       durationMs: Date.now() - started,
       input,
-      output: result.structuredContent ?? result.content,
+      output: scannedResult.structuredContent ?? scannedResult.content,
+      rawOutput,
+      runtimeFindings: runtimeScan.findings,
     });
     return {
-      ...result,
+      ...scannedResult,
       structuredContent: {
-        ...(result.structuredContent ?? {}),
+        ...(scannedResult.structuredContent ?? {}),
         shield: { decision, auditId: audit.auditId },
       },
       _meta: {
-        ...(result._meta ?? {}),
+        ...(scannedResult._meta ?? {}),
         "swee/shield": { decision, auditId: audit.auditId },
       },
       shieldAudit: audit,
