@@ -4,7 +4,7 @@ Swee SG is an open-core, local-first Singapore public-data runtime for civic-hac
 
 The runtime has two product surfaces:
 
-- **Swee Shield**: policy enforcement, audit persistence, replay metadata, and MCP/tool poisoning scans for every REST and MCP tool call.
+- **Swee Shield**: policy enforcement, audit persistence, replay metadata, approval queue, policy simulator, runtime output defense, and MCP/tool poisoning scans for every REST and MCP tool call.
 - **Swee Pulse**: source-backed Singapore city signals for mobility, weather, source health, freshness, gaps, and deterministic explanations.
 
 The app no longer exposes the old counterparty due-diligence workflow. The retained `sg_*` tools are reusable Singapore source adapters; app-level workflows should enter through `swee_pulse_*` and Shield audit tools.
@@ -25,7 +25,7 @@ No AI key is required for the main dashboard. Live LTA routes require `SG_API_LT
 
 For split-origin local development, set `SWEE_WEB_ORIGIN_ALLOWLIST` on the REST gateway to the exact web origin, for example `http://localhost:5173`.
 
-Splunk Shield proxy tools are local-trial ready without changing the Pulse path. Set `SPLUNK_MCP_URL` to the Splunk MCP Streamable HTTP endpoint and `SPLUNK_MCP_TOKEN` to a bearer token, or store the token with `sg_key_set` using `apiName:"splunk_mcp"`. `SPLUNK_MCP_ALLOWED_INDEXES` optionally restricts `splunk_search` by explicit index. `NODE_TLS_REJECT_UNAUTHORIZED=0` is only for local self-signed Splunk trials.
+Splunk Shield proxy tools are local-trial ready without changing the Pulse path. Set `SPLUNK_MCP_URL` to the Splunk MCP Streamable HTTP endpoint and `SPLUNK_MCP_TOKEN` to a bearer token, or store the token with `sg_key_set` using `apiName:"splunk_mcp"`. `SPLUNK_MCP_ALLOWED_INDEXES` optionally restricts `splunk_search` by explicit index. `SWEE_SHIELD_APPROVAL_MODE=queue` makes broad/unbounded SPL create approval records before upstream execution. `NODE_TLS_REJECT_UNAUTHORIZED=0` is only for local self-signed Splunk trials.
 
 `SWEE_SHIELD_RUNTIME_SCAN_MODE=neutralize` redacts/neutralizes risky output and returns the defended result. `SWEE_SHIELD_RUNTIME_SCAN_MODE=block` blocks critical runtime findings and records the blocked audit row.
 
@@ -59,6 +59,10 @@ Shield:
 
 - `swee_shield_audit_lookup`
 - `swee_shield_scan_tools`
+- `swee_shield_approval_list`
+- `swee_shield_approval_decide`
+- `swee_shield_policy_simulate`
+- `swee_shield_splunk_investigation_pack`
 
 Splunk Shield proxy:
 
@@ -89,7 +93,14 @@ curl http://localhost:3000/api/v1/pulse/snapshot
 curl http://localhost:3000/api/v1/pulse/weather
 curl http://localhost:3000/api/v1/pulse/mobility
 curl http://localhost:3000/api/v1/shield/audits
+curl http://localhost:3000/api/v1/shield/approvals
 curl http://localhost:3000/api/v1/shield/scan
+curl -X POST http://localhost:3000/api/v1/shield/policy/simulate \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"index=security failed login","earliest":"-24h","latest":"now","limit":25}'
+curl -X POST http://localhost:3000/api/v1/shield/splunk/investigation-pack \
+  -H 'Content-Type: application/json' \
+  -d '{"question":"Investigate recent failed login activity","limit":20}'
 ```
 
 Every generic tool endpoint is also exposed as `POST /api/v1/<tool-name>`.
@@ -100,9 +111,10 @@ Mocked local demo, no Splunk token:
 
 ```bash
 npx vitest run packages/mcp-server/src/shield/__tests__/runtime-demo-fixtures.test.ts
+npx vitest run packages/mcp-server/src/tools/__tests__/splunk-tools.test.ts
 ```
 
-This uses synthetic fixture events from `packages/mcp-server/src/upstreams/splunk/__tests__/fixtures/demo-events.json`. They are fake demo events, not Splunk data.
+The dashboard route `/api/v1/shield/splunk/investigation-pack` forces mock mode and uses synthetic fixture events embedded in the runtime. They are fake demo events, not Splunk data.
 
 Live Splunk trial, token required:
 

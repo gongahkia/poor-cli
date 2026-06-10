@@ -25,6 +25,10 @@ describe("Singapore country pack", () => {
     ).toBe(true);
     expect(names).toContain("swee_pulse_snapshot");
     expect(names).toContain("swee_shield_audit_lookup");
+    expect(names).toContain("swee_shield_policy_simulate");
+    expect(names).toContain("swee_shield_approval_list");
+    expect(names).toContain("swee_shield_approval_decide");
+    expect(names).toContain("swee_shield_splunk_investigation_pack");
     expect(names).toContain("splunk_search");
     expect(names).toContain("splunk_list_indexes");
     expect(names).toContain("splunk_list_saved_searches");

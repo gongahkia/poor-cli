@@ -38,16 +38,20 @@ describe("REST gateway toolset filtering", () => {
   });
 
   it("excludes Shield tools from default public toolsets", () => {
-    const shieldTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "swee_shield_audit_lookup");
-    expect(shieldTools.length).toBe(1);
-    expect(isToolEnabled(shieldTools[0]!, publicToolsets)).toBe(false);
+    const shieldTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name.startsWith("swee_shield_") || t.name.startsWith("splunk_"));
+    expect(shieldTools.length).toBeGreaterThan(4);
+    for (const tool of shieldTools) {
+      expect(isToolEnabled(tool, publicToolsets), `${tool.name} should not be public-profile enabled`).toBe(false);
+    }
   });
 
   it("includes ops tools only when ops toolset is enabled", () => {
     const withOps: ReadonlySet<ToolSet> = new Set(["public", "briefs", "query", "health", "ops"]);
-    const cacheTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "sg_cache_stats");
-    expect(cacheTools.length).toBe(1);
-    expect(isToolEnabled(cacheTools[0]!, withOps)).toBe(true);
+    const opsTools = ALL_TOOL_DEFINITIONS.filter((t) => t.name === "sg_cache_stats" || t.name === "swee_shield_policy_simulate");
+    expect(opsTools.length).toBe(2);
+    for (const tool of opsTools) {
+      expect(isToolEnabled(tool, withOps)).toBe(true);
+    }
   });
 
   it("filtered count is less than total when ops excluded", () => {

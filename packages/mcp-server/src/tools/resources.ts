@@ -188,25 +188,33 @@ const buildRecipeResources = () => {
 };
 
 const buildShieldAuditResources = () => {
-  return getShieldAuditStore().query({ limit: 25 }).map((entry) => ({
-    uri: `${RESOURCE_URIS.shieldAudits}/${entry.auditId}`,
-    name: `swee-shield-audit-${entry.auditId}`,
-    title: `Shield Audit ${entry.auditId}`,
-    description: `${entry.toolName} ${entry.status} ${entry.decision.decision}/${entry.decision.riskLevel}`,
-    mimeType: JSON_MIME_TYPE,
-    annotations: DEFAULT_RESOURCE_ANNOTATIONS,
-  }));
+  try {
+    return getShieldAuditStore().query({ limit: 25 }).map((entry) => ({
+      uri: `${RESOURCE_URIS.shieldAudits}/${entry.auditId}`,
+      name: `swee-shield-audit-${entry.auditId}`,
+      title: `Shield Audit ${entry.auditId}`,
+      description: `${entry.toolName} ${entry.status} ${entry.decision.decision}/${entry.decision.riskLevel}`,
+      mimeType: JSON_MIME_TYPE,
+      annotations: DEFAULT_RESOURCE_ANNOTATIONS,
+    }));
+  } catch {
+    return [];
+  }
 };
 
 const buildShieldApprovalResources = () => {
-  return getShieldApprovalStore().list({ limit: 25 }).map((entry) => ({
-    uri: `${RESOURCE_URIS.shieldApprovals}/${entry.approvalId}`,
-    name: `swee-shield-approval-${entry.approvalId}`,
-    title: `Shield Approval ${entry.approvalId}`,
-    description: `${entry.toolName} ${entry.status} request ${entry.requestHash.slice(0, 12)}`,
-    mimeType: JSON_MIME_TYPE,
-    annotations: DEFAULT_RESOURCE_ANNOTATIONS,
-  }));
+  try {
+    return getShieldApprovalStore().list({ limit: 25 }).map((entry) => ({
+      uri: `${RESOURCE_URIS.shieldApprovals}/${entry.approvalId}`,
+      name: `swee-shield-approval-${entry.approvalId}`,
+      title: `Shield Approval ${entry.approvalId}`,
+      description: `${entry.toolName} ${entry.status} request ${entry.requestHash.slice(0, 12)}`,
+      mimeType: JSON_MIME_TYPE,
+      annotations: DEFAULT_RESOURCE_ANNOTATIONS,
+    }));
+  } catch {
+    return [];
+  }
 };
 
 const readSingleCatalogEntry = <T extends { readonly id: string }>(
@@ -222,10 +230,14 @@ const getVariable = (variables: Variables, key: string): string => {
 };
 
 const completeRecentAuditIds = (value: string): string[] =>
-  getShieldAuditStore().query({ limit: 100 }).map((entry) => entry.auditId).filter((candidate) => candidate.startsWith(value));
+  buildShieldAuditResources()
+    .map((entry) => entry.uri.slice(`${RESOURCE_URIS.shieldAudits}/`.length))
+    .filter((candidate) => candidate.startsWith(value));
 
 const completeRecentApprovalIds = (value: string): string[] =>
-  getShieldApprovalStore().list({ limit: 100 }).map((entry) => entry.approvalId).filter((candidate) => candidate.startsWith(value));
+  buildShieldApprovalResources()
+    .map((entry) => entry.uri.slice(`${RESOURCE_URIS.shieldApprovals}/`.length))
+    .filter((candidate) => candidate.startsWith(value));
 
 const MAP_PREVIEW_HTML = `<!doctype html>
 <html lang="en">

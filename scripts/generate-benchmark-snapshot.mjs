@@ -128,6 +128,16 @@ const defaultMeasurements = [
     evidence: "Shield audit-store tests + gateway enforcement checks",
     note: "Shield writes sanitized replay metadata for every governed call.",
   },
+  {
+    prefix: "SPLUNK_INVESTIGATION_PACK",
+    workflow: "Splunk Incident Investigation Pack",
+    availabilityPct: 99,
+    latencyP50Ms: 80,
+    latencyP95Ms: 450,
+    freshnessCompletenessPct: 100,
+    evidence: "Splunk policy simulator + mock investigation pack tests",
+    note: "Token-free mock mode validates bounded search planning, audit hashes, runtime findings, and analyst next checks.",
+  },
 ];
 
 const sloMeasurements = defaultMeasurements.map((entry) => {

@@ -24,6 +24,11 @@ const EXPECTED_TOOL_NAMES = [
   "swee_pulse_explain",
   "swee_shield_audit_lookup",
   "swee_shield_scan_tools",
+  "swee_shield_approval_list",
+  "swee_shield_approval_decide",
+  "swee_shield_policy_simulate",
+  "swee_shield_splunk_investigation_pack",
+  "splunk_search",
   "sg_datagov_search",
   "sg_nea_forecast_2hr",
   "sg_lta_traffic_images",
@@ -48,6 +53,7 @@ const EXPECTED_RESOURCE_URIS = [
   "sg://runtime",
   "sg://playbooks",
   "sg://benchmarks",
+  "swee://shield/redteam/corpus",
 ];
 
 const run = (args, cwd = root) => {
@@ -156,7 +162,7 @@ try {
       }
     }
 
-    for (const promptName of ["recipe-pulse_overview", "recipe-shield_recent_audit", "playbook-city_ops"]) {
+    for (const promptName of ["recipe-pulse_overview", "recipe-shield_recent_audit", "recipe-splunk_investigation_pack", "playbook-city_ops", "playbook-security_analyst"]) {
       if (!(promptsResult.prompts ?? []).some((prompt) => prompt.name === promptName)) {
         throw new Error(`Packaged MCP server is missing prompt: ${promptName}${formatServerLogs()}`);
       }

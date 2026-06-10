@@ -39,6 +39,7 @@ const enabledToolsets = resolveEnabledToolsets({
 });
 const enabledTools = ALL_TOOL_DEFINITIONS.filter((tool) => isToolEnabled(tool, enabledToolsets));
 const toolMap = new Map(enabledTools.map((tool) => [tool.name, tool]));
+const allToolMap = new Map(ALL_TOOL_DEFINITIONS.map((tool) => [tool.name, tool]));
 const allowedCorsOrigins = new Set(
   `${DEFAULT_DEV_WEB_ORIGIN_ALLOWLIST},${process.env["SWEE_WEB_ORIGIN_ALLOWLIST"] ?? ""}`
     .split(",")
@@ -122,15 +123,14 @@ const parseApprovalStatus = (value: string | null): ShieldApprovalStatus | undef
   return undefined;
 };
 
-const invokeTool = async (params: {
-  readonly toolName: string;
+const invokeToolDefinition = async (params: {
+  readonly tool: (typeof ALL_TOOL_DEFINITIONS)[number] | undefined;
   readonly input: unknown;
   readonly requestId: string;
   readonly traceId: string;
 }) => {
-  const tool = toolMap.get(params.toolName) ?? toolMap.get(`sg_${params.toolName}`);
-  if (tool === undefined) return null;
-  const result = await invokeShieldedTool(tool, params.input, {
+  if (params.tool === undefined) return null;
+  const result = await invokeShieldedTool(params.tool, params.input, {
     traceId: params.traceId,
     requestId: params.requestId,
   });
@@ -145,6 +145,16 @@ const invokeTool = async (params: {
       },
     },
   };
+};
+
+const invokeTool = async (params: {
+  readonly toolName: string;
+  readonly input: unknown;
+  readonly requestId: string;
+  readonly traceId: string;
+}) => {
+  const tool = toolMap.get(params.toolName) ?? toolMap.get(`sg_${params.toolName}`);
+  return invokeToolDefinition({ tool, input: params.input, requestId: params.requestId, traceId: params.traceId });
 };
 
 const server = createServer(async (req, res) => {
@@ -276,6 +286,33 @@ const server = createServer(async (req, res) => {
 
     if (method === "GET" && route === "/api/v1/shield/scan") {
       sendJson(res, 200, { findings: scanToolCatalogForPoisoning(enabledTools), scannedTools: enabledTools.length });
+      return;
+    }
+
+    if (method === "POST" && route === "/api/v1/shield/policy/simulate") {
+      const input = await parseJsonBody(req, trafficPolicy.maxBodyBytes);
+      const invoked = await invokeToolDefinition({
+        tool: allToolMap.get("swee_shield_policy_simulate"),
+        input,
+        requestId,
+        traceId,
+      });
+      sendJson(res, invoked?.status ?? 404, invoked?.body ?? { error: "policy simulator is not available" });
+      return;
+    }
+
+    if (method === "POST" && route === "/api/v1/shield/splunk/investigation-pack") {
+      const body = await parseJsonBody(req, trafficPolicy.maxBodyBytes);
+      const input = body !== null && typeof body === "object"
+        ? { ...(body as Record<string, unknown>), mode: "mock" }
+        : { mode: "mock" };
+      const invoked = await invokeToolDefinition({
+        tool: allToolMap.get("swee_shield_splunk_investigation_pack"),
+        input,
+        requestId,
+        traceId,
+      });
+      sendJson(res, invoked?.status ?? 404, invoked?.body ?? { error: "Splunk investigation pack is not available" });
       return;
     }
 

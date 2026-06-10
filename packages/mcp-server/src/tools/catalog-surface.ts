@@ -596,6 +596,28 @@ const RECIPE_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
       ...(typeof args["limit"] === "number" ? { limit: args["limit"] } : { limit: 25 }),
     }),
   },
+  splunk_investigation_pack: {
+    args: [
+      { name: "question", description: "Incident question for bounded Splunk investigation.", kind: "string", required: true },
+      { name: "index", description: "Optional allowlisted Splunk index.", kind: "string" },
+      { name: "earliest", description: "Optional earliest SPL time bound.", kind: "string" },
+      { name: "latest", description: "Optional latest SPL time bound.", kind: "string" },
+      { name: "limit", description: "Maximum events per bounded search.", kind: "number" },
+    ],
+    buildStarterPrompt: (args) => {
+      const question = typeof args["question"] === "string" && args["question"].trim() !== ""
+        ? args["question"].trim()
+        : "recent failed login activity";
+      return `Build a Swee Shield Splunk investigation pack for ${question}`;
+    },
+    buildPreferredEntrypointInput: (args) => ({
+      question: typeof args["question"] === "string" ? args["question"] : "Investigate recent failed login activity",
+      ...(typeof args["index"] === "string" ? { index: args["index"] } : {}),
+      ...(typeof args["earliest"] === "string" ? { earliest: args["earliest"] } : {}),
+      ...(typeof args["latest"] === "string" ? { latest: args["latest"] } : {}),
+      ...(typeof args["limit"] === "number" ? { limit: args["limit"] } : { limit: 20 }),
+    }),
+  },
   transit_ops_brief: {
     args: [
       { name: "scopeKey", description: "Optional deterministic scope key used for repeat monitoring runs.", kind: "string" },
@@ -630,6 +652,21 @@ const PLAYBOOK_PROMPT_METADATA: Readonly<Record<string, PromptMetadata>> = {
     buildStarterPrompt: (args) => {
       const focus = typeof args["focus"] === "string" ? args["focus"] : "city";
       return `Open the Swee SG ${focus} operations desk`;
+    },
+  },
+  security_analyst: {
+    args: [
+      { name: "question", description: "Optional incident question for the security analyst desk.", kind: "string" },
+      { name: "index", description: "Optional allowlisted Splunk index.", kind: "string" },
+    ],
+    buildStarterPrompt: (args) => {
+      const question = typeof args["question"] === "string" && args["question"].trim() !== ""
+        ? ` for ${args["question"].trim()}`
+        : "";
+      const index = typeof args["index"] === "string" && args["index"].trim() !== ""
+        ? ` in ${args["index"].trim()}`
+        : "";
+      return `Open the Swee Shield security analyst desk${question}${index}`;
     },
   },
   business_opportunity_scan: {

@@ -17,11 +17,15 @@ describe("DashboardPage", () => {
     expect(html).toContain("What matters now");
     expect(html).toContain("Coverage Gaps");
     expect(html).toContain("Runtime Evidence");
+    expect(html).toContain("Security Workbench");
+    expect(html).toContain("Investigation Pack");
+    expect(html).toContain("Policy Simulator");
     expect(html).toContain("Needs Attention");
     expect(html).toContain("Mobility");
     expect(html).toContain("Weather");
     expect(html).toContain("Source Health");
     expect(html).toContain("Normal Weather Coverage");
+    expect(html).toContain("Ops: Human Approvals");
     expect(html).toContain("Ops: Shield Audit");
     expect(html).not.toContain("Dude CDD");
     expect(html).not.toContain("CDD case");

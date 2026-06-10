@@ -24,7 +24,9 @@ Never invent public-data values.
 | Mobility signals | `swee_pulse_mobility` | `sg_lta_traffic_incidents`, `sg_lta_train_alerts`, `sg_lta_road_works`, `sg_lta_traffic_images` |
 | Weather and rainfall | `swee_pulse_weather` | `sg_nea_forecast_2hr`, `sg_nea_air_quality`, `sg_nea_rainfall` |
 | Source-backed explanation | `swee_pulse_explain` | Use only after deterministic Pulse signals exist |
-| Policy/audit review | `swee_shield_audit_lookup` | `swee_shield_scan_tools`, `sg_trace_lookup`, `sg_request_lookup` |
+| Policy/audit review | `swee_shield_audit_lookup` | `swee_shield_scan_tools`, `swee_shield_policy_simulate`, `sg_trace_lookup`, `sg_request_lookup` |
+| Splunk incident investigation | `swee_shield_splunk_investigation_pack` | `swee_shield_policy_simulate`, `swee_shield_approval_list`, `splunk_search` |
+| Human approval review | `swee_shield_approval_list` | `swee_shield_approval_decide`, `swee_shield_audit_lookup` |
 | Raw public-data lookup | Exact `sg_*` adapter | Prefer Pulse for app-level workflows |
 | Runtime ops | ops tools | health, cache, key, config, trace, request lookup |
 
@@ -36,7 +38,8 @@ The web app should stay signal-first:
 2. Mobility and weather sections that explain what changed, why it matters, and what the operator should check next.
 3. Source health that shows ready, degraded, and gap states with observed freshness.
 4. Shield audit rows that show policy decisions, status, duration, and replay metadata.
-5. Optional explain-only AI copy that never changes severity, provenance, or deterministic signal values.
+5. Security workbench rows that show investigation pack searches, timeline, runtime findings, hashes, policy simulation, and approval status.
+6. Optional explain-only AI copy that never changes severity, provenance, or deterministic signal values.
 
 ## Output Contract
 
@@ -58,6 +61,16 @@ Product tools:
 - `swee_pulse_explain`
 - `swee_shield_audit_lookup`
 - `swee_shield_scan_tools`
+- `swee_shield_policy_simulate`
+- `swee_shield_approval_list`
+- `swee_shield_approval_decide`
+- `swee_shield_splunk_investigation_pack`
+
+Splunk Shield proxy tools:
+
+- `splunk_search`
+- `splunk_list_indexes`
+- `splunk_list_saved_searches`
 
 Selected raw adapters:
 

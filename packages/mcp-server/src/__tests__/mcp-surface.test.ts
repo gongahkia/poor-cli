@@ -8,6 +8,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { derivePublicHttpToolsets, HttpAuthController, type HttpAuthMode } from "../http-auth.js";
 import { startHttpServer } from "../http-server.js";
 import { createServerInstance } from "../server-factory.js";
+import { ShieldApprovalStore, setShieldApprovalStoreForTesting } from "../shield/approval-store.js";
+import { ShieldAuditStore, setShieldAuditStoreForTesting } from "../shield/audit-store.js";
+import { simulateSplunkSearchPolicy } from "../shield/splunk-policy-simulator.js";
 import { NORMALIZED_PLAYBOOK_CATALOG, NORMALIZED_RECIPE_CATALOG } from "../tools/catalog-surface.js";
 
 vi.mock("../apis/datagov/client.js", () => ({
@@ -77,6 +80,14 @@ type TestIssuer = {
   readonly close: () => Promise<void>;
 };
 
+const readResourceText = (result: Awaited<ReturnType<Client["readResource"]>>): string => {
+  const first = result.contents[0];
+  if (first === undefined || !("text" in first)) {
+    throw new Error("Expected text resource content.");
+  }
+  return first.text;
+};
+
 const createdClosers: Array<() => Promise<void>> = [];
 const quietLogger = {
   debug: () => undefined,
@@ -88,6 +99,8 @@ const quietLogger = {
 const ALL_HTTP_TOOLSETS = new Set(["public", "briefs", "query", "health", "ops", "diligence"] as const);
 
 afterEach(async () => {
+  setShieldApprovalStoreForTesting(null);
+  setShieldAuditStoreForTesting(null);
   while (createdClosers.length > 0) {
     const close = createdClosers.pop();
     await close?.();
@@ -354,6 +367,11 @@ describe("MCP surface", () => {
           uri: "ui://sg/map-preview",
           mimeType: "text/html;profile=mcp-app",
         }),
+        expect.objectContaining({
+          uri: "swee://shield/redteam/corpus",
+          title: "Shield Red-Team Corpus",
+          mimeType: "application/json",
+        }),
       ]),
     );
 
@@ -363,9 +381,46 @@ describe("MCP surface", () => {
         expect.objectContaining({ uriTemplate: "sg://tools/{name}" }),
         expect.objectContaining({ uriTemplate: "sg://workflows/{id}" }),
         expect.objectContaining({ uriTemplate: "sg://recipes/{id}" }),
+        expect.objectContaining({ uriTemplate: "swee://shield/audits/{auditId}" }),
+        expect.objectContaining({ uriTemplate: "swee://shield/approvals/{approvalId}" }),
         expect.objectContaining({ uriTemplate: "sg://artifacts/{kind}/{id}" }),
       ]),
     );
+  });
+
+  it("serves Shield audit and approval evidence resources", async () => {
+    const approvalStore = new ShieldApprovalStore(":memory:");
+    setShieldApprovalStoreForTesting(approvalStore);
+    setShieldAuditStoreForTesting(new ShieldAuditStore(":memory:"));
+    const { client } = await createConnectedInMemoryClient();
+
+    const simulated = await client.callTool({
+      name: "swee_shield_policy_simulate",
+      arguments: {
+        query: "index=* error",
+        limit: 75,
+      },
+    });
+    const structured = simulated.structuredContent as { readonly shield?: { readonly auditId?: string } } | undefined;
+    const auditId = structured?.shield?.auditId;
+    expect(auditId).toBeDefined();
+
+    const auditResource = await client.readResource({ uri: `swee://shield/audits/${auditId}` });
+    expect(JSON.parse(readResourceText(auditResource))).toMatchObject({
+      record: { auditId, toolName: "swee_shield_policy_simulate" },
+      replay: { auditId },
+    });
+
+    const request = { query: "index=security failed login", limit: 25 };
+    const approval = approvalStore.create({
+      toolName: "splunk_search",
+      request,
+      risk: simulateSplunkSearchPolicy(request),
+    });
+    const approvalResource = await client.readResource({ uri: `swee://shield/approvals/${approval.approvalId}` });
+    expect(JSON.parse(readResourceText(approvalResource))).toMatchObject({
+      record: { approvalId: approval.approvalId, status: "pending" },
+    });
   });
 
   it("retains source adapters while excluding removed CDD tools", async () => {

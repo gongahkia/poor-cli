@@ -66,7 +66,7 @@ const main = async () => {
     await client.connect(transport);
     const tools = await client.listTools();
     const toolNames = new Set(tools.tools.map((tool) => tool.name));
-    for (const required of ["splunk_list_indexes", "splunk_search", "swee_shield_audit_lookup"]) {
+    for (const required of ["splunk_list_indexes", "splunk_search", "swee_shield_audit_lookup", "swee_shield_splunk_investigation_pack"]) {
       if (!toolNames.has(required)) throw new Error(`MCP tool surface is missing ${required}.`);
     }
     process.stdout.write("- Splunk proxy tools: present\n");

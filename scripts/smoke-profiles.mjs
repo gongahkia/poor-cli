@@ -10,7 +10,7 @@ const EXPECTATIONS = [
   {
     profile: "public",
     includes: ["swee_pulse_snapshot", "swee_pulse_explain", "sg_acra_entities"],
-    excludes: ["swee_shield_audit_lookup", "sg_key_set", "sg_cache_clear"],
+    excludes: ["swee_shield_audit_lookup", "swee_shield_policy_simulate", "swee_shield_splunk_investigation_pack", "sg_key_set", "sg_cache_clear"],
   },
   {
     profile: "cdd_report",
@@ -24,7 +24,7 @@ const EXPECTATIONS = [
   },
   {
     profile: "ops",
-    includes: ["swee_shield_audit_lookup", "sg_cache_stats", "sg_key_set", "sg_config_set"],
+    includes: ["swee_shield_audit_lookup", "swee_shield_policy_simulate", "swee_shield_splunk_investigation_pack", "sg_cache_stats", "sg_key_set", "sg_config_set"],
     excludes: ["swee_pulse_snapshot", "sg_query", "sg_business_dossier"],
   },
 ];

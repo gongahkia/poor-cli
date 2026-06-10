@@ -417,6 +417,38 @@ summary {
   background: #fbfdff;
 }
 
+.ops-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.ops-panel {
+  border: 1px solid #d7dce3;
+  min-width: 0;
+  padding: 1rem;
+}
+
+.ops-panel form {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.ops-result {
+  margin-top: 1rem;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.button-row button {
+  margin-top: 0;
+}
+
 .source-health-list {
   display: grid;
   gap: 0.625rem;
@@ -459,7 +491,8 @@ summary {
   }
 
   .takeaway-grid,
-  .signal-columns {
+  .signal-columns,
+  .ops-grid {
     grid-template-columns: 1fr;
   }
 }

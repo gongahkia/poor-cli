@@ -38,7 +38,6 @@ export type SplunkRedTeamCorpusCase = {
 };
 
 const DISALLOWED_SPL = /\b(delete|outputlookup|collect|sendemail|script|map)\b/i;
-const SPL_COMMAND_PATTERN = /\|\s*([A-Za-z][A-Za-z0-9_]*)/g;
 const DEFAULT_ALLOWED_INDEXES = ["main", "security"] as const;
 
 const severityRank: Readonly<Record<SplunkPolicySeverity, number>> = {

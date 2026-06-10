@@ -40,25 +40,29 @@ for (const toolName of [
   "swee_pulse_explain",
   "swee_shield_audit_lookup",
   "swee_shield_scan_tools",
+  "swee_shield_approval_list",
+  "swee_shield_approval_decide",
+  "swee_shield_policy_simulate",
+  "swee_shield_splunk_investigation_pack",
 ]) {
   if (!toolNames.has(toolName)) {
     throw new Error(`Built tool catalog is missing ${toolName}.`);
   }
 }
 
-for (const familyName of ["Swee Pulse", "Swee Shield", "Operations"]) {
+for (const familyName of ["Swee Pulse", "Swee Shield", "Splunk Shield Proxy", "Operations"]) {
   if (!apiNames.has(familyName)) {
     throw new Error(`Built API catalog is missing ${familyName}.`);
   }
 }
 
-for (const workflowName of ["Swee Pulse Snapshot", "Swee Shield Audit Review"]) {
+for (const workflowName of ["Swee Pulse Snapshot", "Swee Shield Audit Review", "Splunk Incident Investigation Pack"]) {
   if (!workflowNames.has(workflowName)) {
     throw new Error(`Built workflow catalog is missing ${workflowName}.`);
   }
 }
 
-for (const recipeName of ["Pulse Overview", "Recent Shield Audit"]) {
+for (const recipeName of ["Pulse Overview", "Recent Shield Audit", "Splunk Investigation Pack"]) {
   if (!recipeNames.has(recipeName)) {
     throw new Error(`Built recipe catalog is missing ${recipeName}.`);
   }
@@ -84,6 +88,9 @@ ensureIncludes(readmeTarget, [
   "Swee Pulse",
   "swee_pulse_snapshot",
   "swee_shield_audit_lookup",
+  "swee_shield_splunk_investigation_pack",
+  "swee_shield_policy_simulate",
+  "/api/v1/shield/splunk/investigation-pack",
   "/api/v1/pulse/snapshot",
   "SWEE_WEB_ORIGIN_ALLOWLIST",
   "npm run test:smoke:profiles",
@@ -97,6 +104,7 @@ ensureIncludes("AGENTS.md", [
   "Never invent public-data values",
   "swee_pulse_snapshot",
   "swee_shield_audit_lookup",
+  "swee_shield_splunk_investigation_pack",
 ]);
 ensureExcludes("AGENTS.md", staleProductSnippets);
 
@@ -105,6 +113,7 @@ ensureIncludes("docs/architecture.md", [
   "Swee Shield",
   "Pulse Contract",
   "Shield Contract",
+  "Splunk Incident Investigation Pack",
   "/api/v1/pulse/snapshot",
 ]);
 ensureExcludes("docs/architecture.md", staleProductSnippets);

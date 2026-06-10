@@ -100,6 +100,14 @@ const toResult = (payload: unknown): ToolResult => ({
   structuredContent: payload as Readonly<Record<string, unknown>>,
 });
 
+const toPolicyInput = (params: z.infer<typeof ShieldPolicySimulateSchema>) => ({
+  query: params.query,
+  ...(params.index === undefined ? {} : { index: params.index }),
+  ...(params.earliest === undefined ? {} : { earliest: params.earliest }),
+  ...(params.latest === undefined ? {} : { latest: params.latest }),
+  ...(params.limit === undefined ? {} : { limit: params.limit }),
+});
+
 const handleAuditLookup = async (input: unknown): Promise<ToolResult> => {
   const params = validateInput(ShieldAuditLookupSchema, input);
   const store = getShieldAuditStore();
@@ -147,7 +155,7 @@ const handleApprovalDecide = async (input: unknown): Promise<ToolResult> => {
 
 const handlePolicySimulate = async (input: unknown): Promise<ToolResult> => {
   const params = validateInput(ShieldPolicySimulateSchema, input);
-  const simulation = simulateSplunkSearchPolicy(params);
+  const simulation = simulateSplunkSearchPolicy(toPolicyInput(params));
   return toResult({
     simulation,
     redTeamMatrix: buildSplunkRedTeamMatrix(),

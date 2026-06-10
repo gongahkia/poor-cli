@@ -69,7 +69,13 @@ describe("tool catalog parity", () => {
     expect(new Set(catalogNames).size).toBe(catalogNames.length);
     expect(catalogNames.slice().sort()).toEqual(registeredTools.slice().sort());
     expect(catalogNames.length).toBeGreaterThan(50);
-    expect(catalogNames).toEqual(expect.arrayContaining(["swee_pulse_snapshot", "swee_shield_audit_lookup", "sg_datagov_search"]));
+    expect(catalogNames).toEqual(expect.arrayContaining([
+      "swee_pulse_snapshot",
+      "swee_shield_audit_lookup",
+      "swee_shield_splunk_investigation_pack",
+      "swee_shield_policy_simulate",
+      "sg_datagov_search",
+    ]));
     expect(catalogNames).not.toEqual(
       expect.arrayContaining(["sg_query", "sg_business_dossier", "sg_cdd_report", "sg_resolve_counterparty"]),
     );
@@ -96,6 +102,7 @@ describe("tool catalog parity", () => {
       expect.arrayContaining([
         expect.objectContaining({ name: "Swee Pulse", preferredInterface: "swee_pulse_snapshot" }),
         expect.objectContaining({ name: "Swee Shield", preferredInterface: "swee_shield_audit_lookup" }),
+        expect.objectContaining({ name: "Splunk Shield Proxy", preferredInterface: "swee_shield_splunk_investigation_pack" }),
         expect.objectContaining({ name: "Mobility Sources" }),
         expect.objectContaining({ name: "Weather Sources" }),
         expect.objectContaining({ name: "Singapore Public Data Sources" }),
@@ -130,6 +137,9 @@ describe("resource catalog parity", () => {
     expect(JSON.parse((await resourceHandlers.get(RESOURCE_URIS.playbooks)!()).contents[0]!.text!)).toEqual(toSerializable(NORMALIZED_PLAYBOOK_CATALOG));
     expect(JSON.parse((await resourceHandlers.get(RESOURCE_URIS.benchmarks)!()).contents[0]!.text!)).toEqual(BENCHMARK_CATALOG);
     expect(JSON.parse((await resourceHandlers.get(RESOURCE_URIS.opsTaxonomy)!()).contents[0]!.text!)).toEqual(OPS_TAXONOMY_CATALOG);
+    expect(JSON.parse((await resourceHandlers.get(RESOURCE_URIS.shieldRedteamCorpus)!()).contents[0]!.text!)).toMatchObject({
+      schemaVersion: "swee-shield-redteam/v1",
+    });
   });
 
   it("overlays sg://benchmarks with a CI snapshot override when configured", async () => {
@@ -196,6 +206,10 @@ describe("resource catalog parity", () => {
           fallbackTools: expect.arrayContaining(["swee_pulse_mobility", "swee_pulse_weather"]),
         }),
         expect.objectContaining({ id: "shield_recent_audit" }),
+        expect.objectContaining({
+          id: "splunk_investigation_pack",
+          fallbackTools: expect.arrayContaining(["swee_shield_policy_simulate", "swee_shield_audit_lookup"]),
+        }),
       ]),
     );
     expect(PLAYBOOK_CATALOG).toEqual(
@@ -203,7 +217,11 @@ describe("resource catalog parity", () => {
         expect.objectContaining({
           id: "city_ops",
           primaryWorkflows: expect.arrayContaining(["Swee Pulse Snapshot", "Swee Shield Audit Review"]),
-          directTools: expect.arrayContaining(["swee_pulse_snapshot", "swee_shield_audit_lookup"]),
+          directTools: expect.arrayContaining(["swee_pulse_snapshot", "swee_shield_audit_lookup", "swee_shield_splunk_investigation_pack"]),
+        }),
+        expect.objectContaining({
+          id: "security_analyst",
+          directTools: expect.arrayContaining(["swee_shield_splunk_investigation_pack", "swee_shield_policy_simulate"]),
         }),
       ]),
     );
@@ -212,6 +230,10 @@ describe("resource catalog parity", () => {
         expect.objectContaining({
           workflow: "Swee Pulse Snapshot",
           primaryCacheTier: "REALTIME + STATIC",
+        }),
+        expect.objectContaining({
+          workflow: "Splunk Incident Investigation Pack",
+          primaryCacheTier: "LOCAL SQLITE + SPLUNK MCP",
         }),
       ]),
     );

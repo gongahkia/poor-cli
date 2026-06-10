@@ -10,15 +10,15 @@ if (benchmarkCatalog?.schemaVersion !== "swee-benchmarks/v1") {
 }
 
 const workflows = new Set(benchmarkCatalog.workflows ?? []);
-for (const workflow of ["Swee Pulse Snapshot", "Swee Pulse Mobility", "Transport Reliability Benchmark", "Swee Shield Audit Review"]) {
+for (const workflow of ["Swee Pulse Snapshot", "Swee Pulse Mobility", "Transport Reliability Benchmark", "Swee Shield Audit Review", "Splunk Incident Investigation Pack"]) {
   if (!workflows.has(workflow)) {
     throw new Error(`BENCHMARK_CATALOG is missing workflow: ${workflow}`);
   }
 }
 
 const profiles = benchmarkCatalog.workflowProfiles ?? [];
-if (!Array.isArray(profiles) || profiles.length < 4) {
-  throw new Error("BENCHMARK_CATALOG must include Pulse, transport reliability, and Shield workflow profiles.");
+if (!Array.isArray(profiles) || profiles.length < 5) {
+  throw new Error("BENCHMARK_CATALOG must include Pulse, transport reliability, Shield, and Splunk investigation workflow profiles.");
 }
 
 for (const profile of profiles) {

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { getGatewayJson, postGatewayJson } from "@/lib/api/client";
 
 type PulseSignal = {
   readonly id: string;
@@ -56,12 +57,89 @@ type ShieldAuditRow = {
   }[];
 };
 
+type ShieldApprovalRecord = {
+  readonly approvalId: string;
+  readonly toolName: string;
+  readonly status: "pending" | "approved" | "rejected" | "expired";
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  readonly reviewer: string | null;
+  readonly comment: string | null;
+  readonly requestHash: string;
+  readonly request: unknown;
+  readonly risk: {
+    readonly status?: string;
+    readonly riskScore?: number;
+    readonly severity?: string;
+    readonly ruleCodes?: readonly string[];
+  };
+};
+
+type SplunkPolicySimulation = {
+  readonly status: "allow" | "approval_required" | "deny";
+  readonly riskScore: number;
+  readonly severity: string;
+  readonly ruleCodes: readonly string[];
+  readonly suggestedSaferQuery: string;
+  readonly limits?: readonly string[];
+};
+
+type SplunkRedTeamMatrixRow = {
+  readonly id: string;
+  readonly category: string;
+  readonly label: string;
+  readonly expectedStatus: string;
+  readonly simulation: SplunkPolicySimulation;
+};
+
+type PolicySimulationPayload = {
+  readonly simulation: SplunkPolicySimulation;
+  readonly redTeamMatrix: readonly SplunkRedTeamMatrixRow[];
+};
+
+type SplunkInvestigationPack = {
+  readonly schemaVersion: string;
+  readonly investigationId: string;
+  readonly status: "completed" | "partial" | "blocked";
+  readonly mode: "mock" | "live";
+  readonly question: string;
+  readonly generatedAt: string;
+  readonly searches: readonly {
+    readonly label: string;
+    readonly query: string;
+    readonly status: string;
+    readonly auditId: string | null;
+    readonly rawOutputHash: string | null;
+    readonly outputHash: string | null;
+    readonly runtimeFindings: readonly { readonly code: string; readonly severity: string; readonly action: string }[];
+    readonly eventCount?: number;
+  }[];
+  readonly timeline: readonly {
+    readonly time: string | null;
+    readonly source: string | null;
+    readonly host: string | null;
+    readonly event: string;
+    readonly risk: string | null;
+    readonly searchLabel: string;
+  }[];
+  readonly findingSummary?: {
+    readonly total: number;
+    readonly redacted: number;
+    readonly neutralized: number;
+    readonly critical: number;
+  };
+  readonly nextAnalystChecks: readonly string[];
+  readonly limits: readonly string[];
+};
+
 type PulseShield = {
   readonly auditId: string;
   readonly decision: { readonly decision: string; readonly riskLevel: string; readonly mode?: string; readonly reasonCodes?: readonly string[] };
 };
 
-const apiBase = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:3000";
+type GatewayToolPayload<T> = {
+  readonly data?: T;
+};
 
 const severityRank: Record<PulseSignal["severity"], number> = {
   critical: 0,
@@ -102,26 +180,36 @@ export function DashboardPage() {
   const [snapshot, setSnapshot] = useState<PulseSnapshot | null>(null);
   const [pulseShield, setPulseShield] = useState<PulseShield | null>(null);
   const [audits, setAudits] = useState<readonly ShieldAuditRow[]>([]);
+  const [approvals, setApprovals] = useState<readonly ShieldApprovalRecord[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [opsError, setOpsError] = useState<string | null>(null);
   const [refreshCount, setRefreshCount] = useState(0);
+  const [simulatorQuery, setSimulatorQuery] = useState("index=security failed login");
+  const [policySimulation, setPolicySimulation] = useState<PolicySimulationPayload | null>(null);
+  const [policyLoading, setPolicyLoading] = useState(false);
+  const [packQuestion, setPackQuestion] = useState("Investigate recent failed login activity and possible prompt injection.");
+  const [investigationPack, setInvestigationPack] = useState<SplunkInvestigationPack | null>(null);
+  const [packLoading, setPackLoading] = useState(false);
+
+  const refreshApprovals = async () => {
+    const payload = await getGatewayJson<{ readonly records?: readonly ShieldApprovalRecord[] }>("/api/v1/shield/approvals", { limit: "8" });
+    setApprovals(payload.records ?? []);
+  };
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       try {
-        const [pulseResponse, auditResponse] = await Promise.all([
-          fetch(`${apiBase}/api/v1/pulse/snapshot`),
-          fetch(`${apiBase}/api/v1/shield/audits?limit=12`),
+        const [pulsePayload, auditPayload, approvalPayload] = await Promise.all([
+          getGatewayJson<{ readonly data?: { readonly snapshot?: PulseSnapshot }; readonly snapshot?: PulseSnapshot; readonly shield?: PulseShield }>("/api/v1/pulse/snapshot"),
+          getGatewayJson<{ readonly records?: readonly ShieldAuditRow[] }>("/api/v1/shield/audits", { limit: "12" }).catch(() => ({ records: [] })),
+          getGatewayJson<{ readonly records?: readonly ShieldApprovalRecord[] }>("/api/v1/shield/approvals", { limit: "8" }).catch(() => ({ records: [] })),
         ]);
-        if (!pulseResponse.ok) throw new Error(`Pulse API returned ${pulseResponse.status}`);
-        const pulsePayload = await pulseResponse.json() as { readonly data?: { readonly snapshot?: PulseSnapshot }; readonly snapshot?: PulseSnapshot; readonly shield?: PulseShield };
-        const auditPayload = auditResponse.ok
-          ? await auditResponse.json() as { readonly records?: readonly ShieldAuditRow[] }
-          : { records: [] };
         if (!cancelled) {
           setSnapshot(pulsePayload.data?.snapshot ?? pulsePayload.snapshot ?? null);
           setPulseShield(pulsePayload.shield ?? null);
           setAudits(auditPayload.records ?? []);
+          setApprovals(approvalPayload.records ?? []);
           setError(null);
         }
       } catch (caught) {
@@ -133,6 +221,58 @@ export function DashboardPage() {
       cancelled = true;
     };
   }, [refreshCount]);
+
+  const runPolicySimulation = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPolicyLoading(true);
+    setOpsError(null);
+    try {
+      const payload = await postGatewayJson<GatewayToolPayload<PolicySimulationPayload>>("/api/v1/shield/policy/simulate", {
+        query: simulatorQuery,
+        earliest: "-24h",
+        latest: "now",
+        limit: 25,
+      });
+      setPolicySimulation(payload.data ?? null);
+    } catch (caught) {
+      setOpsError(caught instanceof Error ? caught.message : "Policy simulation failed.");
+    } finally {
+      setPolicyLoading(false);
+    }
+  };
+
+  const runInvestigationPack = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPackLoading(true);
+    setOpsError(null);
+    try {
+      const payload = await postGatewayJson<GatewayToolPayload<SplunkInvestigationPack>>("/api/v1/shield/splunk/investigation-pack", {
+        question: packQuestion,
+        mode: "mock",
+        limit: 20,
+        format: "json",
+      });
+      setInvestigationPack(payload.data ?? null);
+      setRefreshCount((count) => count + 1);
+    } catch (caught) {
+      setOpsError(caught instanceof Error ? caught.message : "Investigation pack failed.");
+    } finally {
+      setPackLoading(false);
+    }
+  };
+
+  const decideApproval = async (approvalId: string, decision: "approved" | "rejected") => {
+    setOpsError(null);
+    try {
+      await postGatewayJson<{ readonly record: ShieldApprovalRecord }>(`/api/v1/shield/approvals/${encodeURIComponent(approvalId)}/decide`, {
+        decision,
+        reviewer: "dashboard",
+      });
+      await refreshApprovals();
+    } catch (caught) {
+      setOpsError(caught instanceof Error ? caught.message : "Approval update failed.");
+    }
+  };
 
   const sortedSignals = useMemo(
     () => [...(snapshot?.signals ?? [])].sort((left, right) => severityRank[left.severity] - severityRank[right.severity]),
@@ -232,6 +372,28 @@ export function DashboardPage() {
         </div>
       </section>
 
+      {opsError === null ? null : <p className="error" role="alert">{opsError}</p>}
+
+      <section>
+        <h2>Security Workbench</h2>
+        <div className="ops-grid">
+          <InvestigationPackPanel
+            pack={investigationPack}
+            question={packQuestion}
+            loading={packLoading}
+            onQuestionChange={setPackQuestion}
+            onSubmit={runInvestigationPack}
+          />
+          <PolicySimulatorPanel
+            query={simulatorQuery}
+            result={policySimulation}
+            loading={policyLoading}
+            onQueryChange={setSimulatorQuery}
+            onSubmit={runPolicySimulation}
+          />
+        </div>
+      </section>
+
       <section className={coverageGapCount === 0 ? "source-gaps source-gaps-clear" : "source-gaps"}>
         <div>
           <h2>Coverage Gaps</h2>
@@ -269,6 +431,11 @@ export function DashboardPage() {
       </section>
 
       <details className="ops-details">
+        <summary>Ops: Human Approvals ({approvals.length})</summary>
+        <ApprovalQueue approvals={approvals} onDecide={decideApproval} />
+      </details>
+
+      <details className="ops-details">
         <summary>Ops: Shield Audit ({audits.length})</summary>
         <ShieldAuditTable audits={audits} />
       </details>
@@ -300,6 +467,174 @@ function EvidenceItem({ label, value }: { readonly label: string; readonly value
       <span>{label}</span>
       <strong>{value}</strong>
     </article>
+  );
+}
+
+function InvestigationPackPanel({
+  loading,
+  onQuestionChange,
+  onSubmit,
+  pack,
+  question,
+}: {
+  readonly loading: boolean;
+  readonly onQuestionChange: (value: string) => void;
+  readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  readonly pack: SplunkInvestigationPack | null;
+  readonly question: string;
+}) {
+  return (
+    <article className="ops-panel">
+      <form onSubmit={onSubmit}>
+        <h3>Investigation Pack</h3>
+        <label htmlFor="splunk-pack-question">Question</label>
+        <textarea
+          id="splunk-pack-question"
+          onChange={(event) => onQuestionChange(event.target.value)}
+          rows={3}
+          value={question}
+        />
+        <button disabled={loading || question.trim() === ""} type="submit">{loading ? "Running" : "Run Mock Pack"}</button>
+      </form>
+      {pack === null ? null : (
+        <div className="ops-result">
+          <div className="evidence-grid">
+            <EvidenceItem label="Investigation" value={`${shortId(pack.investigationId)} / ${pack.status}`} />
+            <EvidenceItem label="Timeline" value={`${pack.timeline.length} events`} />
+            <EvidenceItem label="Findings" value={`${pack.findingSummary?.total ?? 0} runtime`} />
+          </div>
+          <table>
+            <thead>
+              <tr><th>Search</th><th>Status</th><th>Audit</th><th>Findings</th></tr>
+            </thead>
+            <tbody>
+              {pack.searches.map((search) => (
+                <tr key={search.label}>
+                  <td><strong>{search.label}</strong><span>{search.query}</span></td>
+                  <td><strong>{search.status}</strong><span>{search.eventCount ?? 0} events</span></td>
+                  <td><strong>{search.auditId === null ? "none" : shortId(search.auditId)}</strong><span>{shortHash("post", search.outputHash)}</span></td>
+                  <td><strong>{search.runtimeFindings.length}</strong><span>{search.runtimeFindings.slice(0, 2).map((finding) => finding.code).join(", ") || "none"}</span></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <TimelineTable timeline={pack.timeline} />
+        </div>
+      )}
+    </article>
+  );
+}
+
+function PolicySimulatorPanel({
+  loading,
+  onQueryChange,
+  onSubmit,
+  query,
+  result,
+}: {
+  readonly loading: boolean;
+  readonly onQueryChange: (value: string) => void;
+  readonly onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  readonly query: string;
+  readonly result: PolicySimulationPayload | null;
+}) {
+  return (
+    <article className="ops-panel">
+      <form onSubmit={onSubmit}>
+        <h3>Policy Simulator</h3>
+        <label htmlFor="splunk-policy-query">SPL</label>
+        <textarea
+          id="splunk-policy-query"
+          onChange={(event) => onQueryChange(event.target.value)}
+          rows={3}
+          value={query}
+        />
+        <button disabled={loading || query.trim() === ""} type="submit">{loading ? "Simulating" : "Simulate"}</button>
+      </form>
+      {result === null ? null : (
+        <div className="ops-result">
+          <div className="evidence-grid">
+            <EvidenceItem label="Decision" value={`${result.simulation.status} / ${result.simulation.severity}`} />
+            <EvidenceItem label="Risk score" value={String(result.simulation.riskScore)} />
+            <EvidenceItem label="Rules" value={result.simulation.ruleCodes.join(", ")} />
+          </div>
+          <p className="muted">Safer query: {result.simulation.suggestedSaferQuery}</p>
+          <table>
+            <thead>
+              <tr><th>Case</th><th>Expected</th><th>Actual</th><th>Rules</th></tr>
+            </thead>
+            <tbody>
+              {result.redTeamMatrix.map((row) => (
+                <tr key={row.id}>
+                  <td><strong>{row.label}</strong><span>{row.category}</span></td>
+                  <td>{row.expectedStatus}</td>
+                  <td>{row.simulation.status}</td>
+                  <td>{row.simulation.ruleCodes.join(", ")}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function TimelineTable({ timeline }: { readonly timeline: SplunkInvestigationPack["timeline"] }) {
+  if (timeline.length === 0) return <p className="muted">No timeline events returned.</p>;
+  return (
+    <table>
+      <thead>
+        <tr><th>Time</th><th>Host</th><th>Event</th><th>Search</th></tr>
+      </thead>
+      <tbody>
+        {timeline.slice(0, 8).map((event, index) => (
+          <tr key={`${event.searchLabel}:${event.time ?? index}`}>
+            <td>{formatDateTime(event.time)}</td>
+            <td><strong>{event.host ?? "unknown"}</strong><span>{event.source ?? "unknown source"}</span></td>
+            <td>{event.event}</td>
+            <td><strong>{event.searchLabel}</strong><span>{event.risk ?? "unknown risk"}</span></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function ApprovalQueue({
+  approvals,
+  onDecide,
+}: {
+  readonly approvals: readonly ShieldApprovalRecord[];
+  readonly onDecide: (approvalId: string, decision: "approved" | "rejected") => void;
+}) {
+  if (approvals.length === 0) return <p className="muted">No Shield approval requests returned yet.</p>;
+  return (
+    <table>
+      <thead>
+        <tr><th>Tool</th><th>Status</th><th>Risk</th><th>Request</th><th>Decision</th></tr>
+      </thead>
+      <tbody>
+        {approvals.map((approval) => (
+          <tr key={approval.approvalId}>
+            <td><strong>{approval.toolName}</strong><span>{shortId(approval.approvalId)}</span></td>
+            <td><strong>{approval.status}</strong><span>expires {formatDateTime(approval.expiresAt)}</span></td>
+            <td><strong>{approval.risk.status ?? "unknown"} / {approval.risk.severity ?? "unknown"}</strong><span>{approval.risk.ruleCodes?.slice(0, 2).join(", ") ?? "none"}</span></td>
+            <td><strong>{approval.requestHash.slice(0, 12)}</strong><span>{JSON.stringify(approval.request)}</span></td>
+            <td>
+              {approval.status === "pending" ? (
+                <span className="button-row">
+                  <button onClick={() => onDecide(approval.approvalId, "approved")} type="button">Approve</button>
+                  <button onClick={() => onDecide(approval.approvalId, "rejected")} type="button">Reject</button>
+                </span>
+              ) : (
+                <strong>{approval.reviewer ?? "recorded"}</strong>
+              )}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
