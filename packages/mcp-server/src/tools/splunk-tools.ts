@@ -51,13 +51,24 @@ const allowedIndexes = (): readonly string[] => (
   .map((value) => value.trim())
   .filter((value) => value !== "");
 
+const queryIndexes = (query: string): readonly string[] =>
+  Array.from(query.matchAll(/\bindex\s*=\s*([A-Za-z0-9_.-]+)/gi))
+    .map((match) => match[1])
+    .filter((value): value is string => value !== undefined && value.trim() !== "");
+
 const assertSearchAllowed = (params: SplunkSearchInput): void => {
   if (DISALLOWED_SPL.test(params.query)) {
     throw deny("Splunk search contains a command blocked by the Swee Shield proxy.", { reason: "destructive_or_exfiltration_spl" });
   }
   const indexes = allowedIndexes();
-  if (params.index !== undefined && indexes.length > 0 && !indexes.includes(params.index)) {
-    throw deny("Splunk search index is not allowlisted for this proxy.", { index: params.index, allowedIndexes: indexes });
+  const requestedIndexes = new Set([
+    ...queryIndexes(params.query),
+    ...(params.index === undefined ? [] : [params.index]),
+  ]);
+  for (const index of requestedIndexes) {
+    if (indexes.length > 0 && !indexes.includes(index)) {
+      throw deny("Splunk search index is not allowlisted for this proxy.", { index, allowedIndexes: indexes });
+    }
   }
 };
 

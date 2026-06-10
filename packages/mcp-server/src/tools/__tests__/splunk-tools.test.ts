@@ -56,7 +56,6 @@ describe("Splunk proxy tools", () => {
     process.env["SPLUNK_MCP_ALLOWED_INDEXES"] = "main,security";
     await expect(getTool("splunk_search").handler({
       query: "index=_internal error",
-      index: "_internal",
     })).rejects.toThrow("not allowlisted");
     expect(mockedCallSplunkTool).not.toHaveBeenCalled();
   });
