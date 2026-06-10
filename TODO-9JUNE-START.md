@@ -41,6 +41,8 @@ What has been done since the plan was written. Cross-references to artifacts.
 - **Demo pinned proposals.** `tests/fixtures/proposals/demo_3room_remove_wall_28.json` (money-shot: removes wall_28 → triggers `structural_wall_protected` every revise → N escalation) and `demo_3room_keep_walls.json` (clean path → goes straight to `awaiting_human_approval` with no escalation_reason).
 - **Guided Room Capture.** Editor accepts room reference photos plus width/depth/height/opening measurements, calls `/api/room-capture/layout`, and builds an editable measured room shell with photo reference panels. This is guided reconstruction, not photogrammetry.
 - **IKEA catalog search.** Editor, HTTP, chat, and MCP surfaces can search/place IKEA catalog items. TinyFish is used when `TINYFISH_API_KEY` is set; local cache/seed items keep the UI usable offline.
+- **Demo hardening.** Malformed Case library payloads fail fast with validation envelopes; vendor-cache misses return explicit fallback metadata; TinyFish/catalog misses fall back to cache/seed; live DesignAgent timeouts fall back deterministically; room-capture invalid measurements/photos/openings are covered.
+- **Case Review polish.** The editor keeps Case Review pinned during MCP sync, shows status/diff metrics, approval/handoff state, and clearer removed-wall/finding highlights for screenshot/demo use.
 - **Tests.** Case/backend/CLI/browser coverage now includes baseline Case snapshots, raster layout `hdb_type`, live-mode fallback, the hero demo CLI, and Case Review panel loading. Full repo suite passes locally; Ruff and Pyright are clean.
 
 ### Honest scoping notes (read these before continuing)
@@ -184,8 +186,8 @@ Build the entire flow as an HTTP service so it works end-to-end before any orche
 
 ### Stage 3 — Coding-agents bonus, polish, hardening (Weeks 4–6)
 - [ ] Capture **Codex driving the UiPath build** on camera for the bonus (the `uip` pack/publish/deploy flow through Codex). This is free Platform-Usage points — do not skip.
-- [ ] Exception/edge-case hardening for the demo: what happens on a malformed plan, a vendor-search miss (falls back to cache), an LLM timeout (falls back to pinned proposal). Judges explicitly score exception handling.
-- [ ] Three.js editor polish: clean before/after, highlight the violating wall/element, show the approved result.
+- [x] Exception/edge-case hardening for the demo: malformed Case payloads, vendor-cache miss, TinyFish/API miss, live LLM timeout fallback, and room-capture bad inputs are covered by code + tests.
+- [x] Three.js editor polish: Case Review now shows before/after diff metrics, clearer violating-wall/finding highlights, approval/handoff state, and survives MCP sync during `?case=` demo loads.
 
 ### Stage 4 — Submission assembly (Week 6–7, see §7)
 - [ ] Devpost page, demo video (≤5 min), README, deck, optional feedback form.

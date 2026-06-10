@@ -153,10 +153,16 @@ async def _create_case(request: Request) -> JSONResponse:
             pinned_proposal_id=pinned_proposal_id,
             vendor_cache_key=vendor_cache_key,
         )
-    except (FileNotFoundError, OSError, ValueError) as exc:
+    except (FileNotFoundError, ValueError) as exc:
+        return _error(
+            "validation_failed",
+            "Could not create Case from library JSON.",
+            hint=str(exc),
+        )
+    except OSError as exc:
         return _error(
             "internal_error",
-            "Could not create Case from library JSON.",
+            "Could not read Case library JSON.",
             hint=str(exc),
         )
 

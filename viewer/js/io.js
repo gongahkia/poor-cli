@@ -291,6 +291,67 @@ function findingIndexSet(findings) {
   return indexes;
 }
 
+function caseDiffStats(caseData) {
+  const baseline = Array.isArray(caseData._baseline_items) ? caseData._baseline_items : [];
+  const current = Array.isArray(caseData.items) ? caseData.items : [];
+  const baselineByKey = new Map();
+  const currentByKey = new Map();
+  baseline.forEach((item, index) => {
+    const key = itemKey(item, index);
+    if (key) baselineByKey.set(key, item);
+  });
+  current.forEach((item, index) => {
+    const key = itemKey(item, index);
+    if (key) currentByKey.set(key, item);
+  });
+  let removed = 0;
+  let changed = 0;
+  baselineByKey.forEach((item, key) => {
+    const next = currentByKey.get(key);
+    if (!next) removed += 1;
+    else if (!sameLayoutItem(item, next)) changed += 1;
+  });
+  let added = 0;
+  currentByKey.forEach((_, key) => {
+    if (!baselineByKey.has(key)) added += 1;
+  });
+  const findings = Array.isArray(caseData.compliance_findings) ? caseData.compliance_findings : [];
+  const errors = findings.filter((f) => f?.severity === 'error').length;
+  return { baseline: baseline.length, current: current.length, removed, changed, added, findings: findings.length, errors };
+}
+
+function caseStatusTone(status) {
+  if (status === 'approved' || status === 'handoff_complete') return 'approved';
+  if (status === 'rejected') return 'rejected';
+  if (status === 'awaiting_human_approval') return 'pending';
+  if (status === 'revising' || status === 'compliance_pending' || status === 'designing') return 'active';
+  return 'neutral';
+}
+
+function appendMetric(root, label, value, tone = '') {
+  const metric = document.createElement('div');
+  metric.className = `case-review-metric ${tone}`.trim();
+  const strong = document.createElement('strong');
+  strong.textContent = String(value);
+  const span = document.createElement('span');
+  span.textContent = label;
+  metric.appendChild(strong);
+  metric.appendChild(span);
+  root.appendChild(metric);
+}
+
+function approvalText(caseData) {
+  const approval = caseData.approval_state || {};
+  const decision = approval.decision || 'not routed';
+  const reviewer = approval.reviewer ? ` by ${approval.reviewer}` : '';
+  if (caseData.vendor_handoff?.vendor_name) {
+    const cached = caseData.vendor_handoff.cached === false ? 'fallback' : 'cache';
+    return `${decision}${reviewer} · handoff: ${caseData.vendor_handoff.vendor_name} (${cached})`;
+  }
+  if (approval.escalation_reason) return `${decision}${reviewer} · ${approval.escalation_reason}`;
+  return `${decision}${reviewer}`;
+}
+
 function cloneCaseData(data) {
   return JSON.parse(JSON.stringify(data));
 }
@@ -345,12 +406,15 @@ function caseGhostMaterial(kind) {
   const mat = new THREE.MeshStandardMaterial({
     color: colors[kind] || colors.baseline,
     transparent: true,
-    opacity: kind === 'removed' ? 0.62 : 0.36,
+    opacity: kind === 'removed' ? 0.78 : 0.42,
     roughness: 0.55,
     metalness: 0.02,
     depthWrite: false,
   });
-  if (kind === 'removed') mat.emissive = new THREE.Color(0x4a0505);
+  if (kind === 'removed') {
+    mat.emissive = new THREE.Color(0x7f1d1d);
+    mat.emissiveIntensity = 0.65;
+  }
   return mat;
 }
 
@@ -372,6 +436,14 @@ function buildGhostFromItem(item, diffKind) {
   );
   edges.name = '_case_diff_edges';
   mesh.add(edges);
+  if (diffKind === 'removed') {
+    const marker = new THREE.Mesh(
+      new THREE.BoxGeometry(item.geo[0] + 0.06, item.geo[1] + 0.06, item.geo[2] + 0.06),
+      new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.12, depthWrite: false }),
+    );
+    marker.name = '_case_removed_marker';
+    mesh.add(marker);
+  }
   return mesh;
 }
 
@@ -465,22 +537,61 @@ function updateCaseReviewPanel(caseData) {
   const panel = document.getElementById('case-review-section');
   if (!panel) return;
   panel.style.display = '';
+  panel.classList.remove('case-status-approved', 'case-status-rejected', 'case-status-pending', 'case-status-active', 'case-status-neutral');
+  panel.classList.add(`case-status-${caseStatusTone(caseData.design_status || '')}`);
   const summary = document.getElementById('case-review-summary');
   const findingsEl = document.getElementById('case-findings-list');
   const findings = Array.isArray(caseData.compliance_findings) ? caseData.compliance_findings : [];
-  const errors = findings.filter((f) => f?.severity === 'error').length;
-  summary.textContent = `${caseData.design_status || 'case'} · revise ${caseData.revise_count || 0} · ${findings.length} finding${findings.length === 1 ? '' : 's'} (${errors} error${errors === 1 ? '' : 's'})`;
+  const stats = caseDiffStats(caseData);
+  summary.innerHTML = '';
+  const header = document.createElement('div');
+  header.className = 'case-review-title';
+  const caseId = document.createElement('strong');
+  caseId.textContent = caseData.case_id ? `Case ${String(caseData.case_id).slice(0, 8)}` : 'Case Review';
+  const badge = document.createElement('span');
+  badge.className = 'case-review-badge';
+  badge.textContent = caseData.design_status || 'case';
+  header.appendChild(caseId);
+  header.appendChild(badge);
+  summary.appendChild(header);
+  const metrics = document.createElement('div');
+  metrics.className = 'case-review-metrics';
+  appendMetric(metrics, 'revise', caseData.revise_count || 0);
+  appendMetric(metrics, 'findings', stats.findings, stats.errors ? 'danger' : 'ok');
+  appendMetric(metrics, 'removed', stats.removed, stats.removed ? 'danger' : '');
+  appendMetric(metrics, 'changed', stats.changed + stats.added, stats.changed || stats.added ? 'warn' : '');
+  summary.appendChild(metrics);
+  const approval = document.createElement('div');
+  approval.className = 'case-review-approval';
+  approval.textContent = approvalText(caseData);
+  summary.appendChild(approval);
   findingsEl.innerHTML = '';
+  if (!findings.length) {
+    const row = document.createElement('div');
+    row.className = 'case-finding-row case-finding-ok';
+    const title = document.createElement('strong');
+    title.textContent = 'No compliance findings';
+    const meta = document.createElement('span');
+    meta.textContent = 'ready for coordinator review';
+    row.appendChild(title);
+    row.appendChild(meta);
+    findingsEl.appendChild(row);
+    return;
+  }
   for (const finding of findings.slice(0, 8)) {
     const row = document.createElement('button');
-    row.className = 'case-finding-row';
+    row.className = `case-finding-row severity-${finding.severity || 'warning'}`;
     row.type = 'button';
     const title = document.createElement('strong');
     title.textContent = finding.element_name || finding.rule_id || 'finding';
     const meta = document.createElement('span');
-    meta.textContent = finding.rule_id || '';
+    meta.textContent = [finding.severity || 'warning', finding.rule_id || ''].filter(Boolean).join(' · ');
+    const reason = document.createElement('span');
+    reason.className = 'case-finding-reason';
+    reason.textContent = finding.reason || 'Review required.';
     row.appendChild(title);
     row.appendChild(meta);
+    row.appendChild(reason);
     row.title = finding.reason || '';
     row.addEventListener('click', () => {
       const target = S.draggables.find((m) => m.userData.name === finding.element_name);
@@ -501,6 +612,12 @@ function updateCaseReviewPanel(caseData) {
       }
     });
     findingsEl.appendChild(row);
+  }
+  if (findings.length > 8) {
+    const more = document.createElement('div');
+    more.className = 'case-findings-more';
+    more.textContent = `+${findings.length - 8} more finding${findings.length - 8 === 1 ? '' : 's'}`;
+    findingsEl.appendChild(more);
   }
 }
 
@@ -559,6 +676,7 @@ function startMcpSync() {
       lastMcpText = text;
       const data = JSON.parse(text);
       if (!data.items) return;
+      if (S.caseReview && !isCasePayload(data)) return;
       // skip if this was written by our own push
       if (data._stamp && data._stamp === lastPushStamp) return;
       if (data._stamp && data._stamp === lastPullStamp) return;

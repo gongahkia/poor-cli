@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from haus.catalog import catalog_item_to_layout_item, get_catalog_item, search_ikea_catalog
+from haus.catalog import catalog_item_to_layout_item, catalog_search_meta, get_catalog_item, search_ikea_catalog
 
 
 def test_ikea_catalog_search_uses_seed_without_tinyfish(tmp_path, monkeypatch) -> None:
@@ -32,3 +32,20 @@ def test_catalog_item_becomes_layout_furniture() -> None:
     assert layout_item["furnitureType"] == "ikea:ikea-test-desk"
     assert layout_item["geo"] == [1.2, 0.75, 0.6]
     assert layout_item["catalog"]["price"] == 99
+
+
+def test_ikea_catalog_refresh_falls_back_when_tinyfish_fails(tmp_path, monkeypatch) -> None:
+    def fail_search(query: str, max_results: int, region: str):
+        raise TimeoutError()
+
+    monkeypatch.setenv("HAUS_CATALOG_ROOT", str(tmp_path))
+    monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
+    monkeypatch.setattr("haus.catalog._search_tinyfish", fail_search)
+
+    items = search_ikea_catalog("BILLY", max_results=5, refresh=True)
+    meta = catalog_search_meta(items, refresh=True)
+
+    assert items
+    assert items[0]["source_provider"] == "seed"
+    assert meta["fallback_used"] is True
+    assert meta["live_result_count"] == 0

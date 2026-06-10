@@ -96,6 +96,7 @@ class DesignAgent:
                 new_items = self._deterministic(case, hints=hints)
                 trace["source"] = "deterministic"
                 trace["fallback_reason"] = str(exc)
+                trace["fallback_kind"] = _fallback_kind(exc)
         else:
             new_items = self._deterministic(case, hints=hints)
             trace["source"] = "deterministic"
@@ -158,6 +159,8 @@ class DesignAgent:
                 model,
                 disabled_dispatch,
             )
+        except TimeoutError as exc:
+            raise LiveProposalUnavailable(f"live {provider} proposal timed out") from exc
         except Exception as exc:
             raise LiveProposalUnavailable(f"live {provider} proposal failed: {exc}") from exc
 
@@ -299,6 +302,17 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _fallback_kind(exc: Exception) -> str:
+    text = str(exc).lower()
+    if "timed out" in text or "timeout" in text:
+        return "timeout"
+    if "api_key" in text or "is not set" in text or "credentials" in text:
+        return "credentials"
+    if "json" in text or "operations" in text or "items array" in text:
+        return "malformed_live_response"
+    return "provider_error"
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:

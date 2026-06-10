@@ -1,6 +1,9 @@
 import { fn } from './state.js';
 
 const WALL_VIEWS = ['north', 'east', 'south', 'west'];
+const MAX_CAPTURE_PHOTOS = 12;
+const MAX_CAPTURE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export function initRoomCapture() {
   const input = document.getElementById('room-capture-input');
@@ -16,11 +19,18 @@ function status(text, isError = false) {
   el.style.color = isError ? 'var(--chat-err-fg)' : 'var(--fg-accent)';
 }
 
-function numberValue(id) {
+function numberValue(id, { min, max, label }) {
   const el = document.getElementById(id);
   const value = Number.parseFloat(el?.value || '');
-  if (!Number.isFinite(value)) throw new Error(`${id} must be numeric`);
+  if (!Number.isFinite(value)) throw new Error(`${label} must be numeric`);
+  if (value < min || value > max) throw new Error(`${label} must be between ${min} and ${max}m`);
   return value;
+}
+
+function errorText(body, fallback) {
+  if (typeof body?.error === 'string') return body.error;
+  if (body?.error?.message) return body.error.message;
+  return fallback;
 }
 
 function readFileDataUrl(file) {
@@ -34,10 +44,13 @@ function readFileDataUrl(file) {
 
 async function roomPhotos() {
   const input = document.getElementById('room-capture-input');
-  const files = Array.from(input?.files || []).slice(0, 12);
+  const files = Array.from(input?.files || []);
+  if (files.length > MAX_CAPTURE_PHOTOS) throw new Error(`Use ${MAX_CAPTURE_PHOTOS} photos or fewer`);
   const out = [];
   for (let i = 0; i < files.length; i += 1) {
     const file = files[i];
+    if (!ALLOWED_IMAGE_TYPES.has(file.type)) throw new Error(`${file.name} must be JPEG, PNG, or WebP`);
+    if (file.size > MAX_CAPTURE_BYTES) throw new Error(`${file.name} is larger than 5 MB`);
     out.push({
       name: file.name,
       view: WALL_VIEWS[i % WALL_VIEWS.length],
@@ -75,9 +88,9 @@ async function buildRoomCapture() {
     status('Building room...');
     const payload = {
       measurements: {
-        width_m: numberValue('room-width'),
-        depth_m: numberValue('room-depth'),
-        height_m: numberValue('room-height'),
+        width_m: numberValue('room-width', { min: 0.5, max: 50, label: 'width' }),
+        depth_m: numberValue('room-depth', { min: 0.5, max: 50, label: 'depth' }),
+        height_m: numberValue('room-height', { min: 1.8, max: 8, label: 'height' }),
       },
       openings: parseOpenings(),
       photos: await roomPhotos(),
@@ -88,7 +101,7 @@ async function buildRoomCapture() {
       body: JSON.stringify(payload),
     });
     const body = await res.json();
-    if (!res.ok || body.ok === false) throw new Error(body.error || `HTTP ${res.status}`);
+    if (!res.ok || body.ok === false) throw new Error(errorText(body, `HTTP ${res.status}`));
     preserveUserItems(body.layout);
     fn.applyLayoutData(body.layout);
     if (fn.pushLayoutToServer) fn.pushLayoutToServer();

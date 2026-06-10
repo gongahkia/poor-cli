@@ -39,6 +39,12 @@ function price(item) {
   return `${item.currency || 'SGD'} ${item.price}`;
 }
 
+function errorText(body, fallback) {
+  if (typeof body?.error === 'string') return body.error;
+  if (body?.error?.message) return body.error.message;
+  return fallback;
+}
+
 async function searchCatalog() {
   const query = document.getElementById('catalog-query')?.value?.trim();
   if (!query) {
@@ -50,15 +56,15 @@ async function searchCatalog() {
   try {
     const res = await fetch(`/api/catalog/ikea/search?${new URLSearchParams({ q: query, refresh })}`);
     const body = await res.json();
-    if (!res.ok || body.ok === false) throw new Error(body.error || `HTTP ${res.status}`);
-    renderResults(body.items || []);
+    if (!res.ok || body.ok === false) throw new Error(errorText(body, `HTTP ${res.status}`));
+    renderResults(body.items || [], body.catalog || null);
   } catch (err) {
     console.error('catalog search failed', err);
     setCatalogMessage(err.message || String(err));
   }
 }
 
-function renderResults(items) {
+function renderResults(items, meta = null) {
   const root = resultRoot();
   if (!root) return;
   root.innerHTML = '';
@@ -66,13 +72,21 @@ function renderResults(items) {
     setCatalogMessage('No IKEA items found.');
     return;
   }
+  if (meta?.fallback_used) {
+    const note = document.createElement('div');
+    note.className = 'catalog-card catalog-note';
+    const span = document.createElement('span');
+    span.textContent = 'Live catalog unavailable; showing cached/seed items.';
+    note.appendChild(span);
+    root.appendChild(note);
+  }
   for (const item of items) {
     const card = document.createElement('div');
     card.className = 'catalog-card';
     const title = document.createElement('strong');
     title.textContent = item.name || item.id;
     const meta = document.createElement('span');
-    meta.textContent = [item.category, dims(item), price(item)].filter(Boolean).join(' · ');
+    meta.textContent = [item.category, dims(item), price(item), item.source_provider].filter(Boolean).join(' · ');
     const place = document.createElement('button');
     place.type = 'button';
     place.textContent = 'Place';
@@ -95,7 +109,7 @@ async function placeItem(itemId, button) {
       body: JSON.stringify({ x: 0, z: 0 }),
     });
     const body = await res.json();
-    if (!res.ok || body.ok === false) throw new Error(body.error || `HTTP ${res.status}`);
+    if (!res.ok || body.ok === false) throw new Error(errorText(body, `HTTP ${res.status}`));
     if (!fn.addLayoutItem(body.layout_item)) throw new Error('Could not place item.');
     button.textContent = 'Placed';
   } catch (err) {

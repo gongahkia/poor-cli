@@ -219,6 +219,8 @@ def test_case_query_loads_review_panel(browser_page, viewer_base_url: str) -> No
     assert "awaiting_human_approval" in panel_text
     assert "wall_28" in panel_text
     assert "structural_wall_protected" in panel_text
+    assert "removed" in panel_text
+    assert browser_page.locator("#case-review-section.case-status-pending").count() == 1
 
 
 def test_chat_transcript_persists_across_reload(browser_page, viewer_base_url: str) -> None:

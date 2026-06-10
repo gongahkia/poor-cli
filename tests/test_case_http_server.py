@@ -23,11 +23,15 @@ BRIEF = {
 }
 
 
-def _client(max_revise: int = 1, handoff_root: Path | None = None) -> TestClient:
+def _client(
+    max_revise: int = 1,
+    handoff_root: Path | None = None,
+    vendor_cache_dir: str | Path | None = VENDORS_DIR,
+) -> TestClient:
     return TestClient(
         create_app(
             proposals_dir=PROPOSALS_DIR,
-            vendor_cache_dir=VENDORS_DIR,
+            vendor_cache_dir=vendor_cache_dir,
             handoff_root=handoff_root,
             max_revise=max_revise,
         )
@@ -145,6 +149,27 @@ def test_create_case_validates_required_fields():
         assert res.json()["error"]["code"] == "validation_failed"
 
 
+def test_create_case_rejects_malformed_library_payload(tmp_path: Path):
+    bad = tmp_path / "bad-case.json"
+    bad.write_text(json.dumps({"version": 1, "metadata": {}, "items": {"bad": "shape"}}), encoding="utf-8")
+
+    with _client() as client:
+        res = client.post("/case", json={"floor_plan_ref": str(bad), "brief": BRIEF})
+
+    assert res.status_code == 400
+    body = res.json()
+    assert body["error"]["code"] == "validation_failed"
+    assert "items" in body["error"]["hint"]
+
+
+def test_create_case_missing_library_is_validation_error():
+    with _client() as client:
+        res = client.post("/case", json={"floor_plan_ref": "missing-case.json", "brief": BRIEF})
+
+    assert res.status_code == 400
+    assert res.json()["error"]["code"] == "validation_failed"
+
+
 def test_unknown_case_returns_uniform_error_envelope():
     with _client() as client:
         res = client.get("/case/does-not-exist")
@@ -178,3 +203,23 @@ def test_handoff_requires_approved_state_over_http(tmp_path: Path):
         res = client.post(f"/case/{case['case_id']}/handoff", json={})
         assert res.status_code == 409
         assert res.json()["error"]["code"] == "invalid_state_transition"
+
+
+def test_handoff_cache_miss_returns_fallback_metadata(tmp_path: Path):
+    with _client(max_revise=3, handoff_root=tmp_path / "handoffs", vendor_cache_dir=tmp_path / "vendors") as client:
+        case = _create_case(client, pinned="demo_3room_keep_walls")
+        case_id = case["case_id"]
+        assert client.post(f"/case/{case_id}/design", json={}).status_code == 200
+        assert client.post(f"/case/{case_id}/compliance", json={}).status_code == 200
+        assert client.patch(
+            f"/case/{case_id}/approval",
+            json={"decision": "approved", "reviewer": "coordinator_alice"},
+        ).status_code == 200
+
+        res = client.post(f"/case/{case_id}/handoff", json={"vendor_cache_key": "not_cached"})
+
+    assert res.status_code == 200
+    handoff = res.json()["vendor_handoff"]
+    assert handoff["cached"] is False
+    assert handoff["source"] == "live_search_stub"
+    assert handoff["fallback_reason"] == "vendor_cache_miss"

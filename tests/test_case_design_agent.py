@@ -112,6 +112,26 @@ def test_live_mode_falls_back_to_deterministic_without_credentials(monkeypatch):
 
     assert case["design_agent_trace"]["source"] == "deterministic"
     assert "OPENAI_API_KEY" in case["design_agent_trace"]["fallback_reason"]
+    assert case["design_agent_trace"]["fallback_kind"] == "credentials"
+    assert any(item.get("type") == "furniture" for item in case["items"])
+
+
+def test_live_mode_timeout_falls_back_to_deterministic(monkeypatch):
+    import haus.chat_server as chat_server
+
+    def fake_chat(api_key, messages, model, dispatch):
+        raise TimeoutError()
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(chat_server, "_CHAT_FNS", {**chat_server._CHAT_FNS, "openai": fake_chat})
+
+    case = load_case_from_library(LIBRARY_3, brief=BRIEF)
+    agent = DesignAgent(proposals_dir=PROPOSALS_DIR, mode="live", provider="openai")
+    case = agent.propose(case)
+
+    assert case["design_agent_trace"]["source"] == "deterministic"
+    assert case["design_agent_trace"]["fallback_kind"] == "timeout"
+    assert "timed out" in case["design_agent_trace"]["fallback_reason"]
     assert any(item.get("type") == "furniture" for item in case["items"])
 
 

@@ -31,3 +31,34 @@ def test_room_capture_builds_measured_shell_with_photo_and_opening() -> None:
 def test_room_capture_rejects_bad_measurements() -> None:
     with pytest.raises(ValueError, match="width_m"):
         build_room_capture_layout({"measurements": {"width_m": 0, "depth_m": 3, "height_m": 2.6}})
+
+
+def test_room_capture_rejects_invalid_photo_data() -> None:
+    with pytest.raises(ValueError, match="invalid base64"):
+        build_room_capture_layout(
+            {
+                "measurements": {"width_m": 3, "depth_m": 3, "height_m": 2.6},
+                "photos": [{"data_url": "data:image/png;base64,not-base64"}],
+            }
+        )
+
+
+def test_room_capture_rejects_unsupported_photo_type() -> None:
+    data = base64.b64encode(b"fake").decode("ascii")
+    with pytest.raises(ValueError, match="image/jpeg"):
+        build_room_capture_layout(
+            {
+                "measurements": {"width_m": 3, "depth_m": 3, "height_m": 2.6},
+                "photos": [{"data_url": f"data:image/gif;base64,{data}"}],
+            }
+        )
+
+
+def test_room_capture_rejects_bad_opening_wall() -> None:
+    with pytest.raises(ValueError, match="north/south/east/west"):
+        build_room_capture_layout(
+            {
+                "measurements": {"width_m": 3, "depth_m": 3, "height_m": 2.6},
+                "openings": [{"wall": "ceiling"}],
+            }
+        )

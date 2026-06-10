@@ -78,6 +78,8 @@ class VendorHandoffAgent:
             "packet_uri": packet_uri,
             "cached": cached,
             "vendor_cache_key": str(key),
+            "source": vendor.get("source", "cache" if cached else "live_search_fallback"),
+            "fallback_reason": None if cached else vendor.get("fallback_reason", "vendor_cache_miss"),
             "contact": vendor.get("contact", {}),
             "specialties": vendor.get("specialties", []),
         }
@@ -153,7 +155,9 @@ class VendorHandoffAgent:
                 "Live vendor search is not configured in Stage 1; this stub marks "
                 "where TinyFish or Serper results will be inserted."
             ),
-            "source": f"stub:{vendor_cache_key}",
+            "source": "live_search_stub",
+            "fallback_reason": "vendor_cache_miss",
+            "requested_cache_key": vendor_cache_key,
         }
 
     def _write_packet(

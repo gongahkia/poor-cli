@@ -33,7 +33,7 @@ import uvicorn
 
 from . import mcp_server as _mcp_server
 from .agent_loop import RoomPlan, plan_flat, plan_room
-from .catalog import catalog_item_to_layout_item, get_catalog_item, search_ikea_catalog
+from .catalog import catalog_item_to_layout_item, catalog_search_meta, get_catalog_item, search_ikea_catalog
 from .logging_utils import configure_logging, new_request_id
 from .mcp_server import (
     _coerce_float,
@@ -2936,7 +2936,12 @@ async def _catalog_ikea_search(request: Request) -> JSONResponse:
         items = search_ikea_catalog(query, max_results=max_results, region=region, refresh=refresh)
     except ValueError as exc:
         return JSONResponse({"ok": False, "error": str(exc), "request_id": request_id}, 400)
-    return JSONResponse({"ok": True, "items": items, "request_id": request_id})
+    return JSONResponse({
+        "ok": True,
+        "items": items,
+        "catalog": catalog_search_meta(items, refresh=refresh),
+        "request_id": request_id,
+    })
 
 
 async def _catalog_ikea_item(request: Request) -> JSONResponse:

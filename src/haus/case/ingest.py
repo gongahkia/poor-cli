@@ -59,6 +59,27 @@ def enrich_wall_hdb_types(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [_enrich_wall_hdb_type(dict(it)) for it in items if isinstance(it, dict)]
 
 
+def _object_list(raw: Any, name: str, path: Path) -> list[dict[str, Any]]:
+    if raw is None:
+        return []
+    if not isinstance(raw, list):
+        raise ValueError(f"Library JSON field {name!r} must be an array: {path}")
+    out: list[dict[str, Any]] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, dict):
+            raise ValueError(f"Library JSON field {name!r}[{index}] must be an object: {path}")
+        out.append(dict(item))
+    return out
+
+
+def _metadata(raw: Any, path: Path) -> dict[str, Any]:
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError(f"Library JSON field 'metadata' must be an object: {path}")
+    return dict(raw)
+
+
 def _baseline_protected_walls(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Snapshot of {name, hdb_type, pos, geo} for walls that compliance must protect."""
     baseline: list[dict[str, Any]] = []
@@ -105,10 +126,11 @@ def load_case_from_library(
     if not isinstance(raw, dict):
         raise ValueError(f"Library JSON root must be an object: {path}")
 
-    items = enrich_wall_hdb_types(raw.get("items", []))
+    items = enrich_wall_hdb_types(_object_list(raw.get("items"), "items", path))
+    rooms = _object_list(raw.get("rooms"), "rooms", path)
     baseline_items = json.loads(json.dumps(items))
 
-    metadata = dict(raw.get("metadata", {}))
+    metadata = _metadata(raw.get("metadata"), path)
     metadata.setdefault("source_library", str(path))
 
     now = _utcnow_iso()
@@ -124,7 +146,7 @@ def load_case_from_library(
         "vendor_cache_key": vendor_cache_key,
         "brief": dict(brief),
         "metadata": metadata,
-        "rooms": [dict(r) for r in raw.get("rooms", []) if isinstance(r, dict)],
+        "rooms": rooms,
         "items": items,
         "compliance_findings": [],
         "approval_state": None,

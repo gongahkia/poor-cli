@@ -323,7 +323,7 @@ def search_ikea_catalog(
     if refresh or os.environ.get("TINYFISH_API_KEY"):
         try:
             live_items = _search_tinyfish(clean_query, limit, clean_region)
-        except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
             live_items = []
         for item in live_items:
             _save_item(item)
@@ -339,6 +339,21 @@ def search_ikea_catalog(
     query_path.parent.mkdir(parents=True, exist_ok=True)
     query_path.write_text(json.dumps({"query": clean_query, "region": clean_region, "items": results}, indent=2), encoding="utf-8")
     return results
+
+
+def catalog_search_meta(
+    items: list[dict[str, Any]],
+    *,
+    refresh: bool = False,
+) -> dict[str, Any]:
+    providers = sorted({str(item.get("source_provider") or "unknown") for item in items})
+    live_count = sum(1 for item in items if item.get("source_provider") == "tinyfish")
+    return {
+        "source_providers": providers,
+        "live_refresh_requested": bool(refresh),
+        "live_result_count": live_count,
+        "fallback_used": bool(refresh) and live_count == 0,
+    }
 
 
 def get_catalog_item(item_id: str) -> dict[str, Any] | None:
@@ -366,7 +381,7 @@ def refresh_catalog_item(item_id: str) -> dict[str, Any] | None:
         return item
     try:
         data = _tinyfish_json(_TINYFISH_FETCH_URL, method="POST", payload={"url": url})
-    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
         return item
     if isinstance(data, dict):
         text = _collapse(data.get("text") or data.get("markdown") or data.get("content") or data.get("body"))

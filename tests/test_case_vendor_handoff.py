@@ -92,6 +92,7 @@ def test_cache_miss_uses_live_search_stub(tmp_path: Path) -> None:
     assert case["design_status"] == "handoff_complete"
     assert case["vendor_handoff"]["cached"] is False
     assert case["vendor_handoff"]["vendor_id"] == "live_search_stub"
+    assert case["vendor_handoff"]["fallback_reason"] == "vendor_cache_miss"
 
 
 def test_handoff_requires_approved_state(tmp_path: Path) -> None:

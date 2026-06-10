@@ -92,6 +92,18 @@ def test_room_capture_route_returns_layout(chat_client: TestClient) -> None:
     assert len(body["layout"]["items"]) == 5
 
 
+def test_room_capture_route_returns_bad_input_error(chat_client: TestClient) -> None:
+    res = chat_client.post(
+        "/api/room-capture/layout",
+        json={
+            "measurements": {"width_m": 3.0, "depth_m": 2.8, "height_m": 2.6},
+            "openings": [{"wall": "ceiling"}],
+        },
+    )
+    assert res.status_code == 400
+    assert res.json()["ok"] is False
+
+
 def test_catalog_routes_return_seed_and_layout_item(
     chat_client: TestClient,
     tmp_path: Path,
@@ -102,7 +114,9 @@ def test_catalog_routes_return_seed_and_layout_item(
 
     res = chat_client.get("/api/catalog/ikea/search?q=BILLY")
     assert res.status_code == 200
-    item = res.json()["items"][0]
+    search_body = res.json()
+    assert search_body["catalog"]["source_providers"]
+    item = search_body["items"][0]
 
     res = chat_client.post(f"/api/catalog/ikea/items/{item['id']}/layout-item", json={})
     assert res.status_code == 200
