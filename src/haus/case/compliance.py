@@ -2,12 +2,9 @@
 
 Two rules in scope:
 - rule_structural_wall_protected: diffs current items[] against the baseline snapshot;
-  fires on missing structural/shelter walls. (SPEC 5.1; demo money-shot.)
+  fires on removed, moved, rotated, or resized structural/shelter walls.
 - rule_walkway_accessibility: scores walkways between adjacent rooms using a corridor
   polygon and item-blocking distance. (SPEC 5.2; backup failure mode.)
-
-v0 limitation honestly stated: structural_wall_protected detects REMOVAL only.
-Move/resize are deferred (SPEC 5.1 lists them but v0 ships removal as the demo path).
 """
 from __future__ import annotations
 
@@ -26,10 +23,13 @@ SEVERITY_WARN = "warn"
 WALKWAY_MIN_WIDTH_M = 0.9
 WALKWAY_SCORE_THRESHOLD_ERROR = 0.3
 WALKWAY_SCORE_THRESHOLD_WARN = 0.5
+PROTECTED_WALL_POSITION_TOLERANCE_M = 0.05
+PROTECTED_WALL_GEOMETRY_TOLERANCE_M = 0.05
+PROTECTED_WALL_ROTATION_TOLERANCE_RAD = math.radians(1.0)
 
 
 def rule_structural_wall_protected(case: dict[str, Any]) -> list[dict[str, Any]]:
-    """Fires for every baseline structural/shelter wall absent from current items[].
+    """Fires for protected baseline walls that were removed or geometrically changed.
 
     Identity by `name` per SPEC section 2.4 (element_name is canonical, element_index is hint).
     Newly-added walls with hdb_type=None fail open by virtue of not being in the baseline.
@@ -52,29 +52,118 @@ def rule_structural_wall_protected(case: dict[str, Any]) -> list[dict[str, Any]]
     findings: list[dict[str, Any]] = []
     for protected in baseline:
         name = protected["name"]
-        if name in current_walls_by_name:
-            continue  # still present; v0 does not check move/resize
-        hdb_type = protected["hdb_type"]
-        findings.append({
-            "rule_id": "structural_wall_protected",
-            "severity": SEVERITY_ERROR,
-            "element_index": None,  # removed -> no current index
-            "element_name": name,
-            "coords": {"pos": list(protected.get("pos", [])), "geo": list(protected.get("geo", []))},
-            "reason": (
-                f"Cannot remove {hdb_type} wall '{name}' "
-                f"(HDB {'load-bearing structural' if hdb_type == 'structural' else 'load-bearing shelter'} "
-                "wall; protected under HDB renovation rules)."
-            ),
-            "machine_hint": {
-                "action": "do_not_remove",
-                "constraint": "structural_wall",
-                "hdb_type": hdb_type,
-                "element_name": name,
-                "alternative": "reshape using partition walls (hdb_type=partition) instead",
-            },
-        })
+        current = current_walls_by_name.get(name)
+        if current is None:
+            findings.append(_protected_wall_finding(
+                protected,
+                current=None,
+                element_index=None,
+                action="do_not_remove",
+                change_type="remove",
+                reason_action="remove",
+            ))
+            continue
+
+        element_index = current_indexes_by_name[name]
+        pos_delta = _max_abs_delta(protected.get("pos"), current.get("pos"))
+        rot_delta = _rotation_delta(protected.get("rot"), current.get("rot"))
+        geo_delta = _max_abs_delta(protected.get("geo"), current.get("geo"))
+        if pos_delta > PROTECTED_WALL_POSITION_TOLERANCE_M or rot_delta > PROTECTED_WALL_ROTATION_TOLERANCE_RAD:
+            change_type = "rotate" if pos_delta <= PROTECTED_WALL_POSITION_TOLERANCE_M else "move"
+            findings.append(_protected_wall_finding(
+                protected,
+                current=current,
+                element_index=element_index,
+                action="do_not_move",
+                change_type=change_type,
+                reason_action="move or rotate",
+            ))
+        if geo_delta > PROTECTED_WALL_GEOMETRY_TOLERANCE_M:
+            findings.append(_protected_wall_finding(
+                protected,
+                current=current,
+                element_index=element_index,
+                action="do_not_resize",
+                change_type="resize",
+                reason_action="resize",
+            ))
     return findings
+
+
+def _protected_wall_finding(
+    protected: dict[str, Any],
+    *,
+    current: dict[str, Any] | None,
+    element_index: int | None,
+    action: str,
+    change_type: str,
+    reason_action: str,
+) -> dict[str, Any]:
+    name = str(protected["name"])
+    hdb_type = str(protected["hdb_type"])
+    wall_kind = "load-bearing structural" if hdb_type == "structural" else "load-bearing shelter"
+    coords: dict[str, Any] = {
+        "pos": list(protected.get("pos", [])),
+        "rot": protected.get("rot", 0.0),
+        "geo": list(protected.get("geo", [])),
+    }
+    if current is not None:
+        coords["current"] = {
+            "pos": list(current.get("pos", [])),
+            "rot": current.get("rot", 0.0),
+            "geo": list(current.get("geo", [])),
+        }
+    return {
+        "rule_id": "structural_wall_protected",
+        "severity": SEVERITY_ERROR,
+        "element_index": element_index,
+        "element_name": name,
+        "coords": coords,
+        "reason": (
+            f"Cannot {reason_action} {hdb_type} wall '{name}' "
+            f"(HDB {wall_kind} wall; protected under HDB renovation rules)."
+        ),
+        "machine_hint": {
+            "action": action,
+            "constraint": "structural_wall",
+            "hdb_type": hdb_type,
+            "element_name": name,
+            "change_type": change_type,
+            "alternative": "reshape using partition walls (hdb_type=partition) instead",
+        },
+    }
+
+
+def _float_list(value: Any) -> list[float] | None:
+    if not isinstance(value, list):
+        return None
+    out: list[float] = []
+    for raw in value:
+        try:
+            out.append(float(raw))
+        except (TypeError, ValueError):
+            return None
+    return out
+
+
+def _max_abs_delta(a: Any, b: Any) -> float:
+    aa = _float_list(a)
+    bb = _float_list(b)
+    if aa is None or bb is None or len(aa) != len(bb):
+        return float("inf")
+    if not aa:
+        return 0.0
+    return max(abs(x - y) for x, y in zip(aa, bb))
+
+
+def _rotation_delta(a: Any, b: Any) -> float:
+    try:
+        aa = float(a or 0.0)
+        bb = float(b or 0.0)
+    except (TypeError, ValueError):
+        return float("inf")
+    raw = abs(aa - bb) % (math.pi * 2.0)
+    return min(raw, math.pi * 2.0 - raw)
 
 
 def _room_center(room: dict[str, Any]) -> tuple[float, float] | None:

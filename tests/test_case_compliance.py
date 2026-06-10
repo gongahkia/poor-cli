@@ -45,6 +45,68 @@ def test_removing_shelter_wall_28_fires_structural_rule():
     assert "alternative" in f["machine_hint"]
 
 
+def test_moving_shelter_wall_28_fires_structural_rule():
+    case = _fresh_case()
+    wall_28 = next(it for it in case["items"] if it.get("name") == "wall_28")
+    wall_28["pos"][0] += 0.2
+
+    findings = rule_structural_wall_protected(case)
+
+    assert len(findings) == 1
+    f = findings[0]
+    assert f["element_name"] == "wall_28"
+    assert f["machine_hint"]["action"] == "do_not_move"
+    assert f["machine_hint"]["change_type"] == "move"
+
+
+def test_resizing_shelter_wall_28_fires_structural_rule():
+    case = _fresh_case()
+    wall_28 = next(it for it in case["items"] if it.get("name") == "wall_28")
+    wall_28["geo"][0] += 0.2
+
+    findings = rule_structural_wall_protected(case)
+
+    assert len(findings) == 1
+    f = findings[0]
+    assert f["element_name"] == "wall_28"
+    assert f["machine_hint"]["action"] == "do_not_resize"
+    assert f["machine_hint"]["change_type"] == "resize"
+
+
+def test_rotating_shelter_wall_28_fires_structural_rule():
+    case = _fresh_case()
+    wall_28 = next(it for it in case["items"] if it.get("name") == "wall_28")
+    wall_28["rot"] = 0.1
+
+    findings = rule_structural_wall_protected(case)
+
+    assert len(findings) == 1
+    f = findings[0]
+    assert f["element_name"] == "wall_28"
+    assert f["machine_hint"]["action"] == "do_not_move"
+    assert f["machine_hint"]["change_type"] == "rotate"
+
+
+def test_small_protected_wall_float_noise_is_allowed():
+    case = _fresh_case()
+    wall_28 = next(it for it in case["items"] if it.get("name") == "wall_28")
+    wall_28["pos"][0] += 0.01
+    wall_28["geo"][0] += 0.01
+    wall_28["rot"] = 0.001
+
+    assert rule_structural_wall_protected(case) == []
+
+
+def test_moving_partition_wall_does_not_fire_structural_rule():
+    case = _fresh_case()
+    partition = next(
+        it for it in case["items"] if it.get("color") == 9211040 and it.get("name")
+    )
+    partition["pos"][0] += 1.0
+
+    assert rule_structural_wall_protected(case) == []
+
+
 def test_removing_partition_wall_does_not_fire_structural_rule():
     case = _fresh_case()
     # any partition wall (color 9211040 maps to partition)

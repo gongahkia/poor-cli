@@ -81,7 +81,7 @@ def _metadata(raw: Any, path: Path) -> dict[str, Any]:
 
 
 def _baseline_protected_walls(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Snapshot of {name, hdb_type, pos, geo} for walls that compliance must protect."""
+    """Snapshot protected wall geometry so compliance can diff later edits."""
     baseline: list[dict[str, Any]] = []
     for it in items:
         if it.get("type") != "wall":
@@ -95,6 +95,7 @@ def _baseline_protected_walls(items: list[dict[str, Any]]) -> list[dict[str, Any
             "name": name,
             "hdb_type": it["hdb_type"],
             "pos": list(it.get("pos", [])),
+            "rot": it.get("rot", 0.0),
             "geo": list(it.get("geo", [])),
         })
     return baseline

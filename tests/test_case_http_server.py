@@ -4,11 +4,14 @@ from __future__ import annotations
 import json
 import zipfile
 from pathlib import Path
+from threading import Thread
 from urllib.parse import urlparse
 
 from starlette.testclient import TestClient
 
 from haus.case.http_server import create_app
+from haus.case.ingest import load_case_from_library
+from haus.case.store import CaseStore, SQLiteCaseStore
 
 
 LIBRARY_3 = "corpus/library/3.json"
@@ -27,6 +30,7 @@ def _client(
     max_revise: int = 1,
     handoff_root: Path | None = None,
     vendor_cache_dir: str | Path | None = VENDORS_DIR,
+    api_token: str | None = None,
 ) -> TestClient:
     return TestClient(
         create_app(
@@ -34,6 +38,8 @@ def _client(
             vendor_cache_dir=vendor_cache_dir,
             handoff_root=handoff_root,
             max_revise=max_revise,
+            store=CaseStore(),
+            api_token=api_token,
         )
     )
 
@@ -205,7 +211,8 @@ def test_handoff_requires_approved_state_over_http(tmp_path: Path):
         assert res.json()["error"]["code"] == "invalid_state_transition"
 
 
-def test_handoff_cache_miss_returns_fallback_metadata(tmp_path: Path):
+def test_handoff_cache_miss_returns_fallback_metadata(tmp_path: Path, monkeypatch):
+    monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
     with _client(max_revise=3, handoff_root=tmp_path / "handoffs", vendor_cache_dir=tmp_path / "vendors") as client:
         case = _create_case(client, pinned="demo_3room_keep_walls")
         case_id = case["case_id"]
@@ -223,3 +230,71 @@ def test_handoff_cache_miss_returns_fallback_metadata(tmp_path: Path):
     assert handoff["cached"] is False
     assert handoff["source"] == "live_search_stub"
     assert handoff["fallback_reason"] == "vendor_cache_miss"
+
+
+def test_sqlite_store_persists_case_across_app_instances(tmp_path: Path):
+    db_path = tmp_path / "cases.sqlite3"
+    app = create_app(
+        proposals_dir=PROPOSALS_DIR,
+        vendor_cache_dir=VENDORS_DIR,
+        case_db_path=db_path,
+    )
+    with TestClient(app) as client:
+        case = _create_case(client, pinned="demo_3room_keep_walls")
+        case_id = case["case_id"]
+        assert case["revision"] == 1
+
+    app = create_app(
+        proposals_dir=PROPOSALS_DIR,
+        vendor_cache_dir=VENDORS_DIR,
+        case_db_path=db_path,
+    )
+    with TestClient(app) as client:
+        res = client.get(f"/case/{case_id}")
+
+    assert res.status_code == 200
+    assert res.json()["case_id"] == case_id
+
+
+def test_case_http_auth_requires_bearer_token():
+    app = create_app(
+        proposals_dir=PROPOSALS_DIR,
+        vendor_cache_dir=VENDORS_DIR,
+        store=CaseStore(),
+        api_token="secret-token",
+    )
+    with TestClient(app) as client:
+        res = client.get("/case/does-not-exist")
+        assert res.status_code == 401
+        assert res.json()["error"]["code"] == "unauthorized"
+
+        res = client.post(
+            "/case",
+            headers={"Authorization": "Bearer secret-token"},
+            json={
+                "floor_plan_ref": LIBRARY_3,
+                "brief": BRIEF,
+                "pinned_proposal_id": "demo_3room_keep_walls",
+            },
+        )
+        assert res.status_code == 201
+
+
+def test_sqlite_store_updates_are_atomic(tmp_path: Path):
+    store = SQLiteCaseStore(tmp_path / "cases.sqlite3")
+    case = load_case_from_library(LIBRARY_3, brief=BRIEF)
+    case = store.create(case)
+    case_id = case["case_id"]
+
+    def bump() -> None:
+        store.update(case_id, lambda c: {**c, "revise_count": c.get("revise_count", 0) + 1})
+
+    threads = [Thread(target=bump) for _ in range(8)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+
+    saved = store.get(case_id)
+    assert saved["revise_count"] == 8
+    assert saved["revision"] == 9

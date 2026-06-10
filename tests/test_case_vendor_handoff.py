@@ -15,6 +15,7 @@ from haus.case.vendor_handoff import (
     VendorHandoffAgent,
     step_handoff,
 )
+from haus.case import vendor_handoff
 
 
 LIBRARY_3 = "corpus/library/3.json"
@@ -83,7 +84,8 @@ def test_handoff_can_select_vendor_by_id(tmp_path: Path) -> None:
     assert case["vendor_handoff"]["vendor_name"] == "Northstar Interior Works"
 
 
-def test_cache_miss_uses_live_search_stub(tmp_path: Path) -> None:
+def test_cache_miss_uses_live_search_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
     case = _approved_case()
     agent = VendorHandoffAgent(vendor_cache_dir=tmp_path / "missing-cache", handoff_root=tmp_path)
 
@@ -92,6 +94,70 @@ def test_cache_miss_uses_live_search_stub(tmp_path: Path) -> None:
     assert case["design_status"] == "handoff_complete"
     assert case["vendor_handoff"]["cached"] is False
     assert case["vendor_handoff"]["vendor_id"] == "live_search_stub"
+    assert case["vendor_handoff"]["fallback_reason"] == "vendor_cache_miss"
+
+
+def test_cache_hit_does_not_call_tinyfish(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
+
+    def fail_search(query: str, vendor_cache_key: str, max_results: int = 5) -> list[dict]:
+        raise AssertionError("TinyFish should not run on cache hit")
+
+    monkeypatch.setattr(vendor_handoff, "_search_tinyfish_vendors", fail_search)
+    case = _approved_case()
+    agent = VendorHandoffAgent(vendor_cache_dir=VENDORS_DIR, handoff_root=tmp_path)
+
+    case = step_handoff(case, handoff_agent=agent)
+
+    assert case["vendor_handoff"]["cached"] is True
+    assert case["vendor_handoff"]["source"] == "cache"
+
+
+def test_cache_miss_uses_tinyfish_and_writes_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
+
+    def fake_search(query: str, vendor_cache_key: str, max_results: int = 5) -> list[dict]:
+        assert "Singapore HDB renovation contractor" in query
+        assert vendor_cache_key == "live_demo"
+        return [{
+            "vendor_id": "vendor-live-001",
+            "vendor_name": "Live TinyFish Renovations",
+            "specialties": ["HDB renovation", "Singapore"],
+            "service_area": "Singapore",
+            "contact": {"url": "https://example.com/live"},
+            "packet_template": "Live search vendor.",
+            "source": "tinyfish",
+        }]
+
+    monkeypatch.setattr(vendor_handoff, "_search_tinyfish_vendors", fake_search)
+    case = _approved_case()
+    agent = VendorHandoffAgent(vendor_cache_dir=tmp_path / "vendors", handoff_root=tmp_path)
+
+    case = step_handoff(case, handoff_agent=agent, vendor_cache_key="live_demo")
+
+    assert case["vendor_handoff"]["cached"] is False
+    assert case["vendor_handoff"]["source"] == "tinyfish"
+    assert case["vendor_handoff"]["fallback_reason"] is None
+    cache_path = tmp_path / "vendors" / "live_demo.json"
+    assert cache_path.exists()
+    cache = json.loads(cache_path.read_text(encoding="utf-8"))
+    assert cache["vendors"][0]["vendor_name"] == "Live TinyFish Renovations"
+
+
+def test_tinyfish_error_falls_back_to_stub(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
+
+    def fail_search(query: str, vendor_cache_key: str, max_results: int = 5) -> list[dict]:
+        raise OSError("network down")
+
+    monkeypatch.setattr(vendor_handoff, "_search_tinyfish_vendors", fail_search)
+    case = _approved_case()
+    agent = VendorHandoffAgent(vendor_cache_dir=tmp_path / "vendors", handoff_root=tmp_path)
+
+    case = step_handoff(case, handoff_agent=agent, vendor_cache_key="live_demo")
+
+    assert case["vendor_handoff"]["cached"] is False
+    assert case["vendor_handoff"]["source"] == "live_search_stub"
     assert case["vendor_handoff"]["fallback_reason"] == "vendor_cache_miss"
 
 

@@ -349,6 +349,17 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Directory where generated handoff packets are written",
     )
     case_server.add_argument(
+        "--case-db-path",
+        type=Path,
+        default=None,
+        help="SQLite DB path for persisted Case payloads",
+    )
+    case_server.add_argument(
+        "--api-token",
+        default=None,
+        help="Require Authorization: Bearer <token> on Case HTTP routes",
+    )
+    case_server.add_argument(
         "--max-revise-attempts",
         type=int,
         default=None,
@@ -495,6 +506,8 @@ def main(argv: list[str] | None = None) -> int:
                 design_provider=args.design_provider,
                 design_model=args.design_model,
                 cache_live_proposals=args.cache_live_proposals,
+                case_db_path=args.case_db_path,
+                api_token=args.api_token,
             )
             return 0
         if args.command == "case":

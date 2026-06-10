@@ -6,19 +6,19 @@ these endpoints, while the viewer/chat server remains a local editing surface.
 """
 from __future__ import annotations
 
-import copy
 import json
 import os
 from pathlib import Path
-from threading import Lock
 from typing import Any
 
 import uvicorn
 from starlette.applications import Starlette
 from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.routing import Route
+from starlette.types import ASGIApp
 
 from .design_agent import DesignAgent, PinnedProposalNotFound
 from .ingest import load_case_from_library, touch
@@ -30,6 +30,7 @@ from .revise_loop import (
     step_design,
     step_revise,
 )
+from .store import CaseNotFound, CaseStoreProtocol, SQLiteCaseStore
 from .vendor_handoff import VendorCacheError, VendorHandoffAgent, step_handoff
 
 
@@ -37,42 +38,9 @@ ERROR_STATUS = {
     "validation_failed": 400,
     "case_not_found": 404,
     "invalid_state_transition": 409,
+    "unauthorized": 401,
     "internal_error": 500,
 }
-
-
-class CaseNotFound(Exception):
-    """Raised when a request references an unknown case_id."""
-
-
-class CaseStore:
-    """Process-local Case storage for the Stage-1 demo service.
-
-    SPEC-HTTP-CASE.md section 7 leaves persistence to the implementer and
-    declares Stage 1 single-writer. A locked in-memory store is enough for
-    the standalone demo and keeps the later Maestro wrapper simple.
-    """
-
-    def __init__(self) -> None:
-        self._cases: dict[str, dict[str, Any]] = {}
-        self._lock = Lock()
-
-    def create(self, case: dict[str, Any]) -> dict[str, Any]:
-        with self._lock:
-            self._cases[str(case["case_id"])] = case
-            return case
-
-    def get(self, case_id: str) -> dict[str, Any]:
-        with self._lock:
-            try:
-                return self._cases[case_id]
-            except KeyError as exc:
-                raise CaseNotFound(case_id) from exc
-
-    def replace(self, case: dict[str, Any]) -> dict[str, Any]:
-        with self._lock:
-            self._cases[str(case["case_id"])] = case
-            return case
 
 
 def _error(
@@ -88,6 +56,19 @@ def _error(
     return JSONResponse(payload, status_code or ERROR_STATUS.get(code, 500))
 
 
+class BearerAuthMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app: ASGIApp, *, token: str) -> None:
+        super().__init__(app)
+        self.token = token
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
+        if request.method == "OPTIONS" or not request.url.path.startswith("/case"):
+            return await call_next(request)
+        if request.headers.get("authorization") != f"Bearer {self.token}":
+            return _error("unauthorized", "Missing or invalid Bearer token.")
+        return await call_next(request)
+
+
 async def _read_json_body(request: Request, *, default: dict[str, Any] | None = None) -> dict[str, Any]:
     raw = await request.body()
     if not raw:
@@ -101,7 +82,7 @@ async def _read_json_body(request: Request, *, default: dict[str, Any] | None = 
     return body
 
 
-def _get_store(request: Request) -> CaseStore:
+def _get_store(request: Request) -> CaseStoreProtocol:
     return request.app.state.case_store
 
 
@@ -118,7 +99,7 @@ def _get_handoff_agent(request: Request) -> VendorHandoffAgent:
 
 
 def _response(case: dict[str, Any], status_code: int = 200) -> JSONResponse:
-    return JSONResponse(copy.deepcopy(case), status_code=status_code)
+    return JSONResponse(case, status_code=status_code)
 
 
 def _case_id(request: Request) -> str:
@@ -168,7 +149,7 @@ async def _create_case(request: Request) -> JSONResponse:
 
     case["design_status"] = "designing"
     touch(case)
-    _get_store(request).create(case)
+    case = _get_store(request).create(case)
     return _response(case, status_code=201)
 
 
@@ -183,55 +164,55 @@ async def _read_case(request: Request) -> JSONResponse:
 async def _design_case(request: Request) -> JSONResponse:
     try:
         body = await _read_json_body(request, default={})
-        case = _get_store(request).get(_case_id(request))
     except ValueError as exc:
         return _error("validation_failed", str(exc))
-    except CaseNotFound:
-        return _error("case_not_found", f"Case not found: {_case_id(request)}")
 
     style_override = body.get("style_override")
     if style_override is not None:
         if not isinstance(style_override, str):
             return _error("validation_failed", "style_override must be a string.")
-        case.setdefault("brief", {})["style_prompt"] = style_override
 
     try:
-        case = step_design(case, _get_agent(request))
+        def mutate(case: dict[str, Any]) -> dict[str, Any]:
+            if style_override is not None:
+                case.setdefault("brief", {})["style_prompt"] = style_override
+            return step_design(case, _get_agent(request))
+
+        case = _get_store(request).update(_case_id(request), mutate)
+    except CaseNotFound:
+        return _error("case_not_found", f"Case not found: {_case_id(request)}")
     except InvalidStateTransition as exc:
         return _error("invalid_state_transition", str(exc))
     except PinnedProposalNotFound as exc:
         return _error("internal_error", "Pinned proposal could not be loaded.", hint=str(exc))
 
-    _get_store(request).replace(case)
     return _response(case)
 
 
 async def _compliance_case(request: Request) -> JSONResponse:
     try:
         await _read_json_body(request, default={})
-        case = _get_store(request).get(_case_id(request))
     except ValueError as exc:
         return _error("validation_failed", str(exc))
-    except CaseNotFound:
-        return _error("case_not_found", f"Case not found: {_case_id(request)}")
 
     try:
-        case = step_compliance(case, max_revise=_get_max_revise(request))
+        case = _get_store(request).update(
+            _case_id(request),
+            lambda case: step_compliance(case, max_revise=_get_max_revise(request)),
+        )
+    except CaseNotFound:
+        return _error("case_not_found", f"Case not found: {_case_id(request)}")
     except InvalidStateTransition as exc:
         return _error("invalid_state_transition", str(exc))
 
-    _get_store(request).replace(case)
     return _response(case)
 
 
 async def _revise_case(request: Request) -> JSONResponse:
     try:
         body = await _read_json_body(request)
-        case = _get_store(request).get(_case_id(request))
     except ValueError as exc:
         return _error("validation_failed", str(exc))
-    except CaseNotFound:
-        return _error("case_not_found", f"Case not found: {_case_id(request)}")
 
     findings = body.get("findings")
     if not isinstance(findings, list) or not all(isinstance(f, dict) for f in findings):
@@ -241,29 +222,30 @@ async def _revise_case(request: Request) -> JSONResponse:
         return _error("validation_failed", "increment_count must be a boolean when provided.")
 
     try:
-        case = step_revise(
-            case,
-            findings=findings,
-            design_agent=_get_agent(request),
-            increment_count=increment_count,
+        case = _get_store(request).update(
+            _case_id(request),
+            lambda case: step_revise(
+                case,
+                findings=findings,
+                design_agent=_get_agent(request),
+                increment_count=increment_count,
+            ),
         )
+    except CaseNotFound:
+        return _error("case_not_found", f"Case not found: {_case_id(request)}")
     except InvalidStateTransition as exc:
         return _error("invalid_state_transition", str(exc))
     except PinnedProposalNotFound as exc:
         return _error("internal_error", "Pinned proposal could not be loaded.", hint=str(exc))
 
-    _get_store(request).replace(case)
     return _response(case)
 
 
 async def _approval_case(request: Request) -> JSONResponse:
     try:
         body = await _read_json_body(request)
-        case = _get_store(request).get(_case_id(request))
     except ValueError as exc:
         return _error("validation_failed", str(exc))
-    except CaseNotFound:
-        return _error("case_not_found", f"Case not found: {_case_id(request)}")
 
     decision = body.get("decision")
     reviewer = body.get("reviewer")
@@ -276,22 +258,23 @@ async def _approval_case(request: Request) -> JSONResponse:
         return _error("validation_failed", "notes must be a string or null.")
 
     try:
-        case = patch_approval(case, decision=decision, reviewer=reviewer, notes=notes)
+        case = _get_store(request).update(
+            _case_id(request),
+            lambda case: patch_approval(case, decision=decision, reviewer=reviewer, notes=notes),
+        )
+    except CaseNotFound:
+        return _error("case_not_found", f"Case not found: {_case_id(request)}")
     except InvalidStateTransition as exc:
         return _error("invalid_state_transition", str(exc))
 
-    _get_store(request).replace(case)
     return _response(case)
 
 
 async def _handoff_case(request: Request) -> JSONResponse:
     try:
         body = await _read_json_body(request, default={})
-        case = _get_store(request).get(_case_id(request))
     except ValueError as exc:
         return _error("validation_failed", str(exc))
-    except CaseNotFound:
-        return _error("case_not_found", f"Case not found: {_case_id(request)}")
 
     vendor_cache_key = body.get("vendor_cache_key")
     if vendor_cache_key is not None and not isinstance(vendor_cache_key, str):
@@ -301,18 +284,22 @@ async def _handoff_case(request: Request) -> JSONResponse:
         return _error("validation_failed", "vendor_id must be a string or null.")
 
     try:
-        case = step_handoff(
-            case,
-            handoff_agent=_get_handoff_agent(request),
-            vendor_cache_key=vendor_cache_key,
-            vendor_id=vendor_id,
+        case = _get_store(request).update(
+            _case_id(request),
+            lambda case: step_handoff(
+                case,
+                handoff_agent=_get_handoff_agent(request),
+                vendor_cache_key=vendor_cache_key,
+                vendor_id=vendor_id,
+            ),
         )
+    except CaseNotFound:
+        return _error("case_not_found", f"Case not found: {_case_id(request)}")
     except InvalidStateTransition as exc:
         return _error("invalid_state_transition", str(exc))
     except VendorCacheError as exc:
         return _error("internal_error", "Vendor cache could not be used.", hint=str(exc))
 
-    _get_store(request).replace(case)
     return _response(case)
 
 
@@ -353,6 +340,13 @@ def _default_handoff_root() -> Path:
     return Path.home() / ".haus" / "handoffs"
 
 
+def _default_case_db_path() -> Path:
+    configured = os.environ.get("HAUS_CASE_DB_PATH")
+    if configured:
+        return Path(configured)
+    return Path.home() / ".haus" / "cases" / "cases.sqlite3"
+
+
 def create_app(
     *,
     proposals_dir: str | Path | None = None,
@@ -363,7 +357,9 @@ def create_app(
     design_provider: str | None = None,
     design_model: str | None = None,
     cache_live_proposals: bool | None = None,
-    store: CaseStore | None = None,
+    store: CaseStoreProtocol | None = None,
+    case_db_path: str | Path | None = None,
+    api_token: str | None = None,
 ) -> Starlette:
     app = Starlette(
         routes=[
@@ -382,12 +378,16 @@ def create_app(
         allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
         allow_headers=["*"],
     )
+    resolved_api_token = api_token if api_token is not None else os.environ.get("HAUS_CASE_API_TOKEN")
+    if resolved_api_token:
+        app.add_middleware(BearerAuthMiddleware, token=resolved_api_token)
     resolved_proposals = Path(proposals_dir) if proposals_dir is not None else _default_proposals_dir()
     resolved_vendor_cache = (
         Path(vendor_cache_dir) if vendor_cache_dir is not None else _default_vendor_cache_dir()
     )
     resolved_handoff_root = Path(handoff_root) if handoff_root is not None else _default_handoff_root()
-    app.state.case_store = store or CaseStore()
+    resolved_case_db_path = Path(case_db_path) if case_db_path is not None else _default_case_db_path()
+    app.state.case_store = store or SQLiteCaseStore(resolved_case_db_path)
     app.state.design_agent = DesignAgent(
         proposals_dir=resolved_proposals,
         mode=design_mode,
@@ -418,6 +418,8 @@ def run_server(
     design_provider: str | None = None,
     design_model: str | None = None,
     cache_live_proposals: bool | None = None,
+    case_db_path: str | Path | None = None,
+    api_token: str | None = None,
 ) -> None:
     if proposals_dir is not None:
         os.environ["HAUS_CASE_PROPOSALS_DIR"] = str(proposals_dir)
@@ -435,6 +437,10 @@ def run_server(
         os.environ["HAUS_CASE_LLM_MODEL"] = design_model
     if cache_live_proposals is not None:
         os.environ["HAUS_CASE_CACHE_LIVE_PROPOSALS"] = "1" if cache_live_proposals else "0"
+    if case_db_path is not None:
+        os.environ["HAUS_CASE_DB_PATH"] = str(case_db_path)
+    if api_token is not None:
+        os.environ["HAUS_CASE_API_TOKEN"] = api_token
     uvicorn.run(
         "haus.case.http_server:_reload_app",
         factory=True,

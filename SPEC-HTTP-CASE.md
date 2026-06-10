@@ -15,7 +15,7 @@
 - The demo fixture pin (one image, one layout, one target wall, one fallback failure).
 - Reserved keys for demo-determinism subsystems (LLM replay, vendor cache) — *contracts only*, not designs.
 
-**Out of scope (deferred; see §7 for the full list):** code · Maestro Case / BPMN mapping · Action Center wire format · real vendor integration · auth · multi-tenancy · concurrency / ETags · additional compliance rules.
+**Out of scope (deferred; see §7 for the full list):** code · Maestro Case / BPMN mapping · Action Center wire format · multi-tenancy · rate limiting · external DB/identity integration · additional compliance rules.
 
 **Operating principle:** the Stage-1 HTTP service must work end-to-end *without any UiPath component*. Stage 2 will wrap it as a thin orchestration layer. If a Stage-1 detail forces a Stage-2 dependency, it is wrong.
 
@@ -324,8 +324,8 @@ There is intentionally **no `/approve` endpoint** in Stage 1. Approval is a huma
 ### 4.3 Universal contract rules
 
 1. **Every mutating endpoint returns the full updated Case payload** — not a delta, not just an ack. This lets Stage 2 Maestro wire each stage as one "call → store full payload" step without a follow-up GET. It also saves the demo from a "now refresh the viewer" beat.
-2. **Errors use a uniform envelope:** `{error: {code: string, message: string, hint?: string}}`. Defined codes: `case_not_found`, `invalid_state_transition`, `validation_failed`, `internal_error`. New codes require an amendment to this spec.
-3. **Stage 1 is single-writer per Case.** No ETags / If-Match / optimistic concurrency. The HTTP service is expected to run one Case at a time during the demo. Concurrency is a Stage-2+ concern.
+2. **Errors use a uniform envelope:** `{error: {code: string, message: string, hint?: string}}`. Defined codes: `case_not_found`, `invalid_state_transition`, `validation_failed`, `unauthorized`, `internal_error`. New codes require an amendment to this spec.
+3. **Stage 1 persists Cases locally and mutates atomically per Case.** SQLite is the default local backend. There are still no ETags / If-Match / external optimistic-concurrency controls; callers should treat each mutating response as the new source of truth.
 4. **`updated_at` is bumped by every mutating call** before the response is returned.
 5. **Unknown fields in request bodies are ignored** (additive forward-compat). Unknown fields in the persisted Case payload are preserved across read/write cycles (matches existing normalizer behaviour at `src/haus/mcp_server.py:190`).
 
@@ -351,7 +351,7 @@ Deliberately small. The rules below are the entire enforcement surface for Stage
 
 **Finding fields:** `element_name` set to the targeted wall's `name`. `coords` populated. `machine_hint`:
 ```json
-{"action": "do_not_remove", "constraint": "structural_wall", "hdb_type": "<structural|shelter>", "alternative": "reshape using partition walls (hdb_type=partition) instead"}
+{"action": "do_not_remove|do_not_move|do_not_resize", "constraint": "structural_wall", "hdb_type": "<structural|shelter>", "change_type": "remove|move|rotate|resize", "alternative": "reshape using partition walls (hdb_type=partition) instead"}
 ```
 
 **Source of the money-shot demo failure** (see §1).
@@ -381,12 +381,12 @@ The output of `POST /case/{id}/compliance` (specifically the `compliance_finding
 
 ## 6. Determinism for the demo
 
-The two reserved keys in §2.8 are the contract surface; the subsystems are deferred.
+The two reserved keys in §2.8 are the contract surface.
 
 - **`pinned_proposal_id`** — when set on a Case, `POST /case/{id}/design` MUST return a previously recorded `items[]` verbatim rather than calling an LLM. The recording mechanism (keying, storage, invalidation) is the subject of `TODO-9JUNE-START.md` §6 task F. This spec only reserves the key and the determinism contract: *"if non-null, `/design` MUST be deterministic for this Case."*
-- **`vendor_cache_key`** — when set, the eventual handoff stage populates `vendor_handoff` from the local vendor cache rather than live search. Subsystem deferred to `TODO-9JUNE-START.md` §6 task E.
+- **`vendor_cache_key`** — when set, the handoff stage reads the local vendor cache first. On cache miss, TinyFish live search may populate the cache when `TINYFISH_API_KEY` is set; otherwise the deterministic stub fallback is used.
 
-Neither subsystem is designed in this document. Implementations of the HTTP service must accept, persist, and round-trip both keys even before the subsystems exist.
+Implementations of the HTTP service must accept, persist, and round-trip both keys.
 
 ---
 
@@ -397,9 +397,9 @@ Out of scope, explicitly:
 - **Code.** No Python, no JSON Schema definitions in JSON Schema format, no OpenAPI document. Those are implementation outputs.
 - **Maestro Case mapping.** Which stages exist, how transitions fire, retry policies at the Maestro layer — all Stage 2. A future `SPEC-MAESTRO-WIRING.md` will reference this doc.
 - **Action Center wire format.** The schema of the approval task, the renderer for findings/before-after, the routing rules — all Stage 2.
-- **Real vendor agent.** TinyFish / Serper integration, ranking, contract generation — all deferred. Stage 1 ships with `vendor_handoff: null` or a cached stub.
-- **Auth, multi-tenancy, rate-limiting.** Stage 1 is a single-tenant local service.
-- **Persistence design beyond "one `case_id` resolves to one payload".** Whether Cases live in one flat JSON file, separate files, SQLite, etc., is the implementer's call. Round-trippability of the schema (§4.3 rule 5) is the only constraint.
+- **Full vendor agent.** TinyFish live search exists; richer ranking, contact extraction, Serper, and contract generation are deferred.
+- **Auth beyond a local Bearer token, multi-tenancy, rate-limiting.** Stage 1 is still a single-tenant local service.
+- **Persistence beyond local SQLite.** External DBs, cloud persistence, and distributed locking are deferred.
 - **Additional compliance rules** beyond the two in §5.
 - **Migration story** for older `corpus/library/*.json` files — handled inline by the ingest enrichment in §3.
 
@@ -413,7 +413,7 @@ The spec is **done** when all six check:
 2. [ ] The `design_status` enum (§2.3), the `compliance_findings[]` shape (§2.4), and the endpoint state-transition table (§4.1 + §4.2 post-states) together uniquely determine the post-state of every mutating call.
 3. [ ] The `hdb_type` gap is called out as a prerequisite (§3), references `src/haus/extraction.py:386, 396` and `src/haus/types.py:32`, names `src/haus/mesh.py` / `src/haus/pipeline.py` as the fix location, and prescribes no implementation.
 4. [ ] The demo fixture pin (§1) appears verbatim — image, layout, target walls, fallback failure — and is referenced as the single source of truth.
-5. [ ] §7 explicitly excludes code, Maestro mapping, Action Center, real vendor, auth, and additional rules.
+5. [ ] §7 explicitly excludes code, Maestro mapping, Action Center, full vendor automation, external identity/storage, and additional rules.
 6. [ ] `pinned_proposal_id` and `vendor_cache_key` are reserved keys (§2.8, §6) with one-paragraph contracts, subsystems undesigned.
 
 ---

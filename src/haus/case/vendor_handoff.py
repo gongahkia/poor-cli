@@ -7,17 +7,25 @@ stub that can be replaced by TinyFish/Serper later.
 """
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import re
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from .ingest import touch
 from .revise_loop import InvalidStateTransition
 
 
 DEFAULT_VENDOR_CACHE_KEY = "demo_hdb_renovation"
+_TINYFISH_SEARCH_URL = "https://api.search.tinyfish.ai"
+_DEFAULT_TIMEOUT_SECONDS = 8
 
 
 class VendorCacheError(Exception):
@@ -79,7 +87,7 @@ class VendorHandoffAgent:
             "cached": cached,
             "vendor_cache_key": str(key),
             "source": vendor.get("source", "cache" if cached else "live_search_fallback"),
-            "fallback_reason": None if cached else vendor.get("fallback_reason", "vendor_cache_miss"),
+            "fallback_reason": vendor.get("fallback_reason"),
             "contact": vendor.get("contact", {}),
             "specialties": vendor.get("specialties", []),
         }
@@ -107,6 +115,18 @@ class VendorHandoffAgent:
                     f"Vendor cache {vendor_cache_key!r} has no vendor matching {vendor_id!r}."
                 )
             return self._normalise_vendor(candidates[0]), True
+
+        live_vendors = self._live_search(vendor_cache_key, case)
+        if live_vendors:
+            self._write_cache(vendor_cache_key, live_vendors)
+            candidates = live_vendors
+            if vendor_id:
+                candidates = [v for v in candidates if v.get("vendor_id") == vendor_id]
+            if not candidates:
+                raise VendorCacheError(
+                    f"Live vendor search for {vendor_cache_key!r} has no vendor matching {vendor_id!r}."
+                )
+            return self._normalise_vendor(candidates[0]), False
 
         return self._live_search_stub(vendor_cache_key, case), False
 
@@ -143,6 +163,27 @@ class VendorHandoffAgent:
                 else "Coordinate the approved HDB renovation handoff package."
             ),
         }
+
+    def _write_cache(self, vendor_cache_key: str, vendors: list[dict[str, Any]]) -> None:
+        if self.vendor_cache_dir is None:
+            return
+        self.vendor_cache_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "cache_key": vendor_cache_key,
+            "description": "Live TinyFish vendor search cached by Haus handoff agent.",
+            "retrieved_at": _utcnow_iso(),
+            "vendors": vendors,
+        }
+        path = self.vendor_cache_dir / f"{vendor_cache_key}.json"
+        path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+
+    def _live_search(self, vendor_cache_key: str, case: dict[str, Any]) -> list[dict[str, Any]]:
+        if not os.environ.get("TINYFISH_API_KEY"):
+            return []
+        try:
+            return _search_tinyfish_vendors(_vendor_query(case), vendor_cache_key)
+        except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
+            return []
 
     def _live_search_stub(self, vendor_cache_key: str, case: dict[str, Any]) -> dict[str, Any]:
         flat_type = str(case.get("brief", {}).get("flat_type") or "HDB flat")
@@ -237,3 +278,114 @@ def step_handoff(
         vendor_cache_key=vendor_cache_key,
         vendor_id=vendor_id,
     )
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _collapse(text: Any) -> str:
+    return re.sub(r"\s+", " ", str(text or "")).strip()
+
+
+def _slug(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug[:80] or "vendor"
+
+
+def _vendor_id(name: str, url: str) -> str:
+    digest = hashlib.sha1(f"{name}|{url}".encode("utf-8")).hexdigest()[:10]  # noqa: S324
+    return f"vendor-{_slug(name)}-{digest}"
+
+
+def _tinyfish_json(url: str) -> Any:
+    api_key = os.environ.get("TINYFISH_API_KEY")
+    if not api_key:
+        raise ValueError("TINYFISH_API_KEY is not set.")
+    req = Request(url, headers={"X-API-Key": api_key})
+    with urlopen(req, timeout=_DEFAULT_TIMEOUT_SECONDS) as res:  # noqa: S310
+        return json.loads(res.read().decode("utf-8"))
+
+
+def _result_list(data: Any) -> list[Any]:
+    if isinstance(data, list):
+        return data
+    if not isinstance(data, dict):
+        return []
+    for key in ("results", "data", "items", "organic"):
+        value = data.get(key)
+        if isinstance(value, list):
+            return value
+    return []
+
+
+def _vendor_query(case: dict[str, Any]) -> str:
+    brief = case.get("brief", {})
+    flat_type = _collapse(brief.get("flat_type") or "HDB flat")
+    style = _collapse(brief.get("style_prompt") or "renovation")
+    rule_ids = sorted({
+        str(f.get("rule_id"))
+        for f in case.get("compliance_findings", [])
+        if isinstance(f, dict) and f.get("rule_id")
+    })
+    compliance = " ".join(rule_ids) if rule_ids else "HDB compliance"
+    return f"Singapore HDB renovation contractor {flat_type} {style} {compliance}"
+
+
+def _search_tinyfish_vendors(query: str, vendor_cache_key: str, max_results: int = 5) -> list[dict[str, Any]]:
+    search_query = f"{query} renovation contractor interior design Singapore contact"
+    data = _tinyfish_json(f"{_TINYFISH_SEARCH_URL}?{urlencode({'query': search_query, 'limit': max_results})}")
+    vendors: list[dict[str, Any]] = []
+    for result in _result_list(data)[:max_results]:
+        if not isinstance(result, dict):
+            continue
+        title = _collapse(result.get("title") or result.get("name"))
+        url = _collapse(result.get("url") or result.get("link"))
+        snippet = _collapse(result.get("snippet") or result.get("description") or result.get("text"))
+        if not title or not url:
+            continue
+        vendors.append(_normalise_tinyfish_vendor(
+            title=title,
+            url=url,
+            snippet=snippet,
+            vendor_cache_key=vendor_cache_key,
+            raw=result,
+        ))
+    return vendors
+
+
+def _normalise_tinyfish_vendor(
+    *,
+    title: str,
+    url: str,
+    snippet: str,
+    vendor_cache_key: str,
+    raw: dict[str, Any],
+) -> dict[str, Any]:
+    name = re.sub(r"\s*[-|]\s*(.+)$", "", title).strip() or title
+    text = f"{name} {snippet}".lower()
+    specialties = ["HDB renovation", "Singapore"]
+    for label, needles in {
+        "interior design": ("interior", "design"),
+        "carpentry": ("carpentry", "carpenter"),
+        "electrical": ("electrical", "electrician"),
+        "plumbing": ("plumbing", "plumber"),
+        "compliance handoff": ("hdb", "permit", "compliance"),
+    }.items():
+        if any(needle in text for needle in needles):
+            specialties.append(label)
+    return {
+        "vendor_id": _vendor_id(name, url),
+        "vendor_name": name,
+        "specialties": sorted(set(specialties)),
+        "service_area": "Singapore",
+        "contact": {"url": url},
+        "packet_template": (
+            "Coordinate the approved HDB renovation design package, compliance findings, "
+            "and coordinator approval before contractor follow-up."
+        ),
+        "source": "tinyfish",
+        "source_provider": "tinyfish",
+        "vendor_cache_key": vendor_cache_key,
+        "raw": raw,
+    }

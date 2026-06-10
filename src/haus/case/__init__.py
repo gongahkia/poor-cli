@@ -26,6 +26,7 @@ from .revise_loop import (
     step_revise,
     patch_approval,
 )
+from .store import CaseNotFound, CaseStore, SQLiteCaseStore
 from .vendor_handoff import (
     DEFAULT_VENDOR_CACHE_KEY,
     VendorCacheError,
@@ -49,6 +50,9 @@ __all__ = [
     "step_compliance",
     "step_revise",
     "patch_approval",
+    "CaseNotFound",
+    "CaseStore",
+    "SQLiteCaseStore",
     "DEFAULT_VENDOR_CACHE_KEY",
     "VendorCacheError",
     "VendorHandoffAgent",
