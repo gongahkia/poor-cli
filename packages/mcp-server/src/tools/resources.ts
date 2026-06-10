@@ -25,6 +25,9 @@ import {
 } from "./catalog-surface.js";
 import type { RegisteredToolDefinition } from "./tool-definition.js";
 import { MAP_UI_RESOURCE_URI } from "./map-payload.js";
+import { getShieldApprovalStore } from "../shield/approval-store.js";
+import { getShieldAuditStore } from "../shield/audit-store.js";
+import { buildSplunkRedTeamMatrix } from "../shield/splunk-policy-simulator.js";
 
 const JSON_MIME_TYPE = "application/json";
 
@@ -184,6 +187,28 @@ const buildRecipeResources = () => {
   );
 };
 
+const buildShieldAuditResources = () => {
+  return getShieldAuditStore().query({ limit: 25 }).map((entry) => ({
+    uri: `${RESOURCE_URIS.shieldAudits}/${entry.auditId}`,
+    name: `swee-shield-audit-${entry.auditId}`,
+    title: `Shield Audit ${entry.auditId}`,
+    description: `${entry.toolName} ${entry.status} ${entry.decision.decision}/${entry.decision.riskLevel}`,
+    mimeType: JSON_MIME_TYPE,
+    annotations: DEFAULT_RESOURCE_ANNOTATIONS,
+  }));
+};
+
+const buildShieldApprovalResources = () => {
+  return getShieldApprovalStore().list({ limit: 25 }).map((entry) => ({
+    uri: `${RESOURCE_URIS.shieldApprovals}/${entry.approvalId}`,
+    name: `swee-shield-approval-${entry.approvalId}`,
+    title: `Shield Approval ${entry.approvalId}`,
+    description: `${entry.toolName} ${entry.status} request ${entry.requestHash.slice(0, 12)}`,
+    mimeType: JSON_MIME_TYPE,
+    annotations: DEFAULT_RESOURCE_ANNOTATIONS,
+  }));
+};
+
 const readSingleCatalogEntry = <T extends { readonly id: string }>(
   entry: T | undefined,
   uri: string,
@@ -195,6 +220,12 @@ const getVariable = (variables: Variables, key: string): string => {
   const value = variables[key];
   return typeof value === "string" ? value : "";
 };
+
+const completeRecentAuditIds = (value: string): string[] =>
+  getShieldAuditStore().query({ limit: 100 }).map((entry) => entry.auditId).filter((candidate) => candidate.startsWith(value));
+
+const completeRecentApprovalIds = (value: string): string[] =>
+  getShieldApprovalStore().list({ limit: 100 }).map((entry) => entry.approvalId).filter((candidate) => candidate.startsWith(value));
 
 const MAP_PREVIEW_HTML = `<!doctype html>
 <html lang="en">
@@ -428,6 +459,16 @@ export const registerResources = (
     annotations: DEFAULT_RESOURCE_ANNOTATIONS,
   }, async () => toJsonContents(RESOURCE_URIS.opsTaxonomy, OPS_TAXONOMY_CATALOG));
 
+  server.registerResource("swee-shield-redteam-corpus", RESOURCE_URIS.shieldRedteamCorpus, {
+    title: "Shield Red-Team Corpus",
+    description: "Local Splunk policy simulator corpus for destructive SPL, prompt injection, fake secrets, oversized outputs, and bad indexes.",
+    mimeType: JSON_MIME_TYPE,
+    annotations: DEFAULT_RESOURCE_ANNOTATIONS,
+  }, async () => toJsonContents(RESOURCE_URIS.shieldRedteamCorpus, {
+    schemaVersion: "swee-shield-redteam/v1",
+    matrix: buildSplunkRedTeamMatrix(),
+  }));
+
   registerAppResource(server, "Singapore Map Preview UI", MAP_UI_RESOURCE_URI, {
     title: "Singapore Map Preview UI",
     description: "Read-only map preview template for geospatial sg_* tool outputs.",
@@ -502,6 +543,42 @@ export const registerResources = (
   }, async (_uri: URL, variables: Variables) => {
     const id = getVariable(variables, "id");
     return readSingleCatalogEntry(getRecipeCatalogEntry(id), `${RESOURCE_URIS.recipes}/${id}`);
+  });
+
+  server.registerResource("swee-shield-audit-evidence", new ResourceTemplate(`${RESOURCE_URIS.shieldAudits}/{auditId}`, {
+    list: async () => ({ resources: buildShieldAuditResources() }),
+    complete: {
+      auditId: completeRecentAuditIds,
+    },
+  }), {
+    title: "Shield Audit Evidence",
+    description: "Sanitized audit record and replay metadata for a governed tool invocation.",
+    mimeType: JSON_MIME_TYPE,
+    annotations: DEFAULT_RESOURCE_ANNOTATIONS,
+  }, async (_uri: URL, variables: Variables) => {
+    const auditId = getVariable(variables, "auditId");
+    const store = getShieldAuditStore();
+    return toJsonContents(`${RESOURCE_URIS.shieldAudits}/${auditId}`, {
+      record: store.get(auditId),
+      replay: store.getReplay(auditId),
+    });
+  });
+
+  server.registerResource("swee-shield-approval-evidence", new ResourceTemplate(`${RESOURCE_URIS.shieldApprovals}/{approvalId}`, {
+    list: async () => ({ resources: buildShieldApprovalResources() }),
+    complete: {
+      approvalId: completeRecentApprovalIds,
+    },
+  }), {
+    title: "Shield Approval Evidence",
+    description: "Human approval queue record for a risky Splunk proxy action.",
+    mimeType: JSON_MIME_TYPE,
+    annotations: DEFAULT_RESOURCE_ANNOTATIONS,
+  }, async (_uri: URL, variables: Variables) => {
+    const approvalId = getVariable(variables, "approvalId");
+    return toJsonContents(`${RESOURCE_URIS.shieldApprovals}/${approvalId}`, {
+      record: getShieldApprovalStore().get(approvalId),
+    });
   });
 
   server.registerResource("sg-artifact", new ResourceTemplate(`${RESOURCE_URIS.artifacts}/{kind}/{id}`, {

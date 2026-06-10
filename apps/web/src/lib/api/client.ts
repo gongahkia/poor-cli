@@ -87,7 +87,7 @@ export type DebugLogsResponse = {
 };
 
 const getGatewayBaseUrl = () => {
-  const configuredUrl = import.meta.env.VITE_REST_GATEWAY_URL?.trim();
+  const configuredUrl = import.meta.env.VITE_REST_GATEWAY_URL?.trim() || import.meta.env.VITE_API_BASE_URL?.trim();
   return (configuredUrl || DEFAULT_REST_GATEWAY_URL).replace(/\/+$/, "");
 };
 

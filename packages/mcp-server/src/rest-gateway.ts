@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { randomUUID } from "node:crypto";
-import { createLogger } from "@swee-sg/shared";
+import { ApiError, createLogger } from "@swee-sg/shared";
 import { getGatewayMetricsSnapshot, recordGatewayRequest } from "./gateway/metrics.js";
 import { getGatewayHealthPayload } from "./gateway/readiness.js";
 import {
@@ -11,6 +11,7 @@ import {
   getTrafficPolicy,
 } from "./gateway/traffic-control.js";
 import { getShieldAuditStore } from "./shield/audit-store.js";
+import { getShieldApprovalStore, type ShieldApprovalStatus } from "./shield/approval-store.js";
 import { invokeShieldedTool } from "./shield/enforcement.js";
 import { scanToolCatalogForPoisoning } from "./shield/scanner.js";
 import { ALL_TOOL_DEFINITIONS } from "./tools/tool-set.js";
@@ -116,6 +117,11 @@ const pulseInputFromUrl = (url: URL): Record<string, string> => {
   return input;
 };
 
+const parseApprovalStatus = (value: string | null): ShieldApprovalStatus | undefined => {
+  if (value === "pending" || value === "approved" || value === "rejected" || value === "expired") return value;
+  return undefined;
+};
+
 const invokeTool = async (params: {
   readonly toolName: string;
   readonly input: unknown;
@@ -215,6 +221,52 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (method === "GET" && route.startsWith("/api/v1/shield/audits/")) {
+      const auditId = decodeURIComponent(route.slice("/api/v1/shield/audits/".length));
+      const store = getShieldAuditStore();
+      const record = store.get(auditId);
+      sendJson(res, record === null ? 404 : 200, record === null ? { error: "audit not found" } : {
+        record,
+        replay: store.getReplay(auditId),
+      });
+      return;
+    }
+
+    if (method === "GET" && route === "/api/v1/shield/approvals") {
+      const statusFilter = parseApprovalStatus(url.searchParams.get("status"));
+      const toolFilter = url.searchParams.get("toolName") ?? undefined;
+      sendJson(res, 200, {
+        records: getShieldApprovalStore().list({
+          ...(statusFilter === undefined ? {} : { status: statusFilter }),
+          ...(toolFilter === undefined ? {} : { toolName: toolFilter }),
+          limit: Number(url.searchParams.get("limit") ?? 25),
+        }),
+      });
+      return;
+    }
+
+    if (method === "POST" && route.startsWith("/api/v1/shield/approvals/") && route.endsWith("/decide")) {
+      const approvalId = decodeURIComponent(route.slice("/api/v1/shield/approvals/".length, -"/decide".length));
+      const body = await parseJsonBody(req, trafficPolicy.maxBodyBytes);
+      const payload = body !== null && typeof body === "object" ? body as Record<string, unknown> : {};
+      const decision = payload["decision"];
+      if (decision !== "approved" && decision !== "rejected") {
+        sendJson(res, 400, { error: { code: "INVALID_APPROVAL_DECISION", message: "decision must be approved or rejected." } });
+        return;
+      }
+      const reviewer = typeof payload["reviewer"] === "string" ? payload["reviewer"] : undefined;
+      const comment = typeof payload["comment"] === "string" ? payload["comment"] : undefined;
+      sendJson(res, 200, {
+        record: getShieldApprovalStore().decide({
+          approvalId,
+          decision,
+          ...(reviewer === undefined ? {} : { reviewer }),
+          ...(comment === undefined ? {} : { comment }),
+        }),
+      });
+      return;
+    }
+
     if (method === "GET" && route.startsWith("/api/v1/shield/replay/")) {
       const auditId = decodeURIComponent(route.slice("/api/v1/shield/replay/".length));
       const replay = getShieldAuditStore().getReplay(auditId);
@@ -268,6 +320,17 @@ const server = createServer(async (req, res) => {
     }
     if (error instanceof SyntaxError) {
       sendJson(res, 400, { error: { code: "INVALID_JSON", message: "Request body must be valid JSON." } });
+      return;
+    }
+    if (error instanceof ApiError) {
+      sendJson(res, error.statusCode, {
+        error: {
+          code: error.code,
+          message: error.message,
+          retryable: error.retryable,
+          ...(error.details === undefined ? {} : { details: error.details }),
+        },
+      });
       return;
     }
     requestLogger.error("request failed", { error: error instanceof Error ? error.message : String(error) });
