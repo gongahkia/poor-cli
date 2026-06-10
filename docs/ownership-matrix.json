@@ -54,6 +54,11 @@
       "backupOwner": "maintainer:governance"
     },
     {
+      "name": "Splunk Incident Investigation Pack",
+      "primaryOwner": "maintainer:runtime-security",
+      "backupOwner": "maintainer:governance"
+    },
+    {
       "name": "Raw Source Adapter Lookup",
       "primaryOwner": "maintainer:data-surface",
       "backupOwner": "maintainer:runtime-reliability"
@@ -63,6 +68,11 @@
     {
       "name": "City Operations Desk",
       "primaryOwner": "maintainer:adoption",
+      "backupOwner": "maintainer:governance"
+    },
+    {
+      "name": "Security Analyst Desk",
+      "primaryOwner": "maintainer:runtime-security",
       "backupOwner": "maintainer:governance"
     }
   ]

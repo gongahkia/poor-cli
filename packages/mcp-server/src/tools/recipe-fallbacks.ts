@@ -10,5 +10,6 @@
 // the nearest recipe prompt without a misleading direct-tool list.
 export const RECIPE_FALLBACK_TOOLS: Readonly<Record<string, readonly string[]>> = {
   pulse_overview: ["swee_pulse_mobility", "swee_pulse_weather"],
-  shield_recent_audit: ["swee_shield_scan_tools"],
+  shield_recent_audit: ["swee_shield_scan_tools", "swee_shield_approval_list", "swee_shield_policy_simulate"],
+  splunk_investigation_pack: ["swee_shield_policy_simulate", "swee_shield_audit_lookup", "swee_shield_approval_list"],
 };
