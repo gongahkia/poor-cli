@@ -1,0 +1,15 @@
+{
+  "Data": {
+    "generatedBy": "SingStat Table Builder",
+    "dateGenerated": "22/03/2026",
+    "total": 3,
+    "records": [
+      { "theme": "Economy & Prices", "subject": "Prices", "topic": "Consumer Price Index (CPI)", "id": "M212261", "title": "Consumer Price Index, All Items, Monthly", "tableType": "time series" },
+      { "theme": "Economy & Prices", "subject": "Prices", "topic": "Inflation", "id": "M212281", "title": "Inflation Rate, Monthly", "tableType": "time series" },
+      { "theme": "Economy & Prices", "subject": "Prices", "topic": "Consumer Price Index (CPI)", "id": "M212301", "title": "Consumer Price Index By Household Income Group, Monthly", "tableType": "time series" }
+    ]
+  },
+  "DataCount": 1,
+  "StatusCode": 200,
+  "Message": ""
+}

@@ -1,0 +1,51 @@
+{
+  "status": "completed",
+  "mode": "execute",
+  "workflow": "healthcare_supplier_diligence",
+  "intent": "business",
+  "apis": ["hsa", "acra", "gebiz"],
+  "confidence": 0.94,
+  "toolsUsed": ["sg_business_dossier"],
+  "steps": [
+    {
+      "id": "business_dossier",
+      "purpose": "Build a cross-registry business dossier.",
+      "tool": "sg_business_dossier",
+      "status": "completed",
+      "input": {
+        "entityName": "ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+        "modules": ["acra", "hsa", "gebiz"],
+        "sectorHints": ["healthcare", "procurement"]
+      },
+      "outputText": "Healthcare supplier diligence completed for ZUELLIG PHARMA SPECIALTY SOLUTIONS GROUP PTE. LTD.",
+      "structuredOutput": {
+        "title": "Business Dossier",
+        "records": {
+          "resolution": {
+            "selectedModules": ["acra", "hsa", "gebiz"],
+            "matchedModules": ["acra", "hsa"],
+            "unmatchedModules": ["gebiz"]
+          }
+        }
+      }
+    }
+  ],
+  "routingExplanation": "Routed to healthcare_supplier_diligence (confidence 0.94) via sg_business_dossier with HSA, ACRA, and procurement-scoped modules.",
+  "continuationHints": [
+    "Use sg_hsa_licensed_pharmacies next when the supplier also needs pharmacy-register evidence.",
+    "Use sg://benchmarks to compare expected latency and credibility for business-diligence workflows."
+  ],
+  "resultSummary": {
+    "level": "informational",
+    "headline": "Healthcare supplier diligence completed with HSA licensing evidence."
+  },
+  "nextActions": [
+    {
+      "tool": "sg_hsa_licensed_pharmacies",
+      "reason": "Check whether the supplier also appears in the licensed pharmacy register.",
+      "input": {
+        "pharmacyName": "A.M. Pharmacy Pte Ltd"
+      }
+    }
+  ]
+}

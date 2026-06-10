@@ -1,0 +1,47 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.81584893819745, 1.4520108099275582]
+      },
+      "properties": {
+        "NAME_OF_STUDENT_CARE_CENTRE": "YMCA Student Care Centre @ Canberra",
+        "SCC_ADDRESS": "471, Sembawang Drive, #1 421, Singapore 750471",
+        "SCC_POSTAL_CODE": "750471",
+        "SCC_TELEPHONE": "98375096",
+        "SCC_EMAIL": "cbscc@ymca.edu.sg",
+        "AUDIT_STATUS": "Grade A",
+        "AUDIT_DATE": "20260123",
+        "SCFA_Y_N": "Y",
+        "BUSINESS_PROFILE": "Commercial Companies",
+        "MONTHLY_FEE": "$295",
+        "ENROLMENT": 100,
+        "FMEL_UPD_D": "20260223124833"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.8189, 1.4471]
+      },
+      "properties": {
+        "NAME_OF_STUDENT_CARE_CENTRE": "Sparkle Student Care",
+        "SCC_ADDRESS": "300 Canberra Road",
+        "SCC_POSTAL_CODE": "756300",
+        "SCC_TELEPHONE": "61234567",
+        "SCC_EMAIL": "hello@example.org",
+        "AUDIT_STATUS": "Grade B",
+        "AUDIT_DATE": "20251119",
+        "SCFA_Y_N": "N",
+        "BUSINESS_PROFILE": "Voluntary Welfare Organisation",
+        "MONTHLY_FEE": "$420",
+        "ENROLMENT": 85,
+        "FMEL_UPD_D": "20260223124833"
+      }
+    }
+  ]
+}

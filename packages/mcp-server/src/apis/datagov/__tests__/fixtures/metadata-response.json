@@ -1,0 +1,54 @@
+{
+  "code": 0,
+  "data": {
+    "datasetId": "d_8b84c4ee58e3cfc0ece0d773c8ca6abc",
+    "name": "HDB Resale Flat Prices",
+    "description": "Resale flat prices based on registration date by town.",
+    "format": "CSV",
+    "managedBy": "Housing & Development Board",
+    "lastUpdatedAt": "2026-03-01T00:00:00+08:00",
+    "createdAt": "2020-01-01T00:00:00+08:00",
+    "collectionIds": ["housing"],
+    "contactEmails": ["data@hdb.gov.sg"],
+    "datasetSize": 2048,
+    "columnMetadata": {
+      "order": ["month", "town", "flat_type", "resale_price"],
+      "map": {
+        "month": "month",
+        "town": "town",
+        "flat_type": "flat_type",
+        "resale_price": "resale_price"
+      },
+      "metaMapping": {
+        "month": {
+          "name": "month",
+          "columnTitle": "Month",
+          "dataType": "text",
+          "index": "1",
+          "isCategorical": false
+        },
+        "town": {
+          "name": "town",
+          "columnTitle": "Town",
+          "dataType": "text",
+          "index": "2",
+          "isCategorical": true
+        },
+        "flat_type": {
+          "name": "flat_type",
+          "columnTitle": "Flat Type",
+          "dataType": "text",
+          "index": "3",
+          "isCategorical": true
+        },
+        "resale_price": {
+          "name": "resale_price",
+          "columnTitle": "Resale Price",
+          "dataType": "numeric",
+          "index": "4",
+          "isCategorical": false
+        }
+      }
+    }
+  }
+}

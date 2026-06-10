@@ -1,0 +1,119 @@
+{
+  "title": "Macro Brief",
+  "summary": [
+    { "label": "USD/SGD", "value": 1.359, "source": "MAS" },
+    { "label": "FX date", "value": "2025-01-03T00:00:00+08:00", "source": "MAS" },
+    { "label": "FX period delta %", "value": 0.02, "source": "MAS" },
+    { "label": "SORA", "value": 2.61, "source": "MAS" },
+    { "label": "SORA period delta %", "value": 1.16, "source": "MAS" },
+    { "label": "Total deposits", "value": 803500.4, "source": "MAS" },
+    { "label": "GDP period", "value": "2025 4Q", "source": "SingStat" },
+    { "label": "GDP at current prices", "value": 156000, "source": "SingStat" },
+    { "label": "GDP table ID", "value": "M015631", "source": "SingStat" },
+    { "label": "CPI YoY period", "value": "2026 Feb", "source": "SingStat" },
+    { "label": "CPI YoY %", "value": 1.6, "source": "SingStat" },
+    { "label": "CPI YoY table ID", "value": "M213781", "source": "SingStat" },
+    { "label": "CPI index", "value": 116.2, "source": "SingStat" },
+    { "label": "CPI index table ID", "value": "M213751", "source": "SingStat" }
+  ],
+  "evidence": [
+    { "label": "FX rows", "value": 2, "source": "MAS" },
+    { "label": "SORA rows", "value": 2, "source": "MAS" },
+    { "label": "Banking rows", "value": 2, "source": "MAS" },
+    { "label": "GDP rows", "value": 2, "source": "SingStat" },
+    { "label": "CPI YoY rows", "value": 2, "source": "SingStat" },
+    { "label": "CPI index rows", "value": 2, "source": "SingStat" },
+    { "label": "Primary SORA key", "value": "sora", "source": "MAS" },
+    { "label": "Primary banking key", "value": "total_deposits", "source": "MAS" }
+  ],
+  "records": {
+    "kpis": {
+      "currency": "USD",
+      "fx": {
+        "metric": "USD/SGD",
+        "value": 1.359,
+        "date": "2025-01-03T00:00:00+08:00",
+        "deltaPercent": 0.02
+      },
+      "interestRate": {
+        "metric": "SORA",
+        "key": "sora",
+        "value": 2.61,
+        "deltaPercent": 1.16
+      },
+      "banking": {
+        "metric": "Total deposits",
+        "key": "total_deposits",
+        "value": 803500.4
+      },
+      "singstatSeries": {
+        "gdpTableId": "M015631",
+        "gdpPeriod": "2025 4Q",
+        "gdpValue": 156000,
+        "cpiYoYTableId": "M213781",
+        "cpiYoYPeriod": "2026 Feb",
+        "cpiYoYValue": 1.6,
+        "cpiIndexTableId": "M213751",
+        "cpiIndexPeriod": "2026 Feb",
+        "cpiIndexValue": 116.2
+      }
+    },
+    "exchangeRates": [
+      { "date": "2025-01-03T00:00:00+08:00", "usd_sgd": 1.359 },
+      { "date": "2025-01-02T00:00:00+08:00", "usd_sgd": 1.3587 }
+    ],
+    "interestRates": [
+      { "date": "2025-01-03T00:00:00+08:00", "sora": 2.61, "sora_1m": 2.63, "sora_3m": 2.67 },
+      { "date": "2025-01-02T00:00:00+08:00", "sora": 2.58, "sora_1m": 2.6, "sora_3m": 2.64 }
+    ],
+    "financialStats": [
+      { "date": "2025-01-03T00:00:00+08:00", "total_deposits": 803500.4, "total_loans": 742200.8, "total_assets": 1062200.1 },
+      { "date": "2025-01-02T00:00:00+08:00", "total_deposits": 802100.2, "total_loans": 741550.3, "total_assets": 1060100.4 }
+    ],
+    "gdpSeries": [
+      { "period": "2025 4Q", "variable": "GDP At Current Market Prices", "value": 156000, "unit": "million dollars" },
+      { "period": "2025 3Q", "variable": "GDP At Current Market Prices", "value": 154000, "unit": "million dollars" }
+    ],
+    "cpiYoYSeries": [
+      { "period": "2026 Feb", "variable": "All Items", "value": 1.6, "unit": "percent" },
+      { "period": "2026 Jan", "variable": "All Items", "value": 1.4, "unit": "percent" }
+    ],
+    "cpiIndexSeries": [
+      { "period": "2026 Feb", "variable": "All Items", "value": 116.2, "unit": "index" },
+      { "period": "2026 Jan", "variable": "All Items", "value": 115.9, "unit": "index" }
+    ],
+    "headlines": [
+      { "code": "FX", "headline": "USD/SGD at 1.359", "source": "MAS", "date": "2025-01-03T00:00:00+08:00" },
+      { "code": "SORA", "headline": "SORA at 2.61%", "source": "MAS", "date": "2025-01-03T00:00:00+08:00" },
+      { "code": "BANKING", "headline": "Total deposits at 803500.4", "source": "MAS", "date": "2025-01-03T00:00:00+08:00" },
+      { "code": "GDP", "headline": "GDP at current prices at 156000 for 2025 4Q", "source": "SingStat", "tableId": "M015631" },
+      { "code": "CPI_YOY", "headline": "CPI YoY at 1.6% for 2026 Feb", "source": "SingStat", "tableId": "M213781" }
+    ]
+  },
+  "gaps": [],
+  "provenance": [
+    { "source": "MAS", "tool": "sg_mas_exchange_rates", "coverage": "Exchange-rate coverage for the requested currency and date range.", "authRequired": false, "recordCount": 2 },
+    { "source": "MAS", "tool": "sg_mas_interest_rates", "coverage": "SORA interest-rate coverage for the requested date range.", "authRequired": false, "recordCount": 2 },
+    { "source": "MAS", "tool": "sg_mas_financial_stats", "coverage": "Banking-statistics coverage for the requested date range.", "authRequired": false, "recordCount": 2 },
+    { "source": "SingStat", "tool": "sg_singstat_table", "coverage": "Validated GDP and CPI table reads for current macro series.", "authRequired": false, "recordCount": 6 }
+  ],
+  "freshness": [
+    { "source": "MAS exchange rates", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2025-01-03T00:00:00+08:00" },
+    { "source": "MAS interest rates", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2025-01-03T00:00:00+08:00" },
+    { "source": "MAS banking stats", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2025-01-03T00:00:00+08:00" },
+    { "source": "SingStat GDP table", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-01" },
+    { "source": "SingStat CPI YoY table", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-01" },
+    { "source": "SingStat CPI index table", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-01" }
+  ],
+  "limits": [
+    { "code": "STARTER_SNAPSHOT", "message": "This brief is a compact macro starter, not a full economic research note or narrative analysis." },
+    { "code": "BOUNDED_SINGSTAT_SERIES", "message": "SingStat coverage is limited to validated GDP and CPI tables with compact recent slices, not open-ended macro table coverage." },
+    { "code": "NO_FORWARD_VIEW", "message": "The brief reports current or requested historical values and does not forecast or interpret future macro conditions." }
+  ],
+  "nextChecks": [
+    { "tool": "sg_singstat_table", "reason": "Retrieve full GDP table data for detailed analysis.", "input": { "tableId": "M015631" } },
+    { "tool": "sg_singstat_table", "reason": "Retrieve full CPI table data for inflation analysis.", "input": { "tableId": "M213781" } },
+    { "tool": "sg_singstat_timeseries", "reason": "Retrieve a bounded GDP time series for trend analysis.", "input": { "tableId": "M015631", "indicator": "GDP At Current Market Prices", "startYear": 2020, "endYear": 2026 } },
+    { "tool": "sg_singstat_search", "reason": "Discover additional SingStat datasets for deeper macro analysis.", "input": { "keyword": "Singapore unemployment" } }
+  ]
+}

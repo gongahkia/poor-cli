@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Swee SG icon</title>
+  <desc id="desc">Singapore skyline above a gridded data panel.</desc>
+  <rect width="128" height="128" rx="24" fill="#f7f1e3"/>
+  <rect x="14" y="70" width="100" height="34" rx="12" fill="#14532d"/>
+  <path d="M22 64h12V36h8v28h10V22h10v42h8V30h10v34h8V44h10v20h8v40H22z" fill="#0f766e"/>
+  <path d="M28 82h72M28 92h72M46 76v22M66 76v22M86 76v22" stroke="#f7f1e3" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="98" cy="30" r="10" fill="#dc2626"/>
+  <path d="M98 16v28M84 30h28" stroke="#f7f1e3" stroke-width="4" stroke-linecap="round"/>
+</svg>

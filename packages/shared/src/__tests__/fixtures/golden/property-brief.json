@@ -1,0 +1,95 @@
+{
+  "title": "Property Brief",
+  "summary": [
+    { "label": "Resolved planning area", "value": "Bedok", "source": "URA" },
+    { "label": "Region", "value": "East", "source": "URA" },
+    { "label": "Resolved postal code", "value": "460123", "source": "OneMap" },
+    { "label": "Private transaction average", "value": 1250000, "source": "URA" },
+    { "label": "Private transaction median", "value": 1250000, "source": "URA" },
+    { "label": "HDB resale average", "value": 560000, "source": "HDB" },
+    { "label": "HDB resale median", "value": 560000, "source": "HDB" },
+    { "label": "Forecast", "value": "Partly Cloudy", "source": "NEA" },
+    { "label": "PSI 24h", "value": 42, "source": "NEA" }
+  ],
+  "evidence": [
+    { "label": "URA transactions", "value": 3, "source": "URA" },
+    { "label": "HDB resale records", "value": 1, "source": "HDB" },
+    { "label": "2-hour forecast rows", "value": 1, "source": "NEA" },
+    { "label": "Air-quality rows", "value": 1, "source": "NEA" },
+    { "label": "Train alerts", "value": 0, "source": "LTA" },
+    { "label": "Traffic incidents", "value": 0, "source": "LTA" }
+  ],
+  "records": {
+    "locationResolution": {
+      "requestedPlanningArea": null,
+      "requestedPostalCode": "460123",
+      "requestedAddress": null,
+      "resolvedPlanningArea": "Bedok",
+      "resolvedRegion": "East",
+      "resolvedPostalCode": "460123",
+      "lat": 1.3236,
+      "lng": 103.9273
+    },
+    "geocode": [
+      {
+        "postal": "460123",
+        "lat": 1.3236,
+        "lng": 103.9273
+      }
+    ],
+    "planningArea": [
+      {
+        "planningArea": "Bedok",
+        "region": "East Region"
+      }
+    ],
+    "uraTransactions": [
+      { "project": "BEDOK HEIGHTS", "street": "BEDOK SOUTH AVENUE 3", "contractDate": "2026-02", "price": 1180000 },
+      { "project": "BEDOK RESIDENCES", "street": "BEDOK NORTH DRIVE", "contractDate": "2026-01", "price": 1250000 },
+      { "project": "BEDOK COURT", "street": "BEDOK SOUTH AVENUE 3", "contractDate": "2025-12", "price": 1320000 }
+    ],
+    "uraRollup": { "count": 3, "median": 1250000, "min": 1180000, "max": 1320000, "average": 1250000, "latestMonth": "2026-02" },
+    "hdbResale": [
+      { "month": "2026-02", "town": "BEDOK", "flatType": "4 ROOM", "resalePrice": 560000 }
+    ],
+    "hdbRollup": { "count": 1, "median": 560000, "min": 560000, "max": 560000, "average": 560000, "latestMonth": "2026-02" },
+    "marketComparison": { "privateAvg": 1250000, "hdbResaleAvg": 560000, "delta": 690000, "ratio": 2.23 },
+    "forecast": [
+      { "area": "Bedok", "forecast": "Partly Cloudy", "updatedAt": "2026-03-26T09:30:00+08:00" }
+    ],
+    "airQuality": [
+      { "region": "east", "psi24h": 42, "pm25OneHourly": 12, "updatedAt": "2026-03-26T09:00:00+08:00" }
+    ],
+    "trainAlerts": [],
+    "trainAlertMessages": [],
+    "trafficIncidents": []
+  },
+  "gaps": [],
+  "provenance": [
+    { "source": "OneMap", "tool": "sg_onemap_geocode", "coverage": "Postal-code or address resolution into a Singapore geocode candidate.", "authRequired": true, "recordCount": 1 },
+    { "source": "URA", "tool": "sg_ura_planning_area", "coverage": "Planning-area resolution for the requested location.", "authRequired": true, "recordCount": 1 },
+    { "source": "URA", "tool": "sg_ura_property_transactions", "coverage": "Private market transaction context for the resolved planning area.", "authRequired": true, "recordCount": 3 },
+    { "source": "HDB", "tool": "sg_hdb_resale_prices", "coverage": "Curated HDB resale market context for the resolved planning area.", "authRequired": false, "recordCount": 1 },
+    { "source": "NEA", "tool": "sg_nea_forecast_2hr", "coverage": "2-hour forecast coverage for the resolved planning area.", "authRequired": false, "recordCount": 1 },
+    { "source": "NEA", "tool": "sg_nea_air_quality", "coverage": "Regional air-quality coverage for the resolved region.", "authRequired": false, "recordCount": 1 }
+  ],
+  "freshness": [
+    { "source": "OneMap geocode", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": null },
+    { "source": "URA planning area", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": null },
+    { "source": "URA transactions", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-02" },
+    { "source": "HDB resale", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-02" },
+    { "source": "NEA forecast", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-26T09:30:00+08:00" },
+    { "source": "NEA air quality", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-26T09:00:00+08:00" }
+  ],
+  "limits": [
+    { "code": "NOT_A_RECOMMENDATION", "message": "This brief is bounded diligence context, not a valuation, investment score, or purchase recommendation." },
+    { "code": "AREA_LEVEL_CONTEXT", "message": "Property context is planning-area oriented and does not replace parcel-level legal or title checks." },
+    { "code": "TRANSPORT_NOT_INCLUDED", "message": "Live transport context was not requested for this property brief." }
+  ],
+  "riskFlags": [],
+  "nextChecks": [
+    { "tool": "sg_ura_property_transactions", "reason": "Retrieve detailed URA transactions for deeper price analysis.", "input": { "propertyType": "residential", "area": "Bedok" } },
+    { "tool": "sg_hdb_resale_prices", "reason": "Retrieve detailed HDB resale records for the planning area.", "input": { "town": "Bedok" } },
+    { "tool": "sg_ura_dev_charges", "reason": "Check development charges for the planning area.", "input": { "planningArea": "Bedok" } }
+  ]
+}

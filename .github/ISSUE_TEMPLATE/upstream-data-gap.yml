@@ -1,0 +1,58 @@
+name: Upstream Data Gap
+description: Report source freshness, auth, availability, schema, or fallback issues.
+title: "[Upstream] "
+labels: ["kind:task", "area:docs"]
+body:
+  - type: input
+    id: source
+    attributes:
+      label: Source
+      description: Name the upstream source, API family, dataset, or tool.
+      placeholder: "ACRA / data.gov.sg dataset / sg_acra_entities"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include exact input, tool, route, or fixture steps.
+    validations:
+      required: true
+  - type: textarea
+    id: freshness
+    attributes:
+      label: Freshness And Provenance
+      description: What observedAt, upstreamTimestamp, rulesVersion, source URL, or provenance did the output return?
+    validations:
+      required: true
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Auth Required
+      options:
+        - No auth
+        - OneMap credentials
+        - URA API key
+        - LTA DataMall API key
+        - Other or unknown
+    validations:
+      required: true
+  - type: textarea
+    id: fallback
+    attributes:
+      label: Expected Fallback Behavior
+      description: How should the tool surface gaps, retryability, or partial results?
+      placeholder: "Return a gap with code, message, provenance/freshness where available, and no invented values."
+    validations:
+      required: true
+  - type: textarea
+    id: constraints
+    attributes:
+      label: Compatibility Constraints
+      value: |
+        - Do not rename or break existing `sg_*` tool names or schemas.
+        - Do not rename `@swee-sg/shield` package/runtime identity without a compatibility plan.
+        - Do not change `SG_API_*`, `SG_APIS_*`, or `sg://...` contracts.
+        - Keep outputs grounded in public data, provenance, freshness, gaps, and limits.
+    validations:
+      required: true

@@ -1,0 +1,43 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.80620757407047, 1.2964584179145409]
+      },
+      "properties": {
+        "NAME": "Social Service Office @ Queenstown",
+        "BLOCKHOUSENUMBER": "40",
+        "STREETNAME": "Margaret Drive",
+        "FLOORNUMBER": "#02-",
+        "UNITNUMBER": "01",
+        "BUILDINGNAME": null,
+        "POSTALCODE": "140040",
+        "HYPERLINK": null,
+        "DESCRIPTION": "Social Service Offices",
+        "FMEL_UPD_D": "20241104113604"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [103.8212, 1.305]
+      },
+      "properties": {
+        "NAME": "Social Service Office @ Bukit Merah",
+        "BLOCKHOUSENUMBER": null,
+        "STREETNAME": null,
+        "FLOORNUMBER": null,
+        "UNITNUMBER": null,
+        "BUILDINGNAME": "Bukit Merah Family Hub",
+        "POSTALCODE": "159470",
+        "HYPERLINK": "https://example.org/sso",
+        "DESCRIPTION": "Social Service Offices",
+        "FMEL_UPD_D": "20241104113604"
+      }
+    }
+  ]
+}

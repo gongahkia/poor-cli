@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "country-pack/v1",
+  "packId": "ph",
+  "country": {
+    "name": "Philippines",
+    "iso2": "PH",
+    "iso3": "PHL"
+  },
+  "status": "skeleton",
+  "summary": "Philippines public-only skeleton for SEC-number status planning. It does not expose broad SEC Company Information Lookup, AFS/GIS, certified documents, or bulk monitoring without SEC subscription terms.",
+  "auth": {
+    "required": true,
+    "kind": "api_key",
+    "envVars": ["PH_API_SEC_KEY"],
+    "notes": "The likely public proof-of-concept path is the SEC Number API with a limited free quota. Any live adapter must keep credentials server-side and document quota, caching, and hosted-use terms."
+  },
+  "licensing": {
+    "upstreamTermsUrl": "https://dev-api.sec.gov.ph/",
+    "redistribution": "partner_required",
+    "commercialUse": "partner_required",
+    "attributionRequired": true,
+    "notes": "SEC API Marketplace material distinguishes free SEC-number access from paid Company Information Lookup packages. Broader company data, AFS/GIS, certified documents, higher quotas, and bulk workflows require subscription terms."
+  },
+  "freshness": {
+    "observedAt": "2026-05-17T00:00:00Z",
+    "upstreamTimestamp": null,
+    "refreshCadence": "manual source review until SEC API credential terms are approved",
+    "staleAfterDays": 90
+  },
+  "publicDataLimits": [
+    {
+      "code": "SKELETON_ONLY",
+      "message": "This pack documents Philippines source boundaries and does not perform a live SEC lookup."
+    },
+    {
+      "code": "SEC_SUBSCRIPTION_BOUNDARY",
+      "message": "Do not return broad SEC company information, AFS, GIS, certified documents, or high-quota results without approved SEC subscription terms."
+    },
+    {
+      "code": "NO_LEGAL_OR_CREDIT_ADVICE",
+      "message": "Outputs are public-source planning artifacts and not legal, tax, credit, investment, or licensed compliance advice."
+    }
+  ],
+  "tools": [
+    {
+      "name": "ph_sec_number_status",
+      "family": "registry",
+      "purpose": "Plan a bounded SEC-number status lookup and return credential, quota, and paid-data gaps when the API path is unavailable.",
+      "outputContract": "brief-envelope/v1",
+      "authRequired": true,
+      "publicDataLimits": [
+        {
+          "code": "SEC_NUMBER_ONLY",
+          "message": "The initial tool must be limited to explicit SEC-number status evidence and must not retrieve paid company-information packages."
+        }
+      ]
+    }
+  ],
+  "examples": [
+    {
+      "title": "SEC API credential missing",
+      "input": {
+        "secNumber": "CS200000001"
+      },
+      "expectedGaps": [
+        {
+          "code": "PH_API_SEC_KEY_REQUIRED",
+          "message": "Set PH_API_SEC_KEY and confirm SEC API Marketplace terms before running a live SEC-number status lookup."
+        }
+      ]
+    }
+  ],
+  "contributionNotes": [
+    "Review SEC API Marketplace terms for free quota, hosted use, caching, attribution, and subscription limits before adding a live adapter.",
+    "Keep PH_API_SEC_KEY server-side only and add tests for missing key, quota exhaustion, no-match, ambiguous-match, and upstream failure.",
+    "Do not expose AFS, GIS, certified documents, secondary licence packs, or broad Company Information Lookup data unless subscription terms permit the exact use.",
+    "Preserve provenance, freshness, gaps, and limits in every output."
+  ]
+}

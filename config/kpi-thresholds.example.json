@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "kpi-thresholds/v1",
+  "installability": {
+    "requireVerifyPassed": true,
+    "allowedRegistrySmokeStatuses": ["passed", "skipped", "missing"],
+    "minInstallSuccessRatePct": 95
+  },
+  "slo": {
+    "maxBreachCount": 0,
+    "maxWarningCount": 2
+  },
+  "docs": {
+    "maxDriftDefects": 2
+  },
+  "onboarding": {
+    "maxMeanTimeToFirstWorkflowMinutes": 120
+  },
+  "ecosystem": {
+    "minSingaporeMcpRepoCount": 5,
+    "minStackoverflowQuestionCount": 150
+  }
+}

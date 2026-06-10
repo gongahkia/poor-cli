@@ -1,0 +1,71 @@
+name: Housing Rules Freshness
+
+on:
+  schedule:
+    # First Monday of each month at 03:00 UTC. SG Budget is delivered ~mid-Feb;
+    # monthly cadence catches drift well before the Apr CPF rate review window.
+    - cron: "0 3 1-7 * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Run housing rules freshness check (strict)
+        id: check
+        env:
+          SG_APIS_HOUSING_RULES_STRICT: "1"
+        run: node ./scripts/check-housing-rules-freshness.mjs
+
+      - name: Open or update tracking issue on drift
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = "Housing rules freshness drift detected";
+            const body = [
+              "Scheduled `housing:rules:check` failed in strict mode.",
+              "",
+              "Action: re-verify the fields under `packages/mcp-server/src/housing/rules-2026.json`",
+              "against current CPF / HDB / MAS / IRAS sources, then update `lastVerified`",
+              "and the `verificationLog` entry.",
+              "",
+              `Run: ${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`,
+            ].join("\n");
+            const { data: existing } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              labels: "housing-rules-drift",
+              state: "open",
+              per_page: 5,
+            });
+            if (existing.length > 0) {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: existing[0].number,
+                body,
+              });
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body,
+              labels: ["housing-rules-drift"],
+            });

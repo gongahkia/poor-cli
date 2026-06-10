@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.deploy.example
+node_modules
+packages/*/dist
+packages/*/tsconfig.tsbuildinfo
+apps/web/dist
+artifacts
+.build-benchmark
+npm-debug.log*

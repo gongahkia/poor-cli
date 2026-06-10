@@ -1,30 +1,99 @@
-name: CLI Harness CI
+name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
-  python:
+  verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: "3.12"
-      - name: Install package
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e .[dev]
-      - name: Run CLI smoke checks
-        run: |
-          python -m compileall poor_cli
-          poor-cli help
-          poor-cli chat --help
-          poor-cli exec --help
-          poor-cli install info
-      - name: Run focused tests
-        run: |
-          python -m pytest -q tests/test_product_contracts.py tests/test_tool_orchestration.py tests/test_server_handlers.py tests/test_server_rate_limit.py
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Production dependency audit
+        run: npm run security:audit:prod
+
+      - name: Verify repository
+        run: npm run verify
+        env:
+          SG_APIS_LOG_LEVEL: error
+
+      - name: Run public no-credential smoke
+        run: npm run test:smoke:public
+        env:
+          SG_APIS_LOG_LEVEL: error
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Run web browser smoke
+        run: npm run test:smoke:web
+        env:
+          SG_APIS_LOG_LEVEL: error
+
+      - name: Upload web browser smoke artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-browser-smoke-${{ github.run_id }}
+          path: output/playwright/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Generate benchmark evidence snapshot
+        run: npm run benchmarks:snapshot -- --output artifacts/benchmarks/latest.json --history-dir artifacts/benchmarks/history
+        env:
+          SG_APIS_LOG_LEVEL: error
+          SG_APIS_REGISTRY_SMOKE_STATUS: skipped
+
+      - name: Verify sg://benchmarks snapshot overlay
+        run: SG_APIS_BENCHMARK_SNAPSHOT_PATH=artifacts/benchmarks/latest.json npm run test -- packages/mcp-server/src/tools/__tests__/catalog-parity.test.ts
+        env:
+          SG_APIS_LOG_LEVEL: error
+
+      - name: Generate KPI dashboard artifact
+        run: npm run kpis:dashboard -- --benchmark artifacts/benchmarks/latest.json --ecosystem artifacts/ecosystem/latest.json --output artifacts/operations/latest.json --history-dir artifacts/operations/history
+        env:
+          SG_APIS_LOG_LEVEL: error
+
+      - name: Upload benchmark snapshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-evidence-snapshot
+          path: artifacts/benchmarks/latest.json
+          retention-days: 90
+
+      - name: Upload benchmark trend history artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-evidence-history-${{ github.run_id }}
+          path: artifacts/benchmarks/history/
+          retention-days: 90
+
+      - name: Upload KPI dashboard artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpi-dashboard-latest
+          path: artifacts/operations/latest.json
+          retention-days: 90
+
+      - name: Upload KPI dashboard history artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: kpi-dashboard-history-${{ github.run_id }}
+          path: artifacts/operations/history/
+          retention-days: 90

@@ -1,0 +1,797 @@
+import type { SourceCoverageItem } from "@swee-sg/shared";
+import { getPeopleDiscovery, getWebPresence, type PeopleDiscovery, type WebPresence } from "../apis/tinyfish/client.js";
+import type { BusinessDossierModule, BusinessSectorHint } from "../diligence/entity-resolution.js";
+import { withDossierAnalystFollowUps } from "../diligence/business-dossier.js";
+import { generateAnalystMemo, type AnalystMemoDossier } from "./analyst-memo.js";
+import { handleBusinessDossier } from "../tools/brief-tools.js";
+import type { CounterpartyResolutionResult } from "./counterparty-resolver.js";
+
+type BusinessDossierInput = Parameters<typeof handleBusinessDossier>[0];
+type AnalystMemoResponse = Awaited<ReturnType<typeof generateAnalystMemo>>;
+
+export type CddOrchestratorInput = BusinessDossierInput;
+export type CddOrchestratorStage = {
+  readonly id:
+    | "acra_identity"
+    | "sector_inference"
+    | "official_modules"
+    | "web_presence"
+    | "people_discovery"
+    | "relationship_graph"
+    | "supplemental_review"
+    | "ai_memo";
+  readonly label: string;
+  readonly status: "completed" | "skipped" | "blocked" | "unavailable";
+  readonly detail: string;
+  readonly tools: readonly string[];
+};
+
+export type CddOrchestratorResponse = {
+  readonly dossier: AnalystMemoDossier;
+  readonly webPresence: WebPresence;
+  readonly peopleDiscovery: PeopleDiscovery;
+  readonly memo: AnalystMemoResponse;
+  readonly generatedAt: string;
+  readonly resolution?: CounterpartyResolutionResult;
+  readonly orchestration: {
+    readonly status: "ready" | "identity_not_resolved";
+    readonly strategy: "acra_then_sector_then_supplemental_memo";
+    readonly acraSectorHints: readonly BusinessSectorHint[];
+    readonly webSectorHints: readonly BusinessSectorHint[];
+    readonly effectiveSectorHints: readonly BusinessSectorHint[];
+    readonly officialModules: readonly string[];
+    readonly supplementalTools: readonly string[];
+    readonly reranDossierForWebSectorHints: boolean;
+    readonly stages: readonly CddOrchestratorStage[];
+    readonly limits: readonly string[];
+  };
+};
+
+export type CddOrchestratorOptions = {
+  readonly resolution?: CounterpartyResolutionResult;
+};
+
+export class CddOrchestratorBadRequestError extends Error {
+  readonly statusCode = 400;
+
+  constructor(
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "CddOrchestratorBadRequestError";
+  }
+}
+
+const UEN_PATTERN = /^(?:\d{8,9}[a-z]|[a-z]\d{2}[a-z]{2}\d{4}[a-z])$/i;
+
+const BUSINESS_DOSSIER_MODULES = [
+  "acra",
+  "bca",
+  "cea",
+  "gebiz",
+  "boa",
+  "hsa",
+  "hlb",
+] as const satisfies readonly BusinessDossierModule[];
+
+const BUSINESS_SECTOR_HINTS = [
+  "construction",
+  "real_estate",
+  "architecture",
+  "healthcare",
+  "hospitality",
+  "procurement",
+] as const satisfies readonly BusinessSectorHint[];
+
+const CDD_ORCHESTRATOR_SUPPLEMENTAL_TOOLS = [
+  "sg_sanctions_screen",
+  "sg_opencorporates_links",
+  "sg_adverse_media_lite",
+  "sg_relationship_graph",
+] as const;
+
+const BUSINESS_IDENTIFIER_FIELDS = [
+  "entityName",
+  "uen",
+  "salespersonName",
+  "registrationNo",
+  "estateAgentName",
+  "estateAgentLicenseNo",
+  "classCode",
+  "workhead",
+  "grade",
+] as const;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const isDossier = (value: unknown): value is AnalystMemoDossier =>
+  isRecord(value)
+  && typeof value["title"] === "string"
+  && Array.isArray(value["summary"])
+  && Array.isArray(value["evidence"])
+  && isRecord(value["records"])
+  && Array.isArray(value["gaps"])
+  && Array.isArray(value["provenance"])
+  && Array.isArray(value["freshness"])
+    && Array.isArray(value["limits"]);
+
+const withResolutionMetadata = (
+  dossier: AnalystMemoDossier,
+  resolution: CounterpartyResolutionResult | undefined,
+): AnalystMemoDossier => {
+  if (resolution === undefined) {
+    return dossier;
+  }
+
+  const selected = resolution.selectedCandidate;
+  const resolutionGap = selected !== null
+    && selected.matchMethod !== "exact_identifier"
+    && selected.matchMethod !== "exact_normalized"
+    && selected.matchMethod !== "legal_suffix_normalized"
+      ? [{
+          code: "RESOLUTION_FUZZY_MATCH",
+          message: `Input "${resolution.originalInput}" resolved to "${selected.label}" using ${selected.matchMethod}; confirm source rows before final decisions.`,
+        }]
+      : [];
+
+  return {
+    ...dossier,
+    records: {
+      ...dossier.records,
+      resolution: {
+        ...(isRecord(dossier.records["resolution"]) ? dossier.records["resolution"] : {}),
+        originalInput: resolution.originalInput,
+        normalizedInput: resolution.normalizedInput,
+        resolutionStatus: resolution.status,
+        selectedCandidate: selected,
+        candidates: resolution.candidates,
+        matchMethod: selected?.matchMethod ?? null,
+        matchScore: selected?.score ?? null,
+        confirmationRequired: resolution.status === "needs_confirmation",
+        confidenceBlockers: resolution.confidenceBlockers,
+        sourcesSearched: resolution.sourcesSearched,
+      },
+    },
+    gaps: [
+      ...dossier.gaps,
+      ...resolutionGap,
+      ...(
+        resolution.status === "needs_confirmation"
+          ? [{ code: "RESOLUTION_CONFIRMATION_REQUIRED", message: "Multiple plausible registry candidates require analyst confirmation before relying on this dossier." }]
+          : []
+      ),
+      ...(
+        resolution.status === "no_match"
+          ? [{ code: "RESOLUTION_NO_MATCH", message: "No retained CDD registry candidate matched the original input." }]
+          : []
+      ),
+    ],
+    limits: [
+      ...dossier.limits,
+      {
+        code: "SAFE_ENTITY_RESOLUTION",
+        message: "Raw user input is normalized against official registry candidates; ambiguous matches require confirmation and identifier fields remain exact-match only.",
+      },
+    ],
+  };
+};
+
+const isBusinessDossierModule = (value: unknown): value is BusinessDossierModule =>
+  typeof value === "string" && (BUSINESS_DOSSIER_MODULES as readonly string[]).includes(value);
+
+const isBusinessSectorHint = (value: unknown): value is BusinessSectorHint =>
+  typeof value === "string" && (BUSINESS_SECTOR_HINTS as readonly string[]).includes(value);
+
+const buildBusinessDossierInputFromIdentifier = (identifier: string): { readonly uen: string } | { readonly entityName: string } =>
+  UEN_PATTERN.test(identifier)
+    ? { uen: identifier.toUpperCase() }
+    : { entityName: identifier };
+
+const getOptionalString = (record: Record<string, unknown>, field: string): string | null => {
+  const value = record[field];
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed === "" ? null : trimmed;
+};
+
+const getStringArray = <T extends string>(
+  value: unknown,
+  guard: (candidate: unknown) => candidate is T,
+): readonly T[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const values = new Set<T>();
+  for (const candidate of value) {
+    if (guard(candidate)) {
+      values.add(candidate);
+    }
+  }
+  return Array.from(values);
+};
+
+export const normalizeCddOrchestratorInput = (input: Record<string, unknown>): BusinessDossierInput => {
+  const identifier = getOptionalString(input, "identifier");
+  const output: Record<string, unknown> = identifier === null
+    ? {}
+    : { ...buildBusinessDossierInputFromIdentifier(identifier) };
+
+  for (const field of BUSINESS_IDENTIFIER_FIELDS) {
+    const value = getOptionalString(input, field);
+    if (value !== null) {
+      output[field] = field === "uen" ? value.toUpperCase() : value;
+    }
+  }
+
+  const modules = getStringArray(input["modules"], isBusinessDossierModule);
+  if (modules.length > 0) {
+    output["modules"] = modules;
+  }
+
+  const sectorHints = getStringArray(input["sectorHints"], isBusinessSectorHint);
+  if (sectorHints.length > 0) {
+    output["sectorHints"] = sectorHints;
+  }
+
+  const explicitSectorHints = getStringArray(input["explicitSectorHints"], isBusinessSectorHint);
+  if (explicitSectorHints.length > 0) {
+    output["explicitSectorHints"] = explicitSectorHints;
+  }
+
+  const webSectorHints = getStringArray(input["webSectorHints"], isBusinessSectorHint);
+  if (webSectorHints.length > 0) {
+    output["webSectorHints"] = webSectorHints;
+  }
+
+  if (input["analystRerun"] === true) {
+    output["analystRerun"] = true;
+  }
+
+  output["includeExternalDiligence"] = true;
+
+  const hasIdentifier = BUSINESS_IDENTIFIER_FIELDS.some((field) => typeof output[field] === "string");
+  if (!hasIdentifier) {
+    throw new CddOrchestratorBadRequestError(
+      "CDD_ORCHESTRATOR_IDENTIFIER_REQUIRED",
+      "Provide a Singapore company name, UEN, or supported sector identifier.",
+    );
+  }
+
+  return output as BusinessDossierInput;
+};
+
+const getDossierSummaryString = (
+  dossier: AnalystMemoDossier,
+  label: string,
+): string | null => {
+  const match = dossier.summary.find((item) => item.label.toLowerCase() === label.toLowerCase());
+  if (match === undefined || match.value === null || match.value === undefined) {
+    return null;
+  }
+  return typeof match.value === "string" ? match.value.trim() || null : String(match.value);
+};
+
+const buildCoverageItem = (
+  params: Readonly<{
+    family: string;
+    label: string;
+    tools: readonly string[];
+    status: SourceCoverageItem["status"];
+    coverageLevel: SourceCoverageItem["coverageLevel"];
+    recordCount: number;
+    reason: string;
+    checkedAt?: string | null;
+    gapCodes?: readonly string[];
+    requiredCredentials?: readonly string[];
+  }>,
+): SourceCoverageItem => ({
+  authRequired: true,
+  coverageLevel: params.coverageLevel,
+  evidenceType: "web_discovery",
+  family: params.family,
+  label: params.label,
+  recordCount: params.recordCount,
+  reason: params.reason,
+  status: params.status,
+  tools: params.tools,
+  ...(params.checkedAt === undefined ? {} : { checkedAt: params.checkedAt }),
+  sourceFreshness: null,
+  ...(params.requiredCredentials === undefined ? {} : { requiredCredentials: params.requiredCredentials }),
+  ...(params.gapCodes === undefined || params.gapCodes.length === 0 ? {} : { gapCodes: params.gapCodes }),
+});
+
+const buildWebPresenceCoverage = (
+  webPresence: WebPresence,
+  generatedAt: string,
+  skippedReason?: string,
+): SourceCoverageItem => {
+  if (skippedReason !== undefined) {
+    return buildCoverageItem({
+      checkedAt: null,
+      coverageLevel: "none",
+      family: "web_presence",
+      label: "Web presence",
+      reason: `${skippedReason} Web presence was not checked; treat this as a coverage gap, not a clean result.`,
+      recordCount: 0,
+      requiredCredentials: ["TINYFISH_API_KEY"],
+      status: "skipped",
+      tools: ["TinyFish Search"],
+    });
+  }
+  if (!webPresence.configured) {
+    return buildCoverageItem({
+      checkedAt: null,
+      coverageLevel: "none",
+      family: "web_presence",
+      gapCodes: ["TINYFISH_API_KEY_REQUIRED"],
+      label: "Web presence",
+      reason: "TinyFish Search is not configured, so web presence was not checked. This is a confidence blocker, not evidence of no web presence.",
+      recordCount: 0,
+      requiredCredentials: ["TINYFISH_API_KEY"],
+      status: "credential_blocked",
+      tools: ["TinyFish Search"],
+    });
+  }
+  return buildCoverageItem({
+    checkedAt: generatedAt,
+    coverageLevel: "full",
+    family: "web_presence",
+    label: "Web presence",
+    reason: webPresence.results.length === 0
+      ? "TinyFish web discovery ran and returned no result snippets; this is not proof that the counterparty has no web presence."
+      : `TinyFish web discovery ran and returned ${webPresence.results.length} analyst-review result snippet(s).`,
+    recordCount: webPresence.results.length,
+    requiredCredentials: ["TINYFISH_API_KEY"],
+    status: "checked",
+    tools: ["TinyFish Search"],
+  });
+};
+
+const buildPeopleDiscoveryCoverage = (
+  peopleDiscovery: PeopleDiscovery,
+  generatedAt: string,
+  skippedReason?: string,
+): SourceCoverageItem => {
+  if (skippedReason !== undefined) {
+    return buildCoverageItem({
+      checkedAt: null,
+      coverageLevel: "none",
+      family: "people_discovery",
+      label: "People discovery",
+      reason: `${skippedReason} People discovery was not checked; treat this as a coverage gap, not verified absence of people evidence.`,
+      recordCount: 0,
+      requiredCredentials: ["TINYFISH_API_KEY"],
+      status: "skipped",
+      tools: ["TinyFish Search"],
+    });
+  }
+  if (!peopleDiscovery.configured) {
+    return buildCoverageItem({
+      checkedAt: null,
+      coverageLevel: "none",
+      family: "people_discovery",
+      gapCodes: ["TINYFISH_API_KEY_REQUIRED"],
+      label: "People discovery",
+      reason: "TinyFish Search is not configured, so people discovery was not checked. This is a confidence blocker, not evidence that no relevant people exist.",
+      recordCount: 0,
+      requiredCredentials: ["TINYFISH_API_KEY"],
+      status: "credential_blocked",
+      tools: ["TinyFish Search"],
+    });
+  }
+  return buildCoverageItem({
+    checkedAt: generatedAt,
+    coverageLevel: "full",
+    family: "people_discovery",
+    label: "People discovery",
+    reason: peopleDiscovery.results.length === 0
+      ? "TinyFish people discovery ran and returned no result snippets; this does not verify employment, authority, or absence of people links."
+      : `TinyFish people discovery ran and returned ${peopleDiscovery.results.length} candidate snippet(s) for analyst review.`,
+    recordCount: peopleDiscovery.results.length,
+    requiredCredentials: ["TINYFISH_API_KEY"],
+    status: "checked",
+    tools: ["TinyFish Search"],
+  });
+};
+
+const withCoverageItems = (
+  dossier: AnalystMemoDossier,
+  items: readonly SourceCoverageItem[],
+): AnalystMemoDossier => {
+  const coverageByFamily = new Map<string, SourceCoverageItem>();
+  for (const item of dossier.sourceCoverage ?? []) {
+    coverageByFamily.set(item.family, item);
+  }
+  for (const item of items) {
+    coverageByFamily.set(item.family, item);
+  }
+  return {
+    ...dossier,
+    sourceCoverage: Array.from(coverageByFamily.values()),
+  };
+};
+
+const getDossierRecordArray = (
+  dossier: AnalystMemoDossier,
+  key: string,
+): readonly Record<string, unknown>[] => {
+  const value = dossier.records[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is Record<string, unknown> => isRecord(item))
+    : [];
+};
+
+const getResolutionStringArray = (
+  dossier: AnalystMemoDossier,
+  key: string,
+): readonly string[] => {
+  const resolution = dossier.records["resolution"];
+  if (!isRecord(resolution)) {
+    return [];
+  }
+  const value = resolution[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string" && item.trim() !== "").map((item) => item.trim())
+    : [];
+};
+
+const getResolutionSectorHints = (
+  dossier: AnalystMemoDossier,
+  key: string,
+): readonly BusinessSectorHint[] =>
+  getResolutionStringArray(dossier, key).filter(isBusinessSectorHint);
+
+const uniqueSectorHints = (
+  hints: readonly (BusinessSectorHint | string)[],
+): readonly BusinessSectorHint[] => {
+  const unique = new Set<BusinessSectorHint>();
+  for (const hint of hints) {
+    if (isBusinessSectorHint(hint)) {
+      unique.add(hint);
+    }
+  }
+  return Array.from(unique);
+};
+
+const normalizeSectorSignalText = (value: string): string =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const inferSectorHintsFromWebPresence = (
+  webPresence: WebPresence,
+): readonly BusinessSectorHint[] => {
+  const text = normalizeSectorSignalText([
+    webPresence.possibleOfficialWebsite,
+    ...webPresence.results.flatMap((result) => [
+      result.title,
+      result.snippet,
+      result.url,
+      result.siteName,
+    ]),
+  ].filter((part): part is string => typeof part === "string" && part.trim() !== "").join(" "));
+  const hints = new Set<BusinessSectorHint>();
+
+  if (/\b(construction|building contractor|civil engineering|licensed builder|registered contractor|bca)\b/.test(text)) {
+    hints.add("construction");
+  }
+  if (/\b(architect|architecture|architectural|boa)\b/.test(text)) {
+    hints.add("architecture");
+  }
+  if (/\b(real estate|estate agent|property agency|salesperson|realtor|cea)\b/.test(text)) {
+    hints.add("real_estate");
+  }
+  if (/\b(healthcare|medical|clinic|hospital|pharma|pharmaceutical|pharmacy|health product|therapeutic|hsa)\b/.test(text)) {
+    hints.add("healthcare");
+  }
+  if (/\b(hotel|hospitality|lodging|serviced apartment|guest room|hlb)\b/.test(text)) {
+    hints.add("hospitality");
+  }
+  if (/\b(gebiz|tender|procurement|government supplier|award notice|quotation)\b/.test(text)) {
+    hints.add("procurement");
+  }
+
+  return Array.from(hints);
+};
+
+const buildWebPresenceQuery = (
+  dossier: AnalystMemoDossier,
+  input: BusinessDossierInput,
+): string => [
+  getDossierSummaryString(dossier, "Entity") ?? input.entityName,
+  getDossierSummaryString(dossier, "UEN") ?? input.uen,
+].filter((part): part is string => typeof part === "string" && part.trim() !== "").join(" ").trim();
+
+const buildSkippedWebPresence = (
+  query: string,
+  reason: string,
+): WebPresence => ({
+  query,
+  configured: false,
+  results: [],
+  possibleOfficialWebsite: null,
+  limits: [
+    reason,
+    "Web discovery was not used because the orchestrator stopped before supplemental evidence collection.",
+  ],
+});
+
+const buildSkippedPeopleDiscovery = (
+  params: Readonly<{
+    entityName: string;
+    uen: string | null;
+    reason: string;
+  }>,
+): PeopleDiscovery => ({
+  entityName: params.entityName,
+  uen: params.uen,
+  query: params.entityName,
+  configured: false,
+  results: [],
+  suggestedActions: [],
+  limits: [
+    params.reason,
+    "People discovery was not used because the orchestrator stopped before supplemental evidence collection.",
+  ],
+});
+
+const resolveBusinessDossierRecord = async (
+  input: BusinessDossierInput,
+): Promise<AnalystMemoDossier> => {
+  const result = await handleBusinessDossier(input);
+  const record = result.structuredContent?.["record"];
+  if (!isDossier(record)) {
+    throw new CddOrchestratorBadRequestError(
+      "CDD_ORCHESTRATOR_DOSSIER_FAILED",
+      "Unable to resolve a business dossier for CDD orchestration.",
+    );
+  }
+  return record;
+};
+
+const memoStageStatus = (memo: AnalystMemoResponse): CddOrchestratorStage["status"] => {
+  if (memo.status === "ready") return "completed";
+  if (memo.status === "unavailable") return "unavailable";
+  return "blocked";
+};
+
+const buildReadyStages = (params: Readonly<{
+  acraSectorHints: readonly BusinessSectorHint[];
+  effectiveSectorHints: readonly BusinessSectorHint[];
+  officialModules: readonly string[];
+  webPresence: WebPresence;
+  webSectorHints: readonly BusinessSectorHint[];
+  peopleDiscovery: PeopleDiscovery;
+  memo: AnalystMemoResponse;
+}>): readonly CddOrchestratorStage[] => [
+  {
+    detail: "Canonical entity resolved through ACRA before downstream CDD enrichment.",
+    id: "acra_identity",
+    label: "ACRA identity lookup",
+    status: "completed",
+    tools: ["sg_acra_entities"],
+  },
+  {
+    detail: [
+      `ACRA hints: ${params.acraSectorHints.join(", ") || "none"}.`,
+      `Web hints: ${params.webSectorHints.join(", ") || "none"}.`,
+      `Effective hints: ${params.effectiveSectorHints.join(", ") || "none"}.`,
+    ].join(" "),
+    id: "sector_inference",
+    label: "Sector inference",
+    status: "completed",
+    tools: ["ACRA SSIC", "TinyFish Search"],
+  },
+  {
+    detail: `Ran official module set: ${params.officialModules.join(", ") || "none"}.`,
+    id: "official_modules",
+    label: "Official sector modules",
+    status: "completed",
+    tools: params.officialModules.map((module) => module === "acra" ? "sg_acra_entities" : `sg_${module}`),
+  },
+  {
+    detail: params.webPresence.configured
+      ? `TinyFish web discovery returned ${params.webPresence.results.length} result(s).`
+      : "TinyFish web discovery is not configured.",
+    id: "web_presence",
+    label: "Web presence",
+    status: params.webPresence.configured ? "completed" : "unavailable",
+    tools: ["TinyFish Search"],
+  },
+  {
+    detail: params.peopleDiscovery.configured
+      ? `People discovery returned ${params.peopleDiscovery.results.length} candidate snippet(s).`
+      : "TinyFish people discovery is not configured.",
+    id: "people_discovery",
+    label: "People discovery",
+    status: params.peopleDiscovery.configured ? "completed" : "unavailable",
+    tools: ["TinyFish Search"],
+  },
+  {
+    detail: "Built from supplied dossier records only; explicit source-declared relationships are shown when present, but ownership or control is not inferred.",
+    id: "relationship_graph",
+    label: "Relationship graph",
+    status: "completed",
+    tools: ["sg_relationship_graph"],
+  },
+  {
+    detail: "Sanctions, OpenCorporates, adverse-media, and relationship graph evidence were included or surfaced as provider gaps.",
+    id: "supplemental_review",
+    label: "Supplemental review",
+    status: "completed",
+    tools: CDD_ORCHESTRATOR_SUPPLEMENTAL_TOOLS,
+  },
+  {
+    detail: params.memo.status === "ready"
+      ? "AI memo generated from cited dossier evidence."
+      : params.memo.reason.message,
+    id: "ai_memo",
+    label: "AI memo",
+    status: memoStageStatus(params.memo),
+    tools: ["dude memo"],
+  },
+];
+
+const buildIdentityBlockedStages = (reason: string, memo: AnalystMemoResponse): readonly CddOrchestratorStage[] => [
+  {
+    detail: reason,
+    id: "acra_identity",
+    label: "ACRA identity lookup",
+    status: "blocked",
+    tools: ["sg_acra_entities"],
+  },
+  {
+    detail: "Skipped because ACRA did not resolve a canonical entity.",
+    id: "sector_inference",
+    label: "Sector inference",
+    status: "skipped",
+    tools: ["ACRA SSIC", "TinyFish Search"],
+  },
+  {
+    detail: "Skipped because sector inference did not run.",
+    id: "official_modules",
+    label: "Official sector modules",
+    status: "skipped",
+    tools: ["sg_bca_*", "sg_boa_*", "sg_cea_salespersons", "sg_gebiz_tenders", "sg_hsa_*", "sg_hlb_hotels"],
+  },
+  {
+    detail: "Skipped until ACRA identity is resolved.",
+    id: "supplemental_review",
+    label: "Supplemental review",
+    status: "skipped",
+    tools: CDD_ORCHESTRATOR_SUPPLEMENTAL_TOOLS,
+  },
+  {
+    detail: memo.status === "ready"
+      ? "No-match memo generated from the identity-gated dossier."
+      : memo.reason.message,
+    id: "ai_memo",
+    label: "AI memo",
+    status: memoStageStatus(memo),
+    tools: ["dude memo"],
+  },
+];
+
+export const runCddOrchestrator = async (
+  input: BusinessDossierInput,
+  options: CddOrchestratorOptions = {},
+): Promise<CddOrchestratorResponse> => {
+  const generatedAt = new Date().toISOString();
+  const baseInput: BusinessDossierInput = {
+    ...input,
+    includeExternalDiligence: true,
+  };
+  const firstDossier = withDossierAnalystFollowUps(
+    withResolutionMetadata(await resolveBusinessDossierRecord(baseInput), options.resolution),
+  );
+  const webPresenceQuery = buildWebPresenceQuery(firstDossier, baseInput);
+  const entityName = getDossierSummaryString(firstDossier, "Entity") ?? baseInput.entityName ?? webPresenceQuery;
+  const uen = getDossierSummaryString(firstDossier, "UEN") ?? baseInput.uen ?? null;
+  const acraRecords = getDossierRecordArray(firstDossier, "acra");
+  const acraSectorHints = getResolutionSectorHints(firstDossier, "effectiveSectorHints");
+
+  if (acraRecords.length === 0) {
+    const reason = "ACRA did not return a canonical entity record, so automated sector, web, people, and memo orchestration stopped at the identity check.";
+    const webPresence = buildSkippedWebPresence(webPresenceQuery, reason);
+    const peopleDiscovery = buildSkippedPeopleDiscovery({ entityName, uen, reason });
+    const stoppedDossier = withDossierAnalystFollowUps(withCoverageItems(firstDossier, [
+      buildWebPresenceCoverage(webPresence, generatedAt, reason),
+      buildPeopleDiscoveryCoverage(peopleDiscovery, generatedAt, reason),
+    ]));
+    const memo = await generateAnalystMemo({ dossier: stoppedDossier });
+    return {
+      dossier: stoppedDossier,
+      webPresence,
+      peopleDiscovery,
+      memo,
+      generatedAt,
+      ...(options.resolution === undefined ? {} : { resolution: options.resolution }),
+      orchestration: {
+        status: "identity_not_resolved",
+        strategy: "acra_then_sector_then_supplemental_memo",
+        acraSectorHints,
+        webSectorHints: [],
+        effectiveSectorHints: acraSectorHints,
+        officialModules: getResolutionStringArray(firstDossier, "selectedModules"),
+        supplementalTools: CDD_ORCHESTRATOR_SUPPLEMENTAL_TOOLS,
+        reranDossierForWebSectorHints: false,
+        stages: buildIdentityBlockedStages(reason, memo),
+        limits: [
+          reason,
+          "No downstream sector module can be treated as matching the entity until ACRA identity is resolved.",
+        ],
+      },
+    };
+  }
+
+  const webPresence = await getWebPresence(webPresenceQuery);
+  const webSectorHints = inferSectorHintsFromWebPresence(webPresence);
+  const mergedSectorHints = uniqueSectorHints([
+    ...getResolutionSectorHints(firstDossier, "sectorHints"),
+    ...acraSectorHints,
+    ...webSectorHints,
+  ]);
+  const hasNewWebSectorHint = webSectorHints.some((hint) => !acraSectorHints.includes(hint));
+  const finalDossier = hasNewWebSectorHint
+    ? withDossierAnalystFollowUps(withResolutionMetadata(await resolveBusinessDossierRecord({
+        ...baseInput,
+        explicitSectorHints: getResolutionSectorHints(firstDossier, "sectorHints"),
+        sectorHints: mergedSectorHints,
+        webSectorHints,
+      }), options.resolution))
+    : firstDossier;
+  const finalEntityName = getDossierSummaryString(finalDossier, "Entity") ?? entityName;
+  const finalUen = getDossierSummaryString(finalDossier, "UEN") ?? uen;
+  const peopleDiscovery = await getPeopleDiscovery({
+    entityName: finalEntityName,
+    ...(finalUen === null ? {} : { uen: finalUen }),
+  });
+  const dossierWithCoverage = withDossierAnalystFollowUps(withCoverageItems(finalDossier, [
+    buildWebPresenceCoverage(webPresence, generatedAt),
+    buildPeopleDiscoveryCoverage(peopleDiscovery, generatedAt),
+  ]));
+  const memo = await generateAnalystMemo({
+    dossier: dossierWithCoverage,
+    peopleDiscovery,
+    webPresence,
+  });
+
+  return {
+    dossier: dossierWithCoverage,
+    webPresence,
+    peopleDiscovery,
+    memo,
+    generatedAt,
+    ...(options.resolution === undefined ? {} : { resolution: options.resolution }),
+    orchestration: {
+      status: "ready",
+      strategy: "acra_then_sector_then_supplemental_memo",
+      acraSectorHints,
+      webSectorHints,
+      effectiveSectorHints: getResolutionSectorHints(finalDossier, "effectiveSectorHints"),
+      officialModules: getResolutionStringArray(finalDossier, "selectedModules"),
+      supplementalTools: CDD_ORCHESTRATOR_SUPPLEMENTAL_TOOLS,
+      reranDossierForWebSectorHints: hasNewWebSectorHint,
+      stages: buildReadyStages({
+        acraSectorHints,
+        effectiveSectorHints: getResolutionSectorHints(finalDossier, "effectiveSectorHints"),
+        memo,
+        officialModules: getResolutionStringArray(finalDossier, "selectedModules"),
+        peopleDiscovery,
+        webPresence,
+        webSectorHints,
+      }),
+      limits: [
+        "ACRA remains the identity gate; TinyFish web signals only add bounded sector hints.",
+        "Supplemental sanctions, OpenCorporates, adverse-media, relationship graph, web presence, and people discovery outputs are analyst-review evidence.",
+        "Claims remain evidence-bound and should not be treated as legal, AML, sanctions, credit, tax, or investment advice.",
+      ],
+    },
+  };
+};

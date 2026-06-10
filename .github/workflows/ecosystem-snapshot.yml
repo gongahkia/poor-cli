@@ -1,0 +1,48 @@
+name: Ecosystem Snapshot
+
+on:
+  schedule:
+    - cron: "0 2 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build repository
+        run: npm run build
+
+      - name: Generate ecosystem snapshot and trend history
+        run: npm run ecosystem:snapshot -- --output artifacts/ecosystem/latest.json --history-dir artifacts/ecosystem/history
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload latest ecosystem snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecosystem-snapshot-latest
+          path: artifacts/ecosystem/latest.json
+          retention-days: 90
+
+      - name: Upload ecosystem snapshot history
+        uses: actions/upload-artifact@v4
+        with:
+          name: ecosystem-snapshot-history-${{ github.run_id }}
+          path: artifacts/ecosystem/history/
+          retention-days: 90

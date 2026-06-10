@@ -1,0 +1,73 @@
+{
+  "title": "Transport Brief",
+  "summary": [
+    { "label": "Transport status", "value": "advisory", "source": "LTA" },
+    { "label": "Focus", "value": "bus stop 83139", "source": "LTA" },
+    { "label": "Primary driver", "value": "Roadwork", "source": "LTA" }
+  ],
+  "evidence": [
+    { "label": "Bus services observed", "value": 4, "source": "LTA" },
+    { "label": "Train alerts observed", "value": 0, "source": "LTA" },
+    { "label": "Train messages observed", "value": 0, "source": "LTA" },
+    { "label": "Traffic incidents observed", "value": 2, "source": "LTA" }
+  ],
+  "records": {
+    "status": {
+      "level": "advisory",
+      "headline": "Traffic advisory: 2 incident(s) including Roadwork for bus stop 83139.",
+      "focus": "bus stop 83139"
+    },
+    "coverage": {
+      "bus": { "status": "available", "requestedBusStopCode": "83139", "requestedServiceNo": null, "servicesObserved": 4 },
+      "train": { "status": "clear", "alertCount": 0, "messageCount": 0 },
+      "traffic": { "status": "incidents_active", "incidentCount": 2 }
+    },
+    "signals": [
+      { "source": "bus", "level": "normal", "headline": "Next bus ETA for bus stop 83139 is 2026-03-26T10:05:00+08:00.", "focus": "bus stop 83139", "busStopCode": "83139", "nextArrival": "2026-03-26T10:05:00+08:00", "coverage": "available" },
+      { "source": "train", "level": "normal", "headline": "No active train alerts reported.", "alertCount": 0, "messageCount": 0, "primaryLine": null, "coverage": "clear" },
+      { "source": "traffic", "level": "advisory", "headline": "2 traffic incident(s) reported, including Roadwork.", "incidentCount": 2, "primaryIncidentType": "Roadwork", "coverage": "incidents_active" }
+    ],
+    "network": {
+      "trainAlertCount": 0,
+      "trainMessageCount": 0,
+      "trainByLine": {},
+      "trafficIncidentCount": 2,
+      "trafficByType": { "Roadwork": 1, "Vehicle Breakdown": 1 }
+    },
+    "stop": {
+      "busStopCode": "83139",
+      "serviceCount": 4,
+      "nextArrival": "2026-03-26T10:05:00+08:00",
+      "avgWaitMinutes": 3.2,
+      "arrivals": [
+        { "serviceNo": "851", "operator": "SBST", "nextArrival": "2026-03-26T10:05:00+08:00", "arrivalCount": 3, "arrivals": [] }
+      ]
+    },
+    "followups": [
+      { "tool": "sg_lta_bus_arrivals", "reason": "Inspect stop-level bus arrivals for the current transport focus.", "input": { "busStopCode": "83139" } },
+      { "tool": "sg_lta_train_alerts", "reason": "Inspect network-wide train service alerts and operator messages.", "input": {} },
+      { "tool": "sg_lta_traffic_incidents", "reason": "Inspect live traffic incidents across Singapore.", "input": {} }
+    ],
+    "raw": {
+      "busArrivals": [],
+      "trainAlerts": [],
+      "trainMessages": [],
+      "trafficIncidents": []
+    }
+  },
+  "gaps": [],
+  "provenance": [
+    { "source": "LTA", "tool": "sg_lta_bus_arrivals", "coverage": "Optional stop-level bus arrival timings for the supplied stop code and service.", "authRequired": true, "recordCount": 4 },
+    { "source": "LTA", "tool": "sg_lta_train_alerts", "coverage": "Network-wide train service alert coverage and operator messages.", "authRequired": true, "recordCount": 0 },
+    { "source": "LTA", "tool": "sg_lta_traffic_incidents", "coverage": "Live road traffic incident coverage across Singapore.", "authRequired": true, "recordCount": 2 }
+  ],
+  "freshness": [
+    { "source": "LTA bus arrivals", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": "2026-03-26T10:05:00+08:00" },
+    { "source": "LTA train alerts", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": null },
+    { "source": "LTA traffic incidents", "observedAt": "2026-03-26T10:00:00.000Z", "upstreamTimestamp": null }
+  ],
+  "limits": [
+    { "code": "SNAPSHOT_ONLY", "message": "This brief summarizes current LTA operational conditions and does not predict delays or incident resolution time." },
+    { "code": "NO_ROUTE_PLANNING", "message": "Use sg_onemap_route for route planning; this brief only summarizes transport operations status." }
+  ]
+}

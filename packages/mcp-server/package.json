@@ -1,0 +1,53 @@
+{
+  "name": "@swee-sg/shield",
+  "version": "0.1.0",
+  "mcpName": "io.github.gongahkia/swee-sg",
+  "description": "Swee SG MCP and REST gateway for policy-governed Singapore public-data tools, Shield audit trails, and Pulse city signals.",
+  "keywords": [
+    "MCP Shield",
+    "Singapore public data",
+    "LTA",
+    "NEA",
+    "OneMap",
+    "Swee Pulse",
+    "City operations",
+    "Operations"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "dist",
+    "assets",
+    "openapi.json",
+    "!dist/**/__tests__/**",
+    "!dist/**/fixtures/**",
+    "!dist/**/mock-server/**"
+  ],
+  "bin": {
+    "swee-sg": "dist/index.js",
+    "swee-shield": "dist/index.js",
+    "sg-apis-mcp": "dist/index.js",
+    "sg-data": "dist/cli.js"
+  },
+  "scripts": {
+    "prepublishOnly": "tsc --build"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "@swee-sg/shared": "0.1.0",
+    "better-sqlite3": "^11.0.0",
+    "jose": "^6.1.2",
+    "read-excel-file": "^9.0.9",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0"
+  }
+}
