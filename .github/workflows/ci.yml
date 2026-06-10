@@ -1,4 +1,4 @@
-name: CLI Harness CI
+name: poor-cli v6 ci
 
 on:
   push:
@@ -17,14 +17,14 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e .[dev]
-      - name: Run CLI smoke checks
+          python -m pip install -e ".[dev]"
+      - name: Smoke
         run: |
-          python -m compileall poor_cli
-          poor-cli help
-          poor-cli chat --help
-          poor-cli exec --help
-          poor-cli install info
-      - name: Run focused tests
-        run: |
-          python -m pytest -q tests/test_product_contracts.py tests/test_tool_orchestration.py tests/test_server_handlers.py tests/test_server_rate_limit.py
+          python -m compileall src/poor_cli
+          poor-cli --version
+          poor-cli --help
+          poor-cli agents
+      - name: Lint
+        run: ruff check src/poor_cli tests
+      - name: Test
+        run: python -m pytest tests/

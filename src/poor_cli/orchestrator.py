@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+import subprocess
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from .agents import AgentRunner, detect_agents
+from .models import Budget, ContextPacket, Plan, TaskSpec, make_id, to_jsonable
+from .planner import Planner
+from .store import RunStore
+
+
+class Orchestrator:
+    def __init__(self, store: RunStore, repo_path: Path | None = None):
+        self.store = store
+        self.repo_path = (repo_path or Path.cwd()).resolve()
+
+    def plan(self, goal: str, budget: Budget) -> tuple[str, Plan]:
+        run_id = self._create_run(goal, budget)
+        agents = detect_agents()
+        self.store.insert_agents(run_id, agents)
+        self.store.append_event(run_id, "agents.detected", {"agents": [asdict(agent) for agent in agents]})
+        planner = Planner(self.repo_path, agents)
+        plan, prompt, response = planner.create(goal)
+        prompt_art = self.store.put_artifact(run_id=run_id, kind="planner.prompt", data=prompt, media_type="text/plain")
+        response_art = self.store.put_artifact(run_id=run_id, kind="planner.response", data=response, media_type="text/plain")
+        plan_art = self.store.put_artifact(run_id=run_id, kind="plan.json", data=to_jsonable(plan))
+        self.store.set_run_plan(run_id, plan.plan_id)
+        self.store.insert_tasks(run_id, plan.tasks)
+        self.store.append_event(
+            run_id,
+            "plan.created",
+            {
+                "plan_id": plan.plan_id,
+                "artifact_id": plan_art.artifact_id,
+                "prompt_artifact_id": prompt_art.artifact_id,
+                "response_artifact_id": response_art.artifact_id,
+                "task_count": len(plan.tasks),
+            },
+        )
+        for task in plan.tasks:
+            self.store.append_event(run_id, "task.created", {"task": to_jsonable(task)}, task.task_id)
+        self.store.set_run_status(run_id, "planned")
+        return run_id, plan
+
+    def run(self, run_id: str, budget: Budget, selected_agents: set[str] | None = None, dry_run: bool = False) -> int:
+        run = self.store.get_run(run_id)
+        agents = detect_agents()
+        if selected_agents:
+            agents = [agent for agent in agents if agent.name in selected_agents or agent.agent_id in selected_agents]
+        if not agents:
+            raise RuntimeError("no selected agents available")
+        runner = AgentRunner(agents)
+        tasks = [_task_from_row(row) for row in self.store.list_tasks(run_id)]
+        self.store.set_run_status(run_id, "running")
+        exit_code = 0
+        for task in tasks:
+            agent = runner.choose(task.suggested_agent)
+            packet = self._context_packet(run, task)
+            packet_art = self.store.put_artifact(run_id=run_id, task_id=task.task_id, kind="context.packet", data=to_jsonable(packet))
+            self.store.set_task_status(task.task_id, "assigned", assigned_agent=agent.name, context_packet_id=packet_art.artifact_id)
+            self.store.append_event(
+                run_id,
+                "context.created",
+                {"packet_id": packet.packet_id, "artifact_id": packet_art.artifact_id},
+                task.task_id,
+            )
+            self.store.append_event(run_id, "task.assigned", {"agent_id": agent.agent_id, "agent": agent.name}, task.task_id)
+            if dry_run:
+                self.store.set_task_status(task.task_id, "skipped")
+                self.store.append_event(run_id, "task.skipped", {"reason": "dry-run"}, task.task_id)
+                continue
+            self.store.append_event(run_id, "agent.started", {"agent_id": agent.agent_id, "command": agent.command}, task.task_id)
+            result = runner.run(
+                agent,
+                goal=str(run["user_goal"]),
+                task=task,
+                context=packet.task_prompt,
+                workdir=self.repo_path,
+                budget_usd=budget.max_usd,
+            )
+            result_art = self.store.put_artifact(run_id=run_id, task_id=task.task_id, kind="agent.result", data=to_jsonable(result))
+            self.store.append_event(
+                run_id,
+                "agent.completed",
+                {"agent_id": result.agent_id, "returncode": result.returncode, "artifact_id": result_art.artifact_id},
+                task.task_id,
+            )
+            if result.returncode == 0:
+                self.store.set_task_status(task.task_id, "completed", result_artifact_id=result_art.artifact_id)
+                self.store.append_event(run_id, "task.completed", {"result_artifact_id": result_art.artifact_id}, task.task_id)
+            else:
+                exit_code = result.returncode or 1
+                self.store.set_task_status(task.task_id, "failed", result_artifact_id=result_art.artifact_id)
+                self.store.append_event(
+                    run_id,
+                    "task.failed",
+                    {"result_artifact_id": result_art.artifact_id, "returncode": result.returncode},
+                    task.task_id,
+                )
+                break
+        final_status = "failed" if exit_code else "completed"
+        summary = self._summary(run_id)
+        self.store.set_run_status(run_id, final_status, summary)
+        self.store.append_event(run_id, f"run.{final_status}", {"summary": summary})
+        return exit_code
+
+    def _create_run(self, goal: str, budget: Budget) -> str:
+        commit = _git(["rev-parse", "HEAD"], self.repo_path)
+        run_id = self.store.create_run(
+            user_goal=goal,
+            repo_path=self.repo_path,
+            git_commit_start=commit,
+            mode=budget.mode,
+            budget=to_jsonable(budget),
+        )
+        self.store.append_event(run_id, "run.created", {"goal": goal, "budget": to_jsonable(budget)})
+        self.store.append_event(run_id, "repo.scanned", {"repo_path": str(self.repo_path), "git_commit_start": commit})
+        return run_id
+
+    def _context_packet(self, run: dict[str, Any], task: TaskSpec) -> ContextPacket:
+        prompt = "\n".join(
+            [
+                f"Run: {run['run_id']}",
+                f"Goal: {run['user_goal']}",
+                f"Task objective: {task.objective}",
+                f"Dependencies: {', '.join(task.dependencies) if task.dependencies else 'none'}",
+                "Constraints: preserve repo intent; keep changes scoped; record validation.",
+                "Expected output: changed files if needed plus concise validation summary.",
+            ]
+        )
+        return ContextPacket(
+            packet_id=make_id("ctx"),
+            run_id=str(run["run_id"]),
+            task_id=task.task_id,
+            token_estimate=max(1, len(prompt) // 4),
+            included_files=[],
+            included_summaries=[],
+            constraints=["keep changes scoped", "report validation", "do not auto-merge"],
+            task_prompt=prompt,
+            validation_instructions=task.validation,
+            handoff_instructions=["summarize changes", "list commands run", "list unresolved blockers"],
+        )
+
+    def _summary(self, run_id: str) -> str:
+        tasks = self.store.list_tasks(run_id)
+        done = sum(1 for task in tasks if task["status"] == "completed")
+        failed = sum(1 for task in tasks if task["status"] == "failed")
+        return f"{done}/{len(tasks)} tasks completed, {failed} failed"
+
+
+def _task_from_row(row: dict[str, Any]) -> TaskSpec:
+    return TaskSpec(
+        task_id=str(row["task_id"]),
+        title=str(row["title"]),
+        objective=str(row["objective"]),
+        task_type=str(row["task_type"]),
+        complexity=str(row["complexity"]),
+        risk=str(row["risk"]),
+        required_context=str(row["required_context"]),
+        dependencies=list(row.get("dependencies") or []),
+        suggested_agent=row.get("assigned_agent") or None,
+        validation=[],
+    )
+
+
+def _git(args: list[str], cwd: Path) -> str | None:
+    try:
+        result = subprocess.run(["git", *args], cwd=cwd, text=True, capture_output=True, timeout=5, check=False)
+    except Exception:
+        return None
+    return result.stdout.strip() if result.returncode == 0 else None

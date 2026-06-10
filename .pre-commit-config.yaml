@@ -3,6 +3,6 @@ repos:
     rev: v0.9.10
     hooks:
       - id: ruff
-        args: [check, poor_cli/]
+        args: [check, src/poor_cli/, tests/]
       - id: ruff-format
-        args: [--check, poor_cli/]
+        args: [--check, src/poor_cli/, tests/]

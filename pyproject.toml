@@ -4,87 +4,35 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "poor-cli"
-dynamic = ["version"]
-description = "CI-focused CLI agent harness with multi-provider support"
+version = "6.0.0a1"
+description = "Deterministic orchestration runtime for local AI coding agents."
 readme = "README.md"
 requires-python = ">=3.11,<3.15"
 license = "MIT"
-authors = [
-    {name = "poor-cli contributors", email = "contributors@poor-cli.dev"}
-]
-keywords = ["ai", "cli", "gemini", "openai", "claude", "ollama", "coding-assistant", "automation", "agent-harness", "ci"]
+authors = [{name = "poor-cli contributors", email = "contributors@poor-cli.dev"}]
+keywords = ["ai", "cli", "coding-agent", "orchestration", "replay", "sqlite"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
-    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Software Development",
     "Topic :: Utilities",
     "Typing :: Typed",
 ]
-dependencies = [
-    "google-genai>=1.0.0",
-    "jmespath>=1.0.1",
-    "rich>=13.0.0",
-    "PyYAML>=6.0",
-    "aiofiles>=23.0.0",
-    "aiohttp>=3.9.0",
-    "cryptography>=41.0.0",
-    "pydantic>=2.0,<3",
-    "jsonschema>=4.0",
-    "textual>=1.0.0",
-]
+dependencies = []
 
 [project.optional-dependencies]
-openai = ["openai>=1.0.0"]
-openrouter = ["openai>=1.0.0"]
-anthropic = ["anthropic>=0.18.0"]
-litellm = ["litellm>=1.50.0"]
-hf-local = ["torch", "transformers", "accelerate"]
-compression = ["llmlingua>=0.2.0"]
-keyring = ["keyring>=24.0.0"]
-repo-map = [
-    "tree-sitter",
-    "tree-sitter-python",
-    "tree-sitter-lua",
-    "tree-sitter-javascript",
-    "tree-sitter-typescript",
-    "tree-sitter-rust",
-]
 dev = [
     "pytest>=8.0",
-    "pytest-cov>=6.0",
     "ruff>=0.9.0",
-    "tiktoken>=0.7.0",
-]
-voice = [
-    "numpy>=1.26",
-    "sounddevice>=0.4.6",
-    "faster-whisper>=1.0.3",
-]
-all = [
-    "openai>=1.0.0",
-    "anthropic>=0.18.0",
-    "litellm>=1.50.0",
-    "llmlingua>=0.2.0",
-    "keyring>=24.0.0",
-    "numpy>=1.26",
-    "sounddevice>=0.4.6",
-    "faster-whisper>=1.0.3",
-    "tree-sitter",
-    "tree-sitter-python",
-    "tree-sitter-lua",
-    "tree-sitter-javascript",
-    "tree-sitter-typescript",
-    "tree-sitter-rust",
 ]
 
 [project.scripts]
-poor-cli = "poor_cli.__main__:main"
-poor-cli-server = "poor_cli.server:main"
+poor-cli = "poor_cli.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/gongahkia/poor-cli"
@@ -92,28 +40,15 @@ Repository = "https://github.com/gongahkia/poor-cli"
 Issues = "https://github.com/gongahkia/poor-cli/issues"
 
 [tool.setuptools.packages.find]
+where = ["src"]
 include = ["poor_cli*"]
-
-[tool.setuptools.package-data]
-poor_cli = ["*.json", "skills/*.md"]
-"poor_cli.server" = ["*.json"]
-
-[tool.setuptools.dynamic]
-version = {attr = "poor_cli.__version__"}
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-x -q --tb=short"
+addopts = "-q"
 
-[tool.coverage.run]
-source = ["poor_cli"]
-omit = ["poor_cli/__pycache__/*"]
+[tool.ruff]
+line-length = 140
 
-[tool.coverage.report]
-show_missing = true
-fail_under = 40
-exclude_lines = [
-    "pragma: no cover",
-    "if __name__ == .__main__.",
-    "if TYPE_CHECKING:",
-]
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

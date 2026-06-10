@@ -1,16 +1,7 @@
-# Include important files in source distribution
 include README.md
 include pyproject.toml
 include requirements.txt
-
-# Include configuration examples
-include .env.example
-
-# Include product assets and source surfaces
-recursive-include asset *.png
-recursive-include poor_cli *.json
-
-# Exclude unwanted files
+include LICENSE
 global-exclude __pycache__
 global-exclude *.py[cod]
 global-exclude .DS_Store
