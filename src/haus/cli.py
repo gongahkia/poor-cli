@@ -324,93 +324,6 @@ def _build_parser() -> argparse.ArgumentParser:
     view.add_argument("--case", required=False, type=Path, default=None, help="Path to Case JSON for before/after review")
     view.add_argument("--port", type=int, default=8080, help="HTTP server port (default: 8080)")
 
-    case_server = subparsers.add_parser(
-        "case-server",
-        help="Start the Stage-1 Renovation Design Case HTTP service",
-    )
-    case_server.add_argument("--host", default="127.0.0.1", help="Bind host (default: 127.0.0.1)")
-    case_server.add_argument("--port", type=int, default=8090, help="HTTP server port (default: 8090)")
-    case_server.add_argument(
-        "--proposals-dir",
-        type=Path,
-        default=None,
-        help="Directory containing pinned proposal JSON files",
-    )
-    case_server.add_argument(
-        "--vendor-cache-dir",
-        type=Path,
-        default=None,
-        help="Directory containing cached vendor JSON files",
-    )
-    case_server.add_argument(
-        "--handoff-root",
-        type=Path,
-        default=None,
-        help="Directory where generated handoff packets are written",
-    )
-    case_server.add_argument(
-        "--case-db-path",
-        type=Path,
-        default=None,
-        help="SQLite DB path for persisted Case payloads",
-    )
-    case_server.add_argument(
-        "--api-token",
-        default=None,
-        help="Require Authorization: Bearer <token> on Case HTTP routes",
-    )
-    case_server.add_argument(
-        "--max-revise-attempts",
-        type=int,
-        default=None,
-        help="Override MAX_REVISE_ATTEMPTS for the revise loop",
-    )
-    case_server.add_argument(
-        "--design-mode",
-        choices=("deterministic", "live"),
-        default=None,
-        help="Design Agent mode for unpinned cases (default: deterministic)",
-    )
-    case_server.add_argument("--design-provider", default=None, help="Live Design Agent provider")
-    case_server.add_argument("--design-model", default=None, help="Live Design Agent model")
-    case_server.add_argument(
-        "--cache-live-proposals",
-        action="store_true",
-        default=None,
-        help="Write successful live Design Agent proposals into the proposals directory",
-    )
-
-    case = subparsers.add_parser("case", help="Run Renovation Design Case utilities")
-    case_subparsers = case.add_subparsers(dest="case_command", required=True)
-    demo = case_subparsers.add_parser("demo", help="Run the Stage-1 demo lifecycle through the HTTP app")
-    demo.add_argument("--fixture", type=Path, default=Path("corpus/library/3.json"), help="Case library JSON fixture")
-    demo.add_argument("--pinned", default="demo_3room_remove_wall_28", help="Pinned proposal id to replay")
-    demo.add_argument("--brief", default=None, help="Brief JSON string or path; defaults to the hackathon demo brief")
-    demo.add_argument("--proposals-dir", type=Path, default=Path("tests/fixtures/proposals"), help="Pinned proposals directory")
-    demo.add_argument("--vendor-cache-dir", type=Path, default=Path("tests/fixtures/vendors"), help="Vendor cache directory")
-    demo.add_argument("--vendor-cache-key", default="demo_hdb_renovation", help="Vendor cache key")
-    demo.add_argument("--handoff-root", type=Path, default=None, help="Handoff packet output root")
-    demo.add_argument("--max-revise-attempts", type=int, default=3, help="N-failure escalation threshold")
-    demo.add_argument("--reviewer", default="coordinator_alice", help="Stage-1 approval reviewer")
-    demo.add_argument("--approval-notes", default="Approved for contractor handoff demo.", help="Stage-1 approval notes")
-    demo.add_argument("--skip-approval", action="store_true", help="Stop at awaiting_human_approval")
-    demo.add_argument("--skip-handoff", action="store_true", help="Stop after approval")
-    demo.add_argument("--out", type=Path, default=None, help="Where to write the final Case JSON")
-    demo.add_argument(
-        "--design-mode",
-        choices=("deterministic", "live"),
-        default=None,
-        help="Design Agent mode for unpinned cases",
-    )
-    demo.add_argument("--design-provider", default=None, help="Live Design Agent provider")
-    demo.add_argument("--design-model", default=None, help="Live Design Agent model")
-    demo.add_argument(
-        "--cache-live-proposals",
-        action="store_true",
-        default=None,
-        help="Write successful live Design Agent proposals into the proposals directory",
-    )
-
     return parser
 
 
@@ -489,30 +402,6 @@ def main(argv: list[str] | None = None) -> int:
             webbrowser.open(open_url)
             run_chat_server(str(project_root), port, layout_path=str(layout_path))
             return 0
-        if args.command == "case-server":
-            from .case.http_server import run_server
-            print(
-                f"Starting case HTTP service at http://{args.host}:{args.port}",
-                file=sys.stderr,
-            )
-            run_server(
-                host=args.host,
-                port=args.port,
-                proposals_dir=args.proposals_dir,
-                vendor_cache_dir=args.vendor_cache_dir,
-                handoff_root=args.handoff_root,
-                max_revise=args.max_revise_attempts,
-                design_mode=args.design_mode,
-                design_provider=args.design_provider,
-                design_model=args.design_model,
-                cache_live_proposals=args.cache_live_proposals,
-                case_db_path=args.case_db_path,
-                api_token=args.api_token,
-            )
-            return 0
-        if args.command == "case":
-            if args.case_command == "demo":
-                return _case_demo(args)
         parser.error(f"Unsupported command: {args.command}")
     except Exception as e:
         log.exception("CLI command failed")

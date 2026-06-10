@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "haus"
 version = "0.1.0"
-description = "Vectorize raster floor plan images into clean wall-polygon PNGs"
+description = "AI floor-plan workbench for uploaded apartment layouts"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}

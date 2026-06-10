@@ -6,10 +6,7 @@ from pathlib import Path
 
 EXPECTED_TARGETS = {
     "mcp.so",
-    "mcp.pizza",
     "PulseMCP",
-    "Smithery",
-    "Anthropic Connectors Directory",
     "Official MCP Registry",
 }
 
@@ -21,7 +18,7 @@ def test_mcp_manifest_tracks_registry_targets_and_copy() -> None:
     assert manifest["repository"] == "https://github.com/gongahkia/haus"
     assert manifest["transport"]["type"] == "stdio"
     assert manifest["listing"]["short_description"] == (
-        "MCP-native HDB BTO floor-plan editor that lets agents furnish Singapore flats."
+        "MCP-native AI floor-plan workbench for uploaded apartment layouts."
     )
     assert len(manifest["listing"]["short_description"]) <= 100
 

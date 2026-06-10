@@ -16,22 +16,21 @@
     "command": "uvx --from git+https://github.com/gongahkia/haus haus mcp"
   },
   "listing": {
-    "short_description": "MCP-native HDB BTO floor-plan editor that lets agents furnish Singapore flats.",
-    "long_description": "Haus is an open-source SVG/GLB floor-plan editor for Singapore HDB BTO layouts. Its stdio MCP server lets assistants load real BTO flat layouts, place and edit furniture, tag rooms, check sightlines and walkways, and write the result back to the browser editor.",
+    "short_description": "MCP-native AI floor-plan workbench for uploaded apartment layouts.",
+    "long_description": "Haus is an open-source floor-plan editor and local AI planning workbench. Users can upload floor-plan images, calibrate scale, vectorize walls into editable 3D geometry, ask agents to furnish rooms, run spatial checks, and export JSON, SVG, or GLB layouts.",
     "category": "Design tools",
     "tags": [
       "mcp",
       "floor-plan",
       "interior-design",
-      "hdb",
-      "bto",
-      "singapore",
+      "apartment",
       "threejs",
-      "layout"
+      "layout",
+      "space-planning"
     ],
     "use_cases": [
-      "Furnish Singapore HDB BTO floor plans through agent tool calls.",
-      "Load real BTO layout presets into a browser-based 3D editor.",
+      "Upload and vectorize apartment floor plans for editable layout planning.",
+      "Let an AI agent furnish a room or whole apartment through MCP tools.",
       "Check furniture placement, room tags, sightlines, and walkway clearance."
     ]
   },
@@ -104,7 +103,10 @@
       "list_room_templates",
       "apply_room_template",
       "score_doorway_accessibility",
-      "score_walkway"
+      "score_walkway",
+      "score_layout",
+      "get_semantic_layout_json",
+      "bim_readiness_report"
     ],
     "resources": [],
     "prompts": []
@@ -113,37 +115,16 @@
     {
       "target": "mcp.so",
       "status": "ready_for_manual_submission",
-      "last_checked": "2026-06-03",
       "path": "https://mcp.so/submit"
-    },
-    {
-      "target": "mcp.pizza",
-      "status": "pending_submission_path",
-      "last_checked": "2026-06-03",
-      "path": "https://www.mcp.pizza/mcp-servers"
     },
     {
       "target": "PulseMCP",
       "status": "ready_for_manual_submission",
-      "last_checked": "2026-06-03",
       "path": "https://www.pulsemcp.com/submit"
-    },
-    {
-      "target": "Smithery",
-      "status": "blocked_until_remote_server_or_mcpb_bundle",
-      "last_checked": "2026-06-03",
-      "path": "https://smithery.ai/docs/build/publish"
-    },
-    {
-      "target": "Anthropic Connectors Directory",
-      "status": "blocked_until_mcpb_bundle_or_remote_connector",
-      "last_checked": "2026-06-03",
-      "path": "https://claude.com/docs/connectors/building/submission"
     },
     {
       "target": "Official MCP Registry",
       "status": "blocked_until_pypi_release_and_package_verification",
-      "last_checked": "2026-06-03",
       "path": "https://modelcontextprotocol.io/registry"
     }
   ]

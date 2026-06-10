@@ -1,20 +1,20 @@
-# haus viewer
+# Haus Viewer
 
-Minimal Three.js floor plan viewer with furniture placement.
+Three.js floor-plan editor with upload, vectorization review, furniture placement, planner chat, and export.
 
 ## Usage
 
 ```bash
-cd viewer && python -m http.server 8080
+haus view
 ```
 
-Then open http://localhost:8080. Drop a `.glb` file or place `model.glb` in this directory.
+Then upload a PNG/JPG/WebP floor plan in the editor, or load an existing JSON/GLB layout.
 
-Alternatively, use the CLI:
+CLI preprocessing is still available:
 
 ```bash
-haus view --glb /path/to/model.glb
+haus build --image /path/to/floor-plan.png --out out/my-plan
+haus view --glb out/my-plan/model.glb
 ```
 
-Use the `Load real layout` dropdown in the editor toolbar to load one of the
-pre-vectorized BTO layouts from `corpus/library/` without running preprocessing.
+Use the sample layout dropdown for bundled examples only; they are not the product's data dependency.

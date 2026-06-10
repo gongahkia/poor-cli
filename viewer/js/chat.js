@@ -96,6 +96,12 @@ export function initChat() {
   });
 
   clearBtn.addEventListener('click', clearConversation);
+  document.querySelectorAll('#chat-quick-prompts button').forEach((button) => {
+    button.addEventListener('click', () => {
+      inputEl.value = button.dataset.prompt || button.textContent || '';
+      send();
+    });
+  });
 
   settingsBtn.addEventListener('click', () => {
     const open = settingsEl.style.display !== 'none';

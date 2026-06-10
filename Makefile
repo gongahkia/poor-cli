@@ -3,9 +3,8 @@ CORPUS := corpus
 OUT := out
 DEBUG := out/debug
 PORT := 8080
-CASE_PORT := 8090
 
-.PHONY: setup test lint vectorize build view mcp case-server case-smoke clean all help
+.PHONY: setup test lint vectorize build view mcp clean all help
 
 help:
 	@echo "haus — floor plan vectorization + 3D editor"
@@ -14,8 +13,6 @@ help:
 	@echo "  make build      image → vector + GLB for all corpus images"
 	@echo "  make view       launch 3D editor in browser (port $(PORT))"
 	@echo "  make mcp        start MCP server for AI-assisted editing"
-	@echo "  make case-server start Stage-1 Case HTTP service (port $(CASE_PORT))"
-	@echo "  make case-smoke  smoke-test a running Case HTTP service"
 	@echo "  make all        lint + test + build"
 	@echo ""
 	@echo "  make vectorize  vectorize only (no GLB)"
@@ -62,12 +59,6 @@ view:
 
 mcp:
 	$(VENV)/haus mcp
-
-case-server:
-	$(VENV)/haus case-server --port $(CASE_PORT) --proposals-dir tests/fixtures/proposals --vendor-cache-dir tests/fixtures/vendors
-
-case-smoke:
-	$(VENV)/python scripts/case_smoke.py --base-url http://127.0.0.1:$(CASE_PORT)
 
 clean:
 	rm -rf $(OUT) viewer/mcp-layout.json

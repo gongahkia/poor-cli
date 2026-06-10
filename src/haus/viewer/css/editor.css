@@ -311,6 +311,15 @@ kbd {
 }
 #chat-messages::-webkit-scrollbar { width: 4px; }
 #chat-messages::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
+#chat-quick-prompts {
+  display: flex; gap: 4px; padding: 6px 12px; border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+#chat-quick-prompts button {
+  background: var(--btn-bg); border: 1px solid var(--border-mid); color: var(--fg-dim);
+  border-radius: 999px; padding: 4px 8px; cursor: pointer; font-size: 10px; line-height: 14px;
+}
+#chat-quick-prompts button:hover { background: var(--btn-hover); color: var(--fg); }
 .chat-msg {
   padding: 7px 10px; border-radius: 8px; max-width: 90%;
   word-wrap: break-word; line-height: 1.4; font-size: 12px;
