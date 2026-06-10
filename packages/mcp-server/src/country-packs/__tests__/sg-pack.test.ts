@@ -20,9 +20,14 @@ describe("Singapore country pack", () => {
     const names = SINGAPORE_COUNTRY_PACK.toolDefinitions.map((definition) => definition.name);
 
     expect(names.length).toBeGreaterThan(50);
-    expect(names.every((name) => name.startsWith("sg_") || name.startsWith("swee_"))).toBe(true);
+    expect(
+      names.every((name) => name.startsWith("sg_") || name.startsWith("swee_") || name.startsWith("splunk_")),
+    ).toBe(true);
     expect(names).toContain("swee_pulse_snapshot");
     expect(names).toContain("swee_shield_audit_lookup");
+    expect(names).toContain("splunk_search");
+    expect(names).toContain("splunk_list_indexes");
+    expect(names).toContain("splunk_list_saved_searches");
     expect(names).toContain("sg_datagov_search");
     expect(names).toContain("sg_lta_traffic_incidents");
     expect(names).toContain("sg_nea_forecast_2hr");

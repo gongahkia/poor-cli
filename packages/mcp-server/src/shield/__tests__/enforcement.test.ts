@@ -90,19 +90,17 @@ describe("Swee Shield enforcement", () => {
       }),
     } satisfies RegisteredToolDefinition;
 
-    await expect(invokeShieldedTool(tool, { query: "index=security" })).rejects.toThrow("blocked tool output");
+    const error = await invokeShieldedTool(tool, { query: "index=security" }).catch((caught: unknown) => caught);
 
-    try {
-      await invokeShieldedTool(tool, { query: "index=security" });
-    } catch (error) {
-      const audit = (error as { readonly shieldAudit?: unknown }).shieldAudit as { readonly status?: string; readonly rawOutputHash?: string | null; readonly outputHash?: string | null; readonly runtimeFindings?: readonly { readonly code: string }[]; readonly error?: { readonly code?: string } } | undefined;
-      expect(audit).toMatchObject({
-        status: "error",
-        outputHash: null,
-        error: { code: "RUNTIME_SCAN_BLOCKED" },
-      });
-      expect(audit?.rawOutputHash).toHaveLength(64);
-      expect(audit?.runtimeFindings?.map((finding) => finding.code)).toContain("SECRET_EXFILTRATION_NEUTRALIZED");
-    }
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("blocked tool output");
+    const audit = (error as { readonly shieldAudit?: unknown }).shieldAudit as { readonly status?: string; readonly rawOutputHash?: string | null; readonly outputHash?: string | null; readonly runtimeFindings?: readonly { readonly code: string }[]; readonly error?: { readonly code?: string } } | undefined;
+    expect(audit).toMatchObject({
+      status: "error",
+      outputHash: null,
+      error: { code: "RUNTIME_SCAN_BLOCKED" },
+    });
+    expect(audit?.rawOutputHash).toHaveLength(64);
+    expect(audit?.runtimeFindings?.map((finding) => finding.code)).toContain("SECRET_EXFILTRATION_NEUTRALIZED");
   });
 });
