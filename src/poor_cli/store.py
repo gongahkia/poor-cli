@@ -303,7 +303,7 @@ class RunStore:
         return [self._row(row) for row in rows]
 
     def list_events(self, run_id: str) -> list[dict[str, Any]]:
-        rows = self.conn.execute("SELECT * FROM events WHERE run_id = ? ORDER BY created_at, event_id", (run_id,)).fetchall()
+        rows = self.conn.execute("SELECT * FROM events WHERE run_id = ? ORDER BY rowid", (run_id,)).fetchall()
         return [self._row(row) for row in rows]
 
     def list_artifacts(self, run_id: str, kind: str | None = None) -> list[dict[str, Any]]:
