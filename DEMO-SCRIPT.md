@@ -5,7 +5,7 @@
 ## 1. Generate the final demo Case
 
 ```console
-$ .venv/bin/haus case demo --fixture corpus/library/3.json --pinned demo_3room_remove_wall_28 --max-revise-attempts 1 --out asset/demo/case-demo.json
+$ .venv/bin/haus case demo --fixture corpus/library/3.json --pinned demo_3room_remove_wall_28 --max-revise-attempts 1 --handoff-root asset/demo/handoffs --out asset/demo/case-demo.json
 ```
 
 Expected terminal beats:
@@ -31,8 +31,8 @@ $ .venv/bin/haus view --case asset/demo/case-demo.json --port 8080
 Run the HTTP smoke path against a live server:
 
 ```console
-$ HAUS_CASE_API_TOKEN=dev-token .venv/bin/haus case-server --port 8090 --api-token dev-token --proposals-dir tests/fixtures/proposals --vendor-cache-dir tests/fixtures/vendors
-$ HAUS_CASE_API_TOKEN=dev-token .venv/bin/python scripts/case_smoke.py --base-url http://127.0.0.1:8090 --max-revise-attempts 1
+$ HAUS_CASE_API_TOKEN=dev-token .venv/bin/haus case-server --port 8090 --api-token dev-token --max-revise-attempts 1 --proposals-dir tests/fixtures/proposals --vendor-cache-dir tests/fixtures/vendors
+$ HAUS_CASE_API_TOKEN=dev-token .venv/bin/python scripts/case_smoke.py --base-url http://127.0.0.1:8090
 ```
 
 ## 2. Stage-1 fallback if UiPath access is still pending

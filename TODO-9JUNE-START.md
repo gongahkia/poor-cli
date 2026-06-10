@@ -45,6 +45,11 @@ What has been done since the plan was written. Cross-references to artifacts.
 - **Case Review polish.** The editor keeps Case Review pinned during MCP sync, shows status/diff metrics, approval/handoff state, and clearer removed-wall/finding highlights for screenshot/demo use.
 - **Tests.** Case/backend/CLI/browser coverage now includes baseline Case snapshots, raster layout `hdb_type`, protected-wall removal/move/rotate/resize findings, SQLite persistence, Bearer auth, TinyFish vendor fallback/cache writes, live-mode fallback, the hero demo CLI, and Case Review panel loading. Full repo suite passes locally; Ruff and Pyright are clean.
 - **2026-06-10 verification.** Passed `.venv/bin/ruff check src/ tests/`, `.venv/bin/pyright`, `.venv/bin/pytest tests/ -q`, and `.venv/bin/haus case demo --fixture corpus/library/3.json --pinned demo_3room_remove_wall_28 --max-revise-attempts 1 --out /tmp/haus-case-demo-verify.json`. The demo reached `handoff_complete` and wrote a packet URI.
+- **2026-06-10 submission-prep verification.** Passed `.venv/bin/ruff check src/ tests/ scripts/`, `.venv/bin/pyright`, `.venv/bin/pytest tests/ -q`, `git diff --check`, `python3 -m json.tool asset/demo/case-demo.json`, and a live Bearer-auth HTTP smoke on port 8190 using `scripts/case_smoke.py`. The smoke reached `handoff_complete`.
+- **Submission/wiring docs.** `SPEC-ACTION-CENTER.md` defines coordinator copy, Action payload fields, decisions, escalation reasons, and PATCH/handoff mapping. `SPEC-MAESTRO-WIRING.md` defines Maestro stages, endpoint calls, payload handoff, retry policy, auth, tunnel notes, and Spike A acceptance. `DEMO-SCRIPT.md` defines the 5-minute video script and screenshot checklist. `SUBMISSION-DRAFT.md` drafts Devpost copy, architecture, deck outline, and public repo checklist.
+- **README submission update.** Root `README.md` now includes Stage-1 fallback demo setup, planned UiPath components, coding-agent/low-code/native split, local auth examples with `HAUS_CASE_API_TOKEN`, tunnel notes, and links to the new specs.
+- **Local HTTP hardening docs/tooling.** `scripts/case_smoke.py` smoke-tests create/design/compliance/revise/approval/handoff against a running server with optional Bearer auth; `make case-smoke` invokes it.
+- **Demo artifact.** `asset/demo/case-demo.json` is generated from the pinned money-shot flow and currently reaches `handoff_complete`.
 
 ### Honest scoping notes (read these before continuing)
 - **HTTP server exists.** The Stage-1 Starlette/Uvicorn layer now wraps the case lifecycle and can run with `haus case-server`. Cases persist to SQLite by default (`HAUS_CASE_DB_PATH` / `--case-db-path`), mutating steps use atomic store updates, and optional Bearer auth is available through `HAUS_CASE_API_TOKEN` / `--api-token`.
@@ -54,9 +59,9 @@ What has been done since the plan was written. Cross-references to artifacts.
 - **Raster layout serialization now emits `hdb_type`.** Existing `corpus/library/{1..4}.json` remain supported through ingest-time color inversion; newly vectorized `layout.json` files carry explicit fields.
 
 ### Current remaining work
-- **Stage 2 is the main blocker:** install/auth `uip`, run Maestro external-HTTP Spike A, model the Maestro Case, wire the Haus HTTP endpoints, and replace the Stage-1 approval stub with Action Center.
-- **Submission packaging remains open:** Devpost, ≤5 min demo video, deck, screenshots, optional product-feedback form, and README additions for UiPath components + coding/low-code agent split.
-- **Deferred engineering scope:** production-grade Action Center render payloads, broader HDB compliance rules beyond protected-wall geometry + accessibility, external DB/identity integration, and richer vendor ranking/contact extraction.
+- **Stage 2 is the main blocker:** install/auth `uip`, run Maestro external-HTTP Spike A, model the Maestro Case, wire the Haus HTTP endpoints, and replace the Stage-1 approval stub with Action Center. Implementation-ready specs now exist; real tenant access is still required.
+- **Submission packaging remains open:** record the ≤5 min demo video, capture real Maestro/Action Center screenshots after access, create the deck, paste final Devpost copy, add links, and optionally fill the product-feedback form.
+- **Deferred engineering scope:** deployed Action Center App/task binding, broader HDB compliance rules beyond protected-wall geometry + accessibility, external DB/identity integration, and richer vendor ranking/contact extraction.
 
 ---
 
@@ -186,8 +191,8 @@ Build the entire flow as an HTTP service so it works end-to-end before any orche
 ### Stage 2 — UiPath orchestration wrap (Weeks 3–5, requires Labs access)
 - [ ] Model the case in **Maestro Case**: stages from §4.1, Case Manager governs transitions + retry counting + escalation rule.
 - [ ] Wire each stage to call the Haus HTTP service (per Spike A's verdict).
-- [ ] Implement the **Action Center** human-approval task for the coordinator (block/override/send-back), wired to the escalation branch.
-- [ ] Decide which agents are **Agent Builder (native)** vs **external framework** and document the split (the README must state coding vs low-code vs combination).
+- [ ] Implement the **Action Center** human-approval task for the coordinator (block/override/send-back), wired to the escalation branch. — **Spec drafted:** `SPEC-ACTION-CENTER.md`; real Action App deployment pending access.
+- [x] Decide which agents are **Agent Builder (native)** vs **external framework** and document the split (the README must state coding vs low-code vs combination). — **Drafted:** root `README.md` + `SUBMISSION-DRAFT.md`; final tenant components still pending access.
 - [ ] **Acceptance for Stage 2:** the same loop now runs *orchestrated by Maestro*, with the human approval happening in Action Center, fully on UiPath Automation Cloud.
 
 ### Stage 3 — Coding-agents bonus, polish, hardening (Weeks 4–6)
@@ -196,7 +201,8 @@ Build the entire flow as an HTTP service so it works end-to-end before any orche
 - [x] Three.js editor polish: Case Review now shows before/after diff metrics, clearer violating-wall/finding highlights, approval/handoff state, and survives MCP sync during `?case=` demo loads.
 
 ### Stage 4 — Submission assembly (Week 6–7, see §7)
-- [ ] Devpost page, demo video (≤5 min), README, deck, optional feedback form. Root `README.md` currently documents Stage-1 local setup; it still needs submission-specific UiPath components, Automation Cloud setup, and coding/low-code agent split after Stage 2 lands.
+- [x] Draft Devpost copy, README submission section, screenshot checklist, public repo checklist, architecture text, and 5-minute video script. — **Drafted:** `SUBMISSION-DRAFT.md`, `DEMO-SCRIPT.md`, root `README.md`.
+- [ ] Finalize Devpost page, demo video (≤5 min), deck, real Maestro/Action Center screenshots, optional feedback form, and final links after UiPath access.
 
 ---
 
@@ -216,7 +222,7 @@ These are the questions that still need answers from the codebase or the platfor
 
 **F. Deterministic LLM replay.** Pin/cache the Design Agent's LLM proposal for the demo run so the 5-minute video is deterministic and replayable, while keeping live generation as the real capability. How do we store and replay a pinned proposal (keyed by floor-plan fixture + brief)? — **RESOLVED.** Contract surface reserved in SPEC §2.8 (`pinned_proposal_id`) and §6. v0 storage = `{proposal_id}.json` files in a configurable proposals directory; payload = `{proposal_id, description, items[]}` (full replacement); deep-copied on load to avoid disk-state corruption. Demo proposals shipped at `tests/fixtures/proposals/demo_3room_remove_wall_28.json` (money-shot) and `demo_3room_keep_walls.json` (clean path). Live provider calls are opt-in (`--design-mode live` / `HAUS_CASE_DESIGN_MODE=live`) and fall back deterministically if credentials, provider calls, or structured output fail. Recorded demo recommendation remains pinned-only.
 
-**G. Coordinator framing wording.** Finalize the human-reviewer persona as an **internal renovation coordinator/designer** approving before contractor handoff. Confirm what this changes in the approval payload (what the coordinator sees: before/after render, violation findings, vendor options) and in the demo narration. — **PARTIAL.** SPEC §2.5 defines `approval_state` (with `reviewer`, `escalation_reason`); SPEC §4.4 defines the Stage-1 PATCH stub for the human transition. The editor now provides before/after diff + finding overlay; final narration/persona wording and real Action Center task copy still need Stage-2 work.
+**G. Coordinator framing wording.** Finalize the human-reviewer persona as an **internal renovation coordinator/designer** approving before contractor handoff. Confirm what this changes in the approval payload (what the coordinator sees: before/after render, violation findings, vendor options) and in the demo narration. — **RESOLVED FOR SPEC.** `SPEC-ACTION-CENTER.md` defines reviewer copy, payload fields, decisions, escalation reasons, vendor option handling, and demo narration. Real Action Center deployment remains Stage 2.
 
 **H. UiPath CLI + Codex setup.** Confirm local CLI install/auth and that Codex resolves UiPath tasks. Current docs list `uip skills install --agent codex`; local check on 2026-06-10 found no `uip` binary. (Build order: Stage 0.) — **OPEN. Needs CLI install + `uip login`; Labs/Automation Cloud access may still block useful verification.**
 
@@ -277,12 +283,10 @@ Ordered by criticality after the 2026-06-10 local verification.
 
 2. **Run Spike A the moment Automation Cloud/Labs access exists.** Smallest proof: a Maestro Case stage calls local/tunneled `POST /case`, stores the returned Case JSON, and calls `POST /case/{id}/design`. Verdict decides HTTP service vs CLI/Python-node packaging.
 
-3. **Implement Stage 2 orchestration.** Model Maestro stages, wire Design/Compliance/Revise/Handoff HTTP calls, move approval into Action Center, and persist the Case payload through the workflow.
+3. **Implement Stage 2 orchestration from the new specs.** Model Maestro stages using `SPEC-MAESTRO-WIRING.md`, wire Design/Compliance/Revise/Handoff HTTP calls, move approval into Action Center using `SPEC-ACTION-CENTER.md`, and persist the Case payload through the workflow.
 
-4. **Write Action Center coordinator copy.** Include before/after render link, compliance findings, `approval_state`, and vendor options. Keep Three.js as the visual review surface, not the approval source of record.
+4. **Capture real UiPath evidence.** Screenshots/video: Maestro stage run, Action Center task, coordinator decision, final handoff, and Codex + `uip` pack/publish/deploy flow.
 
-5. **Update README for submission.** Add UiPath components used, Automation Cloud prerequisites/setup, Codex/coding-agent usage, native-vs-external agent split, and how to reproduce the Stage-1 fallback demo without UiPath.
+5. **Finalize submission packaging.** Record ≤5 min video, create deck, paste `SUBMISSION-DRAFT.md` into Devpost, add public repo/video/deck links, and fill the optional product-feedback form.
 
-6. **Assemble demo artifacts.** Record ≤5 min video, capture Codex + `uip` workflow, take screenshots, create deck, Devpost text, and product feedback form.
-
-7. Keep the **design + compliance loop** as the demo's centre of gravity in every decision (§2 mitigation; §7.2 video budget).
+6. Keep the **design + compliance loop** as the demo's centre of gravity in every decision (§2 mitigation; §7.2 video budget).

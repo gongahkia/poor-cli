@@ -83,15 +83,15 @@ $ HAUS_CASE_API_TOKEN=dev-token haus case-server --port 8090 --case-db-path ~/.h
 Run the local Stage-1 fallback demo without UiPath:
 
 ```console
-$ haus case demo --fixture corpus/library/3.json --pinned demo_3room_remove_wall_28 --max-revise-attempts 1 --out asset/demo/case-demo.json
+$ haus case demo --fixture corpus/library/3.json --pinned demo_3room_remove_wall_28 --max-revise-attempts 1 --handoff-root asset/demo/handoffs --out asset/demo/case-demo.json
 $ haus view --case asset/demo/case-demo.json
 ```
 
 Smoke-test a running Case HTTP service:
 
 ```console
-$ HAUS_CASE_API_TOKEN=dev-token haus case-server --port 8090 --api-token dev-token --proposals-dir tests/fixtures/proposals --vendor-cache-dir tests/fixtures/vendors
-$ HAUS_CASE_API_TOKEN=dev-token python scripts/case_smoke.py --base-url http://127.0.0.1:8090 --max-revise-attempts 1
+$ HAUS_CASE_API_TOKEN=dev-token haus case-server --port 8090 --api-token dev-token --max-revise-attempts 1 --proposals-dir tests/fixtures/proposals --vendor-cache-dir tests/fixtures/vendors
+$ HAUS_CASE_API_TOKEN=dev-token python scripts/case_smoke.py --base-url http://127.0.0.1:8090
 $ curl -H "Authorization: Bearer $HAUS_CASE_API_TOKEN" http://127.0.0.1:8090/case/<case_id>
 ```
 

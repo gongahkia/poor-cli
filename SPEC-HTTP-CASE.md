@@ -9,13 +9,13 @@
 ## 0. Status, scope, non-goals
 
 **In scope:**
-- The HTTP service contract (5 endpoints) that Stage 2 Maestro Case will wrap.
+- The HTTP service contract that Stage 2 Maestro Case will wrap: core lifecycle endpoints plus Stage-1 approval/handoff routes.
 - The "Renovation Design Case" payload schema — extends the existing `corpus/library/*.json` shape.
 - Two compliance rules (`structural_wall_protected`, `doorway_accessibility`).
 - The demo fixture pin (one image, one layout, one target wall, one fallback failure).
-- Reserved keys for demo-determinism subsystems (LLM replay, vendor cache) — *contracts only*, not designs.
+- Determinism hooks for pinned proposals and cache-first vendor handoff.
 
-**Out of scope (deferred; see §7 for the full list):** code · Maestro Case / BPMN mapping · Action Center wire format · multi-tenancy · rate limiting · external DB/identity integration · additional compliance rules.
+**Out of scope (deferred; see §7 for the full list):** Maestro implementation · Action Center implementation · multi-tenancy · rate limiting · external DB/identity integration · additional compliance rules.
 
 **Operating principle:** the Stage-1 HTTP service must work end-to-end *without any UiPath component*. Stage 2 will wrap it as a thin orchestration layer. If a Stage-1 detail forces a Stage-2 dependency, it is wrong.
 
@@ -79,7 +79,7 @@ Ordered, 9 values:
 | `awaiting_human_approval` | Either compliance is clean OR `revise_count >= N`. Human reviewer (Stage 2: Action Center; Stage 1: PATCH stub) decides next. | `compliance_pending` | `POST /case/{id}/compliance` |
 | `approved` | Human approved. Next: handoff. | `awaiting_human_approval` | (Stage 1) PATCH `approval_state.decision = "approved"`; (Stage 2) Action Center |
 | `rejected` | Human rejected. Terminal-ish; Case may be re-opened by a new Case. | `awaiting_human_approval` | same as `approved` |
-| `handoff_complete` | Vendor handoff package produced. | `approved` | (deferred — vendor stage not specified in this doc) |
+| `handoff_complete` | Vendor handoff package produced. | `approved` | `POST /case/{id}/handoff` |
 | `closed` | Terminal. | `handoff_complete`, `rejected` | (deferred) |
 
 `handoff_complete` and `closed` are present in the enum so Stage 2 has somewhere to go without re-amending this spec; their transitions are intentionally undefined here.
@@ -165,10 +165,10 @@ Aligned with the existing `design_flat` MCP tool parameters (`src/haus/mcp_serve
 
 ### 2.8 Determinism hooks
 
-Both keys are reserved here; their subsystems are deferred to `TODO-9JUNE-START.md` §6 tasks F and E respectively. Implementations of the HTTP service must accept and persist these keys even before the subsystems exist.
+Both keys are implemented by the Stage-1 service and remain part of the Maestro boundary.
 
-- **`pinned_proposal_id`** — when non-null, `POST /case/{id}/design` MUST be deterministic for this Case: it returns a previously recorded `items[]` verbatim rather than calling an LLM. Subsystem (LLM replay cache, keyed by `(floor_plan_ref, brief) → items[]`) deferred.
-- **`vendor_cache_key`** — when non-null, the eventual handoff stage MUST populate `vendor_handoff` from the local vendor cache rather than live search. Subsystem (cache lookup, fallback policy) deferred.
+- **`pinned_proposal_id`** — when non-null, `POST /case/{id}/design` MUST be deterministic for this Case: it returns a previously recorded `items[]` verbatim rather than calling an LLM. v0 storage is `{proposal_id}.json` under the configured proposals directory.
+- **`vendor_cache_key`** — when non-null, the handoff stage reads the local vendor cache first. On cache miss, TinyFish live search may populate the cache when `TINYFISH_API_KEY` is set; otherwise the deterministic stub fallback is used.
 
 ### 2.9 Canonical example payload
 
@@ -258,8 +258,10 @@ The example is intentionally truncated to one room and one item — a real Case 
 | 3 | POST | `/case/{id}/compliance` | Run rules, emit findings | `compliance_pending` → `revising` OR `awaiting_human_approval` |
 | 4 | POST | `/case/{id}/revise` | Replay findings into Design Agent | `revising` → `compliance_pending` OR `awaiting_human_approval` |
 | 5 | GET  | `/case/{id}` | Read full Case | (no mutation) |
+| 6 | PATCH | `/case/{id}/approval` | Stage-1 Action Center replacement | `awaiting_human_approval` → `approved` OR `rejected` OR stays `awaiting_human_approval` for `sent_back` |
+| 7 | POST | `/case/{id}/handoff` | Produce contractor handoff packet | `approved` → `handoff_complete` |
 
-There is intentionally **no `/approve` endpoint** in Stage 1. Approval is a human action that lives in Action Center in Stage 2. Stage 1 satisfies the lifecycle via a PATCH-able `approval_state.decision` field (see §4.4 stub).
+There is intentionally **no `/approve` endpoint** in Stage 1. Approval is a human action that lives in Action Center in Stage 2. Stage 1 satisfies the lifecycle via the temporary `PATCH /case/{id}/approval` route.
 
 ### 4.2 Per-endpoint detail
 
@@ -321,6 +323,30 @@ There is intentionally **no `/approve` endpoint** in Stage 1. Approval is a huma
 | Idempotency | Trivially idempotent. |
 | Errors | `case_not_found`. |
 
+#### `PATCH /case/{id}/approval`
+
+| | |
+|---|---|
+| Request | `{decision: "approved" \| "rejected" \| "sent_back", reviewer: string, notes?: string \| null}` |
+| Response (200) | Full Case payload with updated `approval_state`. |
+| Pre-state | `awaiting_human_approval` |
+| Post-state | `approved` for `decision=approved`; `rejected` for `decision=rejected`; `awaiting_human_approval` for `decision=sent_back`. |
+| Idempotency | Not guaranteed; caller should read current Case after timeout before retrying. |
+| Errors | `case_not_found`, `invalid_state_transition`, `validation_failed`. |
+| Stage-2 replacement | Action Center completes a coordinator task, then Maestro writes the same decision payload to this transition or equivalent state update. |
+
+#### `POST /case/{id}/handoff`
+
+| | |
+|---|---|
+| Request | `{vendor_cache_key?: string, vendor_id?: string}` |
+| Response (200) | Full Case payload with `design_status: "handoff_complete"` and populated `vendor_handoff`. |
+| Pre-state | `approved` |
+| Post-state | `handoff_complete` |
+| Idempotency | Not guaranteed; caller should read current Case after timeout before retrying. |
+| Errors | `case_not_found`, `invalid_state_transition`, `validation_failed`, `internal_error`. |
+| Packet | Writes a ZIP containing `handoff.json` and `summary.md`; `vendor_handoff.packet_uri` points to it. |
+
 ### 4.3 Universal contract rules
 
 1. **Every mutating endpoint returns the full updated Case payload** — not a delta, not just an ack. This lets Stage 2 Maestro wire each stage as one "call → store full payload" step without a follow-up GET. It also saves the demo from a "now refresh the viewer" beat.
@@ -335,7 +361,7 @@ There is intentionally **no `/approve` endpoint** in Stage 1. Approval is a huma
 
 **Demo override:** the demo video script should set `MAX_REVISE_ATTEMPTS=1` to force one revise → escalation in a single visible beat. Spec authorises this override.
 
-**Stage-1 approval stub.** Since Action Center does not yet exist, the Stage-1 HTTP service exposes a PATCH-able transition `awaiting_human_approval` → `approved`/`rejected` directly on `approval_state.decision`. The PATCH endpoint shape is intentionally left for the implementer to define minimally (it does not appear in §4.1 because it is a temporary stub, not part of the orchestration boundary). **Stage 2 replaces this stub with Action Center wiring.**
+**Stage-1 approval stub.** Since Action Center does not yet exist, the Stage-1 HTTP service exposes `PATCH /case/{id}/approval` as a temporary transition. **Stage 2 replaces the reviewer UI with Action Center wiring** while preserving the Case state transition. See [`SPEC-ACTION-CENTER.md`](./SPEC-ACTION-CENTER.md).
 
 ---
 
@@ -383,7 +409,7 @@ The output of `POST /case/{id}/compliance` (specifically the `compliance_finding
 
 The two reserved keys in §2.8 are the contract surface.
 
-- **`pinned_proposal_id`** — when set on a Case, `POST /case/{id}/design` MUST return a previously recorded `items[]` verbatim rather than calling an LLM. The recording mechanism (keying, storage, invalidation) is the subject of `TODO-9JUNE-START.md` §6 task F. This spec only reserves the key and the determinism contract: *"if non-null, `/design` MUST be deterministic for this Case."*
+- **`pinned_proposal_id`** — when set on a Case, `POST /case/{id}/design` MUST return a previously recorded `items[]` verbatim rather than calling an LLM. v0 storage is `{proposal_id}.json` under the configured proposals directory. The determinism contract remains: *"if non-null, `/design` MUST be deterministic for this Case."*
 - **`vendor_cache_key`** — when set, the handoff stage reads the local vendor cache first. On cache miss, TinyFish live search may populate the cache when `TINYFISH_API_KEY` is set; otherwise the deterministic stub fallback is used.
 
 Implementations of the HTTP service must accept, persist, and round-trip both keys.
@@ -394,9 +420,8 @@ Implementations of the HTTP service must accept, persist, and round-trip both ke
 
 Out of scope, explicitly:
 
-- **Code.** No Python, no JSON Schema definitions in JSON Schema format, no OpenAPI document. Those are implementation outputs.
-- **Maestro Case mapping.** Which stages exist, how transitions fire, retry policies at the Maestro layer — all Stage 2. A future `SPEC-MAESTRO-WIRING.md` will reference this doc.
-- **Action Center wire format.** The schema of the approval task, the renderer for findings/before-after, the routing rules — all Stage 2.
+- **Maestro implementation.** Stage mapping, endpoint handoff, and retry policy are now drafted in [`SPEC-MAESTRO-WIRING.md`](./SPEC-MAESTRO-WIRING.md), but real tenant wiring is Stage 2.
+- **Action Center implementation.** Task copy and payload are now drafted in [`SPEC-ACTION-CENTER.md`](./SPEC-ACTION-CENTER.md), but real Action App/task deployment is Stage 2.
 - **Full vendor agent.** TinyFish live search exists; richer ranking, contact extraction, Serper, and contract generation are deferred.
 - **Auth beyond a local Bearer token, multi-tenancy, rate-limiting.** Stage 1 is still a single-tenant local service.
 - **Persistence beyond local SQLite.** External DBs, cloud persistence, and distributed locking are deferred.
@@ -409,12 +434,12 @@ Out of scope, explicitly:
 
 The spec is **done** when all six check:
 
-1. [ ] An unfamiliar reader can, from this document alone, hand-construct a valid Case payload that round-trips through `POST /case` → `POST /case/{id}/design` → `POST /case/{id}/compliance` → `POST /case/{id}/revise` without ambiguity.
-2. [ ] The `design_status` enum (§2.3), the `compliance_findings[]` shape (§2.4), and the endpoint state-transition table (§4.1 + §4.2 post-states) together uniquely determine the post-state of every mutating call.
-3. [ ] The `hdb_type` gap is called out as a prerequisite (§3), references `src/haus/extraction.py:386, 396` and `src/haus/types.py:32`, names `src/haus/mesh.py` / `src/haus/pipeline.py` as the fix location, and prescribes no implementation.
-4. [ ] The demo fixture pin (§1) appears verbatim — image, layout, target walls, fallback failure — and is referenced as the single source of truth.
-5. [ ] §7 explicitly excludes code, Maestro mapping, Action Center, full vendor automation, external identity/storage, and additional rules.
-6. [ ] `pinned_proposal_id` and `vendor_cache_key` are reserved keys (§2.8, §6) with one-paragraph contracts, subsystems undesigned.
+1. [x] An unfamiliar reader can, from this document alone, hand-construct a valid Case payload that round-trips through `POST /case` → `POST /case/{id}/design` → `POST /case/{id}/compliance` → `POST /case/{id}/revise` without ambiguity.
+2. [x] The `design_status` enum (§2.3), the `compliance_findings[]` shape (§2.4), and the endpoint state-transition table (§4.1 + §4.2 post-states) together uniquely determine the post-state of every mutating call.
+3. [x] The `hdb_type` gap is called out as a prerequisite (§3), references `src/haus/extraction.py:386, 396` and `src/haus/types.py:32`, names `src/haus/mesh.py` / `src/haus/pipeline.py` as the fix location, and prescribes no implementation.
+4. [x] The demo fixture pin (§1) appears verbatim — image, layout, target walls, fallback failure — and is referenced as the single source of truth.
+5. [x] §7 explicitly excludes real Maestro implementation, real Action Center implementation, full vendor automation, external identity/storage, and additional rules.
+6. [x] `pinned_proposal_id` and `vendor_cache_key` have one-paragraph contracts (§2.8, §6) matching the current implementation.
 
 ---
 

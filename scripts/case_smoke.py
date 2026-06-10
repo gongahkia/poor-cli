@@ -204,7 +204,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--vendor-id", default=None)
     parser.add_argument("--token", default=None, help="Bearer token; defaults to HAUS_CASE_API_TOKEN")
     parser.add_argument("--max-compliance-runs", type=int, default=8)
-    parser.add_argument("--max-revise-attempts", type=int, default=None, help="Documentation aid; set on server, not client")
     parser.add_argument("--reviewer", default="coordinator_smoke")
     parser.add_argument("--approval-notes", default="Approved by local smoke test.")
     parser.add_argument("--approval-decision", choices=("approved", "rejected", "sent_back"), default="approved")
@@ -212,9 +211,6 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--skip-handoff", action="store_true")
     parser.add_argument("--print-json", action="store_true")
     args = parser.parse_args(argv)
-
-    if args.max_revise_attempts is not None:
-        print("note: --max-revise-attempts is configured on the server; client flag is informational", file=sys.stderr)
 
     try:
         case = run(args)
