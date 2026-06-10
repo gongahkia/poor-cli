@@ -1,7 +1,0 @@
-{
-  "Status": "Success",
-  "Result": [
-    { "project": "THE SAIL @ MARINA BAY", "street": "MARINA BOULEVARD", "x": "30219.45", "y": "29321.78", "marketSegment": "CCR", "area": "51-75", "floorRange": "26-30", "noOfUnits": "1", "contractDate": "0125", "typeOfSale": "2", "price": "1280000", "propertyType": "Condominium", "district": "01", "typeOfArea": "Strata", "tenure": "99 yrs lease commencing from 2004", "nettPrice": "-" },
-    { "project": "REFLECTIONS AT KEPPEL BAY", "street": "KEPPEL BAY VIEW", "x": "26834.22", "y": "28523.45", "marketSegment": "RCR", "area": "76-100", "floorRange": "16-20", "noOfUnits": "1", "contractDate": "0125", "typeOfSale": "1", "price": "1550000", "propertyType": "Condominium", "district": "04", "typeOfArea": "Strata", "tenure": "99 yrs lease commencing from 2006", "nettPrice": "-" }
-  ]
-}

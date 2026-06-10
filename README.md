@@ -1,160 +1,129 @@
-# Swee SG
+# poor-cli
 
-Swee SG is an open-core, local-first Singapore public-data runtime for civic-hacker demos and agent/app builders. It is not an official public-agency dashboard. The product value is governed source access: every supported Pulse view keeps provenance, freshness, gaps, and Swee Shield audit context visible.
+[![](https://img.shields.io/badge/tests-passing-brightgreen)](https://github.com/gongahkia/poor-cli/actions/workflows/tests.yml)
+[![](https://img.shields.io/badge/poor-cli_5.0.0-blue)](https://github.com/gongahkia/poor-cli)
 
-The runtime has two product surfaces:
+CI-focused CLI agent harness for code work. The main surfaces are a minimal Textual TUI for interactive use, a non-interactive `exec` path for automation, and a JSON-RPC server for harness integrations.
 
-- **Swee Shield**: policy enforcement, audit persistence, replay metadata, approval queue, policy simulator, runtime output defense, and MCP/tool poisoning scans for every REST and MCP tool call.
-- **Swee Pulse**: source-backed Singapore city signals for mobility, weather, source health, freshness, gaps, and deterministic explanations.
+Current direction and upcoming work are tracked in [ROADMAP.md](ROADMAP.md).
 
-The app no longer exposes the old counterparty due-diligence workflow. The retained `sg_*` tools are reusable Singapore source adapters; app-level workflows should enter through `swee_pulse_*` and Shield audit tools.
+## Install
 
-The first benchmark focus is **transport reliability**: LTA incidents, rail alerts, road works/openings, traffic camera freshness, and credentialed direct adapters where exact structured inputs are supplied.
-
-## Run It
-
-```bash
-npm install
-npm run build
-npm run dev
+```sh
+python3 -m pip install --upgrade 'poor-cli[all]'
+poor-cli --version
 ```
 
-The REST gateway starts on `http://localhost:3000` and the web dashboard starts on the Vite URL printed by `npm run dev`, usually `http://localhost:5173`.
+For the voice stack only, install `poor-cli[voice]`.
 
-No AI key is required for the main dashboard. Live LTA routes require `SG_API_LTA_KEY` where upstream DataMall credentials are needed.
+Supported Python versions are `3.11`, `3.12`, `3.13`, and `3.14`.
 
-For split-origin local development, set `SWEE_WEB_ORIGIN_ALLOWLIST` on the REST gateway to the exact web origin, for example `http://localhost:5173`.
+## Quickstart
 
-Splunk Shield proxy tools are local-trial ready without changing the Pulse path. Set `SPLUNK_MCP_URL` to the Splunk MCP Streamable HTTP endpoint and `SPLUNK_MCP_TOKEN` to a bearer token, or store the token with `sg_key_set` using `apiName:"splunk_mcp"`. `SPLUNK_MCP_ALLOWED_INDEXES` optionally restricts `splunk_search` by explicit index. `SWEE_SHIELD_APPROVAL_MODE=queue` makes broad/unbounded SPL create approval records before upstream execution. `NODE_TLS_REJECT_UNAUTHORIZED=0` is only for local self-signed Splunk trials.
-
-`SWEE_SHIELD_RUNTIME_SCAN_MODE=neutralize` redacts/neutralizes risky output and returns the defended result. `SWEE_SHIELD_RUNTIME_SCAN_MODE=block` blocks critical runtime findings and records the blocked audit row.
-
-## Useful Commands
-
-```bash
-npm run diagnostics
-npm run submission:claims:check
-npm run submission:readiness:check
-npm run splunk:smoke:live
-npm run test:smoke:profiles
-npm run test:smoke:web
-npm run benchmarks:snapshot
-npm run benchmark:transport:live
-npm run benchmark:sources:live
-npm run status:public
-npm test -w apps/web
-npx vitest run packages/mcp-server/src/pulse/__tests__ packages/mcp-server/src/shield/__tests__
+```sh
+export ANTHROPIC_API_KEY="..."
+poor-cli exec --prompt "inspect this repo and run focused tests"
 ```
 
-## Main Tools
+Useful commands:
 
-Pulse:
-
-- `swee_pulse_snapshot`
-- `swee_pulse_mobility`
-- `swee_pulse_weather`
-- `swee_pulse_explain`
-
-Shield:
-
-- `swee_shield_audit_lookup`
-- `swee_shield_scan_tools`
-- `swee_shield_approval_list`
-- `swee_shield_approval_decide`
-- `swee_shield_policy_simulate`
-- `swee_shield_splunk_investigation_pack`
-
-Splunk Shield proxy:
-
-- `splunk_search`
-- `splunk_list_indexes`
-- `splunk_list_saved_searches`
-
-Selected raw source adapters:
-
-- `sg_nea_forecast_2hr`, `sg_nea_air_quality`, `sg_nea_rainfall`
-- `sg_lta_traffic_incidents`, `sg_lta_train_alerts`, `sg_lta_road_works`, `sg_lta_traffic_images`
-- `sg_datagov_search`, `sg_singstat_search`, `sg_onemap_geocode`
-- `sg_hawker_closures`, `sg_nlb_libraries`, `sg_sportsg_facilities`, `sg_nparks_parks`, `sg_pub_water_levels`, `sg_pa_community_outlets`
-- `sg_moe_schools`, `sg_ecda_childcare_centres`, `sg_msf_family_services`, `sg_msf_student_care_services`, `sg_msf_social_service_offices`, `sg_moh_facilities`
-
-Ops:
-
-- `sg_health_check`
-- `sg_cache_stats`, `sg_cache_clear`
-- `sg_key_set`, `sg_key_list`, `sg_key_delete`
-- `sg_config_get`, `sg_config_set`
-- `sg_trace_lookup`, `sg_request_lookup`
-
-## REST Shortcuts
-
-```bash
-curl http://localhost:3000/api/v1/pulse/snapshot
-curl http://localhost:3000/api/v1/pulse/weather
-curl http://localhost:3000/api/v1/pulse/mobility
-curl http://localhost:3000/api/v1/shield/audits
-curl http://localhost:3000/api/v1/shield/approvals
-curl http://localhost:3000/api/v1/shield/scan
-curl -X POST http://localhost:3000/api/v1/shield/policy/simulate \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"index=security failed login","earliest":"-24h","latest":"now","limit":25}'
-curl -X POST http://localhost:3000/api/v1/shield/splunk/investigation-pack \
-  -H 'Content-Type: application/json' \
-  -d '{"question":"Investigate recent failed login activity","limit":20}'
+```sh
+poor-cli help
+poor-cli tui
+python3 -m poor_cli tui
+poor-cli provider list
+poor-cli install info
+poor-cli diag doctor
+poor-cli exec --provider anthropic --prompt "summarize this repository"
+poor-cli server --stdio
 ```
 
-Every generic tool endpoint is also exposed as `POST /api/v1/<tool-name>`.
+## Product Surface
 
-## Splunk Demo Paths
+- `poor-cli tui`: minimal interactive terminal client focused on the agent harness.
+- `poor-cli exec`: one-shot agent run for CI, scripts, and review gates.
+- `poor-cli-server`: JSON-RPC runtime for automation clients.
+- Tools: filesystem, shell, git, diagnostics, tasks, review, deploy, MCP, memory, checkpoints.
+- State: repo-local `.poor-cli/` for config, sessions, checkpoints, audit logs, memories, and automation history.
 
-Mocked local demo, no Splunk token:
+## TUI
 
-```bash
-npx vitest run packages/mcp-server/src/shield/__tests__/runtime-demo-fixtures.test.ts
-npx vitest run packages/mcp-server/src/tools/__tests__/splunk-tools.test.ts
+The interactive surface is intentionally narrow. It is designed to keep the user inside the agent harness, not to expose every backend subsystem as first-class UI. The frontend is Textual for low-latency input while keeping the layout intentionally plain.
+
+- Transcript pane, activity pane, and single-line composer.
+- Approval overlays for permission and plan review.
+- Compact action palette for status, provider, sandbox, policy, diagnostics, and session actions.
+- Voice mode via `Ctrl-V`: local microphone capture, local Whisper transcription, and optional spoken assistant replies.
+- In-session voice mode via `/voice on` and `/voice off` for continuous talk-listen loops without global hotkeys.
+- Key controls: `Enter` send, `Ctrl-V` voice, `Tab` focus, `Ctrl-O` actions, `Esc` cancel, `Ctrl-R` restart, `?` help.
+
+Voice runtime is configured through environment variables:
+
+- `POOR_CLI_VOICE_MODE`: `1` enables continuous in-session voice mode on startup
+- `POOR_CLI_VOICE_MODEL`: local Whisper model name, default `base`
+- `POOR_CLI_VOICE_LANGUAGE`: transcription language or `auto`
+- `POOR_CLI_VOICE_SPEAK_RESPONSES`: `1` to speak voice-originated assistant replies
+- `POOR_CLI_VOICE_TTS_ENGINE`: `auto`, `say`, `spd-say`, or `espeak-ng`
+
+Useful in-app voice commands:
+
+- `/voice on`
+- `/voice off`
+- `/voice talk`
+- `/voice status`
+- `/voice speak on|off`
+- `/voice language <code>`
+- `/voice model <name>`
+
+## Providers
+
+Provider keys: `gemini`, `openai`, `anthropic`, `claude`, `openrouter`, `ollama`, `hf_local`, `vllm`, `llama_server`, `sglang`, `hf_tgi`, `lmstudio`, `litellm`.
+
+Local-first providers work through Ollama, LM Studio, llama-server, vLLM, SGLang, HF TGI, or HF Local. Cloud providers use BYOK environment variables or keyring-backed config.
+
+| Provider | Key | Default Model | Common Models | Capabilities in `poor-cli` |
+|---|---|---|---|---|
+| Gemini | `gemini` | `gemini-2.5-flash` | `gemini-2.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash-lite` | Streaming, function calling, system instructions, vision, JSON mode |
+| OpenAI | `openai` | `gpt-5.1` | `gpt-5.1`, `gpt-5`, `gpt-5-mini` | Streaming, function calling, system instructions, JSON mode, vision on GPT-5/GPT-4.1-class models |
+| Anthropic / Claude | `anthropic` (alias: `claude`) | `claude-sonnet-4-20250514` | `claude-sonnet-4-20250514`, `claude-3-7-sonnet-20250219`, `claude-3-5-haiku-20241022` | Streaming, function calling, system instructions, vision |
+| OpenRouter | `openrouter` | `anthropic/claude-sonnet-4-20250514` | `openai/gpt-5`, `anthropic/claude-sonnet-4-20250514`, `google/gemini-2.5-flash`, `meta-llama/llama-4-maverick`, `deepseek/deepseek-r1` | Streaming, function calling, system instructions, vision (model-dependent) |
+| Ollama | `ollama` | `llama3.1` | Auto-discovered from local `ollama` (`/api/tags`), with fallbacks `llama3.1`, `qwen2.5-coder`, `llama3.1:70b`, `mistral`, `codellama` | Streaming, system instructions, JSON mode, optional function calling for capable local models, local-only execution via `http://localhost:11434` |
+| HF Local | `hf_local` | `Qwen/Qwen2.5-3B` | Local HuggingFace model IDs such as `Qwen/Qwen2.5-3B`, `Qwen/Qwen2.5-7B`, `Qwen/Qwen2.5-14B`, `meta-llama/Llama-3.2-3B` | System instructions, latent communication via local hidden-state access |
+| vLLM | `vllm` | `Qwen/Qwen2.5-3B` | Served local model IDs such as `Qwen/Qwen2.5-3B`, `Qwen/Qwen2.5-7B`, `Qwen/Qwen2.5-14B`, `meta-llama/Llama-3.2-3B` | Streaming, system instructions over vLLM's OpenAI-compatible local server; no latent hidden-state hand-off, local-only execution via `http://localhost:8000/v1` |
+| llama-server | `llama_server` | `local-model` | Served local model IDs such as `local-model`, `qwen2.5-coder`, `llama-3.2` | Streaming, system instructions over llama-server's OpenAI-compatible local server; no latent hidden-state hand-off, local-only execution via `http://localhost:8080/v1` |
+| SGLang | `sglang` | `Qwen/Qwen2.5-3B` | Served local model IDs such as `Qwen/Qwen2.5-3B`, `Qwen/Qwen2.5-7B`, `Qwen/Qwen2.5-14B`, `meta-llama/Llama-3.2-3B` | Streaming, system instructions over SGLang's OpenAI-compatible local server; no latent hidden-state hand-off, local-only execution via `http://localhost:30000/v1` |
+| HF TGI | `hf_tgi` | `tgi` | Served local model IDs such as `tgi`, `Qwen/Qwen2.5-3B`, `Qwen/Qwen2.5-7B` | Streaming, system instructions over TGI's OpenAI-compatible local server; no latent hidden-state hand-off, local-only execution via `http://localhost:3000/v1` |
+| LM Studio | `lmstudio` | `local-model` | Served local model IDs such as `local-model`, `qwen2.5-coder`, `llama-3.2` | Streaming, system instructions over LM Studio's OpenAI-compatible local server; no latent hidden-state hand-off, local-only execution via `http://localhost:1234/v1` |
+| LiteLLM (any backend) | `litellm` | `groq/llama-3.1-70b-versatile` | `groq/llama-3.1-70b-versatile`, `groq/llama-3.1-8b-instant`, `cohere/command-r-plus`, `mistral/mistral-large-latest`, `bedrock/anthropic.claude-3-sonnet-20240229-v1:0` | Catch-all router to 100+ backends via litellm; feature parity varies by underlying backend |
+
+## CI Usage
+
+```sh
+poor-cli exec \
+  --provider anthropic \
+  --prompt "review the diff, run targeted tests, and report blockers only"
 ```
 
-The dashboard route `/api/v1/shield/splunk/investigation-pack` forces mock mode and uses synthetic fixture events embedded in the runtime. They are fake demo events, not Splunk data.
+Recommended CI defaults:
 
-Live Splunk trial, token required:
-
-```bash
-export SPLUNK_MCP_URL=https://localhost:8089/services/mcp
-export SPLUNK_MCP_TOKEN=<bearer-token>
-export SPLUNK_MCP_ALLOWED_INDEXES=main,security
-export SWEE_SPLUNK_SMOKE_QUERY='index=security | head 1'
-npm run build
-npm run splunk:smoke:live
-npm run dev:gateway
-curl -X POST http://localhost:3000/api/v1/splunk_search \
-  -H 'Content-Type: application/json' \
-  -d '{"query":"index=security failed login","limit":10}'
+```yaml
+agentic:
+  auto_approve_tools: ["read_file", "glob_files", "grep_files", "git_status", "git_diff"]
+  auto_approve_edits: false
+  deny_patterns: ["rm -rf", "force-push", "drop database"]
+diff_review:
+  require_diff_preview: true
+sandbox:
+  preset: moderate
 ```
 
-For self-signed local-trial certs only, set `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+## Repository Landmarks
 
-Submission prep lives in:
+- `poor_cli/tui/`: minimal Textual frontend.
+- `poor_cli/server/`: JSON-RPC runtime and handlers.
+- `poor_cli/core.py`: shared agent harness core.
+- `asset/reference/architecture.png`: current architecture reference image.
 
-- `docs/submission/significant-update.md`
-- `docs/submission/demo-script.md`
-- `docs/submission/claims-audit.md`
+## License
 
-Run `npm run submission:claims:check` and `npm run submission:readiness:check` before recording the demo. The live Splunk smoke script exits as skipped without `SPLUNK_MCP_URL` and a token; it does not prove live auth unless it actually runs against a configured Splunk MCP endpoint.
-
-## Public Evidence
-
-`npm run benchmarks:snapshot` writes a benchmark JSON artifact with Pulse, Shield, and transport-reliability coverage evidence. `npm run status:public` turns that artifact into `docs/status/public-status.md`.
-
-Those artifacts are release evidence, not an SLA. Transport rows describe source coverage, freshness handling, credentials, and limits; they do not claim official service status or operational safety.
-
-`npm run benchmark:transport:live` runs the local MCP runtime against `swee_pulse_mobility` and writes live proof artifacts to `artifacts/transport/latest.json` and `artifacts/transport/latest.md`. Missing `SG_API_LTA_KEY` is reported as `credential_missing` for credentialed LTA sources rather than treated as a command failure.
-
-`npm run benchmark:sources:live` runs broader source-family probes for NEA weather, OneMap geocoding, data.gov.sg discovery, SingStat discovery, and civic directory families. It writes `artifacts/sources/latest.json` and `artifacts/sources/latest.md` with source states, record counts, gap codes, Shield audit IDs, and limits.
-
-`npm run benchmark:sources:contracts:live`, `npm run benchmark:datagov:discovery:live`, and `npm run benchmark:credentials:live` add live evidence for source-contract drift, data.gov.sg discovery quality, and optional credential readiness. The check-only counterparts validate committed artifacts during `npm run verify`.
-
-## Runtime Contract
-
-Swee Pulse signals are deterministic transformations of source records. Responses surface provenance, observed freshness, gaps, and recommended operator actions. Absence of a public-data signal is not a safety, compliance, or risk clearance claim.
-
-Swee Shield records policy decisions and sanitized replay metadata in a local SQLite audit store. Secrets are redacted in stored payloads and raw payload hashes are retained for reproducibility.
+MIT
