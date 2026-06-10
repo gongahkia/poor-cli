@@ -1,6 +1,6 @@
 import { fn } from './state.js';
 
-const BTO_LAYOUTS = [
+const SAMPLE_LAYOUTS = [
   {
     id: '1',
     name: '2-room orange BTO',
@@ -39,7 +39,7 @@ export function initBtoLibrary() {
   const picker = document.getElementById('bto-layout-picker');
   if (!picker) return;
 
-  for (const layout of BTO_LAYOUTS) {
+  for (const layout of SAMPLE_LAYOUTS) {
     const option = document.createElement('option');
     option.value = layout.id;
     option.textContent = `${layout.name} - ${layout.walls} walls`;
@@ -48,7 +48,7 @@ export function initBtoLibrary() {
   }
 
   picker.addEventListener('change', async () => {
-    const selected = BTO_LAYOUTS.find((layout) => layout.id === picker.value);
+    const selected = SAMPLE_LAYOUTS.find((layout) => layout.id === picker.value);
     if (!selected) return;
 
     picker.disabled = true;
@@ -62,7 +62,7 @@ export function initBtoLibrary() {
       if (fn.pushLayoutToServer) await fn.pushLayoutToServer();
       if (fn.frameScene) fn.frameScene();
     } catch (err) {
-      console.error('Failed loading BTO layout', selected, err);
+      console.error('Failed loading sample layout', selected, err);
       window.alert(`Failed to load ${selected.name}: ${err.message || err}`);
     } finally {
       picker.disabled = false;

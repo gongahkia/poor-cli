@@ -75,6 +75,7 @@ def test_chat_status_reports_reference_capabilities(chat_client: TestClient) -> 
     assert capabilities["destructive_confirmation"] is True
     assert capabilities["strict_tool_validation"] is True
     assert "llm_reviewed" in capabilities["planner_modes"]
+    assert "apartment_compact" in capabilities["standards_profiles"]
     assert "accessible" in capabilities["standards_profiles"]
     assert capabilities["max_image_attachments"] == 3
     assert "image/png" in capabilities["image_mime_types"]
@@ -100,6 +101,63 @@ def test_room_capture_route_returns_bad_input_error(chat_client: TestClient) -> 
             "openings": [{"wall": "ceiling"}],
         },
     )
+    assert res.status_code == 400
+    assert res.json()["ok"] is False
+
+
+def test_floorplan_vectorize_route_returns_layout(
+    chat_client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HAUS_RUNTIME_ROOT", str(tmp_path))
+
+    def fake_run_vectorize(config: object) -> dict[str, object]:
+        out_dir = getattr(config, "out_dir")
+        out_dir.mkdir(parents=True, exist_ok=True)
+        layout_path = out_dir / "layout.json"
+        layout_path.write_text(
+            json.dumps(
+                {
+                    "version": 1,
+                    "metadata": {"wall_count": 5, "opening_count": 1, "scale_m_per_px": 0.01},
+                    "items": [{"type": "wall", "pos": [0, 1.3, 0], "geo": [3, 2.6, 0.15], "rot": 0}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return {
+            "output_layout": str(layout_path),
+            "output_glb": str(out_dir / "model.glb"),
+            "scale": {"m_per_px": 0.01},
+            "walls": {"total_segments": 5},
+            "openings": {"total": 1},
+        }
+
+    monkeypatch.setattr(chat_server, "run_vectorize", fake_run_vectorize)
+
+    res = chat_client.post(
+        "/api/floorplans/vectorize",
+        data={"scale_m_per_px": "0.01", "wall_height_m": "2.7"},
+        files={"file": ("plan.png", b"not-real-png", "image/png")},
+    )
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["layout"]["metadata"]["source_type"] == "upload"
+    assert body["layout"]["metadata"]["source_filename"] == "plan.png"
+    assert body["layout"]["metadata"]["calibration"]["scale_m_per_px"] == 0.01
+    assert body["layout"]["items"][0]["type"] == "wall"
+    assert body["artifacts"]["upload_id"]
+
+
+def test_floorplan_vectorize_rejects_unsupported_file(chat_client: TestClient) -> None:
+    res = chat_client.post(
+        "/api/floorplans/vectorize",
+        files={"file": ("plan.txt", b"bad", "text/plain")},
+    )
+
     assert res.status_code == 400
     assert res.json()["ok"] is False
 
@@ -463,7 +521,7 @@ def test_concept_chat_drafts_plan_without_mutating_layout(
     assert body["pending_plan"]["status"] == "draft"
     assert body["pending_plan"]["scope"] == "whole_flat"
     assert body["pending_plan"]["planner"]["mode"] == "llm_reviewed"
-    assert body["pending_plan"]["standards_profile"]["id"] == "compact_hdb"
+    assert body["pending_plan"]["standards_profile"]["id"] == "apartment_compact"
     assert body["pending_plan"]["metrics"]["planned_item_count"] > 0
     assert body["references"][0]["url"] == "https://example.com/hdb-living"
     assert mcp_server._load_layout()["items"] == []
@@ -503,7 +561,7 @@ def test_apply_design_plan_mutates_layout_and_tags_rooms(
     assert body["plan"]["status"] == "applied"
     assert body["applied_by_room"]["Living"]
     assert "layout_summary" in body["validation"]
-    assert body["validation"]["quality_profile"] == "compact_hdb"
+    assert body["validation"]["quality_profile"] == "apartment_compact"
     assert "Layout profile:" in body["validation"]["layout_quality"]
 
     layout = mcp_server._load_layout()

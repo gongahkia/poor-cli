@@ -63,17 +63,17 @@ header p { font-size: 16px; line-height: 24px; color: var(--fg-muted); margin-to
 <body>
 <header>
   <h1>haus</h1>
-  <p>Select a floor plan model to open in the editor, or load a GLB file directly.</p>
+  <p>Open the editor, upload a floor plan image, or load an existing GLB model.</p>
 </header>
 <div class="toolbar">
   <label>Load GLB from disk <input type="file" id="glb-upload" accept=".glb"></label>
   <span class="or-divider">|</span>
-  <button id="open-empty">Open empty editor</button>
+  <button id="open-empty">Open editor</button>
 </div>
 <div id="grid"></div>
 <div id="empty">
-  <p>No models found.</p>
-  <p style="margin-top:8px;">Run <code>make build</code> to generate models from floor plan images in <code>corpus/</code>.</p>
+  <p>No sample models found.</p>
+  <p style="margin-top:8px;">Open the editor and upload a PNG/JPG floor plan.</p>
 </div>
 <script>
 const grid = document.getElementById('grid');

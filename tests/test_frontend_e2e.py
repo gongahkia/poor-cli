@@ -73,9 +73,12 @@ def _mock_editor_backend(page) -> None:
                         "destructive_confirmation": True,
                         "strict_tool_validation": True,
                         "standards_profiles": [
+                            "apartment_compact",
                             "compact_hdb",
                             "comfortable_home",
                             "accessible",
+                            "rental_room",
+                            "hdb_bto",
                             "kitchen_basic",
                             "bedroom_basic",
                             "bathroom_basic",

@@ -266,16 +266,19 @@ function refreshPlannerControls() {
 
   const profiles = Array.isArray(caps.standards_profiles)
     ? caps.standards_profiles
-    : ['compact_hdb', 'comfortable_home', 'accessible'];
+    : ['apartment_compact', 'comfortable_home', 'accessible'];
   const profileLabels = {
+    apartment_compact: 'Compact apartment',
     compact_hdb: 'Compact HDB',
     comfortable_home: 'Comfortable home',
     accessible: 'Accessible',
+    rental_room: 'Rental room',
+    hdb_bto: 'HDB/BTO',
     kitchen_basic: 'Kitchen',
     bedroom_basic: 'Bedroom',
     bathroom_basic: 'Bathroom',
   };
-  const selectedProfile = localStorage.getItem(PROFILE_STORAGE) || standardsProfileSel.value || 'compact_hdb';
+  const selectedProfile = localStorage.getItem(PROFILE_STORAGE) || standardsProfileSel.value || 'apartment_compact';
   standardsProfileSel.innerHTML = '';
   for (const profile of profiles) {
     const opt = document.createElement('option');
@@ -283,7 +286,7 @@ function refreshPlannerControls() {
     opt.textContent = profileLabels[profile] || profile;
     standardsProfileSel.appendChild(opt);
   }
-  standardsProfileSel.value = profiles.includes(selectedProfile) ? selectedProfile : 'compact_hdb';
+  standardsProfileSel.value = profiles.includes(selectedProfile) ? selectedProfile : 'apartment_compact';
 }
 
 function hydrateModelPlaceholder() {
@@ -540,7 +543,7 @@ function appendPlanCard(plan) {
   const planner = plan.planner || {};
   const profile = plan.standards_profile || {};
   const readiness = (plan.apply_readiness || plan.validation_status || 'needs_review').replaceAll('_', ' ');
-  meta.textContent = `${readiness} · ${planner.label || planner.mode || 'Haus planner'} · ${profile.label || 'Compact HDB'} · confidence ${plan.confidence || 'medium'}`;
+  meta.textContent = `${readiness} · ${planner.label || planner.mode || 'Haus planner'} · ${profile.label || 'Compact apartment'} · confidence ${plan.confidence || 'medium'}`;
   card.appendChild(meta);
 
   if (profile.notes) {
@@ -803,7 +806,7 @@ async function send() {
 
   const model = modelInput.value.trim();
   const plannerMode = plannerModeSel.value || 'auto';
-  const standardsProfile = standardsProfileSel.value || 'compact_hdb';
+  const standardsProfile = standardsProfileSel.value || 'apartment_compact';
   const transcriptText = attachmentTranscript(text, attachmentsForSend);
 
   inputEl.value = '';

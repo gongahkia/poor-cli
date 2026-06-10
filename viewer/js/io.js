@@ -728,6 +728,7 @@ function clearLocalLayout({ recordUndo = true } = {}) {
   S.layoutMetadata = null;
   S.layoutRooms = [];
   S.roomCapture = null;
+  S.uploadedFloorPlan = null;
   S.redoStack.length = 0;
   fn.refreshSceneList();
 

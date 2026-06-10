@@ -16,6 +16,7 @@ import ipaddress
 import re
 import socket
 import time
+import uuid
 from collections.abc import Callable
 from html.parser import HTMLParser
 from pathlib import Path
@@ -25,6 +26,7 @@ from urllib.parse import parse_qs, parse_qsl, quote_plus, urlencode, unquote, ur
 from urllib.request import Request as UrlRequest, urlopen
 
 from starlette.applications import Starlette
+from starlette.datastructures import UploadFile
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Mount, Route
@@ -35,6 +37,8 @@ from . import mcp_server as _mcp_server
 from .agent_loop import RoomPlan, plan_flat, plan_room
 from .catalog import catalog_item_to_layout_item, catalog_search_meta, get_catalog_item, search_ikea_catalog
 from .logging_utils import configure_logging, new_request_id
+from .pipeline import run_vectorize
+from .types import VectorizeConfig
 from .mcp_server import (
     _coerce_float,
     _save_layout,
@@ -92,12 +96,19 @@ mimetypes.add_type("model/gltf-binary", ".glb")
 _MAX_TOOL_STEPS = 12
 _MAX_CHAT_ATTACHMENTS = 3
 _MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
+_MAX_FLOORPLAN_BYTES = 15 * 1024 * 1024
 _ALLOWED_IMAGE_MIME_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+_ALLOWED_FLOORPLAN_MIME_TYPES = {"image/jpeg", "image/png", "image/webp"}
+_FLOORPLAN_EXTENSIONS = {
+    "image/jpeg": ".jpg",
+    "image/png": ".png",
+    "image/webp": ".webp",
+}
 _WEB_TIMEOUT_SECONDS = 8
 _MAX_WEB_RESPONSE_BYTES = 1_000_000
 _SEARCH_PROVIDER_DEFAULTS = ("serper", "exa", "tinyfish", "duckduckgo")
 _PLANNER_MODES = {"auto", "deterministic", "llm_reviewed", "llm_structured"}
-_DEFAULT_STANDARDS_PROFILE = "compact_hdb"
+_DEFAULT_STANDARDS_PROFILE = "apartment_compact"
 _SEARCH_PROVIDER_KEY_ENV = {
     "serper": "SERPER_API_KEY",
     "exa": "EXA_API_KEY",
@@ -138,7 +149,7 @@ _CONCEPT_DOMAIN_RE = re.compile(
 _SYSTEM = (
     "You are an AI assistant for the haus floor plan editor. "
     "You ONLY help with floor plan editing — arranging furniture, walls, and layout. "
-    "You may use live web references when they support interior design, furniture, HDB/BTO, "
+    "You may use live web references when they support interior design, furniture, uploaded floor plans, HDB/BTO, "
     "renovation, accessibility, materials, or product-dimension decisions. "
     "If the user asks something unrelated (general knowledge, coding, etc), "
     "politely decline and remind them you only handle floor plan tasks.\n\n"
@@ -155,7 +166,7 @@ _SYSTEM = (
     "- remove_objects_by_type is safer than repeated remove_object when deleting many.\n"
     "- batch_move uses relative offsets (dx, dz), not absolute positions.\n\n"
     "Reference workflow:\n"
-    "- Use web_search for current design/product/HDB references when the user asks for current, "
+    "- Use web_search for current design/product/local-housing references when the user asks for current, "
     "specific, sourced, or live reference guidance.\n"
     "- Use fetch_web_page when the user provides a URL or a search result needs more detail.\n"
     "- Cite source URLs in the final answer whenever web tools influenced the plan.\n"
@@ -179,7 +190,7 @@ _TOOLS_SPEC = [
             "type": "object",
             "properties": {
                 "room_id": {"type": "string", "default": ""},
-                "style_prompt": {"type": "string", "default": "minimalist HDB"},
+                "style_prompt": {"type": "string", "default": "minimalist apartment"},
                 "constraints": {"type": "string", "default": ""},
                 "origin_x": {"type": "number"},
                 "origin_z": {"type": "number"},
@@ -259,7 +270,7 @@ _TOOLS_SPEC = [
     {
         "name": "web_search",
         "description": (
-            "Search the live web for current interior design, furniture, HDB/BTO, renovation, "
+            "Search the live web for current interior design, furniture, floor-plan, renovation, "
             "accessibility, material, or product-dimension references. Returns source URLs."
         ),
         "parameters": {
@@ -692,8 +703,8 @@ _TOOLS_SPEC = [
             "properties": {
                 "profile": {
                     "type": "string",
-                    "default": "compact_hdb",
-                    "description": "One of compact_hdb, comfortable_home, accessible, kitchen_basic, bedroom_basic, bathroom_basic.",
+                    "default": "apartment_compact",
+                    "description": "One of apartment_compact, comfortable_home, accessible, rental_room, hdb_bto, kitchen_basic, bedroom_basic, bathroom_basic.",
                 }
             },
         },
@@ -1909,7 +1920,7 @@ def _design_plan_report(plan: dict[str, Any]) -> str:
         f"Status: {plan['status']}",
         f"Scope: {plan['scope']}",
         f"Planner: {plan.get('planner', {}).get('label', 'Deterministic Haus room-kit planner') if isinstance(plan.get('planner'), dict) else 'Deterministic Haus room-kit planner'}",
-        f"Standards profile: {plan.get('standards_profile', {}).get('label', 'Compact HDB circulation') if isinstance(plan.get('standards_profile'), dict) else 'Compact HDB circulation'}",
+        f"Standards profile: {plan.get('standards_profile', {}).get('label', 'Compact apartment circulation') if isinstance(plan.get('standards_profile'), dict) else 'Compact apartment circulation'}",
         "",
         "## Brief",
         plan["brief"],
@@ -2920,6 +2931,132 @@ async def _room_capture_layout(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "layout": layout, "request_id": request_id})
 
 
+def _runtime_root() -> Path:
+    configured = os.environ.get("HAUS_RUNTIME_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path.home() / ".haus").resolve()
+
+
+def _form_bool(value: Any, default: bool = True) -> bool:
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _form_float(value: Any, default: float | None = None) -> float | None:
+    if value is None or str(value).strip() == "":
+        return default
+    try:
+        parsed = float(str(value))
+    except ValueError:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _floorplan_warnings(metadata: dict[str, Any], layout: dict[str, Any], scale_override: float | None) -> list[str]:
+    warnings: list[str] = []
+    wall_count = int(layout.get("metadata", {}).get("wall_count") or metadata.get("walls", {}).get("total_segments") or 0)
+    if wall_count < 4:
+        warnings.append("Few walls were detected. Use the image overlay and draw walls manually if the extraction looks sparse.")
+    scale = layout.get("metadata", {}).get("scale_m_per_px") or metadata.get("scale", {}).get("m_per_px")
+    if scale is None:
+        warnings.append("Scale could not be estimated. Calibrate with a known length before judging measurements.")
+    elif scale_override is None:
+        warnings.append("Scale is estimated from wall thickness. Calibrate with a known length for better measurements.")
+    opening_count = int(layout.get("metadata", {}).get("opening_count") or metadata.get("openings", {}).get("total") or 0)
+    if opening_count == 0:
+        warnings.append("No doors or windows were detected. Add openings manually where needed.")
+    return warnings
+
+
+async def _floorplan_vectorize(request: Request) -> JSONResponse:
+    request_id = new_request_id("floorplan")
+    try:
+        form = await request.form()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid multipart form body.", "request_id": request_id}, 400)
+
+    upload = form.get("file")
+    if not isinstance(upload, UploadFile):
+        return JSONResponse({"ok": False, "error": "Missing floor plan file field 'file'.", "request_id": request_id}, 400)
+
+    content_type = (upload.content_type or "").split(";")[0].strip().lower()
+    if content_type not in _ALLOWED_FLOORPLAN_MIME_TYPES:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "Unsupported floor plan type. Upload PNG, JPG, or WebP.",
+                "request_id": request_id,
+            },
+            400,
+        )
+
+    raw = await upload.read(_MAX_FLOORPLAN_BYTES + 1)
+    if not raw:
+        return JSONResponse({"ok": False, "error": "Floor plan file is empty.", "request_id": request_id}, 400)
+    if len(raw) > _MAX_FLOORPLAN_BYTES:
+        return JSONResponse({"ok": False, "error": "Floor plan file exceeds 15MB.", "request_id": request_id}, 413)
+
+    upload_id = uuid.uuid4().hex[:12]
+    root = _runtime_root() / "uploads" / upload_id
+    root.mkdir(parents=True, exist_ok=True)
+    ext = _FLOORPLAN_EXTENSIONS[content_type]
+    image_path = root / f"source{ext}"
+    image_path.write_bytes(raw)
+    out_dir = root / "vectorized"
+    debug_dir = root / "debug"
+    scale_override = _form_float(form.get("scale_m_per_px"))
+    wall_height = _form_float(form.get("wall_height_m"), 2.6) or 2.6
+    clean = _form_bool(form.get("clean"), True)
+
+    try:
+        metadata = run_vectorize(
+            VectorizeConfig(
+                image_path=image_path,
+                out_dir=out_dir,
+                debug_dir=debug_dir,
+                wall_height=wall_height,
+                scale_override=scale_override,
+                clean=clean,
+            )
+        )
+        layout_path = Path(str(metadata["output_layout"]))
+        layout = json.loads(layout_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        log.exception("[%s] floor plan vectorization failed", request_id)
+        return JSONResponse({"ok": False, "error": str(exc), "request_id": request_id}, 500)
+
+    layout_metadata = layout.setdefault("metadata", {})
+    if isinstance(layout_metadata, dict):
+        layout_metadata["source_type"] = "upload"
+        layout_metadata["source_filename"] = upload.filename or image_path.name
+        layout_metadata["upload_id"] = upload_id
+        if scale_override is not None:
+            layout_metadata["calibration"] = {"scale_m_per_px": scale_override, "source": "user"}
+    warnings = _floorplan_warnings(metadata, layout, scale_override)
+    if warnings and isinstance(layout_metadata, dict):
+        layout_metadata["extraction_warnings"] = warnings
+
+    return JSONResponse(
+        {
+            "ok": True,
+            "layout": layout,
+            "metadata": metadata,
+            "warnings": warnings,
+            "artifacts": {
+                "upload_id": upload_id,
+                "source": str(image_path),
+                "layout": str(layout_path),
+                "glb": str(out_dir / "model.glb"),
+                "vector_clean": str(out_dir / "vector_clean.png"),
+                "debug_dir": str(debug_dir),
+            },
+            "request_id": request_id,
+        }
+    )
+
+
 async def _catalog_ikea_search(request: Request) -> JSONResponse:
     request_id = new_request_id("catalog-search")
     params = request.query_params
@@ -2986,6 +3123,7 @@ def create_app(root_dir: str) -> Starlette:
             Route("/api/sync-layout", _sync_layout, methods=["POST"]),
             Route("/api/mcp/clear-layout", _mcp_clear_layout, methods=["POST"]),
             Route("/api/room-capture/layout", _room_capture_layout, methods=["POST"]),
+            Route("/api/floorplans/vectorize", _floorplan_vectorize, methods=["POST"]),
             Route("/api/catalog/ikea/search", _catalog_ikea_search, methods=["GET"]),
             Route("/api/catalog/ikea/items/{item_id}", _catalog_ikea_item, methods=["GET"]),
             Route("/api/catalog/ikea/items/{item_id}/layout-item", _catalog_ikea_layout_item, methods=["POST"]),

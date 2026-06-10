@@ -56,6 +56,13 @@ FURNITURE_CATALOG = {
 }
 
 STANDARD_PROFILES: dict[str, dict[str, Any]] = {
+    "apartment_compact": {
+        "label": "Compact apartment circulation",
+        "min_walkway_m": 0.75,
+        "clearance_m": 0.45,
+        "turning_space_m": None,
+        "notes": "Practical compact apartment target; not accessibility compliance.",
+    },
     "compact_hdb": {
         "label": "Compact HDB circulation",
         "min_walkway_m": 0.75,
@@ -76,6 +83,20 @@ STANDARD_PROFILES: dict[str, dict[str, Any]] = {
         "clearance_m": 0.90,
         "turning_space_m": 1.50,
         "notes": "Screening target inspired by accessible-route conventions; not a code-compliance certificate.",
+    },
+    "rental_room": {
+        "label": "Rental room planning",
+        "min_walkway_m": 0.65,
+        "clearance_m": 0.40,
+        "turning_space_m": None,
+        "notes": "Tight single-room target for bed, desk, storage, and circulation tradeoffs.",
+    },
+    "hdb_bto": {
+        "label": "HDB/BTO compact planning",
+        "min_walkway_m": 0.75,
+        "clearance_m": 0.45,
+        "turning_space_m": None,
+        "notes": "Singapore HDB/BTO planning target; not HDB permit or code compliance.",
     },
     "kitchen_basic": {
         "label": "Kitchen basic ergonomics",

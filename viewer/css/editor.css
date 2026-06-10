@@ -69,14 +69,20 @@ canvas { display: block; position: fixed; top: 0; left: var(--planner-w); }
   font-size: 11px; padding: 3px 5px; border-radius: 4px; text-align: right;
 }
 .dim-input:focus { border-color: var(--input-focus); outline: none; }
-#room-capture-input, #catalog-query, #room-openings {
+#room-capture-input, #catalog-query, #room-openings, #floorplan-panel-input {
   width: 100%; background: var(--input-bg); border: 1px solid var(--border-mid);
   color: var(--fg-dim); border-radius: 4px; padding: 6px 8px; font-size: 11px;
 }
 #room-openings { min-height: 54px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-#room-capture-status {
+#room-capture-status, #floorplan-upload-status {
   color: var(--fg-accent); font-size: 10px; line-height: 1.35; min-height: 14px;
 }
+#floorplan-review-summary, #floorplan-review-warnings {
+  color: var(--fg-dim); font-size: 10px; line-height: 1.35;
+  padding: 6px; background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 4px; display: flex; flex-direction: column; gap: 4px;
+}
+#floorplan-review-warnings { color: #fbbf24; }
 #catalog-results { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
 .catalog-card {
   display: flex; flex-direction: column; gap: 3px; padding: 6px;
@@ -305,6 +311,15 @@ kbd {
 }
 #chat-messages::-webkit-scrollbar { width: 4px; }
 #chat-messages::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 2px; }
+#chat-quick-prompts {
+  display: flex; gap: 4px; padding: 6px 12px; border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+#chat-quick-prompts button {
+  background: var(--btn-bg); border: 1px solid var(--border-mid); color: var(--fg-dim);
+  border-radius: 999px; padding: 4px 8px; cursor: pointer; font-size: 10px; line-height: 14px;
+}
+#chat-quick-prompts button:hover { background: var(--btn-hover); color: var(--fg); }
 .chat-msg {
   padding: 7px 10px; border-radius: 8px; max-width: 90%;
   word-wrap: break-word; line-height: 1.4; font-size: 12px;

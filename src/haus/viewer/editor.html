@@ -9,9 +9,10 @@
 <body>
 <button id="actions-toggle" title="Toggle editor actions">Actions</button>
 <div id="toolbar">
+  <label>Upload Plan <input type="file" id="floorplan-upload-input" accept="image/png,image/jpeg,image/webp"></label>
   <label>Load GLB <input type="file" id="glb-input" accept=".glb"></label>
-  <select id="bto-layout-picker" title="Load real BTO layout">
-    <option value="">Load real layout...</option>
+  <select id="bto-layout-picker" title="Load sample layout">
+    <option value="">Sample layouts...</option>
   </select>
   <button id="delete-btn" title="Delete selected (X)">Delete</button>
   <button id="wall-btn" title="Draw wall (W)">Draw Wall</button>
@@ -23,7 +24,7 @@
   <button id="export-json-btn" title="Export layout as JSON">Export JSON</button>
   <button id="export-svg-btn" title="Export 2D floor plan as SVG">Export SVG</button>
   <label>Load JSON <input type="file" id="json-input" accept=".json"></label>
-  <label>Floor Plan <input type="file" id="overlay-input" accept="image/*"></label>
+  <label>Overlay <input type="file" id="overlay-input" accept="image/*"></label>
   <button id="chat-btn" title="Focus Haus Planner">Planner</button>
   <button id="theme-btn" title="Toggle light/dark theme">Light</button>
   <button id="help-btn" title="Keyboard shortcuts (?)">?</button>
@@ -41,7 +42,7 @@
         <option value="llm_structured">LLM structured</option>
       </select>
       <select id="chat-standards-profile" title="Standards profile">
-        <option value="compact_hdb">Compact HDB</option>
+        <option value="apartment_compact">Compact apartment</option>
         <option value="comfortable_home">Comfortable home</option>
         <option value="accessible">Accessible</option>
       </select>
@@ -74,6 +75,12 @@
   </div>
   <div id="chat-status"></div>
   <div id="chat-messages"></div>
+  <div id="chat-quick-prompts">
+    <button data-prompt="Furnish this apartment for a compact work-from-home setup.">WFH</button>
+    <button data-prompt="Optimize the living area for sofa, TV sightline, and clear walkway.">Sofa/TV</button>
+    <button data-prompt="Design a rental bedroom with bed, desk, and storage.">Rental</button>
+    <button data-prompt="Check this layout against the selected circulation profile.">Check</button>
+  </div>
   <div id="chat-attachments"></div>
   <div id="chat-input-row">
     <button id="chat-attach-btn" title="Attach visual reference image">Image</button>
@@ -139,6 +146,22 @@
       <span class="snap-val" id="overlay-opacity-label">50%</span>
     </div>
     <button class="furniture-btn" id="overlay-clear">Remove Overlay</button>
+  </div>
+  <div class="section" id="floorplan-upload-section">
+    <h3>Upload Floor Plan</h3>
+    <input type="file" id="floorplan-panel-input" accept="image/png,image/jpeg,image/webp">
+    <div class="toggle-row"><label for="floorplan-known-px">Known px</label><input type="number" class="dim-input" id="floorplan-known-px" min="1" step="1" placeholder="240"><span class="snap-val">px</span></div>
+    <div class="toggle-row"><label for="floorplan-known-m">Known m</label><input type="number" class="dim-input" id="floorplan-known-m" min="0.1" step="0.05" placeholder="3.0"><span class="snap-val">m</span></div>
+    <div class="toggle-row"><label for="floorplan-wall-height">Wall h</label><input type="number" class="dim-input" id="floorplan-wall-height" min="1.8" max="8" step="0.1" value="2.6"><span class="snap-val">m</span></div>
+    <div class="toggle-row"><label for="floorplan-clean">Clean image</label><input type="checkbox" id="floorplan-clean" checked></div>
+    <div id="floorplan-upload-status"></div>
+  </div>
+  <div class="section" id="floorplan-review-section" style="display:none;">
+    <h3>Extraction Review</h3>
+    <div id="floorplan-review-summary"></div>
+    <div id="floorplan-review-warnings"></div>
+    <button class="furniture-btn" id="floorplan-overlay-only">Use Image Only</button>
+    <button class="furniture-btn" id="floorplan-clear">Clear Layout</button>
   </div>
   <div class="section">
     <h3>Room Capture</h3>
