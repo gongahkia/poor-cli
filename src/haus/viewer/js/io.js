@@ -42,6 +42,8 @@ export function initIO() {
   fn.clearLayoutAndSync = clearLayoutAndSync;
   fn.applyLayoutData = applyLayoutData;
   fn.applyCaseData = applyCaseData;
+  fn.addLayoutItem = addLayoutItem;
+  fn.getLayoutData = serializeLayout;
   initCaseReviewPanel();
   startMcpSync();
 }
@@ -54,8 +56,23 @@ function clearModelParts() {
 }
 function materialKindForItem(item) {
   if (item.type === 'wall') return 'wall';
+  if (item.type === 'reference_image') return 'model';
   if (item.type === 'model_part') return 'model';
   return 'furniture';
+}
+function materialForLayoutItem(item, kind) {
+  if (item.texture_data_url) {
+    const texture = new THREE.TextureLoader().load(item.texture_data_url);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    return new THREE.MeshStandardMaterial({
+      map: texture,
+      color: 0xffffff,
+      roughness: 0.72,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+    });
+  }
+  return createSceneMaterial(kind, item.color);
 }
 function buildMeshFromLayoutItem(item) {
   if (!item.geo || !item.pos || item.geo.length < 3 || item.pos.length < 3) {
@@ -66,7 +83,7 @@ function buildMeshFromLayoutItem(item) {
   const kind = materialKindForItem(item);
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]),
-    createSceneMaterial(kind, item.color)
+    materialForLayoutItem(item, kind)
   );
   prepareMeshForScene(mesh, kind, item.color, { replaceMaterial: false });
   mesh.position.set(item.pos[0], item.pos[1], item.pos[2]);
@@ -82,12 +99,18 @@ function buildMeshFromLayoutItem(item) {
     if (item.hdb_thickness_m !== undefined) mesh.userData.hdbThicknessM = item.hdb_thickness_m;
     if (item.thickness_m !== undefined) mesh.userData.thicknessM = item.thickness_m;
     S.userWalls.push(mesh);
-  } else if (item.type === 'model_part') {
+  } else if (item.type === 'model_part' || item.type === 'reference_image') {
     mesh.userData.isModelPart = true;
+    mesh.userData.layoutType = item.type;
+    if (item.texture_data_url) mesh.userData.textureDataUrl = item.texture_data_url;
+    if (item.label) mesh.userData.label = item.label;
+    if (item.source_view) mesh.userData.sourceView = item.source_view;
+    if (item.room_capture_opening) mesh.userData.roomCaptureOpening = item.room_capture_opening;
     S.modelParts.push(mesh);
   } else {
     mesh.userData.baseY = item.geo[1] / 2;
     if (item.furnitureType) mesh.userData.furnitureType = item.furnitureType;
+    if (item.catalog) mesh.userData.catalog = item.catalog;
   }
   if (item.name) mesh.userData.name = item.name;
   if (item.room) mesh.userData.room = item.room;
@@ -148,15 +171,20 @@ function serializeLayout() {
       if (m.userData.hdbThicknessM !== undefined) entry.hdb_thickness_m = m.userData.hdbThicknessM;
       if (m.userData.thicknessM !== undefined) entry.thickness_m = m.userData.thicknessM;
     } else if (m.userData.isModelPart) {
-      entry.type = 'model_part';
+      entry.type = m.userData.layoutType || 'model_part';
       const size = new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3());
       entry.geo = [size.x, size.y, size.z];
       entry.color = m.material?.color?.getHex() ?? 0x888888;
+      if (m.userData.textureDataUrl) entry.texture_data_url = m.userData.textureDataUrl;
+      if (m.userData.label) entry.label = m.userData.label;
+      if (m.userData.sourceView) entry.source_view = m.userData.sourceView;
+      if (m.userData.roomCaptureOpening) entry.room_capture_opening = m.userData.roomCaptureOpening;
     } else {
       entry.type = 'furniture';
       entry.furnitureType = m.userData.furnitureType || null;
       entry.geo = [m.geometry.parameters.width, m.geometry.parameters.height, m.geometry.parameters.depth];
       entry.color = m.material.color.getHex();
+      if (m.userData.catalog) entry.catalog = m.userData.catalog;
     }
     if (m.userData.name) entry.name = m.userData.name;
     if (m.userData.room) entry.room = m.userData.room;
@@ -167,6 +195,7 @@ function serializeLayout() {
   if (S.layoutMetadata) layout.metadata = S.layoutMetadata;
   if (Array.isArray(S.layoutRooms) && S.layoutRooms.length > 0) layout.rooms = S.layoutRooms;
   if (S.caseReview) appendCaseReviewToLayout(layout);
+  if (S.roomCapture) layout.room_capture = S.roomCapture;
   layout.semantic = {
     schema: 'haus.semantic_layout.v1',
     units: 'meters',
@@ -580,6 +609,7 @@ function clearLocalLayout({ recordUndo = true } = {}) {
   S.hiddenObjects.length = 0;
   S.layoutMetadata = null;
   S.layoutRooms = [];
+  S.roomCapture = null;
   S.redoStack.length = 0;
   fn.refreshSceneList();
 
@@ -625,6 +655,7 @@ function applySceneLayout(data, { recordUndo = true, frame = true, preserveCaseR
   if (!preserveCaseReview) clearCaseReview();
   S.layoutMetadata = data.metadata && typeof data.metadata === 'object' ? data.metadata : null;
   S.layoutRooms = Array.isArray(data.rooms) ? data.rooms : [];
+  S.roomCapture = data.room_capture && typeof data.room_capture === 'object' ? data.room_capture : null;
   clearModelParts();
   while (S.draggables.length) S.scene.remove(S.draggables.pop());
   S.userWalls.length = 0; S.redoStack.length = 0;
@@ -645,6 +676,17 @@ function applyLayoutData(data, { recordUndo = true, frame = true } = {}) {
     return;
   }
   applySceneLayout(data, { recordUndo, frame });
+}
+function addLayoutItem(item) {
+  const mesh = buildMeshFromLayoutItem(item);
+  if (!mesh) return false;
+  S.scene.add(mesh);
+  S.draggables.push(mesh);
+  fn.pushUndo({ type: 'add', mesh, inUserWalls: Boolean(mesh.userData.isWall) });
+  fn.refreshSceneList();
+  if (fn.pushLayoutToServer) fn.pushLayoutToServer();
+  if (fn.selectFurniture) fn.selectFurniture(mesh);
+  return true;
 }
 function importJSON(e) {
   const file = e.target.files[0];

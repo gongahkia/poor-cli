@@ -175,6 +175,25 @@ def test_list_room_templates_returns_all() -> None:
     assert "rental_bedroom" in result
 
 
+def test_ikea_catalog_tool_search_and_place(
+    isolated_layout: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HAUS_CATALOG_ROOT", str(tmp_path))
+    monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
+    assert mcp_server._save_layout({"version": 1, "items": []}) is None
+
+    results = mcp_server.search_ikea_catalog("BILLY")
+    assert "BILLY" in results
+    added = mcp_server.add_catalog_furniture("ikea-seed-billy-bookcase", x=1.0, z=2.0)
+    assert "Added IKEA catalog item" in added
+
+    layout = json.loads(isolated_layout.read_text(encoding="utf-8"))
+    assert layout["items"][0]["furnitureType"] == "ikea:ikea-seed-billy-bookcase"
+    assert layout["items"][0]["catalog"]["source"] == "ikea"
+
+
 def test_apply_room_template_places_furniture(isolated_layout: Path) -> None:
     layout = {"version": 1, "items": []}
     assert mcp_server._save_layout(layout) is None

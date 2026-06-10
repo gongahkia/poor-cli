@@ -18,6 +18,8 @@ import { initChat } from './chat.js';
 import { initCommandPalette } from './commandpalette.js';
 import { initSightline } from './sightline.js';
 import { initBtoLibrary } from './btoLibrary.js';
+import { initRoomCapture } from './roomCapture.js';
+import { initCatalog } from './catalog.js';
 initScene();
 initGrid();
 initCollision();
@@ -29,6 +31,8 @@ initSceneList();
 initCamera();
 initIO();
 initBtoLibrary();
+initRoomCapture();
+initCatalog();
 const actionsToggle = document.getElementById('actions-toggle');
 const toolbar = document.getElementById('toolbar');
 if (actionsToggle && toolbar) {

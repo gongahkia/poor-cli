@@ -141,6 +141,23 @@
     <button class="furniture-btn" id="overlay-clear">Remove Overlay</button>
   </div>
   <div class="section">
+    <h3>Room Capture</h3>
+    <input type="file" id="room-capture-input" accept="image/*" multiple>
+    <div class="toggle-row"><label for="room-width">Width</label><input type="number" class="dim-input" id="room-width" min="0.5" max="50" step="0.05" value="3.60"><span class="snap-val">m</span></div>
+    <div class="toggle-row"><label for="room-depth">Depth</label><input type="number" class="dim-input" id="room-depth" min="0.5" max="50" step="0.05" value="3.20"><span class="snap-val">m</span></div>
+    <div class="toggle-row"><label for="room-height">Height</label><input type="number" class="dim-input" id="room-height" min="1.8" max="8" step="0.05" value="2.60"><span class="snap-val">m</span></div>
+    <textarea id="room-openings" placeholder='[{"kind":"door","wall":"south","offset_m":0,"width_m":0.9}]'></textarea>
+    <button class="furniture-btn" id="room-build-btn">Build / Update Room</button>
+    <div id="room-capture-status"></div>
+  </div>
+  <div class="section">
+    <h3>IKEA Catalog</h3>
+    <input type="text" id="catalog-query" placeholder="sofa, desk, BILLY..." autocomplete="off">
+    <div class="toggle-row"><label for="catalog-refresh">Live refresh</label><input type="checkbox" id="catalog-refresh"></div>
+    <button class="furniture-btn" id="catalog-search-btn">Search IKEA</button>
+    <div id="catalog-results"></div>
+  </div>
+  <div class="section">
     <h3>Walls</h3>
     <div class="toggle-row">
       <label for="wall-height-slider">Height</label>

@@ -6,7 +6,7 @@
 
 AI-agent interior design for Singapore HDB/BTO flats, powered by MCP.
 
-`Haus` turns real public-housing floor plans into a browser-based 3D layout editor that agents can operate with tools: place furniture, tag rooms, check walkways and sightlines, then export JSON, SVG, or GLB layouts.
+`Haus` turns real public-housing floor plans and measured room references into a browser-based 3D layout editor that agents can operate with tools: place furniture, tag rooms, check walkways and sightlines, search IKEA catalog items, then export JSON, SVG, or GLB layouts.
 
 <div align="center">
   <a href="./asset/demo/hero.mp4">
@@ -30,7 +30,7 @@ In the browser, open **Chat**, save an Anthropic/OpenAI/Gemini key in **Settings
 design a minimalist 4-room family flat
 ```
 
-The chat can also use live web references for interior-design/HDB research and accept attached room images as visual references to replicate in the current layout. Set `HAUS_ENABLE_WEB_SEARCH=0` before `haus view` if you want to disable live web lookup.
+The chat can also use live web references for interior-design/HDB research and accept attached room images as visual references to replicate in the current layout. The editor also has a guided Room Capture panel for measured room photos and an IKEA Catalog search panel backed by TinyFish when `TINYFISH_API_KEY` is set. Set `HAUS_ENABLE_WEB_SEARCH=0` before `haus view` if you want to disable live web lookup.
 
 To connect an MCP client to the same live layout:
 
@@ -100,6 +100,7 @@ MCP registry/listing metadata lives in [`mcp-manifest.json`](./mcp-manifest.json
 |---|---|
 | **High-level design** | `design_room`, `design_flat` |
 | **Catalog** | `list_furniture_catalog` |
+| **IKEA catalog** | `search_ikea_catalog`, `get_ikea_catalog_item`, `add_catalog_furniture`, `refresh_ikea_catalog` |
 | **Layout queries** | `list_objects`, `get_object_details`, `get_layout_summary`, `get_layout_json` |
 | **Spatial** | `measure_distance`, `find_nearest`, `check_overlap`, `find_objects_in_area` |
 | **Add** | `add_furniture`, `add_wall` |

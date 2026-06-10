@@ -33,8 +33,10 @@ import uvicorn
 
 from . import mcp_server as _mcp_server
 from .agent_loop import RoomPlan, plan_flat, plan_room
+from .catalog import catalog_item_to_layout_item, get_catalog_item, search_ikea_catalog
 from .logging_utils import configure_logging, new_request_id
 from .mcp_server import (
+    _coerce_float,
     _save_layout,
     add_furniture,
     add_wall,
@@ -76,7 +78,12 @@ from .mcp_server import (
     tag_room,
     get_semantic_layout_json,
     bim_readiness_report,
+    search_ikea_catalog as search_ikea_catalog_tool,
+    get_ikea_catalog_item,
+    add_catalog_furniture,
+    refresh_ikea_catalog,
 )
+from .room_capture import build_room_capture_layout
 
 log = configure_logging("haus.chat")
 
@@ -195,6 +202,59 @@ _TOOLS_SPEC = [
         "name": "list_furniture_catalog",
         "description": "List all available furniture types with dimensions.",
         "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "search_ikea_catalog",
+        "description": "Search IKEA products through TinyFish when configured, with local cache fallback.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer", "default": 8},
+                "region": {"type": "string", "default": "sg"},
+                "refresh": {"type": "boolean", "default": False},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "get_ikea_catalog_item",
+        "description": "Return one cached IKEA catalog item as JSON.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "string"},
+                "refresh": {"type": "boolean", "default": False},
+            },
+            "required": ["item_id"],
+        },
+    },
+    {
+        "name": "add_catalog_furniture",
+        "description": "Place a cached IKEA catalog item as editable furniture.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "string"},
+                "x": {"type": "number", "default": 0},
+                "z": {"type": "number", "default": 0},
+                "rotation_deg": {"type": "number", "default": 0},
+            },
+            "required": ["item_id"],
+        },
+    },
+    {
+        "name": "refresh_ikea_catalog",
+        "description": "Force a TinyFish-backed IKEA catalog search and refresh local cache.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer", "default": 12},
+                "region": {"type": "string", "default": "sg"},
+            },
+            "required": ["query"],
+        },
     },
     {
         "name": "web_search",
@@ -654,6 +714,7 @@ _TOOL_SAFETY: dict[str, str] = {
     "design_room": "mutating",
     "design_flat": "mutating",
     "add_furniture": "mutating",
+    "add_catalog_furniture": "mutating",
     "add_wall": "mutating",
     "move_object": "mutating",
     "rotate_object": "mutating",
@@ -1897,6 +1958,10 @@ _DISPATCH_RAW: dict[str, Callable[[dict[str, Any]], str]] = {
     "design_room": lambda a: design_room(**a),
     "design_flat": lambda a: design_flat(**a),
     "list_furniture_catalog": lambda a: list_furniture_catalog(),
+    "search_ikea_catalog": lambda a: search_ikea_catalog_tool(**a),
+    "get_ikea_catalog_item": lambda a: get_ikea_catalog_item(**a),
+    "add_catalog_furniture": lambda a: add_catalog_furniture(**a),
+    "refresh_ikea_catalog": lambda a: refresh_ikea_catalog(**a),
     "web_search": lambda a: _web_search(**a),
     "fetch_web_page": lambda a: _fetch_web_page(**a),
     "list_objects": lambda a: list_objects(),
@@ -2514,6 +2579,9 @@ async def _chat_status(request: Request) -> JSONResponse:
                 "web_search": _web_search_enabled(),
                 "web_fetch": _web_search_enabled(),
                 "image_references": True,
+                "room_capture": True,
+                "ikea_catalog": True,
+                "catalog_cache": True,
                 "design_plans": True,
                 "planner_requires_api_key": False,
                 "planner_modes": ["auto", "deterministic", "llm_reviewed", "llm_structured"],
@@ -2837,6 +2905,70 @@ async def _mcp_clear_layout(_: Request) -> JSONResponse:
     )
 
 
+async def _room_capture_layout(request: Request) -> JSONResponse:
+    request_id = new_request_id("room-capture")
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON body.", "request_id": request_id}, 400)
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "Room capture payload must be a JSON object.", "request_id": request_id}, 400)
+    try:
+        layout = build_room_capture_layout(body)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "request_id": request_id}, 400)
+    return JSONResponse({"ok": True, "layout": layout, "request_id": request_id})
+
+
+async def _catalog_ikea_search(request: Request) -> JSONResponse:
+    request_id = new_request_id("catalog-search")
+    params = request.query_params
+    query = _collapse_ws(str(params.get("q") or params.get("query") or ""))
+    if not query:
+        return JSONResponse({"ok": False, "error": "query must not be empty.", "request_id": request_id}, 400)
+    try:
+        max_results = int(params.get("max_results") or params.get("limit") or 12)
+    except ValueError:
+        max_results = 12
+    refresh = str(params.get("refresh") or "").lower() in {"1", "true", "yes", "on"}
+    region = str(params.get("region") or "sg")
+    try:
+        items = search_ikea_catalog(query, max_results=max_results, region=region, refresh=refresh)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "request_id": request_id}, 400)
+    return JSONResponse({"ok": True, "items": items, "request_id": request_id})
+
+
+async def _catalog_ikea_item(request: Request) -> JSONResponse:
+    request_id = new_request_id("catalog-item")
+    item_id = str(request.path_params.get("item_id") or "").strip()
+    item = get_catalog_item(item_id)
+    if item is None:
+        return JSONResponse({"ok": False, "error": f"IKEA catalog item '{item_id}' was not found.", "request_id": request_id}, 404)
+    return JSONResponse({"ok": True, "item": item, "request_id": request_id})
+
+
+async def _catalog_ikea_layout_item(request: Request) -> JSONResponse:
+    request_id = new_request_id("catalog-layout-item")
+    item_id = str(request.path_params.get("item_id") or "").strip()
+    item = get_catalog_item(item_id)
+    if item is None:
+        return JSONResponse({"ok": False, "error": f"IKEA catalog item '{item_id}' was not found.", "request_id": request_id}, 404)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    layout_item = catalog_item_to_layout_item(
+        item,
+        x=_coerce_float(body.get("x", 0.0), 0.0),
+        z=_coerce_float(body.get("z", 0.0), 0.0),
+        rotation_deg=_coerce_float(body.get("rotation_deg", body.get("rotationDeg", 0.0)), 0.0),
+    )
+    return JSONResponse({"ok": True, "item": item, "layout_item": layout_item, "request_id": request_id})
+
+
 def create_app(root_dir: str) -> Starlette:
     return Starlette(
         routes=[
@@ -2848,6 +2980,10 @@ def create_app(root_dir: str) -> Starlette:
             Route("/api/tool-confirmations/{token}/confirm", _tool_confirmation_apply, methods=["POST"]),
             Route("/api/sync-layout", _sync_layout, methods=["POST"]),
             Route("/api/mcp/clear-layout", _mcp_clear_layout, methods=["POST"]),
+            Route("/api/room-capture/layout", _room_capture_layout, methods=["POST"]),
+            Route("/api/catalog/ikea/search", _catalog_ikea_search, methods=["GET"]),
+            Route("/api/catalog/ikea/items/{item_id}", _catalog_ikea_item, methods=["GET"]),
+            Route("/api/catalog/ikea/items/{item_id}/layout-item", _catalog_ikea_layout_item, methods=["POST"]),
             Mount("/", StaticFiles(directory=root_dir, html=True)),
         ]
     )

@@ -39,11 +39,13 @@ What has been done since the plan was written. Cross-references to artifacts.
 - **Hero demo CLI flow.** `haus case demo --fixture corpus/library/3.json --pinned demo_3room_remove_wall_28` drives the lifecycle through the Stage-1 HTTP app, prints transition lines, writes a final Case JSON, and completes approval + handoff by default.
 - **DesignAgent live mode is opt-in.** Default remains pinned/deterministic for recorded-demo reliability. `--design-mode live` / `HAUS_CASE_DESIGN_MODE=live` enables structured live LLM proposals with deterministic fallback and optional cache writing.
 - **Demo pinned proposals.** `tests/fixtures/proposals/demo_3room_remove_wall_28.json` (money-shot: removes wall_28 → triggers `structural_wall_protected` every revise → N escalation) and `demo_3room_keep_walls.json` (clean path → goes straight to `awaiting_human_approval` with no escalation_reason).
+- **Guided Room Capture.** Editor accepts room reference photos plus width/depth/height/opening measurements, calls `/api/room-capture/layout`, and builds an editable measured room shell with photo reference panels. This is guided reconstruction, not photogrammetry.
+- **IKEA catalog search.** Editor, HTTP, chat, and MCP surfaces can search/place IKEA catalog items. TinyFish is used when `TINYFISH_API_KEY` is set; local cache/seed items keep the UI usable offline.
 - **Tests.** Case/backend/CLI/browser coverage now includes baseline Case snapshots, raster layout `hdb_type`, live-mode fallback, the hero demo CLI, and Case Review panel loading. Full repo suite passes locally; Ruff and Pyright are clean.
 
 ### Honest scoping notes (read these before continuing)
 - **HTTP server exists.** The Stage-1 Starlette/Uvicorn layer now wraps the case lifecycle and can run with `haus case-server`. It is intentionally local/single-tenant with process-local storage; persistence/auth/concurrency are still deferred.
-- **Vendor agent is cache-backed only.** The v0 handoff agent has a deterministic live-search stub fallback, but no TinyFish/Serper implementation yet. This is deliberate for the recorded demo.
+- **Vendor agent is cache-backed only.** The v0 handoff agent has a deterministic live-search stub fallback, but no TinyFish/Serper implementation yet. IKEA catalog search is separate and does use TinyFish when configured.
 - **Live LLM is opt-in, not the recorded-demo default.** The Design Agent has pinned replay, deterministic fallback, and explicit live provider mode. The recorded demo should still rely on pinned proposals for reliability.
 - **Three.js Case Review is demo-focused.** It renders baseline/current diff and finding highlights, not a full Action Center replacement. Stage 2 still needs real Action Center wiring.
 - **Raster layout serialization now emits `hdb_type`.** Existing `corpus/library/{1..4}.json` remain supported through ingest-time color inversion; newly vectorized `layout.json` files carry explicit fields.
@@ -263,7 +265,7 @@ Keep the **design + compliance loop** as the star. Suggested beats:
 
 Ordered by criticality given Stage-1 progress in §0.1. Items 1–5 do not require Labs access.
 
-1. **Codex:** build the **HTTP service layer** that wraps the four step functions already implemented in `src/haus/case/`. Use Starlette/Uvicorn (already pinned). One endpoint per SPEC §4.2; reuse `step_design`/`step_compliance`/`step_revise`/`patch_approval`; honour the universal contract rules in SPEC §4.3 (return full Case payload on every mutation; uniform error envelope; bump `updated_at`). Persistence for Stage 1: single flat JSON file per `case_id` is fine (SPEC §7 defers richer storage). This unblocks §5 Stage 1 acceptance and gives Stage 2 Maestro something concrete to call into.
+1. **Codex:** build the **HTTP service layer** that wraps the four step functions already implemented in `src/haus/case/`. — **Done.** Starlette/Uvicorn service lives at `src/haus/case/http_server.py`; CLI entrypoint is `haus case-server`.
 
 2. **Codex:** **Vendor/Handoff Agent v0** (§5 Stage 1 last open item; §6 task E). — **Done.** Cached vendor directory (`tests/fixtures/vendors/` or `~/.haus/vendors/`); schema `{vendor_id, vendor_name, packet_template, ...}`; handoff agent reads cache-first, with live-search (TinyFish/Serper) as a stubbed fallback for v0. Wires into `vendor_handoff` on the Case + a new `handoff_complete` transition. Keep deliberately thin — see §2 "watch this" — the goal is to prove the handoff exists, not build a CRM.
 

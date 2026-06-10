@@ -16,6 +16,13 @@ from typing import Any
 from mcp.server import FastMCP
 
 from .agent_loop import RoomPlan, RoomZone, plan_flat, plan_room
+from .catalog import (
+    catalog_item_to_layout_item,
+    format_catalog_items,
+    get_catalog_item,
+    refresh_catalog_item,
+    search_ikea_catalog as _search_ikea_catalog,
+)
 from .logging_utils import configure_logging
 
 LAYOUT_PATH = Path(os.environ.get("HAUS_LAYOUT_PATH", "viewer/mcp-layout.json"))
@@ -208,6 +215,14 @@ def _normalize_item(raw: Any) -> dict[str, Any] | None:
         item["name"] = str(raw["name"])
     if "room" in raw and raw.get("room"):
         item["room"] = str(raw["room"])
+    for key in ("label", "source_view", "texture_data_url"):
+        value = raw.get(key)
+        if value is not None:
+            item[key] = str(value)
+    for key in ("catalog", "room_capture_opening"):
+        value = raw.get(key)
+        if isinstance(value, dict):
+            item[key] = json.loads(json.dumps(value))
     for key in _ITEM_STRING_FIELDS:
         value = raw.get(key)
         if value is not None:
@@ -310,6 +325,8 @@ def _normalize_layout(raw: Any) -> dict[str, Any]:
     layout: dict[str, Any] = {"version": _coerce_int(raw.get("version", 1), 1), "items": normalized_items}
     if isinstance(raw.get("metadata"), dict):
         layout["metadata"] = raw["metadata"]
+    if isinstance(raw.get("room_capture"), dict):
+        layout["room_capture"] = raw["room_capture"]
 
     rooms_raw = raw.get("rooms", [])
     normalized_rooms: list[dict[str, Any]] = []
@@ -1271,6 +1288,51 @@ def list_furniture_catalog() -> str:
     for name, spec in FURNITURE_CATALOG.items():
         lines.append(f"  {name}: {spec['w']}m x {spec['d']}m (height {spec['h']}m)")
     return "Available furniture types:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def search_ikea_catalog(query: str, max_results: int = 8, region: str = "sg", refresh: bool = False) -> str:
+    """Search IKEA catalog products through TinyFish when configured, with local cache fallback."""
+    try:
+        items = _search_ikea_catalog(query, max_results=max_results, region=region, refresh=refresh)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    return format_catalog_items(items)
+
+
+@mcp.tool()
+def get_ikea_catalog_item(item_id: str, refresh: bool = False) -> str:
+    """Return one cached IKEA catalog item as JSON."""
+    item = refresh_catalog_item(item_id) if refresh else get_catalog_item(item_id)
+    if item is None:
+        return f"Error: IKEA catalog item '{item_id}' was not found. Use search_ikea_catalog()."
+    return json.dumps(item, indent=2)
+
+
+@mcp.tool()
+def add_catalog_furniture(item_id: str, x: float = 0.0, z: float = 0.0, rotation_deg: float = 0.0) -> str:
+    """Place a cached IKEA catalog item as editable Haus furniture."""
+    item = get_catalog_item(item_id)
+    if item is None:
+        return f"Error: IKEA catalog item '{item_id}' was not found. Use search_ikea_catalog()."
+    data = _load_layout()
+    layout_item = catalog_item_to_layout_item(item, x=x, z=z, rotation_deg=rotation_deg)
+    data["items"].append(layout_item)
+    err = _save_layout(data)
+    if err:
+        return f"Error saving layout: {err}"
+    idx = len(data["items"]) - 1
+    return f"Added IKEA catalog item {item_id} as item [{idx}] at ({x}, {z})."
+
+
+@mcp.tool()
+def refresh_ikea_catalog(query: str, max_results: int = 12, region: str = "sg") -> str:
+    """Force a TinyFish-backed IKEA catalog search and refresh the local cache."""
+    try:
+        items = _search_ikea_catalog(query, max_results=max_results, region=region, refresh=True)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    return format_catalog_items(items)
 
 
 @mcp.tool()

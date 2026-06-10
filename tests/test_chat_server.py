@@ -68,6 +68,8 @@ def test_chat_status_reports_reference_capabilities(chat_client: TestClient) -> 
     assert capabilities["web_search"] is True
     assert capabilities["web_fetch"] is True
     assert capabilities["image_references"] is True
+    assert capabilities["room_capture"] is True
+    assert capabilities["ikea_catalog"] is True
     assert capabilities["design_plans"] is True
     assert capabilities["planner_requires_api_key"] is False
     assert capabilities["destructive_confirmation"] is True
@@ -76,6 +78,37 @@ def test_chat_status_reports_reference_capabilities(chat_client: TestClient) -> 
     assert "accessible" in capabilities["standards_profiles"]
     assert capabilities["max_image_attachments"] == 3
     assert "image/png" in capabilities["image_mime_types"]
+
+
+def test_room_capture_route_returns_layout(chat_client: TestClient) -> None:
+    res = chat_client.post(
+        "/api/room-capture/layout",
+        json={"measurements": {"width_m": 3.0, "depth_m": 2.8, "height_m": 2.6}},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["layout"]["room_capture"]["measurements"]["depth_m"] == 2.8
+    assert len(body["layout"]["items"]) == 5
+
+
+def test_catalog_routes_return_seed_and_layout_item(
+    chat_client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HAUS_CATALOG_ROOT", str(tmp_path))
+    monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
+
+    res = chat_client.get("/api/catalog/ikea/search?q=BILLY")
+    assert res.status_code == 200
+    item = res.json()["items"][0]
+
+    res = chat_client.post(f"/api/catalog/ikea/items/{item['id']}/layout-item", json={})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["layout_item"]["type"] == "furniture"
+    assert body["layout_item"]["catalog"]["source"] == "ikea"
 
 
 def test_chat_status_reports_search_provider_configuration(
