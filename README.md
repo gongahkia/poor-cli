@@ -80,6 +80,52 @@ $ haus case-server --port 8090 --proposals-dir tests/fixtures/proposals --vendor
 $ HAUS_CASE_API_TOKEN=dev-token haus case-server --port 8090 --case-db-path ~/.haus/cases/cases.sqlite3
 ```
 
+Run the local Stage-1 fallback demo without UiPath:
+
+```console
+$ haus case demo --fixture corpus/library/3.json --pinned demo_3room_remove_wall_28 --max-revise-attempts 1 --out asset/demo/case-demo.json
+$ haus view --case asset/demo/case-demo.json
+```
+
+Smoke-test a running Case HTTP service:
+
+```console
+$ HAUS_CASE_API_TOKEN=dev-token haus case-server --port 8090 --api-token dev-token --proposals-dir tests/fixtures/proposals --vendor-cache-dir tests/fixtures/vendors
+$ HAUS_CASE_API_TOKEN=dev-token python scripts/case_smoke.py --base-url http://127.0.0.1:8090 --max-revise-attempts 1
+$ curl -H "Authorization: Bearer $HAUS_CASE_API_TOKEN" http://127.0.0.1:8090/case/<case_id>
+```
+
+For a future Maestro spike, expose the local server through a tunnel such as `cloudflared tunnel --url http://127.0.0.1:8090` or `ngrok http 8090`, set the tunnel URL as the Maestro/API Workflow base URL, and keep `HAUS_CASE_API_TOKEN` enabled.
+
+## UiPath AgentHack status
+
+Target track: **Track 1 - UiPath Maestro Case**. Stage 1 is implemented as a standalone Haus HTTP service so the design/compliance/approval/handoff loop works without UiPath access. Stage 2 will wrap the same service in UiPath Maestro Case and replace the Stage-1 approval stub with Action Center.
+
+Planned UiPath components:
+
+| Component | Status | Role |
+|---|---|---|
+| Maestro Case | pending access | Case Manager, stage transitions, retry/escalation governance |
+| Action Center + Apps | pending access | internal renovation coordinator approval |
+| API Workflows or external workflow task | pending access | HTTP calls into the Haus Case service |
+| Agent Builder | pending access | optional low-code Intake/brief agent |
+| UiPath CLI + Coding Agents | pending `uip` install/auth | Codex-assisted UiPath pack/publish/deploy capture |
+
+Agent split:
+
+| Type | Used for |
+|---|---|
+| Coding agent | OpenAI Codex for this repo and planned UiPath CLI workflow after `uip login` |
+| External coded agents | Haus Design Agent, Compliance Agent, Revise Loop, Vendor/Handoff Agent |
+| Low-code/native UiPath agents | planned Agent Builder and Action Center/Maestro components |
+
+Submission and wiring docs:
+
+- [`SPEC-ACTION-CENTER.md`](./SPEC-ACTION-CENTER.md) - coordinator task copy, payload, decision mapping.
+- [`SPEC-MAESTRO-WIRING.md`](./SPEC-MAESTRO-WIRING.md) - stage mapping, endpoint calls, retry policy.
+- [`DEMO-SCRIPT.md`](./DEMO-SCRIPT.md) - 5-minute video script and screenshot checklist.
+- [`SUBMISSION-DRAFT.md`](./SUBMISSION-DRAFT.md) - Devpost copy, architecture section, public repo checklist.
+
 ## Screenshots
 
 ![](./asset/reference/1.png)
