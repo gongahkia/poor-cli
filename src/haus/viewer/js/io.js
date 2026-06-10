@@ -8,23 +8,18 @@ const loader = new GLTFLoader();
 export function initIO() {
   const params = new URLSearchParams(location.search);
   const glbParam = params.get('glb');
-  const caseParam = params.get('case');
-  if (caseParam) {
-    loadCaseFromUrl(caseParam);
-  } else {
-    loader.load(
-      glbParam || './model.glb',
-      (gltf) => ingestGLB(gltf),
-      undefined,
-      (err) => {
-        if (glbParam) {
-          console.error('Failed loading GLB from query param', err);
-        } else {
-          console.warn('No default model.glb found yet. You can still place furniture manually.');
-        }
-      },
-    );
-  }
+  loader.load(
+    glbParam || './model.glb',
+    (gltf) => ingestGLB(gltf),
+    undefined,
+    (err) => {
+      if (glbParam) {
+        console.error('Failed loading GLB from query param', err);
+      } else {
+        console.warn('No default model.glb found yet. You can still place furniture manually.');
+      }
+    },
+  );
   document.getElementById('glb-input').addEventListener('change', (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -41,10 +36,8 @@ export function initIO() {
   document.getElementById('json-input').addEventListener('change', importJSON);
   fn.clearLayoutAndSync = clearLayoutAndSync;
   fn.applyLayoutData = applyLayoutData;
-  fn.applyCaseData = applyCaseData;
   fn.addLayoutItem = addLayoutItem;
   fn.getLayoutData = serializeLayout;
-  initCaseReviewPanel();
   startMcpSync();
 }
 function clearModelParts() {
@@ -194,7 +187,6 @@ function serializeLayout() {
   const layout = { version: 1, items };
   if (S.layoutMetadata) layout.metadata = S.layoutMetadata;
   if (Array.isArray(S.layoutRooms) && S.layoutRooms.length > 0) layout.rooms = S.layoutRooms;
-  if (S.caseReview) appendCaseReviewToLayout(layout);
   if (S.roomCapture) layout.room_capture = S.roomCapture;
   layout.semantic = {
     schema: 'haus.semantic_layout.v1',
@@ -242,419 +234,6 @@ function semanticRecordForMesh(m, index) {
   };
 }
 
-function isCasePayload(data) {
-  return Boolean(
-    data
-    && Array.isArray(data.items)
-    && (
-      data.case_id
-      || data.case_schema_version
-      || Array.isArray(data._baseline_items)
-      || Array.isArray(data.compliance_findings)
-    )
-  );
-}
-
-function itemKey(item, index = null) {
-  if (item?.name) return `name:${item.name}`;
-  if (index !== null) return `index:${index}`;
-  return null;
-}
-
-function arraysClose(a, b, epsilon = 0.001) {
-  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-  return a.every((value, index) => Math.abs(Number(value) - Number(b[index])) <= epsilon);
-}
-
-function sameLayoutItem(a, b) {
-  if (!a || !b) return false;
-  const sameVisible = (a.visible !== false) === (b.visible !== false);
-  return arraysClose(a.pos, b.pos)
-    && arraysClose(a.geo, b.geo)
-    && Math.abs(Number(a.rot || 0) - Number(b.rot || 0)) <= 0.001
-    && sameVisible;
-}
-
-function findingNameSet(findings) {
-  const names = new Set();
-  for (const finding of findings || []) {
-    if (finding?.element_name) names.add(String(finding.element_name));
-  }
-  return names;
-}
-
-function findingIndexSet(findings) {
-  const indexes = new Set();
-  for (const finding of findings || []) {
-    if (Number.isInteger(finding?.element_index)) indexes.add(finding.element_index);
-  }
-  return indexes;
-}
-
-function caseDiffStats(caseData) {
-  const baseline = Array.isArray(caseData._baseline_items) ? caseData._baseline_items : [];
-  const current = Array.isArray(caseData.items) ? caseData.items : [];
-  const baselineByKey = new Map();
-  const currentByKey = new Map();
-  baseline.forEach((item, index) => {
-    const key = itemKey(item, index);
-    if (key) baselineByKey.set(key, item);
-  });
-  current.forEach((item, index) => {
-    const key = itemKey(item, index);
-    if (key) currentByKey.set(key, item);
-  });
-  let removed = 0;
-  let changed = 0;
-  baselineByKey.forEach((item, key) => {
-    const next = currentByKey.get(key);
-    if (!next) removed += 1;
-    else if (!sameLayoutItem(item, next)) changed += 1;
-  });
-  let added = 0;
-  currentByKey.forEach((_, key) => {
-    if (!baselineByKey.has(key)) added += 1;
-  });
-  const findings = Array.isArray(caseData.compliance_findings) ? caseData.compliance_findings : [];
-  const errors = findings.filter((f) => f?.severity === 'error').length;
-  return { baseline: baseline.length, current: current.length, removed, changed, added, findings: findings.length, errors };
-}
-
-function caseStatusTone(status) {
-  if (status === 'approved' || status === 'handoff_complete') return 'approved';
-  if (status === 'rejected') return 'rejected';
-  if (status === 'awaiting_human_approval') return 'pending';
-  if (status === 'revising' || status === 'compliance_pending' || status === 'designing') return 'active';
-  return 'neutral';
-}
-
-function appendMetric(root, label, value, tone = '') {
-  const metric = document.createElement('div');
-  metric.className = `case-review-metric ${tone}`.trim();
-  const strong = document.createElement('strong');
-  strong.textContent = String(value);
-  const span = document.createElement('span');
-  span.textContent = label;
-  metric.appendChild(strong);
-  metric.appendChild(span);
-  root.appendChild(metric);
-}
-
-function approvalText(caseData) {
-  const approval = caseData.approval_state || {};
-  const decision = approval.decision || 'not routed';
-  const reviewer = approval.reviewer ? ` by ${approval.reviewer}` : '';
-  if (caseData.vendor_handoff?.vendor_name) {
-    const cached = caseData.vendor_handoff.cached === false ? 'fallback' : 'cache';
-    return `${decision}${reviewer} · handoff: ${caseData.vendor_handoff.vendor_name} (${cached})`;
-  }
-  if (approval.escalation_reason) return `${decision}${reviewer} · ${approval.escalation_reason}`;
-  return `${decision}${reviewer}`;
-}
-
-function cloneCaseData(data) {
-  return JSON.parse(JSON.stringify(data));
-}
-
-function appendCaseReviewToLayout(layout) {
-  const c = S.caseReview;
-  layout.case_schema_version = c.case_schema_version ?? 1;
-  layout.case_id = c.case_id;
-  layout.created_at = c.created_at;
-  layout.updated_at = c.updated_at;
-  layout.design_status = c.design_status;
-  layout.revise_count = c.revise_count;
-  layout.pinned_proposal_id = c.pinned_proposal_id ?? null;
-  layout.vendor_cache_key = c.vendor_cache_key ?? null;
-  layout.brief = c.brief || {};
-  layout.compliance_findings = cloneCaseData(c.compliance_findings || []);
-  layout.approval_state = c.approval_state ?? null;
-  layout.vendor_handoff = c.vendor_handoff ?? null;
-  layout._baseline_items = cloneCaseData(c._baseline_items || []);
-  if (Array.isArray(c._baseline_protected_walls)) {
-    layout._baseline_protected_walls = cloneCaseData(c._baseline_protected_walls);
-  }
-}
-
-function clearCaseOverlay() {
-  if (!S.caseOverlayGroup) return;
-  S.scene.remove(S.caseOverlayGroup);
-  S.caseOverlayGroup.traverse((child) => {
-    child.geometry?.dispose?.();
-    if (Array.isArray(child.material)) {
-      child.material.forEach((mat) => mat.dispose?.());
-    } else {
-      child.material?.dispose?.();
-    }
-  });
-  S.caseOverlayGroup = null;
-}
-
-function clearCaseReview() {
-  clearCaseOverlay();
-  S.caseReview = null;
-  const panel = document.getElementById('case-review-section');
-  if (panel) panel.style.display = 'none';
-}
-
-function caseGhostMaterial(kind) {
-  const colors = {
-    removed: 0xef4444,
-    changed: 0xf59e0b,
-    baseline: 0x94a3b8,
-  };
-  const mat = new THREE.MeshStandardMaterial({
-    color: colors[kind] || colors.baseline,
-    transparent: true,
-    opacity: kind === 'removed' ? 0.78 : 0.42,
-    roughness: 0.55,
-    metalness: 0.02,
-    depthWrite: false,
-  });
-  if (kind === 'removed') {
-    mat.emissive = new THREE.Color(0x7f1d1d);
-    mat.emissiveIntensity = 0.65;
-  }
-  return mat;
-}
-
-function buildGhostFromItem(item, diffKind) {
-  if (!item.geo || !item.pos || item.geo.length < 3 || item.pos.length < 3) return null;
-  const mesh = new THREE.Mesh(
-    new THREE.BoxGeometry(item.geo[0], item.geo[1], item.geo[2]),
-    caseGhostMaterial(diffKind),
-  );
-  mesh.position.set(item.pos[0], item.pos[1], item.pos[2]);
-  mesh.rotation.y = item.rot || 0;
-  mesh.visible = item.visible !== false;
-  mesh.userData.caseGhost = diffKind;
-  mesh.userData.name = item.name || '';
-  mesh.raycast = () => {};
-  const edges = new THREE.LineSegments(
-    new THREE.EdgesGeometry(mesh.geometry),
-    new THREE.LineBasicMaterial({ color: diffKind === 'removed' ? 0xffd1d1 : 0xffe7a3 }),
-  );
-  edges.name = '_case_diff_edges';
-  mesh.add(edges);
-  if (diffKind === 'removed') {
-    const marker = new THREE.Mesh(
-      new THREE.BoxGeometry(item.geo[0] + 0.06, item.geo[1] + 0.06, item.geo[2] + 0.06),
-      new THREE.MeshBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.12, depthWrite: false }),
-    );
-    marker.name = '_case_removed_marker';
-    mesh.add(marker);
-  }
-  return mesh;
-}
-
-function addCaseOutline(mesh, color = 0xef4444) {
-  const old = mesh.getObjectByName('_case_finding_outline');
-  if (old) mesh.remove(old);
-  const outline = new THREE.LineSegments(
-    new THREE.EdgesGeometry(mesh.geometry),
-    new THREE.LineBasicMaterial({ color, linewidth: 2 }),
-  );
-  outline.name = '_case_finding_outline';
-  mesh.add(outline);
-}
-
-function tintCurrentMeshForCase(mesh, diffKind) {
-  if (!mesh?.material?.color) return;
-  if (diffKind === 'finding') {
-    mesh.material.color.setHex(0xef4444);
-    if (mesh.material.emissive) mesh.material.emissive.setHex(0x3b0606);
-    addCaseOutline(mesh, 0xffd1d1);
-  } else if (diffKind === 'added') {
-    addCaseOutline(mesh, 0x38bdf8);
-  } else if (diffKind === 'changed') {
-    addCaseOutline(mesh, 0xf59e0b);
-  }
-}
-
-function renderCaseReviewOverlay(caseData) {
-  clearCaseOverlay();
-  const baseline = Array.isArray(caseData._baseline_items) ? caseData._baseline_items : [];
-  if (!baseline.length) return;
-
-  const findings = Array.isArray(caseData.compliance_findings) ? caseData.compliance_findings : [];
-  const findingNames = findingNameSet(findings);
-  const currentByKey = new Map();
-  caseData.items.forEach((item, index) => {
-    const key = itemKey(item, index);
-    if (key) currentByKey.set(key, item);
-  });
-
-  const group = new THREE.Group();
-  group.name = 'case-review-baseline-overlay';
-  let overlayCount = 0;
-  baseline.forEach((item, index) => {
-    const key = itemKey(item, index);
-    const current = key ? currentByKey.get(key) : null;
-    const isFinding = item.name && findingNames.has(String(item.name));
-    let diffKind = null;
-    if (!current) diffKind = isFinding ? 'removed' : 'baseline';
-    else if (!sameLayoutItem(item, current)) diffKind = isFinding ? 'removed' : 'changed';
-    if (!diffKind || (diffKind === 'baseline' && !isFinding)) return;
-    const ghost = buildGhostFromItem(item, diffKind);
-    if (!ghost) return;
-    group.add(ghost);
-    overlayCount += 1;
-  });
-  if (overlayCount > 0) {
-    S.scene.add(group);
-    S.caseOverlayGroup = group;
-  }
-}
-
-function applyCaseStylingToCurrentMeshes(caseData) {
-  const baselineByKey = new Map();
-  const baseline = Array.isArray(caseData._baseline_items) ? caseData._baseline_items : [];
-  baseline.forEach((item, index) => {
-    const key = itemKey(item, index);
-    if (key) baselineByKey.set(key, item);
-  });
-  const findings = Array.isArray(caseData.compliance_findings) ? caseData.compliance_findings : [];
-  const names = findingNameSet(findings);
-  const indexes = findingIndexSet(findings);
-  S.draggables.forEach((mesh, index) => {
-    const name = mesh.userData.name;
-    if ((name && names.has(String(name))) || indexes.has(index)) {
-      tintCurrentMeshForCase(mesh, 'finding');
-      return;
-    }
-    const key = name ? `name:${name}` : `index:${index}`;
-    const baselineItem = baselineByKey.get(key);
-    if (!baselineItem) {
-      tintCurrentMeshForCase(mesh, 'added');
-      return;
-    }
-    const currentItem = caseData.items[index] || null;
-    if (currentItem && !sameLayoutItem(baselineItem, currentItem)) tintCurrentMeshForCase(mesh, 'changed');
-  });
-}
-
-function updateCaseReviewPanel(caseData) {
-  const panel = document.getElementById('case-review-section');
-  if (!panel) return;
-  panel.style.display = '';
-  panel.classList.remove('case-status-approved', 'case-status-rejected', 'case-status-pending', 'case-status-active', 'case-status-neutral');
-  panel.classList.add(`case-status-${caseStatusTone(caseData.design_status || '')}`);
-  const summary = document.getElementById('case-review-summary');
-  const findingsEl = document.getElementById('case-findings-list');
-  const findings = Array.isArray(caseData.compliance_findings) ? caseData.compliance_findings : [];
-  const stats = caseDiffStats(caseData);
-  summary.innerHTML = '';
-  const header = document.createElement('div');
-  header.className = 'case-review-title';
-  const caseId = document.createElement('strong');
-  caseId.textContent = caseData.case_id ? `Case ${String(caseData.case_id).slice(0, 8)}` : 'Case Review';
-  const badge = document.createElement('span');
-  badge.className = 'case-review-badge';
-  badge.textContent = caseData.design_status || 'case';
-  header.appendChild(caseId);
-  header.appendChild(badge);
-  summary.appendChild(header);
-  const metrics = document.createElement('div');
-  metrics.className = 'case-review-metrics';
-  appendMetric(metrics, 'revise', caseData.revise_count || 0);
-  appendMetric(metrics, 'findings', stats.findings, stats.errors ? 'danger' : 'ok');
-  appendMetric(metrics, 'removed', stats.removed, stats.removed ? 'danger' : '');
-  appendMetric(metrics, 'changed', stats.changed + stats.added, stats.changed || stats.added ? 'warn' : '');
-  summary.appendChild(metrics);
-  const approval = document.createElement('div');
-  approval.className = 'case-review-approval';
-  approval.textContent = approvalText(caseData);
-  summary.appendChild(approval);
-  findingsEl.innerHTML = '';
-  if (!findings.length) {
-    const row = document.createElement('div');
-    row.className = 'case-finding-row case-finding-ok';
-    const title = document.createElement('strong');
-    title.textContent = 'No compliance findings';
-    const meta = document.createElement('span');
-    meta.textContent = 'ready for coordinator review';
-    row.appendChild(title);
-    row.appendChild(meta);
-    findingsEl.appendChild(row);
-    return;
-  }
-  for (const finding of findings.slice(0, 8)) {
-    const row = document.createElement('button');
-    row.className = `case-finding-row severity-${finding.severity || 'warning'}`;
-    row.type = 'button';
-    const title = document.createElement('strong');
-    title.textContent = finding.element_name || finding.rule_id || 'finding';
-    const meta = document.createElement('span');
-    meta.textContent = [finding.severity || 'warning', finding.rule_id || ''].filter(Boolean).join(' · ');
-    const reason = document.createElement('span');
-    reason.className = 'case-finding-reason';
-    reason.textContent = finding.reason || 'Review required.';
-    row.appendChild(title);
-    row.appendChild(meta);
-    row.appendChild(reason);
-    row.title = finding.reason || '';
-    row.addEventListener('click', () => {
-      const target = S.draggables.find((m) => m.userData.name === finding.element_name);
-      if (target) {
-        fn.selectFurniture(target);
-      } else if (S.caseOverlayGroup) {
-        const ghost = S.caseOverlayGroup.children.find((m) => m.userData.name === finding.element_name);
-        if (ghost) {
-          const box = new THREE.Box3().setFromObject(ghost);
-          const center = box.getCenter(new THREE.Vector3());
-          const size = box.getSize(new THREE.Vector3());
-          const dist = Math.max(size.x, size.y, size.z, 1) * 2;
-          const dir = S.camera.position.clone().sub(S.orbit.target).normalize();
-          S.orbit.target.copy(center);
-          S.camera.position.copy(center).addScaledVector(dir, dist);
-          S.orbit.update();
-        }
-      }
-    });
-    findingsEl.appendChild(row);
-  }
-  if (findings.length > 8) {
-    const more = document.createElement('div');
-    more.className = 'case-findings-more';
-    more.textContent = `+${findings.length - 8} more finding${findings.length - 8 === 1 ? '' : 's'}`;
-    findingsEl.appendChild(more);
-  }
-}
-
-function initCaseReviewPanel() {
-  const toggle = document.getElementById('case-baseline-toggle');
-  if (toggle) {
-    toggle.addEventListener('change', () => {
-      if (S.caseOverlayGroup) S.caseOverlayGroup.visible = toggle.checked;
-    });
-  }
-}
-
-async function loadCaseFromUrl(url) {
-  try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    applyCaseData(data);
-    if (fn.frameScene) fn.frameScene();
-  } catch (err) {
-    console.error('Case load failed', err);
-    window.alert(`Failed to load Case JSON: ${err.message || err}`);
-  }
-}
-
-function applyCaseData(data, { recordUndo = true, frame = true } = {}) {
-  if (!Array.isArray(data.items)) {
-    console.warn('Ignoring malformed Case payload: items missing array');
-    return;
-  }
-  S.caseReview = cloneCaseData(data);
-  applySceneLayout(data, { recordUndo, frame, preserveCaseReview: true });
-  renderCaseReviewOverlay(data);
-  applyCaseStylingToCurrentMeshes(data);
-  updateCaseReviewPanel(data);
-  fn.refreshSceneList();
-}
 function exportJSON() {
   downloadBlob(new Blob([JSON.stringify(serializeLayout(), null, 2)], { type: 'application/json' }), 'haus-layout.json');
 }
@@ -676,7 +255,6 @@ function startMcpSync() {
       lastMcpText = text;
       const data = JSON.parse(text);
       if (!data.items) return;
-      if (S.caseReview && !isCasePayload(data)) return;
       // skip if this was written by our own push
       if (data._stamp && data._stamp === lastPushStamp) return;
       if (data._stamp && data._stamp === lastPullStamp) return;
@@ -720,7 +298,6 @@ function clearLocalLayout({ recordUndo = true } = {}) {
 
   fn.deselectFurniture();
   if (fn.clearSightlineOverlay) fn.clearSightlineOverlay();
-  clearCaseReview();
   clearModelParts();
   while (S.draggables.length) S.scene.remove(S.draggables.pop());
   S.userWalls.length = 0;
@@ -765,13 +342,12 @@ async function clearLayoutAndSync({ confirmWithMcp = true } = {}) {
     return { ok: true, mcp: { ok: false, error: err.message || String(err) } };
   }
 }
-function applySceneLayout(data, { recordUndo = true, frame = true, preserveCaseReview = false } = {}) {
+function applySceneLayout(data, { recordUndo = true, frame = true } = {}) {
   if (!Array.isArray(data.items)) {
     console.warn('Ignoring malformed MCP layout payload: items missing array');
     return;
   }
   const prev = serializeLayout();
-  if (!preserveCaseReview) clearCaseReview();
   S.layoutMetadata = data.metadata && typeof data.metadata === 'object' ? data.metadata : null;
   S.layoutRooms = Array.isArray(data.rooms) ? data.rooms : [];
   S.roomCapture = data.room_capture && typeof data.room_capture === 'object' ? data.room_capture : null;
@@ -790,10 +366,6 @@ function applySceneLayout(data, { recordUndo = true, frame = true, preserveCaseR
   fn.refreshSceneList();
 }
 function applyLayoutData(data, { recordUndo = true, frame = true } = {}) {
-  if (isCasePayload(data)) {
-    applyCaseData(data, { recordUndo, frame });
-    return;
-  }
   applySceneLayout(data, { recordUndo, frame });
 }
 function addLayoutItem(item) {
