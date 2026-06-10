@@ -2,17 +2,17 @@
 
 > **Audience:** the coding agent (Codex) with read/write access to the Haus repository.
 > **Purpose:** turn Haus from a single-tool floor-plan editor into a multi-agent, UiPath-orchestrated, design-to-approval-to-handoff solution for **UiPath AgentHack Track 1 (Maestro Case)**, and prepare a winning submission.
-> **Status:** planning locked. UiPath Labs access pending. Build order is designed so that an access slip does not block progress.
+> **Status:** Stage 1 local system complete and verified on 2026-06-10. UiPath Labs/Automation Cloud access is still the blocking dependency for Stage 2.
 
 ---
 
 ## 0. TL;DR for the coding agent
 
-We are entering **UiPath AgentHack**, a 7-week hackathon ($50,000 in prizes, deadline **30 Jun 2026**). The hackathon's thesis is the gap between a laptop prototype and a *governed, production-grade, orchestrated* agentic system. UiPath must be the orchestration and governance layer.
+We are entering **UiPath AgentHack**, a 7-week hackathon ($50,000 in prizes, Devpost deadline **29 Jun 2026 11:45pm EDT** / **30 Jun 2026 11:45am SGT**). The hackathon's thesis is the gap between a laptop prototype and a *governed, production-grade, orchestrated* agentic system. UiPath must be the orchestration and governance layer.
 
 We are **pivoting Haus** from "furnish a BTO flat" into one deep vertical slice of the home-renovation lifecycle: **intake → multi-agent design generation → compliance check → human approval (UiPath Action Center) → contractor handoff**, with a **dynamic exception/retry loop** at the compliance step. That dynamic loop is the whole reason we qualify for **Track 1 – Maestro Case** rather than Track 2 – BPMN.
 
-**Primary coding agent for the build: OpenAI Codex.** UiPath for Coding Agents supports Codex first-class (alongside Claude Code, Cursor, Gemini CLI) via the UiPath CLI and `uip skills install`. Using a coding agent earns **bonus points** under the Platform Usage criterion, so the build workflow must be captured for the demo video.
+**Primary coding agent for the build: OpenAI Codex.** UiPath's current CLI docs list Codex as a supported coding-agent target via `uip skills install --agent codex`; local machine check on 2026-06-10 found `uip` is not installed yet. Using a coding agent earns **bonus points** under the Platform Usage criterion, so the build workflow must be captured for the demo video after CLI/auth setup.
 
 **Build order is risk-driven:** build the entire Haus-side multi-agent flow as a **standalone HTTP service first** (works end-to-end with zero UiPath), then wrap it in Maestro Case + Action Center once Labs access lands. If access is late, we still have a working, demoable system.
 
@@ -20,7 +20,7 @@ Read sections 1–3 for context, **4 for the architecture**, **5 for the staged 
 
 ---
 
-## 0.1. Progress (as of 2026-06-09)
+## 0.1. Progress (verified 2026-06-10)
 
 What has been done since the plan was written. Cross-references to artifacts.
 
@@ -44,6 +44,7 @@ What has been done since the plan was written. Cross-references to artifacts.
 - **Demo hardening.** Malformed Case library payloads fail fast with validation envelopes; vendor-cache misses return explicit fallback metadata; TinyFish/catalog misses fall back to cache/seed; live DesignAgent timeouts fall back deterministically; room-capture invalid measurements/photos/openings are covered.
 - **Case Review polish.** The editor keeps Case Review pinned during MCP sync, shows status/diff metrics, approval/handoff state, and clearer removed-wall/finding highlights for screenshot/demo use.
 - **Tests.** Case/backend/CLI/browser coverage now includes baseline Case snapshots, raster layout `hdb_type`, live-mode fallback, the hero demo CLI, and Case Review panel loading. Full repo suite passes locally; Ruff and Pyright are clean.
+- **2026-06-10 verification.** Passed `.venv/bin/ruff check src/ tests/`, `.venv/bin/pyright`, `.venv/bin/pytest tests/ -q`, and `.venv/bin/haus case demo --fixture corpus/library/3.json --pinned demo_3room_remove_wall_28 --max-revise-attempts 1 --out /tmp/haus-case-demo-verify.json`. The demo reached `handoff_complete` and wrote a packet URI.
 
 ### Honest scoping notes (read these before continuing)
 - **HTTP server exists.** The Stage-1 Starlette/Uvicorn layer now wraps the case lifecycle and can run with `haus case-server`. It is intentionally local/single-tenant with process-local storage; persistence/auth/concurrency are still deferred.
@@ -51,6 +52,11 @@ What has been done since the plan was written. Cross-references to artifacts.
 - **Live LLM is opt-in, not the recorded-demo default.** The Design Agent has pinned replay, deterministic fallback, and explicit live provider mode. The recorded demo should still rely on pinned proposals for reliability.
 - **Three.js Case Review is demo-focused.** It renders baseline/current diff and finding highlights, not a full Action Center replacement. Stage 2 still needs real Action Center wiring.
 - **Raster layout serialization now emits `hdb_type`.** Existing `corpus/library/{1..4}.json` remain supported through ingest-time color inversion; newly vectorized `layout.json` files carry explicit fields.
+
+### Current remaining work
+- **Stage 2 is the main blocker:** install/auth `uip`, run Maestro external-HTTP Spike A, model the Maestro Case, wire the Haus HTTP endpoints, and replace the Stage-1 approval stub with Action Center.
+- **Submission packaging remains open:** Devpost, ≤5 min demo video, deck, screenshots, optional product-feedback form, and README additions for UiPath components + coding/low-code agent split.
+- **Deferred engineering scope:** persistence/auth/concurrency for the Case service, real TinyFish/Serper vendor search, structural wall move/resize detection, and production-grade Action Center render payloads.
 
 ---
 
@@ -100,16 +106,16 @@ These were settled in planning and are inputs to the build:
 2. **UiPath familiarity:** cold start. No Maestro / Agent Builder / Action Center experience. Week 1 must include platform learning + spike work.
 3. **Maestro external execution:** open investigation (see §6, task A). First spike: can Maestro call external HTTP cleanly; should Haus run as HTTP service / CLI wrapper / Python node.
 4. **Haus pipeline runtime:** demo-feasible. `haus build` on a sample BTO fixture ran ~1.6s wall time locally. Treat known demo inputs as **inline-capable**; use async/callback only if UiPath adds latency/remote constraints.
-5. **Multi-agent today:** does not exist yet. Current `agent_loop.py` is **deterministic kit-based planning** exposed via MCP tools like `design_room` / `design_flat`.
+5. **Multi-agent today:** Stage-1 Case agents now exist in `src/haus/case/`; the older `agent_loop.py` remains deterministic kit-based planning exposed via MCP tools like `design_room` / `design_flat`.
 6. **Agent pattern for the demo:** LLM-driven agents on top, **Haus deterministic underneath.** Pattern: LLM planner proposes intent → Haus tools execute/validate → compliance agent checks → human approves.
-7. **HDB renovation compliance:** not encoded today. Existing code has HDB **wall classification**, sightline checks, doorway accessibility, walkway scoring — but **no renovation ruleset**.
+7. **HDB renovation compliance:** v0 ruleset exists: structural/shelter wall removal + walkway accessibility. Structural wall move/resize detection is still deferred.
 8. **Best demo failure (the money-shot):** LLM proposes removing/modifying a structural/shelter wall → compliance agent **blocks** and escalates to Action Center. **Backup failure:** furniture blocks a doorway/walkway → existing accessibility scoring triggers.
-9. **Human reviewer framing:** **internal renovation coordinator/designer** approving before contractor handoff (enterprise framing — stronger adoption story than a homeowner approving their own flat). *(This was an open call; see §6 task D to finalize wording, but build to the coordinator framing.)*
+9. **Human reviewer framing:** **internal renovation coordinator/designer** approving before contractor handoff. Stage-1 payload supports this; final Action Center task copy is still Stage-2 work.
 10. **Approval surface:** **UiPath Action Center** (not a parallel approval inside Three.js) — better Platform Usage signal.
-11. **Contractor handoff:** real-ish via live vendor search (TinyFish / Serper) where available; **cache selected vendors** into a simple directory after discovery. Do **not** depend on guaranteed "contact IDs" from live search.
+11. **Contractor handoff:** v0 is cache-first with deterministic live-search stub fallback. Real TinyFish/Serper vendor search is not implemented.
 12. **Demo assets exist:** `corpus/cleaned/*.jpg`, `tests/fixtures/*.jpg`, prebuilt layouts in `corpus/library/*.json`.
 13. **Team:** one human + coding agents. Split agents by workstream: UiPath spike · Haus HTTP/MCP wrapper · compliance rules · Three.js/demo polish · test/video script.
-14. **Three.js editor:** reuse it in the demo. Strongest visual proof — UiPath orchestrates, Haus generates/validates, Action Center approves, editor shows before/after layout.
+14. **Three.js editor:** reused for Stage-1 Case Review. Strongest visual proof — UiPath orchestrates, Haus generates/validates, Action Center approves, editor shows before/after layout.
 15. **Coding agent:** **OpenAI Codex** is the primary build agent.
 
 ---
@@ -158,11 +164,11 @@ This dual routing (auto-revise primary, human escalation after N) is what demons
 
 ## 5. Staged build plan (the work)
 
-**Guiding principle:** de-risk the UiPath dependency. Build the Haus-side system so completely that UiPath becomes a genuine-but-thin orchestration wrapper over a system that already works end-to-end. **Stages 1–3 require no UiPath access.**
+**Guiding principle:** de-risk the UiPath dependency. Build the Haus-side system so completely that UiPath becomes a genuine-but-thin orchestration wrapper over a system that already works end-to-end. Stage 1 and non-UiPath demo polish require no UiPath access; Stage 2 and the Codex/`uip` bonus capture do.
 
 ### Stage 0 — Foundations & investigation (Week 1, parallel with access wait)
 - [ ] **Spike A (highest priority):** verify Maestro can call external HTTP cleanly; decide Haus packaging (HTTP service vs CLI wrapper vs Python node). See §6 task A. *Do this the moment Labs access lands; until then, design the HTTP contract so it's orchestration-agnostic.* — **BLOCKED on Labs access.**
-- [ ] Install UiPath CLI + Codex skills: `uip skills install --agent codex` (verify exact invocation against current UiPath CLI docs). Confirm Codex recognizes UiPath tasks (`uip solution pack/publish/deploy`). — **BLOCKED on Labs access.**
+- [ ] Install UiPath CLI + Codex skills: `uip skills install --agent codex` per current UiPath CLI docs. Confirm Codex recognizes UiPath tasks (`uip solution pack/publish/deploy`). — **OPEN.** Local check on 2026-06-10: `uip` is not installed; needs CLI install + `uip login`.
 - [x] Inventory the repo: confirm the current state of `extraction.py` wall classification (see §6 task B — this gates the compliance critical path). — **Resolved:** classification already exists at `src/haus/extraction.py:386` (`_snap_to_hdb`) and `:396` (`_classify_wall_hdb`); persisted on `WallSegment.hdb_type` at `src/haus/types.py:32`. See §0.1 + §6 B.
 - [x] Pick and pin the **demo floor-plan fixture** from `corpus/cleaned/` or `tests/fixtures/`. Verify `haus build` runs clean and fast on it. — **Pinned:** `tests/fixtures/bto_3room_orange.jpg` + `corpus/library/3.json`; recorded in `SPEC-HTTP-CASE.md` §1.
 - [x] Choose LICENSE: **MIT or Apache 2.0** (hackathon requires one). Add it now. — **MIT added** (`LICENSE` at repo root; `pyproject.toml` updated).
@@ -190,7 +196,7 @@ Build the entire flow as an HTTP service so it works end-to-end before any orche
 - [x] Three.js editor polish: Case Review now shows before/after diff metrics, clearer violating-wall/finding highlights, approval/handoff state, and survives MCP sync during `?case=` demo loads.
 
 ### Stage 4 — Submission assembly (Week 6–7, see §7)
-- [ ] Devpost page, demo video (≤5 min), README, deck, optional feedback form.
+- [ ] Devpost page, demo video (≤5 min), README, deck, optional feedback form. Root `README.md` currently documents Stage-1 local setup; it still needs submission-specific UiPath components, Automation Cloud setup, and coding/low-code agent split after Stage 2 lands.
 
 ---
 
@@ -212,7 +218,7 @@ These are the questions that still need answers from the codebase or the platfor
 
 **G. Coordinator framing wording.** Finalize the human-reviewer persona as an **internal renovation coordinator/designer** approving before contractor handoff. Confirm what this changes in the approval payload (what the coordinator sees: before/after render, violation findings, vendor options) and in the demo narration. — **PARTIAL.** SPEC §2.5 defines `approval_state` (with `reviewer`, `escalation_reason`); SPEC §4.4 defines the Stage-1 PATCH stub for the human transition. The editor now provides before/after diff + finding overlay; final narration/persona wording and real Action Center task copy still need Stage-2 work.
 
-**H. UiPath CLI + Codex setup.** Confirm the exact `uip skills install` invocation for Codex against current UiPath CLI docs, and that Codex resolves UiPath tasks. (Build order: Stage 0.) — **OPEN. Blocked on Labs access.**
+**H. UiPath CLI + Codex setup.** Confirm local CLI install/auth and that Codex resolves UiPath tasks. Current docs list `uip skills install --agent codex`; local check on 2026-06-10 found no `uip` binary. (Build order: Stage 0.) — **OPEN. Needs CLI install + `uip login`; Labs/Automation Cloud access may still block useful verification.**
 
 ---
 
@@ -221,7 +227,7 @@ These are the questions that still need answers from the codebase or the platfor
 ### 7.1 The four required artifacts
 1. **Devpost project page** — title; **Track 1 – UiPath Maestro Case** clearly selected; description of the design-to-approval-to-handoff solution; the business problem (AI-assisted renovation design with compliance gating + governed contractor handoff for an internal renovation/ID firm); how it works; screenshots (before/after editor, Action Center approval, the violation block).
 2. **Demo video (≤5 min)** — see script guidance below. Must show it *running*, walk the architecture, name the agents + orchestration, show the human's role.
-3. **Public GitHub repo (MIT/Apache 2.0)** — README: what it does · UiPath components used (Maestro Case, Action Center, Agent Builder/external split) · setup · prerequisites · **explicit statement: combination of coding agents (Codex) + agents**. Setup must be reproducible enough that another dev could run it.
+3. **Public GitHub repo (MIT/Apache 2.0)** — README: what it does · UiPath components used (Maestro Case, Action Center, Agent Builder/external split) · setup · prerequisites · **explicit statement: combination of coding agents (Codex) + agents** · verifiable Codex evidence for bonus points. Setup must be reproducible enough that another dev could run it.
 4. **On UiPath Automation Cloud** — orchestration + agent logic through the platform; README lists all UiPath components; video shows it running on the platform.
    - **Deck** (organizers' template) — upload to Drive/OneDrive/Dropbox, share-all permissions.
    - **Optional feedback form** — fill it; eligible for Best Product Feedback ($1,500). Low effort, real upside given we're a cold-start team with genuine first-impressions feedback.
@@ -255,8 +261,8 @@ Keep the **design + compliance loop** as the star. Suggested beats:
 
 | Risk | Why it matters | Mitigation |
 |---|---|---|
-| **UiPath access slip + cold start** | ~3 weeks runway; UiPath is non-negotiable for the rules; a 1-week slip costs a third of runway on the one mandatory component | **Build order:** Stages 1–3 need no UiPath. The Haus HTTP service works end-to-end first; UiPath becomes a thin wrap. An access slip degrades scope, not viability. |
-| **Compliance ruleset doesn't exist yet** | The money-shot demo failure depends on code not yet written; §6 task B decides if it's a 1-day or 1-week job | Hard-scope the ruleset to exactly the two failure scenarios; frame as "extensible." Resolve task B first. |
+| **UiPath access slip + cold start** | UiPath is non-negotiable for the rules; a slip hits the one mandatory component | **Build order:** Stage 1 works end-to-end without UiPath. UiPath becomes a thin wrap. An access slip degrades scope, not the local demo. |
+| **Compliance ruleset stays too narrow** | The money-shot works, but judges may ask whether move/resize or more HDB rules are covered | Say v0 covers structural/shelter removal + accessibility; explicitly frame move/resize and broader rules as extensibility points. |
 | **"Haus is just one node"** | If the demo emphasizes intake/vendor lookups, we demote our unique IP and weaken Platform Usage | Keep design+compliance loop the star (video budget §7.2); keep vendor agent thin. |
 | **Live demo fragility** | A failed vendor search or LLM timeout mid-recording is an unforced error | Pre-seed vendor cache (task E) + pin LLM proposal (task F); show fallbacks *as* exception handling. |
 | **Scope creep ("handle everything")** | Trying to build the whole lifecycle in 3 weeks → shallow everywhere → reads as a slide deck | Build ONE deep slice. Gesture at the rest. |
@@ -265,22 +271,18 @@ Keep the **design + compliance loop** as the star. Suggested beats:
 
 ## 9. Immediate next actions
 
-Ordered by criticality given Stage-1 progress in §0.1. Items 1–5 do not require Labs access.
+Ordered by criticality after the 2026-06-10 local verification.
 
-1. **Codex:** build the **HTTP service layer** that wraps the four step functions already implemented in `src/haus/case/`. — **Done.** Starlette/Uvicorn service lives at `src/haus/case/http_server.py`; CLI entrypoint is `haus case-server`.
+1. **Install/auth UiPath CLI locally.** `uip` is not on PATH. Install `@uipath/cli`, run `uip login`, then `uip skills install --agent codex`; verify Codex proposes the pack/publish/deploy chain for a UiPath task.
 
-2. **Codex:** **Vendor/Handoff Agent v0** (§5 Stage 1 last open item; §6 task E). — **Done.** Cached vendor directory (`tests/fixtures/vendors/` or `~/.haus/vendors/`); schema `{vendor_id, vendor_name, packet_template, ...}`; handoff agent reads cache-first, with live-search (TinyFish/Serper) as a stubbed fallback for v0. Wires into `vendor_handoff` on the Case + a new `handoff_complete` transition. Keep deliberately thin — see §2 "watch this" — the goal is to prove the handoff exists, not build a CRM.
+2. **Run Spike A the moment Automation Cloud/Labs access exists.** Smallest proof: a Maestro Case stage calls local/tunneled `POST /case`, stores the returned Case JSON, and calls `POST /case/{id}/design`. Verdict decides HTTP service vs CLI/Python-node packaging.
 
-3. **Codex:** **wire the Three.js editor to render Case before/after** (§5 Stage 1 acceptance, item c; §6 task G). — **Done.** The editor reads Case payloads via `?case=...` or JSON import, renders current `items[]`, overlays baseline ghosts from `_baseline_items`, highlights findings, and shows a Case Review panel.
+3. **Implement Stage 2 orchestration.** Model Maestro stages, wire Design/Compliance/Revise/Handoff HTTP calls, move approval into Action Center, and persist the Case payload through the workflow.
 
-4. **Codex:** **finish the `hdb_type` propagation gap on the raster path** (SPEC §3 callout). — **Done.** `floor_plan_to_layout` emits explicit wall classification into raster-generated `layout.json`; MCP/editor JSON paths preserve the fields.
+4. **Write Action Center coordinator copy.** Include before/after render link, compliance findings, `approval_state`, and vendor options. Keep Three.js as the visual review surface, not the approval source of record.
 
-5. **Codex:** **hero demo CLI flow.** — **Done.** `haus case demo --fixture corpus/library/3.json --pinned demo_3room_remove_wall_28` runs through the Stage-1 HTTP app, prints transition lines, writes Case JSON, approves, and completes handoff unless skipped.
+5. **Update README for submission.** Add UiPath components used, Automation Cloud prerequisites/setup, Codex/coding-agent usage, native-vs-external agent split, and how to reproduce the Stage-1 fallback demo without UiPath.
 
-6. **Codex (decision needed before recording):** wire a **real LLM provider call** into `DesignAgent` (§6 task F still-open). — **Done with decision.** Recorded demo should stay pinned-only for reliability; live LLM proposal generation is exposed as opt-in `--design-mode live` / `HAUS_CASE_DESIGN_MODE=live` with deterministic fallback and optional proposal caching.
+6. **Assemble demo artifacts.** Record ≤5 min video, capture Codex + `uip` workflow, take screenshots, create deck, Devpost text, and product feedback form.
 
-7. **Human:** the moment UiPath Labs access lands, run **Spike A** (§6 A) and `uip skills install --agent codex` (§6 H). These unblock §5 Stage 2.
-
-8. **Human:** product feedback form (§7.1, Best Product Feedback $1.5k). 30-minute task; do it once Stage 1 is HTTP-exposed and you have real first-impressions opinions on Maestro/Action Center post-Stage-2.
-
-9. Keep the **design + compliance loop** as the demo's centre of gravity in every decision (§2 mitigation; §7.2 video budget).
+7. Keep the **design + compliance loop** as the demo's centre of gravity in every decision (§2 mitigation; §7.2 video budget).
