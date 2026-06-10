@@ -1,9 +1,49 @@
 # Swee Shield × Splunk — Agentic Ops Hackathon Build Brief
 
-**Status:** Architecture locked. Ready to implement.
+**Status:** Architecture locked. Stages 1-6 and token-independent submission prep implemented; live Splunk E2E/video remain external-gated.
 **Audience:** The coding agent (has repository access; does *not* have our planning conversation — this document is that context).
 **Repository:** Swee SG (Node 20 / TypeScript npm workspace).
 **Submission deadline:** Jun 15, 2026, 09:00 PDT (submission period opened May 18, 2026).
+
+## Implementation status as of Jun 10, 2026
+
+Completed without a Splunk token:
+
+- [x] Stage 1 upstream Splunk MCP client with mocked MCP transport tests.
+- [x] Stage 2 `SPLUNK_MCP_URL` / `SPLUNK_MCP_TOKEN` / `splunk_mcp` keystore plumbing and config-only readiness.
+- [x] Stage 3 Shield-governed Splunk proxy tools: `splunk_search`, `splunk_list_indexes`, `splunk_list_saved_searches`.
+- [x] Stage 4 deterministic runtime scanner for credential/PII redaction and prompt-injection neutralization, including block mode.
+- [x] Stage 5 audit migration for runtime findings plus raw/post-redaction output hashes.
+- [x] Stage 6 dashboard Shield audit finding/hash surface.
+- [x] Synthetic Splunk demo fixtures and token-free fixture test.
+- [x] Submission docs: significant-update narrative, demo script, claims audit.
+- [x] Root `architecture_diagram.md`.
+- [x] Root MIT `LICENSE`.
+- [x] Token-free submission checks: `npm run submission:claims:check` and `npm run submission:readiness:check`.
+- [x] Token-gated live smoke wrapper: `npm run splunk:smoke:live` skips honestly without `SPLUNK_MCP_URL` and token.
+
+Still external-gated:
+
+- [ ] Live Splunk Enterprise + Splunk MCP Server token.
+- [ ] Seeded live Splunk index with approved demo events.
+- [ ] Live E2E proof using `npm run splunk:smoke:live`.
+- [ ] Demo video under 3 minutes.
+- [ ] Public repo settings check: license detected in repository UI, repo public, submission form filled.
+
+Verification baseline after token-free work:
+
+```bash
+npm run build
+npm run test
+npm run lint
+npm test -w apps/web
+npm run build -w apps/web
+npm run submission:claims:check
+npm run submission:readiness:check
+npm run splunk:smoke:live
+```
+
+`npm run splunk:smoke:live` must pass only after live Splunk credentials are configured; without credentials it should exit as skipped.
 
 > A note on honesty before anything else. This brief deliberately constrains what we are allowed to *claim*, because the value of this project to a security audience depends on every claim being true and verifiable. Several capabilities that sound impressive (deterministic replay; "Splunk can't sanitize this") are **not** true of this codebase or are misleading, and the brief calls each one out. Do not let scope creep reintroduce a claim this document has retired.
 

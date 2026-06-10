@@ -33,6 +33,9 @@ Splunk Shield proxy tools are local-trial ready without changing the Pulse path.
 
 ```bash
 npm run diagnostics
+npm run submission:claims:check
+npm run submission:readiness:check
+npm run splunk:smoke:live
 npm run test:smoke:profiles
 npm run test:smoke:web
 npm run benchmarks:snapshot
@@ -107,6 +110,9 @@ Live Splunk trial, token required:
 export SPLUNK_MCP_URL=https://localhost:8089/services/mcp
 export SPLUNK_MCP_TOKEN=<bearer-token>
 export SPLUNK_MCP_ALLOWED_INDEXES=main,security
+export SWEE_SPLUNK_SMOKE_QUERY='index=security | head 1'
+npm run build
+npm run splunk:smoke:live
 npm run dev:gateway
 curl -X POST http://localhost:3000/api/v1/splunk_search \
   -H 'Content-Type: application/json' \
@@ -120,6 +126,8 @@ Submission prep lives in:
 - `docs/submission/significant-update.md`
 - `docs/submission/demo-script.md`
 - `docs/submission/claims-audit.md`
+
+Run `npm run submission:claims:check` and `npm run submission:readiness:check` before recording the demo. The live Splunk smoke script exits as skipped without `SPLUNK_MCP_URL` and a token; it does not prove live auth unless it actually runs against a configured Splunk MCP endpoint.
 
 ## Public Evidence
 

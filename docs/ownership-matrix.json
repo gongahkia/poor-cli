@@ -17,6 +17,11 @@
       "backupOwner": "maintainer:governance"
     },
     {
+      "name": "Splunk Shield Proxy",
+      "primaryOwner": "maintainer:runtime-security",
+      "backupOwner": "maintainer:governance"
+    },
+    {
       "name": "Mobility Sources",
       "primaryOwner": "maintainer:data-surface",
       "backupOwner": "maintainer:runtime-reliability"
