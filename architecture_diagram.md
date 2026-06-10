@@ -21,8 +21,9 @@ flowchart LR
 2. Swee Shield evaluates tool metadata and policy before any upstream call.
 3. Proxy handler calls the configured Splunk MCP endpoint with bearer auth.
 4. Runtime scanner redacts credential/PII-shaped output and neutralizes prompt-injection text.
-5. Audit store persists sanitized input, policy decision, runtime findings, raw output hash, and post-redaction output hash.
-6. The dashboard shows recent decisions, reason codes, finding counts, and audit IDs.
+5. If `SWEE_SHIELD_RUNTIME_SCAN_MODE=block`, critical runtime findings block the result and still write the audit row.
+6. Audit store persists sanitized input, policy decision, runtime findings, raw output hash, and post-redaction output hash when a defended result is returned.
+7. The dashboard shows recent decisions, reason codes, finding counts, severity/action summaries, short hash IDs, and audit IDs.
 
 ## AI Integration
 
@@ -31,3 +32,5 @@ Foundation-sec and other investigation agents should consume only the post-scann
 ## Claim Boundary
 
 The audit trail is tamper-evident and hash-verified. It is inspection-only and does not provide deterministic replay of upstream Splunk responses.
+
+The gateway readiness check reports whether Splunk MCP config is present. It does not prove live Splunk auth or upstream availability.

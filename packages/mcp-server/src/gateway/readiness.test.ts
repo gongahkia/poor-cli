@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../apis/acra/client.js", () => ({
   probeAcraLookupReadiness: vi.fn(async () => ({
@@ -17,6 +17,16 @@ vi.mock("../apis/tinyfish/client.js", () => ({
 
 vi.mock("../tools/health-check.js", () => ({
   probeDatagovDatastoreHealth: vi.fn(async () => undefined),
+}));
+
+vi.mock("../upstreams/splunk/mcp-client.js", () => ({
+  inspectSplunkMcpConfig: vi.fn(() => ({
+    allowedIndexesConfigured: false,
+    configured: false,
+    tokenConfigured: false,
+    tokenSource: "none",
+    urlConfigured: false,
+  })),
 }));
 
 vi.mock("../ai/providers.js", () => {
@@ -45,9 +55,15 @@ vi.mock("../ai/providers.js", () => {
 });
 
 const { generateText, ProviderRequestError } = await import("../ai/providers.js");
-const { getGatewayHealthPayload } = await import("./readiness.js");
+const { inspectSplunkMcpConfig } = await import("../upstreams/splunk/mcp-client.js");
+const { getGatewayHealthPayload, resetGatewayReadinessCacheForTesting } = await import("./readiness.js");
 
 describe("gateway readiness", () => {
+  afterEach(() => {
+    resetGatewayReadinessCacheForTesting();
+    vi.clearAllMocks();
+  });
+
   it("surfaces explain-only AI provider auth failures", async () => {
     vi.mocked(generateText).mockRejectedValueOnce(new ProviderRequestError("openai", 401));
 
@@ -67,6 +83,48 @@ describe("gateway readiness", () => {
       status: "failing",
     });
     expect(health.services.analystMemo.message).toContain("OPENAI_API_KEY");
+  });
+
+  it("surfaces Splunk MCP as config-only readiness without probing upstream", async () => {
+    vi.mocked(inspectSplunkMcpConfig).mockReturnValueOnce({
+      allowedIndexesConfigured: true,
+      configured: true,
+      tokenConfigured: true,
+      tokenSource: "env",
+      urlConfigured: true,
+    });
+
+    const health = await getGatewayHealthPayload({
+      startedAt: new Date("2026-05-17T00:00:00.000Z"),
+      toolCount: 108,
+    });
+
+    expect(health.services.splunkMcp).toMatchObject({
+      configured: true,
+      status: "ready",
+      details: {
+        allowedIndexesConfigured: true,
+        probeMode: "config_only",
+        tokenSource: "env",
+      },
+    });
+  });
+
+  it("leaves Splunk MCP unconfigured without changing required readiness", async () => {
+    const health = await getGatewayHealthPayload({
+      startedAt: new Date("2026-05-17T00:00:00.000Z"),
+      toolCount: 108,
+    });
+
+    expect(health.services.splunkMcp).toMatchObject({
+      configured: false,
+      status: "unconfigured",
+      details: {
+        tokenSource: "none",
+        urlConfigured: false,
+      },
+    });
+    expect(health.status).toBe("ok");
   });
 
   it("marks gateway readiness failing when production auth is fail-closed", async () => {

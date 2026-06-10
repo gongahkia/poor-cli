@@ -8,6 +8,7 @@ import {
 import { probeAcraLookupReadiness } from "../apis/acra/client.js";
 import { probeTinyFishSearchReadiness } from "../apis/tinyfish/client.js";
 import { probeDatagovDatastoreHealth } from "../tools/health-check.js";
+import { inspectSplunkMcpConfig } from "../upstreams/splunk/mcp-client.js";
 
 export type GatewayReadinessLevel = "ready" | "degraded" | "failing";
 export type GatewayServiceStatus = "ready" | "unconfigured" | "failing";
@@ -45,6 +46,9 @@ export type GatewayHealthPayload = {
       readonly provider: AiProvider;
       readonly model: string;
     };
+    readonly splunkMcp: GatewayServiceReadiness & {
+      readonly configured: boolean;
+    };
   };
 };
 
@@ -62,6 +66,11 @@ let cachedServiceReadiness: {
 } | null = null;
 let inFlightServiceReadiness: Promise<Omit<GatewayHealthPayload["services"], "gateway">> | null =
   null;
+
+export const resetGatewayReadinessCacheForTesting = (): void => {
+  cachedServiceReadiness = null;
+  inFlightServiceReadiness = null;
+};
 
 const toObservedAt = (): string => new Date().toISOString();
 
@@ -291,6 +300,27 @@ const checkAnalystMemoReadiness = async (): Promise<
   }
 };
 
+const checkSplunkMcpReadiness = (): GatewayHealthPayload["services"]["splunkMcp"] => {
+  const startedAt = Date.now();
+  const config = inspectSplunkMcpConfig();
+  return {
+    status: config.configured ? "ready" : "unconfigured",
+    configured: config.configured,
+    message: config.configured
+      ? "Splunk MCP proxy configuration is present; live upstream auth was not probed."
+      : "Splunk MCP proxy is not configured. Set SPLUNK_MCP_URL and SPLUNK_MCP_TOKEN or a splunk_mcp keystore entry.",
+    observedAt: toObservedAt(),
+    latencyMs: Date.now() - startedAt,
+    details: {
+      urlConfigured: config.urlConfigured,
+      tokenConfigured: config.tokenConfigured,
+      tokenSource: config.tokenSource,
+      allowedIndexesConfigured: config.allowedIndexesConfigured,
+      probeMode: "config_only",
+    },
+  };
+};
+
 const resolveServiceReadiness = async (): Promise<
   Omit<GatewayHealthPayload["services"], "gateway">
 > => {
@@ -307,13 +337,15 @@ const resolveServiceReadiness = async (): Promise<
     checkAcraLookupReadiness(),
     checkTinyFishReadiness(),
     checkAnalystMemoReadiness(),
+    checkSplunkMcpReadiness(),
   ])
-    .then(([datagovDatastore, acraLookup, tinyfish, analystMemo]) => {
+    .then(([datagovDatastore, acraLookup, tinyfish, analystMemo, splunkMcp]) => {
       const services = {
         datagovDatastore,
         acraLookup,
         tinyfish,
         analystMemo,
+        splunkMcp,
       };
       cachedServiceReadiness = {
         expiresAt: Date.now() + READINESS_CACHE_TTL_MS,

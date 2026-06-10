@@ -26,6 +26,18 @@ const baseHealth: GatewayHealth = {
       mode: "web-discovery-only",
       status: "ready",
     },
+    splunkMcp: {
+      configured: true,
+      details: {
+        allowedIndexesConfigured: true,
+        probeMode: "config_only",
+        tokenConfigured: true,
+        tokenSource: "env",
+        urlConfigured: true,
+      },
+      message: "Splunk MCP proxy is configured. Live upstream authentication was not probed.",
+      status: "ready",
+    },
   },
   status: "ok",
   tools: 105,
@@ -65,6 +77,39 @@ describe("getGatewayReadinessIssues", () => {
 
   it("keeps the landing page quiet when all visible services are ready", () => {
     expect(getGatewayReadinessIssues(baseHealth)).toEqual([]);
+  });
+
+  it("flags Splunk MCP setup without requiring a live token", () => {
+    const issues = getGatewayReadinessIssues({
+      ...baseHealth,
+      services: {
+        ...baseHealth.services,
+        splunkMcp: {
+          configured: false,
+          details: {
+            allowedIndexesConfigured: false,
+            probeMode: "config_only",
+            tokenConfigured: false,
+            tokenSource: "none",
+            urlConfigured: false,
+          },
+          message:
+            "Set SPLUNK_MCP_URL and SPLUNK_MCP_TOKEN or a splunk_mcp keystore entry to enable Splunk proxy tools.",
+          status: "unconfigured",
+        },
+      },
+    });
+
+    expect(issues).toEqual([
+      expect.objectContaining({
+        key: "splunkMcp",
+        label: "Splunk MCP proxy",
+        state: "Unconfigured",
+        tone: "warn",
+      }),
+    ]);
+    expect(issues[0]?.detail).toContain("SPLUNK_MCP_URL");
+    expect(issues[0]?.detail).toContain("splunk_mcp");
   });
 
   it("keeps the explain-only AI readiness metadata compact", () => {
@@ -109,5 +154,21 @@ describe("getGatewayReadinessIssues", () => {
     expect(html).not.toContain("REST gateway process environment");
     expect(html).not.toContain("Browser env");
     expect(html).not.toContain("browser VITE_* keys are not used");
+  });
+
+  it("renders Splunk MCP readiness as config-only metadata", () => {
+    const html = renderToStaticMarkup(
+      createElement(GatewayStatusPanel, {
+        health: baseHealth,
+      }),
+    );
+
+    expect(html).toContain("Splunk MCP proxy");
+    expect(html).toContain("config-only");
+    expect(html).toContain("Token");
+    expect(html).toContain("env");
+    expect(html).toContain("URL");
+    expect(html).toContain("configured");
+    expect(html).not.toContain("authenticated");
   });
 });

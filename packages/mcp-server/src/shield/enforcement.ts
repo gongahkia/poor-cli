@@ -2,7 +2,12 @@ import type { RegisteredToolDefinition } from "../tools/tool-definition.js";
 import type { ShieldAuditRecord, ToolErrorPayload, ToolResult } from "@swee-sg/shared";
 import { buildShieldToolMetadata, evaluateShieldPolicy } from "./policy.js";
 import { getShieldAuditStore } from "./audit-store.js";
-import { scanToolResultForRuntimeFindings } from "./runtime-scanner.js";
+import {
+  hasBlockingRuntimeFinding,
+  resolveRuntimeScanMode,
+  RuntimeScanBlockedError,
+  scanToolResultForRuntimeFindings,
+} from "./runtime-scanner.js";
 
 export class ShieldDeniedError extends Error {
   constructor(readonly audit: ShieldAuditRecord) {
@@ -11,15 +16,30 @@ export class ShieldDeniedError extends Error {
   }
 }
 
-const toToolError = (toolName: string, error: unknown): ToolErrorPayload => ({
-  source: "swee-shield",
-  tool: toolName,
-  code: error instanceof ShieldDeniedError ? "SHIELD_DENIED" : "TOOL_INVOCATION_FAILED",
-  retryable: false,
-  severity: error instanceof ShieldDeniedError ? "high" : "medium",
-  category: error instanceof ShieldDeniedError ? "policy" : "runtime",
-  message: error instanceof Error ? error.message : String(error),
-});
+const toToolError = (toolName: string, error: unknown): ToolErrorPayload => {
+  if (error instanceof RuntimeScanBlockedError) {
+    return {
+      source: "swee-shield",
+      tool: toolName,
+      code: "RUNTIME_SCAN_BLOCKED",
+      retryable: false,
+      severity: "high",
+      category: "runtime_scan",
+      message: error.message,
+      details: { findings: error.findings },
+    };
+  }
+
+  return {
+    source: "swee-shield",
+    tool: toolName,
+    code: error instanceof ShieldDeniedError ? "SHIELD_DENIED" : "TOOL_INVOCATION_FAILED",
+    retryable: false,
+    severity: error instanceof ShieldDeniedError ? "high" : "medium",
+    category: error instanceof ShieldDeniedError ? "policy" : "runtime",
+    message: error instanceof Error ? error.message : String(error),
+  };
+};
 
 export const invokeShieldedTool = async (
   tool: RegisteredToolDefinition,
@@ -59,6 +79,9 @@ export const invokeShieldedTool = async (
     const result = await tool.handler(input);
     const rawOutput = result.structuredContent ?? result.content;
     const runtimeScan = scanToolResultForRuntimeFindings(result);
+    if (resolveRuntimeScanMode() === "block" && hasBlockingRuntimeFinding(runtimeScan.findings)) {
+      throw new RuntimeScanBlockedError(runtimeScan.findings, rawOutput);
+    }
     const scannedResult = runtimeScan.result;
     const finishedAt = new Date().toISOString();
     const audit = getShieldAuditStore().record({
@@ -99,6 +122,9 @@ export const invokeShieldedTool = async (
       finishedAt,
       durationMs: Date.now() - started,
       input,
+      ...(error instanceof RuntimeScanBlockedError
+        ? { rawOutput: error.rawOutput, runtimeFindings: error.findings }
+        : {}),
       error: toToolError(tool.name, error),
     });
     const throwable = error instanceof Error ? error : new Error(String(error));

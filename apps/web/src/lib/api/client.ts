@@ -40,6 +40,10 @@ export type GatewayHealth = {
       provider: string;
       model: string;
     } & GatewayServiceReadiness;
+    splunkMcp?: {
+      status?: "ready" | "unconfigured" | "failing" | string;
+      configured: boolean;
+    } & GatewayServiceReadiness;
   };
 };
 

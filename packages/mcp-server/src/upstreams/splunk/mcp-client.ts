@@ -14,6 +14,16 @@ export type SplunkMcpConfig = {
   readonly timeoutMs: number;
 };
 
+export type SplunkMcpTokenSource = "env" | "keystore" | "none";
+
+export type SplunkMcpConfigReadiness = {
+  readonly configured: boolean;
+  readonly urlConfigured: boolean;
+  readonly tokenConfigured: boolean;
+  readonly tokenSource: SplunkMcpTokenSource;
+  readonly allowedIndexesConfigured: boolean;
+};
+
 export type SplunkMcpTransportConfig = SplunkMcpConfig & {
   readonly authorizationHeader: string;
 };
@@ -74,6 +84,31 @@ export const resolveSplunkMcpConfig = (options: {
     url,
     token,
     timeoutMs: options.timeoutMs ?? getTimeout("splunk_mcp"),
+  };
+};
+
+export const inspectSplunkMcpConfig = (options: {
+  readonly env?: EnvMap;
+  readonly keystore?: KeystoreReader;
+} = {}): SplunkMcpConfigReadiness => {
+  const env = options.env ?? process.env;
+  const keystore = options.keystore ?? getDefaultKeystore();
+  const urlConfigured = readEnvValue(env, "SPLUNK_MCP_URL") !== undefined;
+  const envToken = readEnvValue(env, "SPLUNK_MCP_TOKEN");
+  const keystoreToken = envToken === undefined ? keystore.getKey("splunk_mcp")?.trim() : undefined;
+  const tokenSource: SplunkMcpTokenSource = envToken !== undefined
+    ? "env"
+    : keystoreToken !== undefined && keystoreToken !== ""
+      ? "keystore"
+      : "none";
+  const tokenConfigured = tokenSource !== "none";
+  const allowedIndexesConfigured = readEnvValue(env, "SPLUNK_MCP_ALLOWED_INDEXES") !== undefined;
+  return {
+    configured: urlConfigured && tokenConfigured,
+    urlConfigured,
+    tokenConfigured,
+    tokenSource,
+    allowedIndexesConfigured,
   };
 };
 

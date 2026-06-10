@@ -20,6 +20,23 @@ export type RuntimeScanResult = {
   readonly findings: readonly ShieldRuntimeFinding[];
 };
 
+export type RuntimeScanMode = "neutralize" | "block";
+
+export class RuntimeScanBlockedError extends Error {
+  constructor(readonly findings: readonly ShieldRuntimeFinding[], readonly rawOutput: unknown) {
+    super("Swee Shield blocked tool output after runtime scan findings.");
+    this.name = "RuntimeScanBlockedError";
+  }
+}
+
+export const resolveRuntimeScanMode = (): RuntimeScanMode => {
+  const mode = process.env["SWEE_SHIELD_RUNTIME_SCAN_MODE"]?.trim().toLowerCase();
+  return mode === "block" ? "block" : "neutralize";
+};
+
+export const hasBlockingRuntimeFinding = (findings: readonly ShieldRuntimeFinding[]): boolean =>
+  findings.some((finding) => finding.severity === "critical");
+
 const REDACTION_PATTERNS: readonly StringPattern[] = [
   {
     code: "SECRET_ASSIGNMENT_REDACTED",

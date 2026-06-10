@@ -6,6 +6,7 @@ import {
   Globe2,
   KeyRound,
   Server,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -32,6 +33,7 @@ export type GatewayReadinessIssue = {
 };
 
 type GatewayExplainAiReadiness = NonNullable<GatewayHealth["services"]>["analystMemo"];
+type GatewaySplunkReadiness = NonNullable<GatewayHealth["services"]>["splunkMcp"];
 
 const toneClasses: Record<HealthTone, string> = {
   good: "border-emerald-200 bg-emerald-50 text-emerald-950",
@@ -133,6 +135,11 @@ function readServiceDetail(service: GatewayServiceReadiness | undefined, key: st
   return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
+function readServiceDetailFlag(service: GatewayServiceReadiness | undefined, key: string): boolean | undefined {
+  const value = service?.details?.[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
 function getProviderName(service: GatewayExplainAiReadiness | undefined): string {
   return service?.provider ?? readServiceDetail(service, "provider") ?? "openai";
 }
@@ -176,6 +183,21 @@ function getExplainAiMetadata(
   ];
 }
 
+function getSplunkMcpMetadata(
+  service: GatewaySplunkReadiness | undefined,
+): { label: string; value: string }[] {
+  const probeMode = readServiceDetail(service, "probeMode");
+  return [
+    ...getServiceMetadata(service),
+    ...(probeMode === undefined ? [] : [{ label: "Mode", value: probeMode.replace(/_/g, "-") }]),
+    { label: "Token", value: readServiceDetail(service, "tokenSource") ?? "none" },
+    {
+      label: "URL",
+      value: readServiceDetailFlag(service, "urlConfigured") === true ? "configured" : "missing",
+    },
+  ];
+}
+
 export function getGatewayReadinessIssues(health: GatewayHealth): GatewayReadinessIssue[] {
   const services = [
     {
@@ -201,6 +223,12 @@ export function getGatewayReadinessIssues(health: GatewayHealth): GatewayReadine
       key: "analystMemo",
       label: getExplainAiKeyLabel(health.services?.analystMemo),
       service: health.services?.analystMemo,
+    },
+    {
+      fallback: "Set SPLUNK_MCP_URL and SPLUNK_MCP_TOKEN or a splunk_mcp keystore entry to enable Splunk proxy tools.",
+      key: "splunkMcp",
+      label: "Splunk MCP proxy",
+      service: health.services?.splunkMcp,
     },
   ];
 
@@ -399,6 +427,7 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
   const acraLookup = state.health.services?.acraLookup;
   const tinyfish = state.health.services?.tinyfish;
   const analystMemo = state.health.services?.analystMemo;
+  const splunkMcp = state.health.services?.splunkMcp;
 
   if (variant === "panel") {
     return <GatewayStatusPanel health={state.health} />;
@@ -411,6 +440,7 @@ export function GatewayStatus({ variant = "chips" }: GatewayStatusProps) {
       <StatusChip label="ACRA" service={acraLookup} />
       <StatusChip label="Web evidence" service={tinyfish} />
       <StatusChip label={getExplainAiKeyLabel(analystMemo)} service={analystMemo} />
+      <StatusChip label="Splunk MCP" service={splunkMcp} />
     </div>
   );
 }
@@ -422,6 +452,7 @@ export function GatewayStatusPanel({ health }: { health: GatewayHealth }) {
   const acraLookup = health.services?.acraLookup;
   const tinyfish = health.services?.tinyfish;
   const analystMemo = health.services?.analystMemo;
+  const splunkMcp = health.services?.splunkMcp;
 
   return (
     <div className="space-y-3">
@@ -490,6 +521,17 @@ export function GatewayStatusPanel({ health }: { health: GatewayHealth }) {
         metadata={getExplainAiMetadata(analystMemo)}
         state={getReadinessState(analystMemo?.status)}
         tone={getReadinessTone(analystMemo?.status)}
+      />
+      <HealthRow
+        detail={getServiceMessage(
+          splunkMcp,
+          "Set SPLUNK_MCP_URL and SPLUNK_MCP_TOKEN or a splunk_mcp keystore entry to enable Splunk proxy tools.",
+        )}
+        icon={ShieldCheck}
+        label="Splunk MCP proxy"
+        metadata={getSplunkMcpMetadata(splunkMcp)}
+        state={getReadinessState(splunkMcp?.status)}
+        tone={getReadinessTone(splunkMcp?.status)}
       />
     </div>
   );

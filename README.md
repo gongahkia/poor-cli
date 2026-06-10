@@ -27,6 +27,8 @@ For split-origin local development, set `SWEE_WEB_ORIGIN_ALLOWLIST` on the REST 
 
 Splunk Shield proxy tools are local-trial ready without changing the Pulse path. Set `SPLUNK_MCP_URL` to the Splunk MCP Streamable HTTP endpoint and `SPLUNK_MCP_TOKEN` to a bearer token, or store the token with `sg_key_set` using `apiName:"splunk_mcp"`. `SPLUNK_MCP_ALLOWED_INDEXES` optionally restricts `splunk_search` by explicit index. `NODE_TLS_REJECT_UNAUTHORIZED=0` is only for local self-signed Splunk trials.
 
+`SWEE_SHIELD_RUNTIME_SCAN_MODE=neutralize` redacts/neutralizes risky output and returns the defended result. `SWEE_SHIELD_RUNTIME_SCAN_MODE=block` blocks critical runtime findings and records the blocked audit row.
+
 ## Useful Commands
 
 ```bash
@@ -88,6 +90,36 @@ curl http://localhost:3000/api/v1/shield/scan
 ```
 
 Every generic tool endpoint is also exposed as `POST /api/v1/<tool-name>`.
+
+## Splunk Demo Paths
+
+Mocked local demo, no Splunk token:
+
+```bash
+npx vitest run packages/mcp-server/src/shield/__tests__/runtime-demo-fixtures.test.ts
+```
+
+This uses synthetic fixture events from `packages/mcp-server/src/upstreams/splunk/__tests__/fixtures/demo-events.json`. They are fake demo events, not Splunk data.
+
+Live Splunk trial, token required:
+
+```bash
+export SPLUNK_MCP_URL=https://localhost:8089/services/mcp
+export SPLUNK_MCP_TOKEN=<bearer-token>
+export SPLUNK_MCP_ALLOWED_INDEXES=main,security
+npm run dev:gateway
+curl -X POST http://localhost:3000/api/v1/splunk_search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"index=security failed login","limit":10}'
+```
+
+For self-signed local-trial certs only, set `NODE_TLS_REJECT_UNAUTHORIZED=0`.
+
+Submission prep lives in:
+
+- `docs/submission/significant-update.md`
+- `docs/submission/demo-script.md`
+- `docs/submission/claims-audit.md`
 
 ## Public Evidence
 

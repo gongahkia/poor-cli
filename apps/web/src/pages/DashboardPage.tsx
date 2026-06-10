@@ -88,6 +88,15 @@ const plural = (count: number, singular: string, pluralForm = `${singular}s`): s
   `${count} ${count === 1 ? singular : pluralForm}`;
 
 const shortId = (value: string): string => value.slice(0, 8);
+const severityOrder: Readonly<Record<string, number>> = {
+  critical: 0,
+  high: 1,
+  medium: 2,
+  low: 3,
+};
+
+const shortHash = (label: string, value: string | null | undefined): string =>
+  value === null || value === undefined ? `${label}:none` : `${label}:${value.slice(0, 8)}`;
 
 export function DashboardPage() {
   const [snapshot, setSnapshot] = useState<PulseSnapshot | null>(null);
@@ -367,7 +376,7 @@ function SourceTable({ sources }: { readonly sources: readonly PulseSourceHealth
   );
 }
 
-function ShieldAuditTable({ audits }: { readonly audits: readonly ShieldAuditRow[] }) {
+export function ShieldAuditTable({ audits }: { readonly audits: readonly ShieldAuditRow[] }) {
   if (audits.length === 0) return <p className="muted">No Shield audit rows returned yet.</p>;
   return (
     <table>
@@ -378,11 +387,10 @@ function ShieldAuditTable({ audits }: { readonly audits: readonly ShieldAuditRow
         {audits.map((audit) => {
           const findings = audit.runtimeFindings ?? [];
           const reasonCodes = audit.decision.reasonCodes ?? [];
-          const hashes = audit.outputHash === null || audit.outputHash === undefined
-            ? "no output hash"
-            : audit.rawOutputHash === null || audit.rawOutputHash === undefined
-              ? "post hash"
-              : "raw + post hash";
+          const topFinding = findings
+            .slice()
+            .sort((left, right) => (severityOrder[left.severity] ?? 9) - (severityOrder[right.severity] ?? 9))[0];
+          const hashSummary = `${shortHash("raw", audit.rawOutputHash)} · ${shortHash("post", audit.outputHash)}`;
           return (
             <tr key={audit.auditId}>
               <td>{audit.toolName}</td>
@@ -391,12 +399,12 @@ function ShieldAuditTable({ audits }: { readonly audits: readonly ShieldAuditRow
                 <span>{reasonCodes.slice(0, 2).join(", ") || "default_allow"}</span>
               </td>
               <td>
-                <strong>{findings.length}</strong>
+                <strong>{findings.length} {topFinding === undefined ? "none" : `${topFinding.severity} ${topFinding.action}`}</strong>
                 <span>{findings.slice(0, 2).map((finding) => finding.code).join(", ") || "none"}</span>
               </td>
               <td>
                 <strong>{audit.status}</strong>
-                <span>{audit.durationMs}ms · {hashes}</span>
+                <span>{audit.durationMs}ms · {hashSummary}</span>
               </td>
               <td>
                 <strong>{shortId(audit.auditId)}</strong>

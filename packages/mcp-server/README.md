@@ -45,6 +45,7 @@ Core Pulse weather, source-health, Shield audit, and no-auth public adapters run
 - `SG_API_ONEMAP_EMAIL` and `SG_API_ONEMAP_PASSWORD` for OneMap sources that require authentication.
 - `SPLUNK_MCP_URL` and `SPLUNK_MCP_TOKEN` for Shield-governed Splunk MCP proxy tools.
 - `SPLUNK_MCP_ALLOWED_INDEXES` to restrict `splunk_search` to explicit indexes.
+- `SWEE_SHIELD_RUNTIME_SCAN_MODE=neutralize|block` to return defended output or block critical runtime findings.
 - `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `GOOGLE_API_KEY` for optional explain-only AI.
 
 Use `sg_key_set` for local credential setup when you do not want to export environment variables.

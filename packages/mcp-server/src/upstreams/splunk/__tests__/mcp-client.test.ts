@@ -4,6 +4,7 @@ import { z } from "zod";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   callSplunkTool,
+  inspectSplunkMcpConfig,
   listSplunkTools,
   resolveSplunkMcpConfig,
   type SplunkMcpTransportFactory,
@@ -59,6 +60,32 @@ describe("Splunk MCP client", () => {
       keystore: { getKey: (apiName) => apiName === "splunk_mcp" ? "stored-token" : null },
       timeoutMs: 1234,
     }).token).toBe("stored-token");
+  });
+
+  it("reports config readiness and token source without probing upstream", () => {
+    expect(inspectSplunkMcpConfig({
+      env: {
+        SPLUNK_MCP_ALLOWED_INDEXES: "main,security",
+        SPLUNK_MCP_URL: "https://splunk.example/services/mcp",
+      },
+      keystore: { getKey: (apiName) => apiName === "splunk_mcp" ? "stored-token" : null },
+    })).toEqual({
+      allowedIndexesConfigured: true,
+      configured: true,
+      tokenConfigured: true,
+      tokenSource: "keystore",
+      urlConfigured: true,
+    });
+    expect(inspectSplunkMcpConfig({
+      env: {},
+      keystore: { getKey: () => null },
+    })).toEqual({
+      allowedIndexesConfigured: false,
+      configured: false,
+      tokenConfigured: false,
+      tokenSource: "none",
+      urlConfigured: false,
+    });
   });
 
   it("lists and calls tools over an injected MCP transport with bearer auth", async () => {

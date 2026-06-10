@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it } from "vitest";
 
 import { App } from "@/App";
-import { DashboardPage } from "@/pages/DashboardPage";
+import { DashboardPage, ShieldAuditTable } from "@/pages/DashboardPage";
 
 describe("DashboardPage", () => {
   it("renders the Swee SG dashboard shell without CDD copy", () => {
@@ -37,5 +37,28 @@ describe("DashboardPage", () => {
 
     expect(html).toContain("Swee SG");
     expect(html).not.toContain("Running CDD orchestrator");
+  });
+
+  it("renders Shield audit findings, reason codes, and hash evidence", () => {
+    const html = renderToStaticMarkup(
+      <ShieldAuditTable
+        audits={[{
+          auditId: "12345678-aaaa-bbbb-cccc-123456789012",
+          decision: { decision: "warn", reasonCodes: ["policy_warn_list"], riskLevel: "medium" },
+          durationMs: 42,
+          outputHash: "abcdef1234567890",
+          rawOutputHash: "123456abcdef7890",
+          runtimeFindings: [{ action: "neutralized", code: "SECRET_EXFILTRATION_NEUTRALIZED", severity: "critical" }],
+          startedAt: "2026-06-10T02:00:00.000Z",
+          status: "success",
+          toolName: "splunk_search",
+        }]}
+      />,
+    );
+
+    expect(html).toContain("critical neutralized");
+    expect(html).toContain("policy_warn_list");
+    expect(html).toContain("raw:123456ab");
+    expect(html).toContain("post:abcdef12");
   });
 });
