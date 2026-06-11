@@ -88,6 +88,7 @@ from .mcp_server import (
     refresh_ikea_catalog,
 )
 from .room_capture import build_room_capture_layout
+from .workbench import validate_layout_schema
 
 log = configure_logging("haus.chat")
 
@@ -2891,13 +2892,20 @@ async def _sync_layout(request: Request) -> JSONResponse:
     if "items" not in body:
         return JSONResponse({"ok": False, "error": "Missing 'items' in layout payload.", "request_id": request_id}, 400)
 
-    err = _save_layout(body)
+    validation = validate_layout_schema(body)
+    if not validation["ok"]:
+        return JSONResponse(
+            {"ok": False, "error": "Layout schema validation failed.", "details": validation["errors"], "request_id": request_id},
+            400,
+        )
+
+    err = _save_layout(validation["layout"])
     if err:
         log.error("[%s] sync failed: %s", request_id, err)
         return JSONResponse({"ok": False, "error": err, "request_id": request_id}, 500)
 
     log.info("[%s] layout synced (%s items)", request_id, len(body.get("items", [])))
-    return JSONResponse({"ok": True, "request_id": request_id})
+    return JSONResponse({"ok": True, "warnings": validation["warnings"], "request_id": request_id})
 
 
 async def _mcp_clear_layout(_: Request) -> JSONResponse:

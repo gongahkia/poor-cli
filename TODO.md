@@ -39,10 +39,10 @@
 - [ ] [P0][Shared] Add an explicit "LLM reviewed" badge only when a provider actually reviewed the deterministic plan.
 - [ ] [P0][Shared] Add an assumptions panel that the user can edit before applying a plan.
 - [ ] [P0][Shared] Add an unknowns panel for missing measurements, unconfirmed walls, missing door widths, and uncertain product dimensions.
-- [ ] [P0][Shared] Add a validation report object that can be regenerated after every layout edit.
-- [ ] [P0][Shared] Add a validation severity model with info, warning, serious, and blocked states.
-- [ ] [P0][Shared] Add room-by-room validation summaries.
-- [ ] [P0][Shared] Add a plain-English explanation for every warning and every suggested fix.
+- [x] [P0][Shared] Add a validation report object that can be regenerated after every layout edit.
+- [x] [P0][Shared] Add a validation severity model with info, warning, serious, and blocked states.
+- [x] [P0][Shared] Add room-by-room validation summaries.
+- [x] [P0][Shared] Add a plain-English explanation for every warning and every suggested fix.
 - [ ] [P0][Shared] Add a "show me why" action that highlights the geometry behind any warning.
 - [ ] [P0][Shared] Add visual overlays for walkway corridors, blocked areas, door clearances, turning circles, and product footprints.
 - [ ] [P0][Shared] Add measurements to overlays so users can see actual clearance values.
@@ -53,7 +53,7 @@
 - [ ] [P0][Shared] Add an HTML report export that works without external services.
 - [ ] [P0][Shared] Add a PDF report export path or print-optimized HTML fallback.
 - [ ] [P0][Shared] Add a report builder that lets users include or exclude assumptions, warnings, shopping list, scenarios, and images.
-- [ ] [P0][Shared] Add a source-of-truth layout JSON schema with versioned migrations.
+- [x] [P0][Shared] Add a source-of-truth layout JSON schema with versioned migrations.
 - [ ] [P0][Shared] Add layout schema validation at import, sync, export, and MCP boundaries.
 - [ ] [P0][Shared] Add migration tests for older bundled layouts.
 - [ ] [P0][Shared] Add a product-safe disclaimer block to every exported report.
@@ -67,78 +67,78 @@
 - [ ] [P0][Renovation] Add a Renovation journey intake form for goals, must-keep rooms, must-change rooms, budget band, style, household profile, and constraints.
 - [ ] [P0][Renovation] Add fields for "allowed wall changes" with options no wall changes, non-structural only, and exploratory concept.
 - [ ] [P0][Renovation] Add room priority inputs such as storage, open space, work-from-home, child-friendly, entertaining, rental, resale, and aging-ready.
-- [ ] [P0][Renovation] Generate at least three renovation scenarios named conservative, balanced, and ambitious.
-- [ ] [P0][Renovation] Score renovation scenarios by disruption, likely cost tier, confidence, storage gain, circulation quality, and accessibility impact.
-- [ ] [P0][Renovation] Mark every proposed wall removal or opening as concept-only and requiring professional verification.
-- [ ] [P0][Renovation] Add a structural uncertainty flag for all walls unless the user explicitly marks them non-structural.
-- [ ] [P0][Renovation] Add a "do not touch" lock for walls, doors, windows, rooms, and fixed fixtures.
-- [ ] [P0][Renovation] Add a storage planning tool that estimates storage zones by room and flags under-served rooms.
-- [ ] [P0][Renovation] Add a kitchen work-zone checker for fridge, sink, cooking zone, counter, and walkway conflicts.
-- [ ] [P0][Renovation] Add a bathroom fixture clearance checker for shower, toilet, sink, door swing, and wet-area access.
-- [ ] [P0][Renovation] Add an open-plan concept tool that proposes visual zoning without assuming structural feasibility.
-- [ ] [P0][Renovation] Add a room function reassignment tool for study, nursery, guest room, storage room, dining, and flex space.
-- [ ] [P0][Renovation] Add a before and after annotation layer showing moved, added, removed, and unchanged elements.
-- [ ] [P0][Renovation] Add a renovation questions list for contractors, IDs, or architects based on unresolved assumptions.
-- [ ] [P0][Renovation] Add a scope brief export with project goals, constraints, scenarios, selected option, assumptions, and open questions.
-- [ ] [P0][Renovation] Add a "renovation sanity check" command that reviews the active scenario for impossible, risky, or low-confidence recommendations.
-- [ ] [P0][Renovation] Add support for marking plumbing-constrained wet areas so plans avoid casual bathroom or kitchen relocation.
-- [ ] [P0][Renovation] Add a visual tag for fixed service zones and high-risk modification zones.
-- [ ] [P0][Renovation] Add a materials and finishes placeholder section without pretending to estimate exact costs.
-- [ ] [P0][Renovation] Add a cost tier explanation model using low, medium, high, and unknown rather than exact prices.
-- [ ] [P0][Renovation] Add a revision command such as "make it cheaper", "more storage", "less renovation", and "more accessible."
-- [ ] [P0][Renovation] Add tests that a renovation draft does not mutate the layout until the user applies a scenario.
-- [ ] [P0][Renovation] Add tests that wall removal suggestions are blocked from direct mutation unless explicitly confirmed.
+- [x] [P0][Renovation] Generate at least three renovation scenarios named conservative, balanced, and ambitious.
+- [x] [P0][Renovation] Score renovation scenarios by disruption, likely cost tier, confidence, storage gain, circulation quality, and accessibility impact.
+- [x] [P0][Renovation] Mark every proposed wall removal or opening as concept-only and requiring professional verification.
+- [x] [P0][Renovation] Add a structural uncertainty flag for all walls unless the user explicitly marks them non-structural.
+- [x] [P0][Renovation] Add a "do not touch" lock for walls, doors, windows, rooms, and fixed fixtures.
+- [x] [P0][Renovation] Add a storage planning tool that estimates storage zones by room and flags under-served rooms.
+- [x] [P0][Renovation] Add a kitchen work-zone checker for fridge, sink, cooking zone, counter, and walkway conflicts.
+- [x] [P0][Renovation] Add a bathroom fixture clearance checker for shower, toilet, sink, door swing, and wet-area access.
+- [x] [P0][Renovation] Add an open-plan concept tool that proposes visual zoning without assuming structural feasibility.
+- [x] [P0][Renovation] Add a room function reassignment tool for study, nursery, guest room, storage room, dining, and flex space.
+- [x] [P0][Renovation] Add a before and after annotation layer showing moved, added, removed, and unchanged elements.
+- [x] [P0][Renovation] Add a renovation questions list for contractors, IDs, or architects based on unresolved assumptions.
+- [x] [P0][Renovation] Add a scope brief export with project goals, constraints, scenarios, selected option, assumptions, and open questions.
+- [x] [P0][Renovation] Add a "renovation sanity check" command that reviews the active scenario for impossible, risky, or low-confidence recommendations.
+- [x] [P0][Renovation] Add support for marking plumbing-constrained wet areas so plans avoid casual bathroom or kitchen relocation.
+- [x] [P0][Renovation] Add a visual tag for fixed service zones and high-risk modification zones.
+- [x] [P0][Renovation] Add a materials and finishes placeholder section without pretending to estimate exact costs.
+- [x] [P0][Renovation] Add a cost tier explanation model using low, medium, high, and unknown rather than exact prices.
+- [x] [P0][Renovation] Add a revision command such as "make it cheaper", "more storage", "less renovation", and "more accessible."
+- [x] [P0][Renovation] Add tests that a renovation draft does not mutate the layout until the user applies a scenario.
+- [x] [P0][Renovation] Add tests that wall removal suggestions are blocked from direct mutation unless explicitly confirmed.
 - [ ] [P0][Renovation] Add a sample renovation report fixture for a compact apartment.
 - [ ] [P0][Accessibility] Add an Accessibility journey intake form for mobility aid, caregiver needs, fall risk, vision constraints, priority rooms, and target profile.
-- [ ] [P0][Accessibility] Add accessibility profiles for general aging-ready, cane, walker, wheelchair, caregiver-assisted, low-vision, and fall-risk bathroom.
-- [ ] [P0][Accessibility] Add a standards source model that distinguishes practical guidance from formal code requirements.
-- [ ] [P0][Accessibility] Add a required disclaimer that accessibility checks are planning guidance and not ADA certification, medical advice, or occupational therapy assessment.
-- [ ] [P0][Accessibility] Add doorway width checks based on user-entered door widths and profile thresholds.
-- [ ] [P0][Accessibility] Add path clearance checks from entry to bedroom, bathroom, kitchen, living area, and exit.
-- [ ] [P0][Accessibility] Add turning circle overlays for wheelchair and caregiver-assisted profiles.
-- [ ] [P0][Accessibility] Add bed transfer clearance checks on at least one side and the foot of bed.
-- [ ] [P0][Accessibility] Add toilet transfer clearance checks when bathroom fixtures are present.
-- [ ] [P0][Accessibility] Add shower access checks for step-in, walk-in, and curbless shower labels.
-- [ ] [P0][Accessibility] Add sink and vanity approach clearance checks.
-- [ ] [P0][Accessibility] Add kitchen reach and appliance access checks for fridge, sink, counter, stove, and washer.
-- [ ] [P0][Accessibility] Add door swing conflict checks for bathrooms, bedrooms, and narrow corridors.
-- [ ] [P0][Accessibility] Add trip hazard markers for rugs, thresholds, clutter zones, tight furniture gaps, and loose obstacles.
-- [ ] [P0][Accessibility] Add lighting recommendation markers for entry, corridor, bathroom, stairs, and night path.
-- [ ] [P0][Accessibility] Add storage reach-height notes as non-geometric recommendations.
-- [ ] [P0][Accessibility] Add a prioritized fix list grouped into move furniture, remove hazard, change product, renovate, and verify on site.
-- [ ] [P0][Accessibility] Add severity scoring that highlights blocked route, high fall risk, assisted-use issue, comfort issue, and information missing.
-- [ ] [P0][Accessibility] Add a "quick wins" section for changes that do not require renovation.
-- [ ] [P0][Accessibility] Add an "ask a professional" section for changes involving walls, plumbing, stairs, electrical, or clinical needs.
-- [ ] [P0][Accessibility] Add a caregiver route simulation from bedroom to bathroom and entry to living area.
-- [ ] [P0][Accessibility] Add a night route simulation from bed to bathroom.
-- [ ] [P0][Accessibility] Add a bathroom safety checklist based on walk-in shower, grab bar locations, non-slip surface, and door swing direction.
-- [ ] [P0][Accessibility] Add a report export titled Home Accessibility Planning Review.
-- [ ] [P0][Accessibility] Add tests for doorway, corridor, turning circle, bed transfer, and bathroom fixture checks.
-- [ ] [P0][Accessibility] Add tests proving accessibility reports include disclaimers and source-type labels.
-- [ ] [P0][Accessibility] Add fixture placement examples for an accessible bedroom and bathroom.
+- [x] [P0][Accessibility] Add accessibility profiles for general aging-ready, cane, walker, wheelchair, caregiver-assisted, low-vision, and fall-risk bathroom.
+- [x] [P0][Accessibility] Add a standards source model that distinguishes practical guidance from formal code requirements.
+- [x] [P0][Accessibility] Add a required disclaimer that accessibility checks are planning guidance and not ADA certification, medical advice, or occupational therapy assessment.
+- [x] [P0][Accessibility] Add doorway width checks based on user-entered door widths and profile thresholds.
+- [x] [P0][Accessibility] Add path clearance checks from entry to bedroom, bathroom, kitchen, living area, and exit.
+- [x] [P0][Accessibility] Add turning circle overlays for wheelchair and caregiver-assisted profiles.
+- [x] [P0][Accessibility] Add bed transfer clearance checks on at least one side and the foot of bed.
+- [x] [P0][Accessibility] Add toilet transfer clearance checks when bathroom fixtures are present.
+- [x] [P0][Accessibility] Add shower access checks for step-in, walk-in, and curbless shower labels.
+- [x] [P0][Accessibility] Add sink and vanity approach clearance checks.
+- [x] [P0][Accessibility] Add kitchen reach and appliance access checks for fridge, sink, counter, stove, and washer.
+- [x] [P0][Accessibility] Add door swing conflict checks for bathrooms, bedrooms, and narrow corridors.
+- [x] [P0][Accessibility] Add trip hazard markers for rugs, thresholds, clutter zones, tight furniture gaps, and loose obstacles.
+- [x] [P0][Accessibility] Add lighting recommendation markers for entry, corridor, bathroom, stairs, and night path.
+- [x] [P0][Accessibility] Add storage reach-height notes as non-geometric recommendations.
+- [x] [P0][Accessibility] Add a prioritized fix list grouped into move furniture, remove hazard, change product, renovate, and verify on site.
+- [x] [P0][Accessibility] Add severity scoring that highlights blocked route, high fall risk, assisted-use issue, comfort issue, and information missing.
+- [x] [P0][Accessibility] Add a "quick wins" section for changes that do not require renovation.
+- [x] [P0][Accessibility] Add an "ask a professional" section for changes involving walls, plumbing, stairs, electrical, or clinical needs.
+- [x] [P0][Accessibility] Add a caregiver route simulation from bedroom to bathroom and entry to living area.
+- [x] [P0][Accessibility] Add a night route simulation from bed to bathroom.
+- [x] [P0][Accessibility] Add a bathroom safety checklist based on walk-in shower, grab bar locations, non-slip surface, and door swing direction.
+- [x] [P0][Accessibility] Add a report export titled Home Accessibility Planning Review.
+- [x] [P0][Accessibility] Add tests for doorway, corridor, turning circle, bed transfer, and bathroom fixture checks.
+- [x] [P0][Accessibility] Add tests proving accessibility reports include disclaimers and source-type labels.
+- [x] [P0][Accessibility] Add fixture placement examples for an accessible bedroom and bathroom.
 - [ ] [P0][Furniture Fit] Add a Furniture Fit journey intake form for room, budget, style, household needs, existing furniture, must-buy items, and preferred retailers.
-- [ ] [P0][Furniture Fit] Add a product dimension model with width, depth, height, clearance need, orientation, source URL, source confidence, and last checked date.
-- [ ] [P0][Furniture Fit] Add manual product entry for dimensions when catalog search is unavailable or incomplete.
-- [ ] [P0][Furniture Fit] Add product import from URL when the page can be safely fetched and dimensions can be extracted.
+- [x] [P0][Furniture Fit] Add a product dimension model with width, depth, height, clearance need, orientation, source URL, source confidence, and last checked date.
+- [x] [P0][Furniture Fit] Add manual product entry for dimensions when catalog search is unavailable or incomplete.
+- [x] [P0][Furniture Fit] Add product import from URL when the page can be safely fetched and dimensions can be extracted.
 - [ ] [P0][Furniture Fit] Add IKEA catalog search as a first-class UI flow rather than only a chat/tool capability.
-- [ ] [P0][Furniture Fit] Add a generic product catalog cache that can store non-IKEA items.
-- [ ] [P0][Furniture Fit] Add product cards with dimensions, source, price if available, and fit status.
-- [ ] [P0][Furniture Fit] Add a "will it fit in this room" checker with clearance, door swing, walkway, and usable orientation results.
-- [ ] [P0][Furniture Fit] Add a "will it fit through the path" checker for entry door, corridor, bedroom door, elevator placeholder, and stair placeholder.
-- [ ] [P0][Furniture Fit] Add furniture delivery path overlays.
-- [ ] [P0][Furniture Fit] Add support for rotating furniture and rechecking fit at all valid orientations.
-- [ ] [P0][Furniture Fit] Add support for assembly clearance around beds, wardrobes, desks, dining tables, and sofas.
-- [ ] [P0][Furniture Fit] Add support for pull-out clearance for drawers, wardrobe doors, dining chairs, desk chairs, and sofa beds.
-- [ ] [P0][Furniture Fit] Add support for existing furniture locks so new plans work around items the user already owns.
-- [ ] [P0][Furniture Fit] Add a substitute suggestion flow when a product fails fit checks.
-- [ ] [P0][Furniture Fit] Add side-by-side comparison of product alternatives by dimensions, price, fit score, and clearance risk.
-- [ ] [P0][Furniture Fit] Add a shopping list export with product names, dimensions, quantities, source URLs, and fit notes.
-- [ ] [P0][Furniture Fit] Add a "buy nothing yet" warning when scale, doorway width, or product dimensions are unconfirmed.
-- [ ] [P0][Furniture Fit] Add a room layout optimizer for sofa and TV sightline, bed and wardrobe access, desk daylight preference, and dining circulation.
-- [ ] [P0][Furniture Fit] Add a budget estimator that sums known product prices and marks unknown prices.
-- [ ] [P0][Furniture Fit] Add a "what should I measure before buying" checklist.
-- [ ] [P0][Furniture Fit] Add tests for product dimension parsing, manual entry, fit scoring, and shopping list export.
-- [ ] [P0][Furniture Fit] Add fixtures for common small apartment products such as queen bed, single bed, sofa, desk, wardrobe, dining table, and storage shelf.
+- [x] [P0][Furniture Fit] Add a generic product catalog cache that can store non-IKEA items.
+- [x] [P0][Furniture Fit] Add product cards with dimensions, source, price if available, and fit status.
+- [x] [P0][Furniture Fit] Add a "will it fit in this room" checker with clearance, door swing, walkway, and usable orientation results.
+- [x] [P0][Furniture Fit] Add a "will it fit through the path" checker for entry door, corridor, bedroom door, elevator placeholder, and stair placeholder.
+- [x] [P0][Furniture Fit] Add furniture delivery path overlays.
+- [x] [P0][Furniture Fit] Add support for rotating furniture and rechecking fit at all valid orientations.
+- [x] [P0][Furniture Fit] Add support for assembly clearance around beds, wardrobes, desks, dining tables, and sofas.
+- [x] [P0][Furniture Fit] Add support for pull-out clearance for drawers, wardrobe doors, dining chairs, desk chairs, and sofa beds.
+- [x] [P0][Furniture Fit] Add support for existing furniture locks so new plans work around items the user already owns.
+- [x] [P0][Furniture Fit] Add a substitute suggestion flow when a product fails fit checks.
+- [x] [P0][Furniture Fit] Add side-by-side comparison of product alternatives by dimensions, price, fit score, and clearance risk.
+- [x] [P0][Furniture Fit] Add a shopping list export with product names, dimensions, quantities, source URLs, and fit notes.
+- [x] [P0][Furniture Fit] Add a "buy nothing yet" warning when scale, doorway width, or product dimensions are unconfirmed.
+- [x] [P0][Furniture Fit] Add a room layout optimizer for sofa and TV sightline, bed and wardrobe access, desk daylight preference, and dining circulation.
+- [x] [P0][Furniture Fit] Add a budget estimator that sums known product prices and marks unknown prices.
+- [x] [P0][Furniture Fit] Add a "what should I measure before buying" checklist.
+- [x] [P0][Furniture Fit] Add tests for product dimension parsing, manual entry, fit scoring, and shopping list export.
+- [x] [P0][Furniture Fit] Add fixtures for common small apartment products such as queen bed, single bed, sofa, desk, wardrobe, dining table, and storage shelf.
 - [ ] [P0][Furniture Fit] Add e2e test coverage for search product, place product, fail fit, choose substitute, and export shopping list.
 - [ ] [P1][Designer] Add a Designer journey intake form for client name, project type, design brief, style words, budget band, timeline, and meeting date.
 - [ ] [P1][Designer] Add a client brief object with goals, constraints, assumptions, unanswered questions, and selected scenario.

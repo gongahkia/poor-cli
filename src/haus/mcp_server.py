@@ -24,6 +24,7 @@ from .catalog import (
     search_ikea_catalog as _search_ikea_catalog,
 )
 from .logging_utils import configure_logging
+from .workbench import migrate_layout, validate_layout_schema
 
 LAYOUT_PATH = Path(os.environ.get("HAUS_LAYOUT_PATH", "viewer/mcp-layout.json"))
 
@@ -343,10 +344,23 @@ def _normalize_layout(raw: Any) -> dict[str, Any]:
     if normalized_rooms:
         layout["rooms"] = normalized_rooms
 
+    for key in (
+        "schema",
+        "layout_schema_version",
+        "assumptions",
+        "validation_reports",
+        "exports",
+        "layout_versions",
+        "scenarios",
+        "semantic",
+    ):
+        if key in raw:
+            layout[key] = raw[key]
+
     if "_stamp" in raw:
         layout["_stamp"] = _coerce_int(raw.get("_stamp", 0), 0)
 
-    return layout
+    return migrate_layout(layout)
 
 
 def _load_layout() -> dict[str, Any]:
@@ -372,6 +386,9 @@ def _load_layout() -> dict[str, Any]:
 
 
 def _save_layout(data: dict[str, Any]) -> str | None:
+    validation = validate_layout_schema(data)
+    if not validation["ok"]:
+        return "Error: layout schema validation failed: " + "; ".join(validation["errors"])
     normalized = _normalize_layout(data)
     LAYOUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     tmp = LAYOUT_PATH.with_suffix(".tmp")
