@@ -281,3 +281,61 @@ Acceptable first experiment:
   likely cost tier, unknown quantity count, items needing professional pricing,
   and questions to ask contractors. This builds on current scope briefs without
   pretending to generate a bid.
+
+## Real Estate Staging
+
+Decision: defer.
+
+Haus should not add real estate staging yet. Real estate users are a plausible
+future audience for floor-plan tools, but listing-oriented staging is a visual
+marketing workflow with accuracy, disclosure, image-rights, and platform-quality
+expectations. Haus currently focuses on measured planning, client-safe designer
+pre-sales, and reports that preserve assumptions and warnings. It should not
+generate listing visuals until designer-grade screenshots and report exports are
+credible enough to avoid misleading buyers, sellers, or agents.
+
+Current evidence:
+
+- Product notes cite real estate agents and property professionals as possible
+  floor-plan users, but the selected primary journeys are renovation,
+  accessibility, furniture fit, and designer pre-sales.
+- The Designer journey already has branded report settings, client-safe copy,
+  presentation mode, screenshot templates, a mood-board placeholder, and static
+  report export.
+- `tests/test_workbench.py` verifies designer reports, branded settings,
+  screenshot templates, and client-safe text.
+- `tests/test_frontend_e2e.py` covers the Designer journey through client brief,
+  branded presentation, and static report export.
+- The README roadmap asks for stronger mood-board assets, branded proposal
+  polish, and client-review handoff bundles before expanding adjacent workflows.
+
+Why it remains P3:
+
+- Screenshot templates are useful for reports, but not yet good enough for
+  listing-grade visual marketing.
+- Haus does not model listing disclosures, original-versus-staged image pairs,
+  image licensing, platform export requirements, or agent approval workflows.
+- Photorealistic rendering is itself deferred, so staging should not depend on
+  generated visuals that could misrepresent dimensions, finishes, fixtures, or
+  renovation feasibility.
+- Real estate staging could create buyer-facing claims, so it needs stronger
+  source-of-truth links back to measured geometry and original property state.
+
+Promotion gates:
+
+- Ship designer-grade screenshot quality for whole-flat, room close-up, warning
+  overlay, and selected-scenario views with stable camera framing and tests.
+- Add original-versus-staged export pairs with visible disclosure text and a
+  preserved reference to the validated source layout.
+- Define staging-only object status so furniture, decor, lighting, and styling
+  changes cannot be confused with renovation or fixture changes.
+- Add image-rights, disclosure, and listing-platform metadata fields to exports.
+- Add review tests proving staged outputs include disclaimers, preserve room
+  dimensions, avoid hidden warnings, and never imply professional renovation
+  verification.
+
+Acceptable first experiment:
+
+- A real estate preparation checklist inside Designer reports: declutter notes,
+  room-function suggestions, missing-photo prompts, staging assumptions, and
+  disclosure reminders. This can serve agents without producing listing images.

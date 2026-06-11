@@ -240,4 +240,4 @@
 - [x] [P3][Future] Evaluate photorealistic rendering only after spatial planning and report exports are trustworthy.
 - [x] [P3][Future] Evaluate IFC or BIM export only after semantic layout data is robust and professional boundaries are clear.
 - [x] [P3][Future] Evaluate contractor estimating only after renovation scopes, quantities, and product catalogs are mature.
-- [ ] [P3][Future] Evaluate real estate staging only after designer-grade screenshots and report exports are credible.
+- [x] [P3][Future] Evaluate real estate staging only after designer-grade screenshots and report exports are credible.
