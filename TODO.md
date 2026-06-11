@@ -235,7 +235,7 @@
 - [x] [P2][Launch] Add MCP registry copy that emphasizes practical floor-plan workflows rather than generic AI claims.
 - [x] [P2][Launch] Add issue templates for bug report, feature request, floor plan extraction failure, and journey feedback.
 - [x] [P2][Launch] Add a roadmap section that invites users to choose between homeowner, accessibility, furniture, and designer workflows.
-- [ ] [P3][Future] Evaluate real-time collaborative project sharing only after local project workflows are stable.
+- [x] [P3][Future] Evaluate real-time collaborative project sharing only after local project workflows are stable.
 - [ ] [P3][Future] Evaluate cloud storage only after local privacy and project bundle exports are strong.
 - [ ] [P3][Future] Evaluate photorealistic rendering only after spatial planning and report exports are trustworthy.
 - [ ] [P3][Future] Evaluate IFC or BIM export only after semantic layout data is robust and professional boundaries are clear.

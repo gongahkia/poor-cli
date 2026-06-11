@@ -136,6 +136,8 @@ Help prioritize the next workflow by opening a [journey feedback issue](./.githu
 * Furniture fit: deeper catalog provenance, delivery-path checks, and product comparison exports.
 * Designer: stronger mood-board assets, branded proposal polish, and client-review handoff bundles.
 
+Future expansion gates are tracked in [`docs/future-evaluations.md`](./docs/future-evaluations.md).
+
 ## Stack
 
 * Frontend: JavaScript, Three.js
