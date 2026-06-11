@@ -67,6 +67,20 @@
       <label>Storage</label>
       <span><input type="checkbox" id="chat-key-persist"> Remember in browser</span>
     </div>
+    <div class="chat-key-row privacy-row">
+      <span id="privacy-local-copy">Floor plans stay on this machine unless you use an external provider, web search, or paste/share an export.</span>
+    </div>
+    <div class="chat-key-row">
+      <label>Privacy</label>
+      <span><input type="checkbox" id="chat-disable-web-search"> Disable web search</span>
+    </div>
+    <div class="chat-key-row">
+      <label>Keys</label>
+      <span><input type="checkbox" id="chat-disable-key-storage"> Do not save keys in browser storage</span>
+    </div>
+    <div class="chat-key-row provider-warning" id="provider-data-warning">
+      External providers may receive chat text, layout details, and attached image references for the current request.
+    </div>
     <div class="chat-key-row">
       <button id="chat-key-save">Save</button>
       <button id="chat-key-forget">Forget</button>
@@ -245,8 +259,40 @@
       <div id="product-results"></div>
     </div>
     <div class="journey-panel" data-panel="designer">
-      <textarea id="designer-intake" placeholder="Client name, project type, design brief, style words, budget band, timeline, meeting date"></textarea>
+      <input type="text" id="designer-client-name" placeholder="Client name" autocomplete="off">
+      <input type="text" id="designer-project-type" placeholder="Project type" autocomplete="off">
+      <textarea id="designer-brief" placeholder="Design brief"></textarea>
+      <input type="text" id="designer-style-words" placeholder="Style words, comma-separated" autocomplete="off">
+      <input type="text" id="designer-budget-band" placeholder="Budget band" autocomplete="off">
+      <input type="text" id="designer-timeline" placeholder="Timeline" autocomplete="off">
+      <input type="date" id="designer-meeting-date">
+      <div class="designer-brand">
+        <input type="text" id="brand-logo" placeholder="Logo URL or asset note" autocomplete="off">
+        <input type="text" id="brand-business-name" placeholder="Business name" autocomplete="off">
+        <input type="text" id="brand-contact" placeholder="Contact" autocomplete="off">
+        <input type="color" id="brand-accent-color" value="#2563eb" title="Report accent color">
+        <textarea id="brand-footer-disclaimer" placeholder="Footer disclaimer"></textarea>
+      </div>
+      <div class="designer-mood-board">
+        <textarea id="mood-reference-images" placeholder="Reference image URLs or notes, one per line"></textarea>
+        <textarea id="mood-product-cards" placeholder="Product card notes, one per line"></textarea>
+        <textarea id="mood-style-notes" placeholder="Style notes"></textarea>
+        <textarea id="mood-material-notes" placeholder="Material notes"></textarea>
+      </div>
       <button class="furniture-btn" id="draft-designer-btn">Draft Pre-Sales Brief</button>
+      <button class="furniture-btn" id="presentation-mode-btn">Presentation Mode</button>
+      <button class="furniture-btn" id="export-proposal-btn">Export Proposal Outline</button>
+      <button class="furniture-btn" id="export-client-questions-btn">Export Client Questions</button>
+      <button class="furniture-btn" id="export-call-script-btn">Export Call Script</button>
+      <button class="furniture-btn" id="export-static-report-btn">Export Static Report</button>
+      <div class="screenshot-template-grid">
+        <button type="button" data-shot-template="whole_flat">Whole Flat Shot</button>
+        <button type="button" data-shot-template="room_close_up">Room Close-up</button>
+        <button type="button" data-shot-template="warning_overlay">Warning Overlay</button>
+        <button type="button" data-shot-template="selected_scenario">Scenario Shot</button>
+      </div>
+      <div id="designer-output"></div>
+      <div id="designer-revision-log"></div>
     </div>
   </div>
   <div class="section" id="assumptions-section">
@@ -277,10 +323,15 @@
       <label><input type="checkbox" id="report-scenarios" checked> Scenarios</label>
       <label><input type="checkbox" id="report-images" checked> Images</label>
     </div>
+    <div id="report-preview"></div>
     <div id="validation-results"></div>
   </div>
   <div class="section" id="manual-model-section">
     <h3>Manual Plan Tools</h3>
+    <input type="text" id="manual-room-label" placeholder="Manual room label" autocomplete="off">
+    <div class="toggle-row"><label>Room width</label><input type="number" class="dim-input" id="manual-room-width" min="0.5" step="0.05" value="3.60"><span class="snap-val">m</span></div>
+    <div class="toggle-row"><label>Room depth</label><input type="number" class="dim-input" id="manual-room-depth" min="0.5" step="0.05" value="3.20"><span class="snap-val">m</span></div>
+    <button class="furniture-btn" id="manual-room-build-btn">Build Manual Room</button>
     <button class="furniture-btn" id="calibration-start-btn">Draw Calibration Segment</button>
     <button class="furniture-btn" id="recalibrate-btn">Recalibrate</button>
     <input type="text" id="trace-room-label" placeholder="Room label" autocomplete="off">
@@ -379,10 +430,29 @@
   </div>
   <div class="section">
     <h3>On Scene <span id="scene-count"></span></h3>
+    <input type="search" id="scene-filter" placeholder="Search objects" autocomplete="off">
+    <select id="scene-filter-kind">
+      <option value="">All objects</option>
+      <option value="warning">Warnings</option>
+      <option value="locked">Locked</option>
+      <option value="existing">Existing</option>
+      <option value="proposed">Proposed</option>
+      <option value="removed">Removed</option>
+    </select>
     <div id="scene-list"></div>
+    <div id="minimap-panel"></div>
   </div>
   <div class="section" id="selected-info" style="display:none;">
     <h3>Selected</h3>
+    <input type="text" id="sel-name" placeholder="Object name" autocomplete="off">
+    <input type="text" id="sel-room" placeholder="Room label" autocomplete="off">
+    <select id="sel-status">
+      <option value="existing">Existing</option>
+      <option value="proposed">Proposed</option>
+      <option value="removed">Removed</option>
+    </select>
+    <div class="toggle-row"><label for="sel-locked">Locked</label><input type="checkbox" id="sel-locked"></div>
+    <input type="text" id="sel-source" placeholder="Source / product metadata" autocomplete="off">
     <div class="toggle-row"><label>Color</label><input type="color" id="sel-color" value="#888888"></div>
     <div class="toggle-row"><label>Pos</label><span id="sel-pos">0, 0, 0</span></div>
     <div class="toggle-row">
@@ -404,7 +474,27 @@
       <span><kbd>R</kbd> 90° <kbd>Shift+R</kbd> 15° <kbd>X</kbd> del <kbd>Cmd+D</kbd> dup <kbd>H</kbd> hide <kbd>F</kbd> frame</span>
     </div>
   </div>
+  <div class="section" id="polish-tools-section">
+    <h3>View & Polish</h3>
+    <div class="camera-bookmarks">
+      <button type="button" data-camera-bookmark="entry">Entry</button>
+      <button type="button" data-camera-bookmark="living">Living</button>
+      <button type="button" data-camera-bookmark="kitchen">Kitchen</button>
+      <button type="button" data-camera-bookmark="bedroom">Bedroom</button>
+      <button type="button" data-camera-bookmark="bathroom">Bathroom</button>
+      <button type="button" data-camera-bookmark="whole_flat">Whole Flat</button>
+    </div>
+    <button class="furniture-btn" id="dimension-labels-btn">Dimension Labels</button>
+    <select id="clearance-preset">
+      <option value="0.25">Snap 0.25m</option>
+      <option value="0.45">Storage clearance 0.45m</option>
+      <option value="0.75">Walkway 0.75m</option>
+      <option value="0.90">Comfort 0.90m</option>
+    </select>
+    <button class="furniture-btn" id="snap-selected-edge-btn">Snap Selected to Room Edge</button>
+  </div>
 </div>
+<div id="presentation-stage" aria-hidden="true"></div>
 <div id="help-modal">
   <div id="help-content">
     <h2>Keyboard Shortcuts</h2>

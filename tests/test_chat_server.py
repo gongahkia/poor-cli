@@ -162,6 +162,26 @@ def test_floorplan_vectorize_rejects_unsupported_file(chat_client: TestClient) -
     assert res.json()["ok"] is False
 
 
+def test_floorplan_vectorize_reports_failed_vectorization(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_vectorize(config: object) -> dict[str, object]:
+        raise RuntimeError("vectorization failed")
+
+    monkeypatch.setattr(chat_server, "run_vectorize", fail_vectorize)
+
+    res = chat_client.post(
+        "/api/floorplans/vectorize",
+        files={"file": ("plan.png", b"not-real-png", "image/png")},
+    )
+
+    assert res.status_code == 500
+    body = res.json()
+    assert body["ok"] is False
+    assert "vectorization failed" in body["error"]
+
+
 def test_catalog_routes_return_seed_and_layout_item(
     chat_client: TestClient,
     tmp_path: Path,
@@ -536,6 +556,49 @@ def test_concept_chat_without_provider_key_uses_deterministic_planner(chat_clien
     assert body["pending_plan"]["planner"]["mode"] == "deterministic"
 
 
+def test_chat_request_can_disable_web_search_for_plans_and_tools(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_search(query: str, max_results: int = 5) -> list[dict[str, object]]:
+        raise AssertionError("search_references should not be called")
+
+    monkeypatch.setattr(chat_server, "search_references", fail_search)
+
+    draft = chat_client.post(
+        "/api/chat",
+        json={"message": "Design a living room concept", "web_search_disabled": True},
+    )
+    assert draft.status_code == 200
+    body = draft.json()
+    assert body["references"] == []
+    assert body["actions"][0]["args"]["web_search_disabled"] is True
+
+    def fake_provider(
+        api_key: str,
+        messages: list[dict[str, object]],
+        model: str,
+        dispatch,
+    ) -> tuple[str, list[dict[str, object]]]:
+        result = dispatch("web_search", {"query": "current furniture prices", "max_results": 1})
+        return result, messages + [{"role": "assistant", "content": [{"type": "text", "text": result}]}]
+
+    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+    routed = chat_client.post(
+        "/api/chat",
+        json={
+            "message": "What should I buy?",
+            "provider": "openai",
+            "api_key": "test-key",
+            "web_search_disabled": True,
+        },
+    )
+    assert routed.status_code == 200
+    routed_body = routed.json()
+    assert "disabled by this chat session's privacy settings" in routed_body["response"]
+    assert routed_body["actions"][0]["tool"] == "web_search"
+
+
 def test_apply_design_plan_mutates_layout_and_tags_rooms(
     chat_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -657,6 +720,15 @@ def test_destructive_tool_requires_backend_confirmation(
     assert confirmed.status_code == 200
     assert confirmed.json()["ok"] is True
     assert mcp_server._load_layout()["items"] == []
+
+
+def test_expired_confirmation_token_returns_recovery_error(chat_client: TestClient) -> None:
+    res = chat_client.post("/api/tool-confirmations/expired-token/confirm")
+
+    assert res.status_code == 404
+    body = res.json()
+    assert body["ok"] is False
+    assert "expired" in body["error"]
 
 
 def test_tool_args_reject_unknown_fields_without_executing(

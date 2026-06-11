@@ -758,3 +758,198 @@ def test_furniture_fit_flow_fails_suggests_substitute_and_exports(browser_page, 
         browser_page.click("#export-shopping-btn")
     download = download_info.value
     assert download.suggested_filename.endswith("shopping-list.csv")
+
+
+def test_renovation_journey_manual_room_to_three_scenarios_and_report_preview(
+    browser_page,
+    viewer_base_url: str,
+) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+    browser_page.add_init_script("localStorage.removeItem('haus_project_state');")
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+
+    browser_page.click("#tools-toggle")
+    browser_page.click("#journey-first-run button[data-journey='renovation']")
+    browser_page.fill("#project-title", "Renovation E2E")
+    browser_page.fill("#manual-room-label", "Living Room")
+    browser_page.fill("#manual-room-width", "4.2")
+    browser_page.fill("#manual-room-depth", "3.6")
+    browser_page.click("#manual-room-build-btn")
+    browser_page.wait_for_function(
+        "() => document.querySelector('#scene-list')?.innerText.includes('Living Room door')"
+    )
+
+    browser_page.fill("#renovation-goals", "More storage and a clearer living route")
+    browser_page.click("#draft-renovation-btn")
+    browser_page.wait_for_function(
+        """
+        () => {
+          const text = document.querySelector('#scenario-list')?.innerText || '';
+          return text.includes('conservative') && text.includes('balanced') && text.includes('ambitious');
+        }
+        """
+    )
+    browser_page.click("#export-report-html-btn")
+    browser_page.wait_for_selector("#report-preview .report-preview-card")
+    preview = browser_page.locator("#report-preview").inner_text()
+    assert "Preview: renovation-e2e-report.html" in preview
+    assert "conservative" in preview
+    assert "Haus is a concept planning" in preview
+
+
+def test_accessibility_journey_blocked_route_warning_and_report_preview(
+    browser_page,
+    viewer_base_url: str,
+) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+    browser_page.add_init_script("localStorage.removeItem('haus_project_state');")
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+
+    browser_page.click("#tools-toggle")
+    browser_page.click("#journey-first-run button[data-journey='accessibility']")
+    browser_page.fill("#project-title", "Accessibility E2E")
+    browser_page.fill("#manual-room-label", "Bathroom")
+    browser_page.fill("#manual-room-width", "2.0")
+    browser_page.fill("#manual-room-depth", "1.8")
+    browser_page.click("#manual-room-build-btn")
+    browser_page.select_option("#access-profile", "wheelchair")
+    browser_page.click("#run-accessibility-btn")
+    browser_page.wait_for_function(
+        "() => document.querySelector('#validation-results')?.innerText.includes('target is 0.92m')"
+    )
+
+    browser_page.click("#export-report-html-btn")
+    browser_page.wait_for_selector("#report-preview .report-preview-card")
+    assert "Accessibility E2E" in browser_page.locator("#report-preview").inner_text()
+
+
+def test_designer_journey_client_brief_to_branded_presentation_and_static_report(
+    browser_page,
+    viewer_base_url: str,
+) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+    browser_page.add_init_script("localStorage.removeItem('haus_project_state');")
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+
+    browser_page.click("#tools-toggle")
+    browser_page.click("#journey-first-run button[data-journey='designer']")
+    browser_page.fill("#project-title", "Designer E2E")
+    browser_page.fill("#designer-client-name", "Avery Client")
+    browser_page.fill("#designer-project-type", "Pre-sales apartment refresh")
+    browser_page.fill("#designer-brief", "Create a warm, low-renovation option with credible storage.")
+    browser_page.fill("#designer-style-words", "warm, calm, practical")
+    browser_page.fill("#designer-budget-band", "$8k-$12k")
+    browser_page.fill("#designer-timeline", "6 weeks")
+    browser_page.fill("#brand-business-name", "Northline Studio")
+    browser_page.fill("#brand-contact", "hello@northline.example")
+    browser_page.evaluate(
+        """
+        () => {
+          const input = document.querySelector('#brand-accent-color');
+          input.value = '#0f766e';
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        """
+    )
+    browser_page.click("#draft-designer-btn")
+    browser_page.wait_for_function(
+        "() => document.querySelector('#designer-output')?.innerText.includes('Avery Client')"
+    )
+    output = browser_page.locator("#designer-output").inner_text()
+    assert "Northline Studio" not in output
+    assert "~/.haus/clients/avery-client/designer-e2e" in output
+
+    browser_page.click("#presentation-mode-btn")
+    browser_page.wait_for_selector("body.presentation-active #presentation-stage")
+    assert "Designer E2E" in browser_page.locator("#presentation-stage").inner_text()
+    browser_page.keyboard.press("Escape")
+    browser_page.wait_for_function("() => !document.body.classList.contains('presentation-active')")
+
+    with browser_page.expect_download() as download_info:
+        browser_page.click("#export-static-report-btn")
+    assert download_info.value.suggested_filename.endswith("designer-static-report.html")
+
+
+def test_ui_keyboard_navigation_and_core_contrast(browser_page, viewer_base_url: str) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+    browser_page.wait_for_selector("#chat-panel.open")
+
+    for _ in range(4):
+        browser_page.keyboard.press("Tab")
+    active_id = browser_page.evaluate("() => document.activeElement?.id || document.activeElement?.textContent")
+    assert active_id
+
+    ratio = browser_page.evaluate(
+        """
+        () => {
+          const el = document.querySelector('#chat-send');
+          const style = getComputedStyle(el);
+          const parse = (value) => value.match(/[0-9.]+/g).slice(0, 3).map(Number);
+          const lum = ([r, g, b]) => {
+            const channels = [r, g, b].map((v) => {
+              v /= 255;
+              return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+            });
+            return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+          };
+          const fg = lum(parse(style.color));
+          const bg = lum(parse(style.backgroundColor));
+          return (Math.max(fg, bg) + 0.05) / (Math.min(fg, bg) + 0.05);
+        }
+        """
+    )
+    assert ratio >= 4.5
+
+
+def test_large_layout_json_loads_within_performance_budget(browser_page, viewer_base_url: str) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+    items = [
+        {
+            "id": f"item-{index}",
+            "type": "furniture",
+            "name": f"Storage {index}",
+            "room": "Large Room",
+            "pos": [(index % 30) * 0.55, 0.25, (index // 30) * 0.55],
+            "geo": [0.35, 0.5, 0.35],
+            "rot": 0,
+            "visible": True,
+            "color": 4473924,
+            "scenario_status": "existing",
+        }
+        for index in range(360)
+    ]
+    layout = {
+        "version": 1,
+        "rooms": [{"id": "room-large", "label": "Large Room", "bounds": {"x_min": -0.5, "z_min": -0.5, "x_max": 17, "z_max": 8}}],
+        "items": items,
+    }
+
+    start = time.monotonic()
+    browser_page.set_input_files(
+        "#json-input",
+        {"name": "large-layout.json", "mimeType": "application/json", "buffer": json.dumps(layout).encode()},
+    )
+    browser_page.wait_for_function("() => document.querySelector('#scene-count')?.innerText.includes('360')")
+    assert time.monotonic() - start < 8.0

@@ -10,10 +10,10 @@ Concept planning and spatial validation workbench for uploaded apartment layouts
 
 <div align="center">
   <a href="./asset/demo/hero.mp4">
-    <img src="./asset/demo/hero.gif" alt="Demo: prompt Haus to furnish a compact apartment layout through MCP tools." width="720">
+    <img src="./asset/demo/hero.gif" alt="Demo: use Haus to draft, validate, and export apartment planning scenarios." width="720">
   </a>
   <br>
-  <sub>Sample prompt: <code>furnish this apartment for a compact work-from-home setup</code>.</sub>
+  <sub>Sample prompt: <code>draft three renovation options and show validation warnings before export</code>.</sub>
 </div>
 
 ## Try It
@@ -49,6 +49,15 @@ $ uvx --from git+https://github.com/gongahkia/haus haus mcp --layout ~/.haus/vie
 
 `uvx haus view` and `pipx install haus` are the intended short forms after a PyPI release; until then, use the GitHub `uvx --from` command above.
 
+## Four Customer Journeys
+
+| Journey | Use it for | Try this prompt | Demo |
+|---|---|---|---|
+| Renovation | Compare conservative, balanced, and ambitious concept options before changing walls, openings, or services. | `Draft three renovation options and flag what needs professional verification.` | [screenshot](./asset/demo/journeys/renovation.png), [sample report](./asset/demo/reports/renovation-concept-pack.md) |
+| Accessibility | Find blocked routes, narrow openings, turning risks, trip hazards, and practical quick wins. | `Run a wheelchair accessibility review and separate quick wins from renovation work.` | [screenshot](./asset/demo/journeys/accessibility.png), [sample report](./asset/demo/reports/accessibility-review.md) |
+| Furniture Fit | Check product dimensions, clearance, delivery assumptions, substitutes, and shopping-list export before buying. | `Check if this sofa fits, suggest smaller substitutes, and export a shopping list.` | [screenshot](./asset/demo/journeys/furniture-fit.png), [sample report](./asset/demo/reports/furniture-fit-report.md) |
+| Designer | Turn intake notes into a client-safe pre-sales brief, branded report, call script, and presentation view. | `Create a client pre-sales pack from this design brief and selected scenario.` | [screenshot](./asset/demo/journeys/designer.png), [sample report](./asset/demo/reports/designer-pre-sales-pack.md) |
+
 ## What It Does
 
 * **Journey-first planning:** choose Renovation, Accessibility, Furniture Fit, Designer, or Blank Project and keep that context in project metadata and chat.
@@ -56,6 +65,13 @@ $ uvx --from git+https://github.com/gongahkia/haus haus mcp --layout ~/.haus/vie
 * **Scenario validation:** compare layout versions, assumptions, unknowns, warnings, and room-by-room validation results before applying a plan.
 * **Useful fallbacks:** if extraction is weak, load the image as a reference overlay and open manual tracing tools immediately.
 * **Local-first exports:** save JSON, SVG, GLB, screenshots, shopping lists, and standalone HTML/print reports.
+
+## Launch Assets
+
+* Demo screenshots live in [`asset/demo/journeys`](./asset/demo/journeys).
+* Sample journey reports live in [`asset/demo/reports`](./asset/demo/reports).
+* Clean `uvx` smoke tests are documented in [`docs/launch/smoke-tests.md`](./docs/launch/smoke-tests.md), with scripts for Linux and macOS under [`scripts/`](./scripts).
+* MCP registry copy is in [`docs/launch/mcp-registry-copy.md`](./docs/launch/mcp-registry-copy.md).
 
 ## Source Checkout
 
@@ -91,7 +107,11 @@ Accessibility output is planning guidance only, not ADA certification, medical a
 
 Bundled sample layouts are examples only. The product does not depend on a comprehensive BTO/HDB corpus.
 
+Extraction accuracy depends on image quality, scale confirmation, and visible plan symbols. Product dimensions and prices can become stale and should be checked against retailer pages or physical measurements before purchase. Web search and external LLM providers are optional; the local deterministic planner remains available when those are disabled.
+
 ## MCP Tool Surface
+
+The MCP surface is meant to support practical floor-plan workflows, not generic scene editing claims. Agents can inspect real layout objects, draft journey-specific options, validate geometry, and export client-readable artifacts.
 
 | Category | Tools |
 |---|---|
@@ -106,6 +126,15 @@ Bundled sample layouts are examples only. The product does not depend on a compr
 | **Validation** | `check_sightline`, `score_doorway_accessibility`, `score_walkway`, `score_layout` |
 | **Simulation/templates** | `suggest_furniture_placement`, `auto_place_furniture`, `simulate_layout_options`, `apply_simulated_option`, `list_room_templates`, `apply_room_template` |
 | **Export semantics** | `get_semantic_layout_json`, `bim_readiness_report` |
+
+## Roadmap
+
+Help prioritize the next workflow by opening a [journey feedback issue](./.github/ISSUE_TEMPLATE/journey_feedback.md):
+
+* Homeowner renovation: stronger before/after visuals, contractor question packs, and service-zone constraints.
+* Accessibility: richer room-specific checklists, caregiver routes, and OT handoff summaries.
+* Furniture fit: deeper catalog provenance, delivery-path checks, and product comparison exports.
+* Designer: stronger mood-board assets, branded proposal polish, and client-review handoff bundles.
 
 ## Stack
 

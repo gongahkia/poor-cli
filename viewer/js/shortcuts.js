@@ -8,6 +8,10 @@ export function initShortcuts() {
     if (!inInput && key === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); fn.undo(); return; }
     if (!inInput && key === 'y' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); fn.redo(); return; }
     if (inInput) return;
+    if (document.body.classList.contains('presentation-active')) {
+      if (key === 'escape') fn.togglePresentationMode?.();
+      return;
+    }
     // FPS mode: only ESC to exit
     if (S.fpsMode) { if (key === 'escape') fn.exitFps(); return; }
     if (key === 'escape') {
@@ -21,6 +25,11 @@ export function initShortcuts() {
     if (S.wallMode) return;
     if (key === 'p') { fn.toggleFps(); return; }
     if (key === 's' && (e.ctrlKey || e.metaKey) && e.shiftKey) { e.preventDefault(); fn.captureScreenshot(); }
+    else if (key === '[') { fn.previousScenario?.(); }
+    else if (key === ']') { fn.nextScenario?.(); }
+    else if (key === 'v' && !(e.ctrlKey || e.metaKey)) { fn.regenerateValidation?.(); }
+    else if (key === 'e' && !(e.ctrlKey || e.metaKey)) { fn.previewHtmlReport?.(); }
+    else if (key === 't') { fn.setCameraView?.('top'); }
     else if (key === 'g') { toggle('grid-toggle'); }
     else if (key === 's' && !(e.ctrlKey || e.metaKey)) { toggle('snap-toggle'); }
     else if (key === 'c' && !(e.ctrlKey || e.metaKey)) { toggle('collision-toggle'); }

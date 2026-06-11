@@ -140,34 +140,34 @@
 - [x] [P0][Furniture Fit] Add tests for product dimension parsing, manual entry, fit scoring, and shopping list export.
 - [x] [P0][Furniture Fit] Add fixtures for common small apartment products such as queen bed, single bed, sofa, desk, wardrobe, dining table, and storage shelf.
 - [x] [P0][Furniture Fit] Add e2e test coverage for search product, place product, fail fit, choose substitute, and export shopping list.
-- [ ] [P1][Designer] Add a Designer journey intake form for client name, project type, design brief, style words, budget band, timeline, and meeting date.
-- [ ] [P1][Designer] Add a client brief object with goals, constraints, assumptions, unanswered questions, and selected scenario.
-- [ ] [P1][Designer] Add a lead qualification summary that separates client needs, spatial risks, likely scope, and follow-up questions.
-- [ ] [P1][Designer] Add a presentation mode that hides editing controls and shows plan, options, warnings, and notes cleanly.
-- [ ] [P1][Designer] Add a branded report settings panel for logo, business name, contact, accent color, and footer disclaimer.
-- [ ] [P1][Designer] Add a mood board placeholder that can collect reference images, product cards, style notes, and material notes.
-- [ ] [P1][Designer] Add a proposal outline export with scope, assumptions, exclusions, optional add-ons, and next steps.
-- [ ] [P1][Designer] Add a client questions export grouped by measurements, preferences, budget, household routines, and constraints.
-- [ ] [P1][Designer] Add a revision log so designers can show how option A became option B.
-- [ ] [P1][Designer] Add shareable static report output that can be emailed without requiring Haus to run.
-- [ ] [P1][Designer] Add local client/project folders under the Haus runtime root.
-- [ ] [P1][Designer] Add client-safe language that avoids exposing internal tool logs unless requested.
-- [ ] [P1][Designer] Add a "design call script" export for walking through plan options.
-- [ ] [P1][Designer] Add screenshot templates for whole flat, room close-up, warning overlay, and selected scenario.
-- [ ] [P1][Designer] Add tests for branded reports and presentation mode output.
-- [ ] [P1][Designer] Add a sample designer pre-sales project fixture.
-- [ ] [P1][Chat UX] Replace the current tool-heavy first impression with a chat-first workspace shell.
-- [ ] [P1][Chat UX] Keep advanced editor controls accessible through a tools drawer instead of dominating the first screen.
-- [ ] [P1][Chat UX] Add suggested prompts that change based on the selected journey.
-- [ ] [P1][Chat UX] Add structured plan cards for each journey with scenario tabs, warnings, assumptions, and actions.
-- [ ] [P1][Chat UX] Add "apply", "revise", "compare", "validate", "export", and "show geometry" actions on plan cards.
-- [ ] [P1][Chat UX] Add confirmation cards for high-impact renovation, accessibility, and destructive edit actions.
-- [ ] [P1][Chat UX] Add empty-state guidance that asks the user to upload a floor plan or start with manual room dimensions.
-- [ ] [P1][Chat UX] Add a manual room builder for users who do not have a floor plan image.
-- [ ] [P1][Chat UX] Add natural language examples for each journey without overloading the UI.
-- [ ] [P1][Chat UX] Add transcript persistence per project instead of global localStorage only.
-- [ ] [P1][Chat UX] Add plan and report links in the chat transcript for completed actions.
-- [ ] [P1][Chat UX] Add error recovery messages that tell the user exactly what measurement or input is missing.
+- [x] [P1][Designer] Add a Designer journey intake form for client name, project type, design brief, style words, budget band, timeline, and meeting date.
+- [x] [P1][Designer] Add a client brief object with goals, constraints, assumptions, unanswered questions, and selected scenario.
+- [x] [P1][Designer] Add a lead qualification summary that separates client needs, spatial risks, likely scope, and follow-up questions.
+- [x] [P1][Designer] Add a presentation mode that hides editing controls and shows plan, options, warnings, and notes cleanly.
+- [x] [P1][Designer] Add a branded report settings panel for logo, business name, contact, accent color, and footer disclaimer.
+- [x] [P1][Designer] Add a mood board placeholder that can collect reference images, product cards, style notes, and material notes.
+- [x] [P1][Designer] Add a proposal outline export with scope, assumptions, exclusions, optional add-ons, and next steps.
+- [x] [P1][Designer] Add a client questions export grouped by measurements, preferences, budget, household routines, and constraints.
+- [x] [P1][Designer] Add a revision log so designers can show how option A became option B.
+- [x] [P1][Designer] Add shareable static report output that can be emailed without requiring Haus to run.
+- [x] [P1][Designer] Add local client/project folders under the Haus runtime root.
+- [x] [P1][Designer] Add client-safe language that avoids exposing internal tool logs unless requested.
+- [x] [P1][Designer] Add a "design call script" export for walking through plan options.
+- [x] [P1][Designer] Add screenshot templates for whole flat, room close-up, warning overlay, and selected scenario.
+- [x] [P1][Designer] Add tests for branded reports and presentation mode output.
+- [x] [P1][Designer] Add a sample designer pre-sales project fixture.
+- [x] [P1][Chat UX] Replace the current tool-heavy first impression with a chat-first workspace shell.
+- [x] [P1][Chat UX] Keep advanced editor controls accessible through a tools drawer instead of dominating the first screen.
+- [x] [P1][Chat UX] Add suggested prompts that change based on the selected journey.
+- [x] [P1][Chat UX] Add structured plan cards for each journey with scenario tabs, warnings, assumptions, and actions.
+- [x] [P1][Chat UX] Add "apply", "revise", "compare", "validate", "export", and "show geometry" actions on plan cards.
+- [x] [P1][Chat UX] Add confirmation cards for high-impact renovation, accessibility, and destructive edit actions.
+- [x] [P1][Chat UX] Add empty-state guidance that asks the user to upload a floor plan or start with manual room dimensions.
+- [x] [P1][Chat UX] Add a manual room builder for users who do not have a floor plan image.
+- [x] [P1][Chat UX] Add natural language examples for each journey without overloading the UI.
+- [x] [P1][Chat UX] Add transcript persistence per project instead of global localStorage only.
+- [x] [P1][Chat UX] Add plan and report links in the chat transcript for completed actions.
+- [x] [P1][Chat UX] Add error recovery messages that tell the user exactly what measurement or input is missing.
 - [x] [P1][Validation] Refactor geometry checks into reusable modules shared by MCP tools, chat planning, and report generation.
 - [x] [P1][Validation] Add unit tests for rotated furniture clearance against room polygons.
 - [x] [P1][Validation] Add unit tests for door swing conflicts against furniture and fixtures.
@@ -182,7 +182,7 @@
 - [x] [P1][Catalog] Add product categories for renovation placeholders such as built-in storage, island, peninsula, partition, sliding door, and glass divider.
 - [x] [P1][Reports] Add a shared report component library for title page, project summary, scenario table, annotated plan, warnings, assumptions, and next steps.
 - [x] [P1][Reports] Add journey-specific report templates for renovation concept pack, accessibility review, furniture fit report, and designer pre-sales pack.
-- [ ] [P1][Reports] Add an export preview screen before downloading reports.
+- [x] [P1][Reports] Add an export preview screen before downloading reports.
 - [x] [P1][Reports] Add report filename conventions based on project title, journey, scenario, and date.
 - [x] [P1][Reports] Add tests that exported reports include selected scenarios and exclude unselected drafts.
 - [x] [P1][MCP] Add MCP tools for create_project, list_projects, load_project, save_project, list_scenarios, duplicate_scenario, and export_report.
@@ -202,39 +202,39 @@
 - [x] [P1][Export] Add export support for scenario-only JSON.
 - [x] [P1][Export] Add export support for validation-only Markdown.
 - [x] [P1][Export] Add export support for shopping-list CSV.
-- [ ] [P1][Privacy] Add local-only privacy copy explaining that uploaded floor plans stay on the user's machine unless web or LLM providers are used.
-- [ ] [P1][Privacy] Add a provider data warning before sending images or layout details to an external LLM.
-- [ ] [P1][Privacy] Add a setting to disable web search completely.
-- [ ] [P1][Privacy] Add a setting to disable saving API keys in browser storage.
+- [x] [P1][Privacy] Add local-only privacy copy explaining that uploaded floor plans stay on the user's machine unless web or LLM providers are used.
+- [x] [P1][Privacy] Add a provider data warning before sending images or layout details to an external LLM.
+- [x] [P1][Privacy] Add a setting to disable web search completely.
+- [x] [P1][Privacy] Add a setting to disable saving API keys in browser storage.
 - [x] [P1][Privacy] Add redaction of source file paths from exported client-facing reports.
-- [ ] [P1][QA] Add an end-to-end test for the Renovation journey from upload to three scenarios to report export.
-- [ ] [P1][QA] Add an end-to-end test for the Accessibility journey from sample layout to blocked route warning to report export.
-- [ ] [P1][QA] Add an end-to-end test for the Furniture Fit journey from product search to failed fit to substitute to shopping list export.
-- [ ] [P1][QA] Add an end-to-end test for the Designer journey from client brief to branded presentation export.
-- [ ] [P1][QA] Add golden fixtures for reports so formatting regressions are visible.
-- [ ] [P1][QA] Add accessibility checks for the Haus UI itself, including keyboard navigation and contrast.
-- [ ] [P1][QA] Add performance tests for loading large layout JSON files.
-- [ ] [P1][QA] Add error-path tests for failed vectorization, unsupported uploads, unavailable web search, and expired confirmation tokens.
-- [ ] [P2][Polish] Improve visual styling so report screenshots look credible for homeowners and designers.
-- [ ] [P2][Polish] Add measured dimension labels to furniture and room boundaries in 2D mode.
-- [ ] [P2][Polish] Add color-coded journey themes while keeping a consistent core UI.
-- [ ] [P2][Polish] Add camera bookmarks for entry, living, kitchen, bedroom, bathroom, and whole-flat views.
-- [ ] [P2][Polish] Add object snapping to room edges and common clearance distances.
-- [ ] [P2][Polish] Add keyboard shortcuts for scenario switch, validate, export, and top-down view.
-- [ ] [P2][Polish] Add inline editing for room labels, dimensions, object names, and product metadata.
-- [ ] [P2][Polish] Add a minimap or overview panel for larger layouts.
-- [ ] [P2][Polish] Add warning badges directly in the scene list.
-- [ ] [P2][Polish] Add search and filter for objects by room, type, warning, locked state, and scenario status.
-- [ ] [P2][Launch] Update README around the four customer journeys rather than only MCP novelty.
-- [ ] [P2][Launch] Add screenshots or GIFs for Renovation, Accessibility, Furniture Fit, and Designer journeys.
-- [ ] [P2][Launch] Add a sample exported report for each journey under asset/demo or docs.
-- [ ] [P2][Launch] Add a "try this prompt" section for each selected journey.
-- [ ] [P2][Launch] Add clear limitations for extraction accuracy, product dimensions, accessibility guidance, and renovation feasibility.
-- [ ] [P2][Launch] Add a clean install smoke test for the public uvx command on Linux.
-- [ ] [P2][Launch] Add a clean install smoke test for the public uvx command on macOS.
-- [ ] [P2][Launch] Add MCP registry copy that emphasizes practical floor-plan workflows rather than generic AI claims.
-- [ ] [P2][Launch] Add issue templates for bug report, feature request, floor plan extraction failure, and journey feedback.
-- [ ] [P2][Launch] Add a roadmap section that invites users to choose between homeowner, accessibility, furniture, and designer workflows.
+- [x] [P1][QA] Add an end-to-end test for the Renovation journey from upload to three scenarios to report export.
+- [x] [P1][QA] Add an end-to-end test for the Accessibility journey from sample layout to blocked route warning to report export.
+- [x] [P1][QA] Add an end-to-end test for the Furniture Fit journey from product search to failed fit to substitute to shopping list export.
+- [x] [P1][QA] Add an end-to-end test for the Designer journey from client brief to branded presentation export.
+- [x] [P1][QA] Add golden fixtures for reports so formatting regressions are visible.
+- [x] [P1][QA] Add accessibility checks for the Haus UI itself, including keyboard navigation and contrast.
+- [x] [P1][QA] Add performance tests for loading large layout JSON files.
+- [x] [P1][QA] Add error-path tests for failed vectorization, unsupported uploads, unavailable web search, and expired confirmation tokens.
+- [x] [P2][Polish] Improve visual styling so report screenshots look credible for homeowners and designers.
+- [x] [P2][Polish] Add measured dimension labels to furniture and room boundaries in 2D mode.
+- [x] [P2][Polish] Add color-coded journey themes while keeping a consistent core UI.
+- [x] [P2][Polish] Add camera bookmarks for entry, living, kitchen, bedroom, bathroom, and whole-flat views.
+- [x] [P2][Polish] Add object snapping to room edges and common clearance distances.
+- [x] [P2][Polish] Add keyboard shortcuts for scenario switch, validate, export, and top-down view.
+- [x] [P2][Polish] Add inline editing for room labels, dimensions, object names, and product metadata.
+- [x] [P2][Polish] Add a minimap or overview panel for larger layouts.
+- [x] [P2][Polish] Add warning badges directly in the scene list.
+- [x] [P2][Polish] Add search and filter for objects by room, type, warning, locked state, and scenario status.
+- [x] [P2][Launch] Update README around the four customer journeys rather than only MCP novelty.
+- [x] [P2][Launch] Add screenshots or GIFs for Renovation, Accessibility, Furniture Fit, and Designer journeys.
+- [x] [P2][Launch] Add a sample exported report for each journey under asset/demo or docs.
+- [x] [P2][Launch] Add a "try this prompt" section for each selected journey.
+- [x] [P2][Launch] Add clear limitations for extraction accuracy, product dimensions, accessibility guidance, and renovation feasibility.
+- [x] [P2][Launch] Add a clean install smoke test for the public uvx command on Linux.
+- [x] [P2][Launch] Add a clean install smoke test for the public uvx command on macOS.
+- [x] [P2][Launch] Add MCP registry copy that emphasizes practical floor-plan workflows rather than generic AI claims.
+- [x] [P2][Launch] Add issue templates for bug report, feature request, floor plan extraction failure, and journey feedback.
+- [x] [P2][Launch] Add a roadmap section that invites users to choose between homeowner, accessibility, furniture, and designer workflows.
 - [ ] [P3][Future] Evaluate real-time collaborative project sharing only after local project workflows are stable.
 - [ ] [P3][Future] Evaluate cloud storage only after local privacy and project bundle exports are strong.
 - [ ] [P3][Future] Evaluate photorealistic rendering only after spatial planning and report exports are trustworthy.

@@ -8,7 +8,8 @@ const loader = new GLTFLoader();
 const PRESERVED_LAYOUT_KEYS = [
   'id', 'confidence', 'width_m', 'depth_m', 'height_m', 'swing_direction', 'sill_height_m',
   'wall_association', 'fixed_type', 'locked', 'do_not_touch', 'hazard', 'structural_status',
-  'structural_confidence', 'concept_only', 'source_confidence', 'source_url',
+  'structural_confidence', 'concept_only', 'source_confidence', 'source_url', 'source',
+  'movable', 'fixed', 'existing', 'proposed', 'removed', 'scenario_status',
 ];
 export function initIO() {
   const params = new URLSearchParams(location.search);

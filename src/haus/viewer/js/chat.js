@@ -21,6 +21,9 @@ let keyPersistEl;
 let keySaveBtn;
 let keyForgetBtn;
 let keyStatusEl;
+let disableWebSearchEl;
+let disableKeyStorageEl;
+let providerWarningEl;
 
 let history = [];
 let serverStatus = null;
@@ -35,6 +38,8 @@ const PLANNER_MODE_STORAGE = 'haus_chat_planner_mode';
 const PROFILE_STORAGE = 'haus_chat_standards_profile';
 const HISTORY_STORAGE = 'haus_chat_history';
 const TRANSCRIPT_STORAGE = 'haus_chat_transcript';
+const DISABLE_WEB_SEARCH_STORAGE = 'haus_chat_disable_web_search';
+const DISABLE_KEY_STORAGE = 'haus_chat_disable_key_storage';
 const DEFAULT_MAX_ATTACHMENTS = 3;
 const DEFAULT_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
@@ -62,6 +67,10 @@ export function initChat() {
   keySaveBtn = document.getElementById('chat-key-save');
   keyForgetBtn = document.getElementById('chat-key-forget');
   keyStatusEl = document.getElementById('chat-key-status');
+  disableWebSearchEl = document.getElementById('chat-disable-web-search');
+  disableKeyStorageEl = document.getElementById('chat-disable-key-storage');
+  providerWarningEl = document.getElementById('provider-data-warning');
+  fn.renderJourneyPrompts = renderJourneyPrompts;
 
   document.getElementById('chat-btn').addEventListener('click', openChat);
   sendBtn.addEventListener('click', () => send());
@@ -87,21 +96,29 @@ export function initChat() {
     hydrateModelPlaceholder();
     loadKeyField();
     refreshProviderStatus();
+    refreshProviderWarning();
   });
   plannerModeSel.addEventListener('change', () => {
     localStorage.setItem(PLANNER_MODE_STORAGE, plannerModeSel.value);
+    refreshProviderWarning();
   });
   standardsProfileSel.addEventListener('change', () => {
     localStorage.setItem(PROFILE_STORAGE, standardsProfileSel.value);
   });
 
   clearBtn.addEventListener('click', clearConversation);
-  document.querySelectorAll('#chat-quick-prompts button').forEach((button) => {
-    button.addEventListener('click', () => {
-      inputEl.value = button.dataset.prompt || button.textContent || '';
-      send();
-    });
+  disableWebSearchEl.checked = localStorage.getItem(DISABLE_WEB_SEARCH_STORAGE) === '1';
+  disableKeyStorageEl.checked = localStorage.getItem(DISABLE_KEY_STORAGE) === '1';
+  disableWebSearchEl.addEventListener('change', () => {
+    localStorage.setItem(DISABLE_WEB_SEARCH_STORAGE, disableWebSearchEl.checked ? '1' : '0');
+    refreshProviderWarning();
   });
+  disableKeyStorageEl.addEventListener('change', () => {
+    localStorage.setItem(DISABLE_KEY_STORAGE, disableKeyStorageEl.checked ? '1' : '0');
+    if (disableKeyStorageEl.checked) setStoredKeys({});
+    loadKeyField();
+  });
+  renderJourneyPrompts();
 
   settingsBtn.addEventListener('click', () => {
     const open = settingsEl.style.display !== 'none';
@@ -112,7 +129,7 @@ export function initChat() {
   keySaveBtn.addEventListener('click', saveKey);
   keyForgetBtn.addEventListener('click', forgetKey);
 
-  history = loadJson(HISTORY_STORAGE, []);
+  history = loadJson(historyStorageKey(), loadJson(HISTORY_STORAGE, []));
   renderTranscript();
 
   const storedModel = localStorage.getItem(MODEL_STORAGE);
@@ -140,34 +157,54 @@ function saveJson(key, value) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function transcriptStorageKey() {
+  return fn.getProjectTranscriptKey ? fn.getProjectTranscriptKey(TRANSCRIPT_STORAGE) : TRANSCRIPT_STORAGE;
+}
+
+function historyStorageKey() {
+  return fn.getProjectTranscriptKey ? fn.getProjectTranscriptKey(HISTORY_STORAGE) : HISTORY_STORAGE;
+}
+
+function saveHistory(value) {
+  const trimmed = value.slice(-80);
+  saveJson(historyStorageKey(), trimmed);
+  saveJson(HISTORY_STORAGE, trimmed);
+}
+
+function keyStorageDisabled() {
+  return Boolean(disableKeyStorageEl?.checked) || localStorage.getItem(DISABLE_KEY_STORAGE) === '1';
+}
+
 function getKeys() {
-  return { ...loadJson(KEYS_STORAGE, {}), ...sessionKeys };
+  return { ...(keyStorageDisabled() ? {} : loadJson(KEYS_STORAGE, {})), ...sessionKeys };
 }
 
 function setStoredKeys(keys) {
-  saveJson(KEYS_STORAGE, keys);
+  saveJson(KEYS_STORAGE, keyStorageDisabled() ? {} : keys);
 }
 
 function loadKeyField() {
   const keys = getKeys();
-  const storedKeys = loadJson(KEYS_STORAGE, {});
+  const storedKeys = keyStorageDisabled() ? {} : loadJson(KEYS_STORAGE, {});
   const provider = providerSel.value;
   keyInput.value = keys[provider] || '';
-  keyPersistEl.checked = Boolean(storedKeys[provider]);
+  keyPersistEl.checked = Boolean(storedKeys[provider]) && !keyStorageDisabled();
+  keyPersistEl.disabled = keyStorageDisabled();
   if (storedKeys[provider]) keyStatusEl.textContent = 'Key loaded from browser storage';
   else if (sessionKeys[provider]) keyStatusEl.textContent = 'Key available for this tab only';
+  else if (keyStorageDisabled()) keyStatusEl.textContent = 'Browser key storage disabled';
   else keyStatusEl.textContent = '';
 }
 
 function saveKey() {
-  const storedKeys = loadJson(KEYS_STORAGE, {});
+  const storedKeys = keyStorageDisabled() ? {} : loadJson(KEYS_STORAGE, {});
   const provider = providerSel.value;
   const value = keyInput.value.trim();
 
   delete storedKeys[provider];
   delete sessionKeys[provider];
 
-  if (value && keyPersistEl.checked) {
+  if (value && keyPersistEl.checked && !keyStorageDisabled()) {
     storedKeys[provider] = value;
     keyStatusEl.textContent = 'Saved in this browser. Browser storage can be read by scripts on this page.';
   } else if (value) {
@@ -180,6 +217,7 @@ function saveKey() {
   setStoredKeys(storedKeys);
   refreshProviders();
   refreshProviderStatus();
+  refreshProviderWarning();
 }
 
 function forgetKey() {
@@ -193,6 +231,7 @@ function forgetKey() {
   keyStatusEl.textContent = 'Forgot key';
   refreshProviders();
   refreshProviderStatus();
+  refreshProviderWarning();
 }
 
 async function fetchStatus() {
@@ -247,6 +286,70 @@ function refreshProviderStatus(keys = getKeys(), envProviders = new Set(Array.is
   const provider = providerSel.value;
   if (!provider || keys[provider] || envProviders.has(provider)) setStatus('');
   else setStatus('Deterministic planner available. Add a provider key for LLM-reviewed plans.', false);
+  refreshProviderWarning();
+}
+
+function refreshProviderWarning() {
+  if (!providerWarningEl) return;
+  const provider = providerSel?.value || '';
+  const keys = getKeys();
+  const hasCredential = providerHasCredential(provider, keys);
+  const externalMode = hasCredential && (plannerModeSel?.value || 'auto') !== 'deterministic';
+  providerWarningEl.style.display = externalMode ? '' : 'none';
+  if (externalMode) {
+    providerWarningEl.textContent = disableWebSearchEl?.checked
+      ? 'External LLM provider may receive chat text, layout details, and attached image references. Web search is disabled for this request.'
+      : 'External LLM provider may receive chat text, layout details, attached image references, and live reference context for this request.';
+  }
+}
+
+function promptPresets(journey) {
+  const sets = {
+    renovation: [
+      'Draft three renovation options: conservative, balanced, ambitious',
+      'Validate this renovation idea before I talk to a contractor',
+      'Export a homeowner-friendly renovation concept report',
+    ],
+    accessibility: [
+      'Check the route from entry to bathroom for blockers',
+      'List quick wins and renovation-level accessibility fixes',
+      'Export an accessibility planning review',
+    ],
+    furniture_fit: [
+      'Will this product fit if the room measurements are uncertain?',
+      'Find smaller substitutes and explain what to measure before buying',
+      'Export the shopping list and fit notes',
+    ],
+    designer: [
+      'Turn this client intake into a pre-sales brief',
+      'Prepare questions for the design call',
+      'Create a client-safe presentation summary',
+    ],
+    blank: [
+      'Start with manual room dimensions',
+      'Tell me what measurements are missing',
+      'Draft a concept plan for this layout',
+    ],
+  };
+  return sets[journey] || sets.blank;
+}
+
+function renderJourneyPrompts() {
+  const root = document.getElementById('chat-quick-prompts');
+  if (!root) return;
+  const journey = fn.getProject?.()?.journey || 'blank';
+  root.innerHTML = '';
+  for (const prompt of promptPresets(journey)) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.dataset.prompt = prompt;
+    button.textContent = prompt;
+    button.addEventListener('click', () => {
+      inputEl.value = prompt;
+      send();
+    });
+    root.appendChild(button);
+  }
 }
 
 function refreshPlannerControls() {
@@ -544,6 +647,24 @@ function appendPlanCard(plan) {
   brief.textContent = plan.brief || '';
   card.appendChild(brief);
 
+  const tabs = document.createElement('div');
+  tabs.className = 'chat-scenario-tabs';
+  const tabLabels = (Array.isArray(plan.zones) && plan.zones.length > 0)
+    ? plan.zones.slice(0, 5).map((zone) => zone.name || 'Zone')
+    : ['Option A', 'Option B', 'Option C'];
+  tabLabels.forEach((label, index) => {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.className = `chat-scenario-tab${index === 0 ? ' active' : ''}`;
+    tab.textContent = label;
+    tab.addEventListener('click', () => {
+      tabs.querySelectorAll('.chat-scenario-tab').forEach((item) => item.classList.remove('active'));
+      tab.classList.add('active');
+    });
+    tabs.appendChild(tab);
+  });
+  card.appendChild(tabs);
+
   const meta = document.createElement('div');
   meta.className = 'chat-plan-meta';
   const planner = plan.planner || {};
@@ -565,6 +686,23 @@ function appendPlanCard(plan) {
     warningEl.className = 'chat-plan-warning';
     warningEl.textContent = warning;
     card.appendChild(warningEl);
+  }
+
+  const assumptions = Array.isArray(plan.assumptions) ? plan.assumptions : [];
+  if (assumptions.length > 0) {
+    const details = document.createElement('details');
+    details.className = 'chat-plan-review';
+    const summary = document.createElement('summary');
+    summary.textContent = 'Assumptions';
+    const list = document.createElement('ul');
+    assumptions.slice(0, 6).forEach((item) => {
+      const li = document.createElement('li');
+      li.textContent = item;
+      list.appendChild(li);
+    });
+    details.appendChild(summary);
+    details.appendChild(list);
+    card.appendChild(details);
   }
 
   const metrics = plan.metrics || {};
@@ -650,12 +788,46 @@ function appendPlanCard(plan) {
 
   const downloadBtn = document.createElement('button');
   downloadBtn.type = 'button';
-  downloadBtn.textContent = 'Download brief';
+  downloadBtn.textContent = 'Export';
   downloadBtn.addEventListener('click', () => downloadPlanReport(plan.id, statusLine));
+
+  const compareBtn = document.createElement('button');
+  compareBtn.type = 'button';
+  compareBtn.textContent = 'Compare';
+  compareBtn.addEventListener('click', () => {
+    fn.compareActiveScenarios?.();
+    statusLine.textContent = 'Comparison opened in validation panel.';
+    appendMessage('assistant', `Plan link: compare current scenarios for ${plan.id}.`);
+    persistTranscript('assistant', `Plan link: compare current scenarios for ${plan.id}.`);
+  });
+
+  const validateBtn = document.createElement('button');
+  validateBtn.type = 'button';
+  validateBtn.textContent = 'Validate';
+  validateBtn.addEventListener('click', () => {
+    const report = fn.regenerateValidation?.();
+    statusLine.textContent = report ? `Validation complete with ${report.warnings?.length || 0} warning(s).` : 'Validation requested.';
+    appendMessage('assistant', `Validation link: ${statusLine.textContent}`);
+    persistTranscript('assistant', `Validation link: ${statusLine.textContent}`);
+  });
+
+  const geometryBtn = document.createElement('button');
+  geometryBtn.type = 'button';
+  geometryBtn.textContent = 'Show geometry';
+  geometryBtn.addEventListener('click', () => {
+    const report = fn.regenerateValidation?.();
+    if (report?.overlays) fn.showValidationOverlay?.(report.overlays);
+    statusLine.textContent = 'Geometry overlay shown.';
+    appendMessage('assistant', `Geometry link: overlay shown for ${plan.id}.`);
+    persistTranscript('assistant', `Geometry link: overlay shown for ${plan.id}.`);
+  });
 
   actions.appendChild(applyBtn);
   actions.appendChild(reviseBtn);
+  actions.appendChild(compareBtn);
+  actions.appendChild(validateBtn);
   actions.appendChild(downloadBtn);
+  actions.appendChild(geometryBtn);
   card.appendChild(actions);
   card.appendChild(statusLine);
 
@@ -732,6 +904,8 @@ async function downloadPlanReport(planId, statusLine) {
     link.remove();
     URL.revokeObjectURL(url);
     statusLine.textContent = 'Brief downloaded.';
+    appendMessage('assistant', `Report link: downloaded haus-concept-${planId}.md.`);
+    persistTranscript('assistant', `Report link: downloaded haus-concept-${planId}.md.`);
   } catch (err) {
     statusLine.textContent = err.message || String(err);
     appendMessage('error', statusLine.textContent);
@@ -768,9 +942,12 @@ function maybeShowSightlineOverlay(action) {
 }
 
 function persistTranscript(role, text) {
-  const transcript = loadJson(TRANSCRIPT_STORAGE, []);
+  const scopedKey = transcriptStorageKey();
+  const transcript = loadJson(scopedKey, loadJson(TRANSCRIPT_STORAGE, []));
   transcript.push({ role, text: sanitizeTranscriptText(text) });
-  saveJson(TRANSCRIPT_STORAGE, transcript.slice(-250));
+  const trimmed = transcript.slice(-250);
+  saveJson(scopedKey, trimmed);
+  saveJson(TRANSCRIPT_STORAGE, trimmed);
 }
 
 function sanitizeTranscriptText(text) {
@@ -781,20 +958,44 @@ function sanitizeTranscriptText(text) {
 
 function renderTranscript() {
   messagesEl.innerHTML = '';
-  const transcript = loadJson(TRANSCRIPT_STORAGE, []);
+  const transcript = loadJson(transcriptStorageKey(), loadJson(TRANSCRIPT_STORAGE, []));
   for (const msg of transcript) {
     appendMessage(msg.role || 'assistant', msg.text || '');
+  }
+  if (transcript.length === 0) {
+    appendMessage('assistant', 'Upload a floor plan, start from manual room dimensions, or ask for a journey-specific draft plan.');
   }
 }
 
 function clearConversation() {
   history = [];
-  saveJson(HISTORY_STORAGE, history);
+  saveHistory(history);
+  saveJson(transcriptStorageKey(), []);
   saveJson(TRANSCRIPT_STORAGE, []);
   clearAttachments();
   messagesEl.innerHTML = '';
   appendMessage('assistant', 'Conversation cleared.');
   persistTranscript('assistant', 'Conversation cleared.');
+}
+
+function recoveryText(errorText) {
+  const text = String(errorText || '').toLowerCase();
+  if (text.includes('scale') || text.includes('calibration')) return 'Recovery: confirm scale by drawing a known-length segment or build a manual room with width and depth.';
+  if (text.includes('door')) return 'Recovery: add door/opening widths in Manual Plan Tools before validating fit or accessibility.';
+  if (text.includes('room') || text.includes('boundary')) return 'Recovery: upload a floor plan, trace room boundaries, or use the manual room builder.';
+  if (text.includes('product') || text.includes('dimension')) return 'Recovery: enter product width, depth, height, and source confidence before checking fit.';
+  if (text.includes('web_search') || text.includes('web search') || text.includes('reference')) return 'Recovery: web search is unavailable or disabled. Continue with deterministic planning, or re-enable web search in chat settings.';
+  if (text.includes('confirmation') || text.includes('token')) return 'Recovery: the confirmation expired. Ask Haus to repeat the edit and confirm the new card.';
+  if (text.includes('unsupported') || text.includes('image type')) return 'Recovery: upload a PNG, JPEG, WEBP, GIF, or a supported Haus JSON layout.';
+  if (text.includes('vector')) return 'Recovery: use manual room dimensions or trace rooms if floor-plan vectorization fails.';
+  return '';
+}
+
+function appendRecoveryMessage(errorText) {
+  const recovery = recoveryText(errorText);
+  if (!recovery) return;
+  appendMessage('assistant', recovery);
+  persistTranscript('assistant', recovery);
 }
 
 async function send() {
@@ -813,6 +1014,7 @@ async function send() {
   const model = modelInput.value.trim();
   const plannerMode = plannerModeSel.value || 'auto';
   const standardsProfile = standardsProfileSel.value || 'apartment_compact';
+  const webSearchDisabled = Boolean(disableWebSearchEl?.checked);
   const transcriptText = attachmentTranscript(text, attachmentsForSend);
   const projectContext = fn.getProjectChatContext ? fn.getProjectChatContext(text) : null;
 
@@ -843,6 +1045,8 @@ async function send() {
         api_key: apiKey,
         planner_mode: plannerMode,
         standards_profile: standardsProfile,
+        web_search_disabled: webSearchDisabled,
+        privacy: fn.getPrivacySettings ? fn.getPrivacySettings() : { disable_web_search: webSearchDisabled },
         project_context: projectContext,
         command_route: projectContext?.route || '',
         attachments: attachmentsForSend,
@@ -862,6 +1066,7 @@ async function send() {
       const errText = data.error || `Request failed with HTTP ${res.status}`;
       appendMessage('error', errText);
       persistTranscript('error', errText);
+      appendRecoveryMessage(errText);
       return;
     }
 
@@ -881,7 +1086,7 @@ async function send() {
     }
 
     history = Array.isArray(data.history) ? data.history : [];
-    saveJson(HISTORY_STORAGE, history);
+    saveHistory(history);
 
     if (data.request_id) setStatus(`Last request: ${data.request_id}`, false);
   } catch (err) {
@@ -889,6 +1094,7 @@ async function send() {
     const textErr = `Request failed: ${err.message}`;
     appendMessage('error', textErr);
     persistTranscript('error', textErr);
+    appendRecoveryMessage(textErr);
   } finally {
     inputEl.disabled = false;
     sendBtn.disabled = false;

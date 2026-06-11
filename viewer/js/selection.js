@@ -21,6 +21,7 @@ export function initSelection() {
   fn.clearMultiSelect = clearMultiSelect;
   setupDimSliders();
   setupColorPicker();
+  setupMetadataControls();
   setupDragHandlers();
   document.getElementById('delete-btn').addEventListener('click', deleteSelected);
 }
@@ -57,6 +58,7 @@ function selectFurniture(mesh) {
   refreshOutline(mesh);
   document.getElementById('selected-info').style.display = '';
   populateDimSliders(mesh);
+  populateMetadataFields(mesh);
   updateColorPicker(mesh);
   updatePosDisplay(mesh);
   fn.refreshSceneList();
@@ -178,6 +180,72 @@ function populateDimSliders(mesh) {
   document.getElementById('sel-height-num').value = d.h.toFixed(2);
   document.getElementById('sel-depth').value = Math.round(d.d * 10);
   document.getElementById('sel-depth-num').value = d.d.toFixed(2);
+}
+
+function layoutMeta(mesh) {
+  if (!mesh.userData.layoutMeta || typeof mesh.userData.layoutMeta !== 'object') mesh.userData.layoutMeta = {};
+  return mesh.userData.layoutMeta;
+}
+
+function populateMetadataFields(mesh) {
+  const meta = layoutMeta(mesh);
+  const name = document.getElementById('sel-name');
+  const room = document.getElementById('sel-room');
+  const status = document.getElementById('sel-status');
+  const locked = document.getElementById('sel-locked');
+  const source = document.getElementById('sel-source');
+  if (name) name.value = mesh.userData.name || mesh.userData.furnitureType || (mesh.userData.isWall ? 'Wall' : 'Object');
+  if (room) room.value = mesh.userData.room || '';
+  if (status) status.value = meta.scenario_status || (meta.removed ? 'removed' : meta.proposed ? 'proposed' : 'existing');
+  if (locked) locked.checked = Boolean(meta.locked || meta.do_not_touch);
+  if (source) source.value = meta.source || meta.source_url || mesh.userData.catalog?.url || '';
+}
+
+function setupMetadataControls() {
+  const bindText = (id, apply) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', () => {
+      if (!S.selectedTarget) return;
+      apply(S.selectedTarget, el.value.trim());
+      fn.refreshSceneList();
+      if (fn.pushLayoutToServer) fn.pushLayoutToServer();
+    });
+  };
+  bindText('sel-name', (mesh, value) => {
+    mesh.userData.name = value;
+  });
+  bindText('sel-room', (mesh, value) => {
+    mesh.userData.room = value;
+  });
+  bindText('sel-source', (mesh, value) => {
+    const meta = layoutMeta(mesh);
+    meta.source = value;
+  });
+  const status = document.getElementById('sel-status');
+  if (status) {
+    status.addEventListener('change', () => {
+      if (!S.selectedTarget) return;
+      const meta = layoutMeta(S.selectedTarget);
+      meta.scenario_status = status.value;
+      meta.existing = status.value === 'existing';
+      meta.proposed = status.value === 'proposed';
+      meta.removed = status.value === 'removed';
+      fn.refreshSceneList();
+      if (fn.pushLayoutToServer) fn.pushLayoutToServer();
+    });
+  }
+  const locked = document.getElementById('sel-locked');
+  if (locked) {
+    locked.addEventListener('change', () => {
+      if (!S.selectedTarget) return;
+      const meta = layoutMeta(S.selectedTarget);
+      meta.locked = locked.checked;
+      meta.do_not_touch = locked.checked;
+      fn.refreshSceneList();
+      if (fn.pushLayoutToServer) fn.pushLayoutToServer();
+    });
+  }
 }
 function setupDimSliders() {
   const axes = [

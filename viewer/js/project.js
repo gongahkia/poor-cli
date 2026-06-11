@@ -158,12 +158,24 @@ function makeScenario(name, journey, layout, status = 'draft', parentId = null) 
 export function initProjectWorkbench() {
   fn.getProjectChatContext = getProjectChatContext;
   fn.getProject = () => S.project;
+  fn.getProjectTranscriptKey = getProjectTranscriptKey;
+  fn.getPrivacySettings = getPrivacySettings;
   fn.migrateLayoutData = migrateLayout;
   fn.validateProjectLayout = validateLayout;
   fn.regenerateValidation = regenerateValidation;
   fn.showValidationOverlay = showValidationOverlay;
   fn.clearValidationOverlay = clearValidationOverlay;
   fn.openManualTracingTools = openManualTracingTools;
+  fn.setJourney = setJourney;
+  fn.nextScenario = nextScenario;
+  fn.previousScenario = previousScenario;
+  fn.compareActiveScenarios = compareBeforeAfter;
+  fn.previewHtmlReport = exportHtmlReport;
+  fn.buildManualRoom = buildManualRoom;
+  fn.togglePresentationMode = togglePresentationMode;
+  fn.toggleDimensionLabels = toggleDimensionLabels;
+  fn.snapSelectedToRoomEdge = snapSelectedToRoomEdge;
+  fn.renderMinimap = renderMinimap;
   fn.recordProjectVersion = (status, note = '') => {
     syncProjectFromLayout();
     captureVersion(S.project, status, S.project.layout, note);
@@ -203,6 +215,7 @@ function bindProjectUi() {
   $('view-3d-btn')?.addEventListener('click', enter3dWalkthrough);
   $('export-scenario-png-btn')?.addEventListener('click', exportAnnotatedPng);
   $('export-report-html-btn')?.addEventListener('click', exportHtmlReport);
+  $('manual-room-build-btn')?.addEventListener('click', buildManualRoom);
   $('calibration-start-btn')?.addEventListener('click', startCalibrationWizard);
   $('recalibrate-btn')?.addEventListener('click', recalibrateFromInputs);
   $('trace-room-btn')?.addEventListener('click', traceRoomRectangle);
@@ -212,9 +225,33 @@ function bindProjectUi() {
   $('draft-renovation-btn')?.addEventListener('click', draftRenovationScenarios);
   $('run-accessibility-btn')?.addEventListener('click', runAccessibilityReview);
   $('draft-designer-btn')?.addEventListener('click', draftDesignerBrief);
+  $('presentation-mode-btn')?.addEventListener('click', togglePresentationMode);
+  $('export-proposal-btn')?.addEventListener('click', exportProposalOutline);
+  $('export-client-questions-btn')?.addEventListener('click', exportClientQuestions);
+  $('export-call-script-btn')?.addEventListener('click', exportCallScript);
+  $('export-static-report-btn')?.addEventListener('click', exportStaticReport);
+  document.querySelectorAll('[data-shot-template]').forEach((button) => {
+    button.addEventListener('click', () => captureScreenshotTemplate(button.dataset.shotTemplate));
+  });
   $('add-product-btn')?.addEventListener('click', addManualProduct);
   $('fit-product-btn')?.addEventListener('click', checkActiveProductFit);
   $('export-shopping-btn')?.addEventListener('click', exportShoppingList);
+  document.querySelectorAll('[data-camera-bookmark]').forEach((button) => {
+    button.addEventListener('click', () => {
+      if (fn.setCameraBookmark) fn.setCameraBookmark(button.dataset.cameraBookmark);
+    });
+  });
+  $('dimension-labels-btn')?.addEventListener('click', toggleDimensionLabels);
+  $('snap-selected-edge-btn')?.addEventListener('click', snapSelectedToRoomEdge);
+  [
+    'designer-client-name', 'designer-project-type', 'designer-brief', 'designer-style-words',
+    'designer-budget-band', 'designer-timeline', 'designer-meeting-date', 'brand-logo',
+    'brand-business-name', 'brand-contact', 'brand-accent-color', 'brand-footer-disclaimer',
+    'mood-reference-images', 'mood-product-cards', 'mood-style-notes', 'mood-material-notes',
+  ].forEach((id) => {
+    $(id)?.addEventListener('input', syncDesignerFromForm);
+    $(id)?.addEventListener('change', syncDesignerFromForm);
+  });
   document.querySelectorAll('#floorplan-review-checklist input').forEach((input) => {
     input.addEventListener('change', () => {
       const checks = {};
@@ -242,8 +279,22 @@ function setJourney(journey) {
   if (!$('project-title').value) $('project-title').value = S.project.title;
   captureVersion(S.project, 'revised', S.project.layout, `Journey set to ${JOURNEYS[journey]}`);
   renderProject();
+  if (fn.renderJourneyPrompts) fn.renderJourneyPrompts();
   scheduleAutosave();
   if (fn.pushLayoutToServer) fn.pushLayoutToServer();
+}
+
+function getProjectTranscriptKey(base = 'haus_chat_transcript') {
+  const id = S.project?.id ? String(S.project.id).replace(/[^a-zA-Z0-9_-]/g, '') : '';
+  return id ? `${base}_${id}` : base;
+}
+
+function getPrivacySettings() {
+  return {
+    disable_web_search: Boolean($('chat-disable-web-search')?.checked),
+    disable_key_storage: Boolean($('chat-disable-key-storage')?.checked),
+    local_only_copy: $('privacy-local-copy')?.textContent || '',
+  };
 }
 
 function loadProject() {
@@ -324,6 +375,26 @@ function applyProjectToForm() {
   $('intake-timeline').value = S.project.intake?.timeline || '';
   $('intake-goal').value = S.project.intake?.main_goal || '';
   $('assumptions-input').value = (S.project.assumptions || []).join('\n');
+  const designer = S.project.designer || {};
+  const intake = designer.intake || {};
+  $('designer-client-name').value = intake.client_name || '';
+  $('designer-project-type').value = intake.project_type || '';
+  $('designer-brief').value = intake.design_brief || '';
+  $('designer-style-words').value = (intake.style_words || []).join(', ');
+  $('designer-budget-band').value = intake.budget_band || '';
+  $('designer-timeline').value = intake.timeline || '';
+  $('designer-meeting-date').value = intake.meeting_date || '';
+  const brand = designer.brand_settings || {};
+  $('brand-logo').value = brand.logo || '';
+  $('brand-business-name').value = brand.business_name || '';
+  $('brand-contact').value = brand.contact || '';
+  $('brand-accent-color').value = brand.accent_color || '#2563eb';
+  $('brand-footer-disclaimer').value = brand.footer_disclaimer || '';
+  const mood = designer.mood_board || {};
+  $('mood-reference-images').value = (mood.reference_images || []).join('\n');
+  $('mood-product-cards').value = (mood.product_cards || []).join('\n');
+  $('mood-style-notes').value = mood.style_notes || '';
+  $('mood-material-notes').value = mood.material_notes || '';
 }
 
 function readIntakeFromForm() {
@@ -348,6 +419,7 @@ function saveAssumptions() {
 function renderProject() {
   if (!S.project) return;
   $('journey-selector').value = S.project.journey;
+  document.body.dataset.journey = S.project.journey || 'blank';
   document.querySelectorAll('.journey-panel').forEach((panel) => {
     panel.style.display = panel.dataset.panel === S.project.journey ? '' : 'none';
   });
@@ -355,6 +427,9 @@ function renderProject() {
   renderScenarios();
   renderUnknowns();
   renderProducts();
+  renderDesignerPanel();
+  renderReportPreview();
+  renderMinimap();
 }
 
 function renderVersionHistory() {
@@ -391,6 +466,25 @@ function renderScenarios() {
     row.appendChild(apply);
     root.appendChild(row);
   }
+}
+
+function stepScenario(direction) {
+  const scenarios = S.project.scenarios || [];
+  if (!scenarios.length) return;
+  const current = Math.max(0, scenarios.findIndex((scenario) => scenario.id === S.activeScenarioId));
+  const next = (current + direction + scenarios.length) % scenarios.length;
+  S.activeScenarioId = scenarios[next].id;
+  S.project.active_scenario_id = S.activeScenarioId;
+  renderProject();
+  scheduleAutosave();
+}
+
+function nextScenario() {
+  stepScenario(1);
+}
+
+function previousScenario() {
+  stepScenario(-1);
 }
 
 function renderUnknowns() {
@@ -831,16 +925,369 @@ function groupedFixList(report) {
   return groups;
 }
 
+function ensureDesignerState() {
+  if (!S.project.designer || typeof S.project.designer !== 'object') {
+    S.project.designer = {
+      intake: {},
+      client_brief: null,
+      lead_qualification: null,
+      brand_settings: {},
+      mood_board: {},
+      revision_log: [],
+      screenshot_templates: [],
+      exports: [],
+      local_project_folder: '',
+    };
+  }
+  if (!Array.isArray(S.project.designer.revision_log)) S.project.designer.revision_log = [];
+  if (!Array.isArray(S.project.designer.screenshot_templates)) S.project.designer.screenshot_templates = [];
+  if (!Array.isArray(S.project.designer.exports)) S.project.designer.exports = [];
+  return S.project.designer;
+}
+
+function linesFrom(id) {
+  return ($(id)?.value || '').split('\n').map((line) => line.trim()).filter(Boolean);
+}
+
+function csvWords(id) {
+  return ($(id)?.value || '').split(',').map((word) => word.trim()).filter(Boolean);
+}
+
+function readDesignerIntake() {
+  return {
+    client_name: $('designer-client-name')?.value.trim() || '',
+    project_type: $('designer-project-type')?.value.trim() || '',
+    design_brief: $('designer-brief')?.value.trim() || '',
+    style_words: csvWords('designer-style-words'),
+    budget_band: $('designer-budget-band')?.value.trim() || '',
+    timeline: $('designer-timeline')?.value.trim() || '',
+    meeting_date: $('designer-meeting-date')?.value || '',
+  };
+}
+
+function readBrandSettings() {
+  return {
+    logo: $('brand-logo')?.value.trim() || '',
+    business_name: $('brand-business-name')?.value.trim() || 'Haus Studio',
+    contact: $('brand-contact')?.value.trim() || '',
+    accent_color: $('brand-accent-color')?.value || '#2563eb',
+    footer_disclaimer: $('brand-footer-disclaimer')?.value.trim() || PRODUCT_DISCLAIMER,
+  };
+}
+
+function readMoodBoard() {
+  return {
+    reference_images: linesFrom('mood-reference-images'),
+    product_cards: linesFrom('mood-product-cards'),
+    style_notes: $('mood-style-notes')?.value.trim() || '',
+    material_notes: $('mood-material-notes')?.value.trim() || '',
+  };
+}
+
+function localDesignerFolder(intake) {
+  const client = slug(intake.client_name || 'client');
+  const project = slug(S.project.title || intake.project_type || 'project');
+  return `~/.haus/clients/${client}/${project}`;
+}
+
+function syncDesignerFromForm() {
+  const designer = ensureDesignerState();
+  designer.intake = readDesignerIntake();
+  designer.brand_settings = readBrandSettings();
+  designer.mood_board = readMoodBoard();
+  designer.local_project_folder = localDesignerFolder(designer.intake);
+  designer.client_brief = buildClientBrief();
+  designer.lead_qualification = buildLeadQualification(designer.client_brief, S.validationReport || validateLayout(currentLayout(), S.project.journey));
+  renderDesignerPanel();
+  scheduleAutosave();
+}
+
+function buildClientQuestions() {
+  return {
+    measurements: [
+      'Which room dimensions have been measured on site?',
+      'What are the clear widths of entry, bedroom, bathroom, and kitchen openings?',
+      'Which ceiling heights, sill heights, and fixture depths are confirmed?',
+    ],
+    preferences: [
+      'Which existing furniture, finishes, or storage pieces must stay?',
+      'Which style words matter most when tradeoffs are required?',
+      'Which room should feel most improved after the first revision?',
+    ],
+    budget: [
+      'What is the comfortable budget range and the hard upper limit?',
+      'Which add-ons are optional versus essential?',
+      'Should the concept prioritize lower cost, speed, or a stronger transformation?',
+    ],
+    household_routines: [
+      'Who uses the home daily and at what times do peak routines happen?',
+      'Where do bags, laundry, deliveries, mobility aids, or pet items land?',
+      'Which paths need to stay clear at night?',
+    ],
+    constraints: [
+      'Which walls, doors, windows, plumbing, electrical, or appliances are do-not-touch?',
+      'Are there building, landlord, estate, or accessibility constraints to respect?',
+      'What unanswered measurement would block a decision today?',
+    ],
+  };
+}
+
+function buildClientBrief() {
+  const designer = ensureDesignerState();
+  const intake = designer.intake || readDesignerIntake();
+  const active = activeScenario();
+  const unknowns = S.project.unknowns || unknownsForLayout(currentLayout());
+  return {
+    client_name: intake.client_name,
+    project_type: intake.project_type,
+    goals: [intake.design_brief, S.project.intake?.main_goal].filter(Boolean),
+    style_words: intake.style_words || [],
+    budget_band: intake.budget_band,
+    timeline: intake.timeline,
+    meeting_date: intake.meeting_date,
+    constraints: [
+      ...(S.project.assumptions || []),
+      ...unknowns.map((item) => `${item.field}: ${item.message}`),
+    ],
+    assumptions: S.project.assumptions || [],
+    unanswered_questions: Object.values(buildClientQuestions()).flat(),
+    selected_scenario: active ? { id: active.id, name: active.name, status: active.status } : null,
+  };
+}
+
+function buildLeadQualification(brief, report = S.validationReport || validateLayout(currentLayout(), 'designer')) {
+  const risks = (report.warnings || []).slice(0, 6).map((item) => `${item.severity}: ${item.message}`);
+  return {
+    client_needs: brief.goals.length ? brief.goals : ['Clarify the core design outcome before proposal.'],
+    spatial_risks: risks.length ? risks : ['No blocking spatial risk found in the current draft.'],
+    likely_scope: [
+      brief.project_type || 'Interior planning concept',
+      brief.budget_band ? `Budget band: ${brief.budget_band}` : 'Budget band not confirmed',
+      brief.timeline ? `Timeline: ${brief.timeline}` : 'Timeline not confirmed',
+    ],
+    follow_up_questions: brief.unanswered_questions.slice(0, 8),
+  };
+}
+
+function recordDesignerRevision(from, to, reason) {
+  const designer = ensureDesignerState();
+  designer.revision_log.push({
+    from: from || 'intake',
+    to: to || activeScenario()?.name || 'draft',
+    reason: reason || 'Designer revision',
+    created_at: nowIso(),
+  });
+}
+
 function draftDesignerBrief() {
   setJourney('designer');
-  const text = $('designer-intake').value.trim();
+  const designer = ensureDesignerState();
+  designer.intake = readDesignerIntake();
+  designer.brand_settings = readBrandSettings();
+  designer.mood_board = readMoodBoard();
+  designer.local_project_folder = localDesignerFolder(designer.intake);
+  const report = regenerateValidation();
+  const brief = buildClientBrief();
+  const lead = buildLeadQualification(brief, report);
+  designer.client_brief = brief;
+  designer.lead_qualification = lead;
   const scenario = makeScenario('Designer pre-sales brief', 'designer', currentLayout(), 'draft');
-  scenario.summary = text || 'Client needs, spatial risks, likely scope, and follow-up questions captured for pre-sales.';
+  scenario.summary = brief.goals.join(' ') || 'Client needs, spatial risks, likely scope, and follow-up questions captured for pre-sales.';
   scenario.client_safe = true;
+  scenario.assumptions = brief.assumptions;
+  scenario.unanswered_questions = brief.unanswered_questions;
+  scenario.lead_qualification = lead;
   S.project.scenarios.push(scenario);
   S.activeScenarioId = scenario.id;
+  S.project.active_scenario_id = scenario.id;
+  recordDesignerRevision('client intake', scenario.name, 'Created pre-sales option from structured intake.');
   captureVersion(S.project, 'draft', S.project.layout, 'Drafted designer pre-sales brief');
   renderProject();
+  scheduleAutosave();
+}
+
+function renderDesignerPanel() {
+  const output = $('designer-output');
+  const log = $('designer-revision-log');
+  if (!output || !S.project) return;
+  const designer = ensureDesignerState();
+  const brief = designer.client_brief || buildClientBrief();
+  const lead = designer.lead_qualification || buildLeadQualification(brief, S.validationReport || validateLayout(currentLayout(), S.project.journey));
+  const brand = designer.brand_settings || readBrandSettings();
+  output.innerHTML = `
+    <div class="designer-summary" style="--designer-accent:${esc(brand.accent_color || '#2563eb')}">
+      <strong>${esc(brief.client_name || 'Client brief')}</strong>
+      <span>${esc(brief.project_type || 'Project type not set')} · ${esc(brief.budget_band || 'Budget TBD')} · ${esc(brief.timeline || 'Timeline TBD')}</span>
+      <span>Goals: ${esc(brief.goals.join(' ') || 'No goals captured yet.')}</span>
+      <span>Lead scope: ${esc(lead.likely_scope.join(' | '))}</span>
+      <span>Local folder: ${esc(designer.local_project_folder || localDesignerFolder(brief))}</span>
+    </div>`;
+  if (log) {
+    log.innerHTML = (designer.revision_log || []).length
+      ? designer.revision_log.slice(-6).reverse().map((entry) => `<div><strong>${esc(entry.from)} -> ${esc(entry.to)}</strong><span>${esc(entry.reason)}</span></div>`).join('')
+      : '<div><span>No revisions recorded yet.</span></div>';
+  }
+}
+
+function proposalOutline() {
+  const designer = ensureDesignerState();
+  const brief = designer.client_brief || buildClientBrief();
+  return [
+    `# Proposal Outline: ${S.project.title}`,
+    '',
+    `Client: ${brief.client_name || 'TBD'}`,
+    `Project type: ${brief.project_type || 'TBD'}`,
+    '',
+    '## Scope',
+    ...brief.goals.map((item) => `- ${item}`),
+    '- Concept layouts, validation notes, selected scenario summary, and client-safe next steps.',
+    '',
+    '## Assumptions',
+    ...((brief.assumptions || []).length ? brief.assumptions : ['Measurements and constraints remain to be verified.']).map((item) => `- ${item}`),
+    '',
+    '## Exclusions',
+    '- Construction drawings, engineering sign-off, permitting, medical advice, and contractor-ready quantities.',
+    '',
+    '## Optional Add-ons',
+    '- Site measurement review',
+    '- Product sourcing shortlist',
+    '- Additional scenario iteration',
+    '',
+    '## Next Steps',
+    '- Confirm missing measurements',
+    '- Pick the preferred scenario direction',
+    '- Schedule a follow-up design review',
+  ].join('\n');
+}
+
+function questionsMarkdown() {
+  const sections = buildClientQuestions();
+  return Object.entries(sections).map(([section, questions]) => [
+    `## ${section.replace(/_/g, ' ')}`,
+    ...questions.map((question) => `- ${question}`),
+  ].join('\n')).join('\n\n');
+}
+
+function callScript() {
+  const designer = ensureDesignerState();
+  const brief = designer.client_brief || buildClientBrief();
+  const lead = designer.lead_qualification || buildLeadQualification(brief);
+  return [
+    `# Design Call Script: ${S.project.title}`,
+    '',
+    `Opening: confirm ${brief.client_name || 'the client'} wants to focus on ${brief.project_type || 'the home plan'}.`,
+    '',
+    '## Walkthrough',
+    ...lead.client_needs.map((item) => `- Reflect need: ${item}`),
+    ...lead.spatial_risks.map((item) => `- Explain risk in client-safe terms: ${item}`),
+    '',
+    '## Decision Points',
+    '- Pick conservative, balanced, or ambitious direction.',
+    '- Confirm missing measurements before purchase or renovation decisions.',
+    '- Agree on next revision and follow-up date.',
+  ].join('\n');
+}
+
+function staticReportHtml() {
+  const designer = ensureDesignerState();
+  const brand = designer.brand_settings || readBrandSettings();
+  const brief = designer.client_brief || buildClientBrief();
+  const lead = designer.lead_qualification || buildLeadQualification(brief);
+  const report = S.validationReport || validateLayout(currentLayout(), S.project.journey);
+  return [
+    '<!doctype html><html><head><meta charset="utf-8">',
+    `<title>${esc(S.project.title)} Designer Report</title>`,
+    `<style>body{font-family:system-ui,sans-serif;margin:32px;color:#172033;line-height:1.45}h1,h2{color:${esc(brand.accent_color || '#2563eb')}}.brand{border-bottom:3px solid ${esc(brand.accent_color || '#2563eb')};padding-bottom:12px}.card{border:1px solid #d7dde8;border-radius:8px;padding:12px;margin:10px 0;background:#f8fafc}.warn{border-left:4px solid #b45309}.risk{border-left:4px solid #b91c1c}.footer{font-size:12px;color:#526070;margin-top:32px}@media print{body{margin:18mm}}</style>`,
+    '</head><body>',
+    `<div class="brand"><h1>${esc(brand.business_name || 'Haus Studio')}</h1><p>${esc(brand.contact || '')}</p></div>`,
+    `<h2>${esc(S.project.title)}</h2>`,
+    `<p>Client: ${esc(brief.client_name || 'TBD')} · ${esc(brief.project_type || 'Project')}</p>`,
+    '<h2>Client Goals</h2>',
+    '<ul>',
+    ...(brief.goals.length ? brief.goals : ['Confirm goals during intake.']).map((item) => `<li>${esc(item)}</li>`),
+    '</ul>',
+    '<h2>Lead Qualification</h2>',
+    `<div class="card"><strong>Likely scope</strong><p>${esc(lead.likely_scope.join(' | '))}</p></div>`,
+    '<h2>Warnings</h2>',
+    ...(report.warnings || []).slice(0, 8).map((item) => `<div class="card ${item.severity === 'blocked' || item.severity === 'serious' ? 'risk' : 'warn'}"><strong>${esc(item.message)}</strong><p>${esc(item.explanation)}</p><p>${esc(item.suggested_fix)}</p></div>`),
+    '<h2>Next Steps</h2><ul><li>Confirm missing measurements.</li><li>Select a scenario direction.</li><li>Schedule the next revision review.</li></ul>',
+    `<div class="footer">${esc(brand.footer_disclaimer || PRODUCT_DISCLAIMER)}</div>`,
+    '</body></html>',
+  ].join('\n');
+}
+
+function exportDesignerArtifact(kind, text, filename, type = 'text/markdown') {
+  const designer = ensureDesignerState();
+  downloadText(text, filename, type);
+  designer.exports.push({ kind, filename, created_at: nowIso(), client_safe: true });
+  S.project.exports.push({ kind, filename, created_at: nowIso(), disclaimer: PRODUCT_DISCLAIMER });
+  captureVersion(S.project, 'exported', S.project.layout, `Exported ${filename}`);
+  scheduleAutosave();
+  renderProject();
+}
+
+function exportProposalOutline() {
+  syncDesignerFromForm();
+  exportDesignerArtifact('proposal_outline', proposalOutline(), `${slug(S.project.title)}-proposal-outline.md`);
+}
+
+function exportClientQuestions() {
+  syncDesignerFromForm();
+  exportDesignerArtifact('client_questions', `# Client Questions\n\n${questionsMarkdown()}`, `${slug(S.project.title)}-client-questions.md`);
+}
+
+function exportCallScript() {
+  syncDesignerFromForm();
+  exportDesignerArtifact('design_call_script', callScript(), `${slug(S.project.title)}-design-call-script.md`);
+}
+
+function exportStaticReport() {
+  syncDesignerFromForm();
+  exportDesignerArtifact('designer_static_report', staticReportHtml(), `${slug(S.project.title)}-designer-static-report.html`, 'text/html');
+}
+
+function togglePresentationMode() {
+  const active = !document.body.classList.contains('presentation-active');
+  document.body.classList.toggle('presentation-active', active);
+  const stage = $('presentation-stage');
+  const button = $('presentation-mode-btn');
+  if (button) button.textContent = active ? 'Exit Presentation Mode' : 'Presentation Mode';
+  if (!stage) return;
+  stage.setAttribute('aria-hidden', active ? 'false' : 'true');
+  if (!active) {
+    stage.innerHTML = '';
+    return;
+  }
+  const designer = ensureDesignerState();
+  const brief = designer.client_brief || buildClientBrief();
+  const report = S.validationReport || regenerateValidation();
+  const scenarios = (S.project.scenarios || []).slice(0, 4);
+  stage.innerHTML = `
+    <div class="presentation-inner">
+      <header><span>${esc(JOURNEYS[S.project.journey] || 'Haus')}</span><h1>${esc(S.project.title)}</h1><p>${esc(brief.goals.join(' ') || 'Planning review')}</p></header>
+      <section><h2>Options</h2>${scenarios.map((scenario) => `<article><strong>${esc(scenario.name)}</strong><span>${esc(scenario.summary || scenario.status || 'Draft option')}</span></article>`).join('')}</section>
+      <section><h2>Warnings</h2>${(report.warnings || []).slice(0, 5).map((item) => `<article><strong>${esc(item.message)}</strong><span>${esc(item.suggested_fix)}</span></article>`).join('') || '<article><span>No blocking warnings in the current draft.</span></article>'}</section>
+      <section><h2>Notes</h2><article><span>${esc(PRODUCT_DISCLAIMER)}</span></article></section>
+    </div>`;
+}
+
+function captureScreenshotTemplate(template) {
+  if (!template) return;
+  if (template === 'whole_flat' && fn.frameScene) fn.frameScene();
+  if (template === 'selected_scenario' && activeScenario() && fn.frameScene) fn.frameScene();
+  if (template === 'warning_overlay') showValidationOverlay((S.validationReport || regenerateValidation()).overlays);
+  if (template === 'room_close_up' && fn.setCameraBookmark) fn.setCameraBookmark(S.project.rooms?.[0]?.label || 'living');
+  S.renderer.render(S.scene, S.camera);
+  const url = S.renderer.domElement.toDataURL('image/png');
+  const a = document.createElement('a');
+  const filename = `${slug(S.project.title)}-${template.replace(/_/g, '-')}.png`;
+  a.href = url;
+  a.download = filename;
+  a.click();
+  const designer = ensureDesignerState();
+  designer.screenshot_templates.push({ template, filename, created_at: nowIso() });
+  S.project.exports.push({ kind: 'screenshot_template', template, filename, created_at: nowIso(), disclaimer: PRODUCT_DISCLAIMER });
+  scheduleAutosave();
 }
 
 function addManualProduct() {
@@ -980,6 +1427,84 @@ function openManualTracingTools() {
   setAutosave('Manual tracing tools are ready.');
 }
 
+function buildManualRoom() {
+  syncProjectFromLayout();
+  const label = $('manual-room-label')?.value.trim() || `Manual Room ${S.project.layout.rooms.length + 1}`;
+  const width = Math.max(0.5, numberValue('manual-room-width', 3.6));
+  const depth = Math.max(0.5, numberValue('manual-room-depth', 3.2));
+  const wall = 0.12;
+  const height = 2.6;
+  const offset = S.project.layout.rooms.length * (width + 0.8);
+  const bounds = {
+    x_min: offset - width / 2,
+    z_min: -depth / 2,
+    x_max: offset + width / 2,
+    z_max: depth / 2,
+  };
+  const room = {
+    id: uid('room'),
+    label,
+    kind: label.toLowerCase().replace(/\s+/g, '_') || 'room',
+    bounds,
+    occupancy: 'unknown',
+    priority: 'normal',
+    locked: false,
+    confidence: 'user_confirmed',
+    source: 'manual_dimensions',
+    dimensions_m: { width, depth, area_m2: Number((width * depth).toFixed(2)) },
+  };
+  const wallItems = [
+    { name: `${label} north wall`, pos: [offset, height / 2, -depth / 2], geo: [width, height, wall] },
+    { name: `${label} south wall`, pos: [offset, height / 2, depth / 2], geo: [width, height, wall] },
+    { name: `${label} west wall`, pos: [offset - width / 2, height / 2, 0], geo: [wall, height, depth] },
+    { name: `${label} east wall`, pos: [offset + width / 2, height / 2, 0], geo: [wall, height, depth] },
+  ].map((item) => ({
+    ...item,
+    id: uid('wall'),
+    type: 'wall',
+    room: label,
+    rot: 0,
+    visible: true,
+    color: 0x6b7280,
+    structural_status: 'unknown',
+    structural_confidence: 'unknown',
+    confidence: 'user_confirmed',
+    locked: true,
+    source: 'manual_dimensions',
+    scenario_status: 'existing',
+  }));
+  const door = {
+    id: uid('door'),
+    type: 'door',
+    name: `${label} door`,
+    room: label,
+    width_m: 0.82,
+    swing_direction: 'unknown',
+    pos: [offset - width / 2 + 0.75, 1, depth / 2],
+    geo: [0.82, 2.0, 0.08],
+    rot: 0,
+    visible: true,
+    color: 0x2563eb,
+    confidence: 'user_entered',
+    source: 'manual_dimensions',
+    scenario_status: 'existing',
+  };
+  S.project.layout.rooms.push(room);
+  S.project.layout.items.push(...wallItems, door);
+  S.project.layout.metadata.calibration = {
+    scale_m_per_px: null,
+    confidence: 'manual_dimensions',
+    user_confirmed: true,
+    source: 'manual_room_builder',
+  };
+  S.project.layout.metadata.source = 'manual_room_dimensions';
+  if (fn.applyLayoutData) fn.applyLayoutData(S.project.layout, { frame: true });
+  captureVersion(S.project, 'revised', S.project.layout, `Built manual room ${label}`);
+  regenerateValidation();
+  if (fn.pushLayoutToServer) fn.pushLayoutToServer();
+  renderProject();
+}
+
 function traceRoomRectangle() {
   syncProjectFromLayout();
   const label = $('trace-room-label').value.trim() || `Room ${S.project.layout.rooms.length + 1}`;
@@ -1079,6 +1604,113 @@ function exportAnnotatedPng() {
   scheduleAutosave();
 }
 
+function clearDimensionLabels() {
+  if (!S.dimensionLabelGroup) return;
+  S.scene.remove(S.dimensionLabelGroup);
+  S.dimensionLabelGroup.traverse((child) => {
+    if (child.material?.map) child.material.map.dispose();
+    if (child.material) child.material.dispose();
+    if (child.geometry) child.geometry.dispose();
+  });
+  S.dimensionLabelGroup = null;
+}
+
+function toggleDimensionLabels() {
+  if (S.dimensionLabelGroup) {
+    clearDimensionLabels();
+    return;
+  }
+  const layout = currentLayout();
+  const group = new THREE.Group();
+  group.name = 'haus_dimension_labels';
+  for (const room of layout.rooms || []) {
+    if (!room.bounds) continue;
+    const width = room.bounds.x_max - room.bounds.x_min;
+    const depth = room.bounds.z_max - room.bounds.z_min;
+    group.add(labelSprite(`${room.label}: ${width.toFixed(2)}m x ${depth.toFixed(2)}m`, (room.bounds.x_min + room.bounds.x_max) / 2, room.bounds.z_min - 0.18, 0x0f766e));
+  }
+  for (const item of layout.items || []) {
+    if (item.visible === false) continue;
+    const rect = rectForItem(item);
+    const dims = dimsForItem(item);
+    group.add(labelSprite(`${labelForItem(item)} ${dims.w.toFixed(2)} x ${dims.d.toFixed(2)}m`, (rect.x_min + rect.x_max) / 2, rect.z_max + 0.16, 0x2563eb));
+  }
+  S.scene.add(group);
+  S.dimensionLabelGroup = group;
+}
+
+function snapSelectedToRoomEdge() {
+  if (!S.selectedTarget) return;
+  syncProjectFromLayout();
+  const mesh = S.selectedTarget;
+  const dims = fn.getMeshDims ? fn.getMeshDims(mesh) : { w: 1, d: 1 };
+  const clearance = Number($('clearance-preset')?.value || 0.25);
+  const rooms = S.project.layout.rooms || [];
+  const room = rooms.find((item) => item.label === mesh.userData.room) || rooms.find((item) => item.bounds);
+  if (!room?.bounds) {
+    setAutosave('Add or select a room before snapping to an edge.');
+    return;
+  }
+  const oldPos = mesh.position.clone();
+  const candidates = [
+    { x: room.bounds.x_min + dims.w / 2 + clearance, z: mesh.position.z },
+    { x: room.bounds.x_max - dims.w / 2 - clearance, z: mesh.position.z },
+    { x: mesh.position.x, z: room.bounds.z_min + dims.d / 2 + clearance },
+    { x: mesh.position.x, z: room.bounds.z_max - dims.d / 2 - clearance },
+  ];
+  const best = candidates.reduce((winner, item) => {
+    const distance = Math.hypot(item.x - mesh.position.x, item.z - mesh.position.z);
+    return distance < winner.distance ? { ...item, distance } : winner;
+  }, { ...candidates[0], distance: Infinity });
+  mesh.position.x = fn.snapToGrid ? fn.snapToGrid(best.x) : best.x;
+  mesh.position.z = fn.snapToGrid ? fn.snapToGrid(best.z) : best.z;
+  if (S.collisionEnabled && fn.checkCollision?.(mesh)) {
+    mesh.position.copy(oldPos);
+    fn.showCollisionFlash?.();
+    setAutosave('Snap blocked by collision.');
+    return;
+  }
+  fn.pushUndo?.({ type: 'move', mesh, oldPos, newPos: mesh.position.clone() });
+  fn.refreshSceneList?.();
+  if (fn.pushLayoutToServer) fn.pushLayoutToServer();
+  setAutosave(`Snapped to ${clearance.toFixed(2)}m clearance.`);
+}
+
+function renderMinimap() {
+  const root = $('minimap-panel');
+  if (!root || !S.project) return;
+  const layout = currentLayout();
+  const bounds = layoutBounds(layout);
+  const width = Math.max(0.1, bounds.width);
+  const depth = Math.max(0.1, bounds.depth);
+  const projectX = (x) => ((x - bounds.xMin) / width) * 100;
+  const projectZ = (z) => ((z - bounds.zMin) / depth) * 100;
+  root.innerHTML = '<strong>Overview</strong><div class="minimap-canvas"></div>';
+  const canvas = root.querySelector('.minimap-canvas');
+  for (const room of layout.rooms || []) {
+    if (!room.bounds) continue;
+    const node = document.createElement('span');
+    node.className = 'minimap-room';
+    node.style.left = `${projectX(room.bounds.x_min)}%`;
+    node.style.top = `${projectZ(room.bounds.z_min)}%`;
+    node.style.width = `${Math.max(2, projectX(room.bounds.x_max) - projectX(room.bounds.x_min))}%`;
+    node.style.height = `${Math.max(2, projectZ(room.bounds.z_max) - projectZ(room.bounds.z_min))}%`;
+    node.title = room.label || 'Room';
+    canvas.appendChild(node);
+  }
+  for (const item of layout.items || []) {
+    const rect = rectForItem(item);
+    const node = document.createElement('span');
+    node.className = `minimap-item ${item.type || 'object'}`;
+    node.style.left = `${projectX(rect.x_min)}%`;
+    node.style.top = `${projectZ(rect.z_min)}%`;
+    node.style.width = `${Math.max(2, projectX(rect.x_max) - projectX(rect.x_min))}%`;
+    node.style.height = `${Math.max(2, projectZ(rect.z_max) - projectZ(rect.z_min))}%`;
+    node.title = labelForItem(item);
+    canvas.appendChild(node);
+  }
+}
+
 function exportHtmlReport() {
   const report = S.validationReport || regenerateValidation();
   const include = {
@@ -1088,6 +1720,16 @@ function exportHtmlReport() {
     scenarios: $('report-scenarios').checked,
     images: $('report-images').checked,
   };
+  const filename = `${slug(S.project.title)}-report.html`;
+  const html = buildHtmlReport(report, include);
+  S.reportPreview = { html, filename, created_at: nowIso() };
+  S.project.exports.push({ kind: 'html_report_preview', filename, created_at: nowIso(), disclaimer: PRODUCT_DISCLAIMER });
+  captureVersion(S.project, 'previewed', S.project.layout, `Previewed ${filename}`);
+  renderReportPreview();
+  scheduleAutosave();
+}
+
+function buildHtmlReport(report, include) {
   const title = esc(S.project.title || 'Haus Report');
   const parts = [
     '<!doctype html><html><head><meta charset="utf-8">',
@@ -1104,11 +1746,60 @@ function exportHtmlReport() {
   if (include.shopping && S.project.shopping_list_csv) parts.push('<h2>Shopping List</h2><pre>', esc(S.project.shopping_list_csv), '</pre>');
   if (include.images) parts.push('<h2>Images</h2><p>Attach exported annotated PNG snapshots for scenario visuals.</p>');
   parts.push('<button onclick="window.print()">Print / Save PDF</button></body></html>');
-  const filename = `${slug(S.project.title)}-report.html`;
-  downloadText(parts.join('\n'), filename, 'text/html');
-  S.project.exports.push({ kind: 'html_report', filename, created_at: nowIso(), disclaimer: PRODUCT_DISCLAIMER });
-  captureVersion(S.project, 'exported', S.project.layout, `Exported ${filename}`);
+  return parts.join('\n');
+}
+
+function renderReportPreview() {
+  const root = $('report-preview');
+  if (!root) return;
+  if (!S.reportPreview) {
+    root.innerHTML = '';
+    return;
+  }
+  const { html, filename } = S.reportPreview;
+  const text = html.replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  root.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'report-preview-card';
+  const title = document.createElement('strong');
+  title.textContent = `Preview: ${filename}`;
+  const excerpt = document.createElement('p');
+  excerpt.textContent = text.slice(0, 1400);
+  const scenarios = document.createElement('p');
+  scenarios.className = 'report-preview-scenarios';
+  scenarios.textContent = `Scenarios: ${(S.project.scenarios || []).map((item) => item.name).join(', ') || 'base draft'}`;
+  const actions = document.createElement('div');
+  actions.className = 'report-preview-actions';
+  const download = document.createElement('button');
+  download.type = 'button';
+  download.textContent = 'Download HTML';
+  download.addEventListener('click', () => downloadPreviewedReport());
+  const print = document.createElement('button');
+  print.type = 'button';
+  print.textContent = 'Open Print View';
+  print.addEventListener('click', () => {
+    const win = window.open('', '_blank');
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+    }
+  });
+  actions.appendChild(download);
+  actions.appendChild(print);
+  card.appendChild(title);
+  card.appendChild(scenarios);
+  card.appendChild(excerpt);
+  card.appendChild(actions);
+  root.appendChild(card);
+}
+
+function downloadPreviewedReport() {
+  if (!S.reportPreview) return;
+  downloadText(S.reportPreview.html, S.reportPreview.filename, 'text/html');
+  S.project.exports.push({ kind: 'html_report', filename: S.reportPreview.filename, created_at: nowIso(), disclaimer: PRODUCT_DISCLAIMER });
+  captureVersion(S.project, 'exported', S.project.layout, `Exported ${S.reportPreview.filename}`);
   scheduleAutosave();
+  renderProject();
 }
 
 function scenarioScore(layout, journey) {

@@ -12,6 +12,7 @@ export function initCamera() {
   fn.frameScene = frameScene;
   fn.frameSelected = frameSelected;
   fn.setCameraView = setCameraView;
+  fn.setCameraBookmark = setCameraBookmark;
   fn.toggleOrtho = toggleOrtho;
   fn.toggleFps = toggleFps;
   fn.exitFps = exitFps;
@@ -81,6 +82,49 @@ function setCameraView(direction) {
   if (direction === 'front') S.camera.position.set(center.x, center.y, center.z + dist);
   else if (direction === 'right') S.camera.position.set(center.x + dist, center.y, center.z);
   else if (direction === 'top') S.camera.position.set(center.x, center.y + dist, center.z + 0.001);
+  S.orbit.update();
+}
+function setCameraBookmark(bookmark) {
+  const key = String(bookmark || '').replace(/_/g, ' ').toLowerCase();
+  if (!key || key === 'whole flat') {
+    frameScene();
+    return;
+  }
+  const aliases = {
+    entry: ['entry', 'foyer', 'entrance', 'hall'],
+    living: ['living', 'lounge'],
+    kitchen: ['kitchen', 'pantry'],
+    bedroom: ['bedroom', 'bed'],
+    bathroom: ['bathroom', 'bath', 'toilet', 'wc'],
+  }[key] || [key];
+  const room = (S.layoutRooms || []).find((item) => {
+    const text = `${item.label || ''} ${item.kind || ''}`.toLowerCase();
+    return aliases.some((alias) => text.includes(alias));
+  });
+  const box = new THREE.Box3();
+  box.makeEmpty();
+  if (room?.bounds) {
+    box.expandByPoint(new THREE.Vector3(room.bounds.x_min, 0, room.bounds.z_min));
+    box.expandByPoint(new THREE.Vector3(room.bounds.x_max, 2.6, room.bounds.z_max));
+  }
+  const matches = S.draggables.filter((mesh) => {
+    const text = `${mesh.userData.room || ''} ${mesh.userData.name || ''} ${mesh.userData.furnitureType || ''}`.toLowerCase();
+    return aliases.some((alias) => text.includes(alias));
+  });
+  for (const mesh of matches) box.expandByObject(mesh);
+  if (box.isEmpty()) {
+    frameScene();
+    return;
+  }
+  const { center, size } = frameBounds(box);
+  const footprint = Math.max(size.x, size.z, 2.5);
+  const dist = Math.max(footprint * 1.6, 4.5);
+  S.orbit.target.copy(center);
+  S.camera.position.set(center.x + dist * 0.7, Math.max(2.6, center.y + dist * 0.65), center.z + dist * 0.75);
+  if (S.camera.fov !== 45) {
+    S.camera.fov = 45;
+    S.camera.updateProjectionMatrix();
+  }
   S.orbit.update();
 }
 function toggleOrtho() {

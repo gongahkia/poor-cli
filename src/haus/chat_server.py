@@ -1899,14 +1899,14 @@ def _apply_design_plan(plan_id: str) -> tuple[dict[str, Any], int]:
     )
 
 
-def _revise_design_plan(plan_id: str, revision: str) -> tuple[dict[str, Any], int]:
+def _revise_design_plan(plan_id: str, revision: str, *, web_search_disabled: bool = False) -> tuple[dict[str, Any], int]:
     plan = _find_plan(plan_id)
     if plan is None:
         return {"ok": False, "error": f"Plan '{plan_id}' was not found."}, 404
 
     old_brief = str(plan.get("brief", ""))
     revised_brief = _collapse_ws(f"{old_brief} Revision: {revision}")
-    references = search_references(_design_search_query(revised_brief), max_results=5) or list(plan.get("web_references", []))
+    references = list(plan.get("web_references", [])) if web_search_disabled else search_references(_design_search_query(revised_brief), max_results=5) or list(plan.get("web_references", []))
     planner = plan.get("planner", {})
     profile = plan.get("standards_profile", {})
     planner_mode = str(planner.get("mode", "deterministic")) if isinstance(planner, dict) else "deterministic"
@@ -2089,11 +2089,14 @@ def _dispatch(
     request_id: str,
     tool_log: list[dict[str, Any]],
     confirmation_token: str | None = None,
+    web_search_disabled: bool = False,
 ) -> str:
     fn = _DISPATCH_RAW.get(name)
     start = time.perf_counter()
 
-    if fn is None:
+    if web_search_disabled and name in {"web_search", "web_fetch"}:
+        result = f"Error: {name} is disabled by this chat session's privacy settings."
+    elif fn is None:
         result = f"Error: unknown tool '{name}'."
     else:
         args, validation_error = _validate_tool_args(name, args)
@@ -2631,9 +2634,10 @@ def _design_chat_payload(
     planner_mode: str,
     standards_profile: str,
     fallback_reason: str | None = None,
+    web_search_disabled: bool = False,
 ) -> JSONResponse:
     start = time.perf_counter()
-    references = search_references(_design_search_query(user_msg), max_results=5)
+    references = [] if web_search_disabled else search_references(_design_search_query(user_msg), max_results=5)
     plan = _draft_design_plan(
         user_msg,
         references=references,
@@ -2665,6 +2669,7 @@ def _design_chat_payload(
             "reference_count": len(references),
             "planner_mode": planner_mode,
             "standards_profile": standards_profile,
+            "web_search_disabled": web_search_disabled,
         },
         "result": f"Drafted concept plan {plan['id']}.",
         "result_json": plan,
@@ -2691,9 +2696,10 @@ def _revision_chat_payload(
     history: list[dict[str, Any]],
     user_msg: str,
     request_id: str,
+    web_search_disabled: bool = False,
 ) -> JSONResponse:
     start = time.perf_counter()
-    payload, status = _revise_design_plan(plan_id, revision)
+    payload, status = _revise_design_plan(plan_id, revision, web_search_disabled=web_search_disabled)
     if status != 200:
         return JSONResponse({"error": payload.get("error", "Revision failed."), "request_id": request_id}, status)
 
@@ -2740,6 +2746,8 @@ async def _chat(request: Request) -> JSONResponse:
     client_key = str(body.get("api_key", "")).strip()
     planner_mode_requested = str(body.get("planner_mode") or body.get("plannerMode") or "auto")
     standards_profile = str(body.get("standards_profile") or body.get("standardsProfile") or _DEFAULT_STANDARDS_PROFILE)
+    raw_web_search_disabled = body.get("web_search_disabled", body.get("disable_web_search", False))
+    web_search_disabled = raw_web_search_disabled is True or str(raw_web_search_disabled).lower() in {"1", "true", "yes", "on"}
     attachments, attachment_error = _normalize_attachments(body.get("attachments", []))
 
     if not user_msg:
@@ -2766,6 +2774,7 @@ async def _chat(request: Request) -> JSONResponse:
             history=history,
             user_msg=user_msg,
             request_id=request_id,
+            web_search_disabled=web_search_disabled,
         )
 
     if concept_request:
@@ -2780,6 +2789,7 @@ async def _chat(request: Request) -> JSONResponse:
             planner_mode=resolved_planner_mode,
             standards_profile=standards_profile,
             fallback_reason=planner_fallback_reason,
+            web_search_disabled=web_search_disabled,
         )
 
     if provider not in _CHAT_FNS:
@@ -2807,7 +2817,7 @@ async def _chat(request: Request) -> JSONResponse:
     messages = history + [{"role": "user", "content": _build_user_content(user_msg, attachments)}]
 
     def dispatch(name: str, args: dict[str, Any]) -> str:
-        return _dispatch(name, args, request_id=request_id, tool_log=tool_log)
+        return _dispatch(name, args, request_id=request_id, tool_log=tool_log, web_search_disabled=web_search_disabled)
 
     log.info("[%s] chat request provider=%s model=%s", request_id, provider, model)
 
@@ -2848,7 +2858,9 @@ async def _design_plan_revise(request: Request) -> JSONResponse:
     if not revision:
         return JSONResponse({"ok": False, "error": "Revision must not be empty.", "request_id": request_id}, 400)
 
-    payload, status = _revise_design_plan(plan_id, revision)
+    raw_web_search_disabled = body.get("web_search_disabled", body.get("disable_web_search", False))
+    web_search_disabled = raw_web_search_disabled is True or str(raw_web_search_disabled).lower() in {"1", "true", "yes", "on"}
+    payload, status = _revise_design_plan(plan_id, revision, web_search_disabled=web_search_disabled)
     payload["request_id"] = request_id
     return JSONResponse(payload, status)
 
