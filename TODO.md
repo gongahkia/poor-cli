@@ -1,15 +1,15 @@
-- [ ] [P0][Research] Record the selected primary journeys as Renovation Concept Pack, Accessibility Checker, Furniture Fit Planner, and Designer Pre-Sales Assistant.
-- [ ] [P0][Research] Capture Houzz renovation-market evidence in product notes with source URL https://www.houzz.com/magazine/2025-u-s-houzz-and-home-renovation-trends-stsetivw-vs~181188659.
-- [ ] [P0][Research] Capture AARP HomeFit and aging-in-place evidence in product notes with source URL https://www.aarp.org/livable-communities/housing/info-2020/homefit-guide/.
-- [ ] [P0][Research] Capture IKEA Kreativ furniture-fit evidence in product notes with source URL https://www.ikea.com/us/en/planners/.
-- [ ] [P0][Research] Capture Houzz Pro designer workflow evidence in product notes with source URL https://pro.houzz.com/for-pros/software-interior-designer.
-- [ ] [P0][Research] Capture RoomSketcher user-segment evidence in product notes with source URL https://help.roomsketcher.com/hc/en-us/articles/35581805358877-New-to-RoomSketcher-Start-Here.
-- [ ] [P0][Research] Capture HomeByMe branded-furniture and sharing evidence in product notes with source URL https://home.by.me/en/.
-- [ ] [P0][Research] Capture Planner 5D AI home-design evidence in product notes with source URL https://planner5d.com/.
-- [ ] [P0][Positioning] State that Haus is a concept planning and spatial validation workbench, not BIM authoring, code certification, medical advice, or contractor-ready documentation.
-- [ ] [P0][Positioning] Rewrite product copy so the core promise is "turn a floor plan into actionable layout options, checks, and client-ready exports."
-- [ ] [P0][Positioning] Define the primary success metric as "user reaches a useful applied plan and export in under 10 minutes."
-- [ ] [P0][Positioning] Define the secondary success metric as "user finds at least one actionable spatial risk before buying furniture or starting renovation."
+- [x] [P0][Research] Record the selected primary journeys as Renovation Concept Pack, Accessibility Checker, Furniture Fit Planner, and Designer Pre-Sales Assistant.
+- [x] [P0][Research] Capture Houzz renovation-market evidence in product notes with source URL https://www.houzz.com/magazine/2025-u-s-houzz-and-home-renovation-trends-stsetivw-vs~181188659.
+- [x] [P0][Research] Capture AARP HomeFit and aging-in-place evidence in product notes with source URL https://www.aarp.org/livable-communities/housing/info-2020/homefit-guide/.
+- [x] [P0][Research] Capture IKEA Kreativ furniture-fit evidence in product notes with source URL https://www.ikea.com/us/en/planners/.
+- [x] [P0][Research] Capture Houzz Pro designer workflow evidence in product notes with source URL https://pro.houzz.com/for-pros/software-interior-designer.
+- [x] [P0][Research] Capture RoomSketcher user-segment evidence in product notes with source URL https://help.roomsketcher.com/hc/en-us/articles/35581805358877-New-to-RoomSketcher-Start-Here.
+- [x] [P0][Research] Capture HomeByMe branded-furniture and sharing evidence in product notes with source URL https://home.by.me/en/.
+- [x] [P0][Research] Capture Planner 5D AI home-design evidence in product notes with source URL https://planner5d.com/.
+- [x] [P0][Positioning] State that Haus is a concept planning and spatial validation workbench, not BIM authoring, code certification, medical advice, or contractor-ready documentation.
+- [x] [P0][Positioning] Rewrite product copy so the core promise is "turn a floor plan into actionable layout options, checks, and client-ready exports."
+- [x] [P0][Positioning] Define the primary success metric as "user reaches a useful applied plan and export in under 10 minutes."
+- [x] [P0][Positioning] Define the secondary success metric as "user finds at least one actionable spatial risk before buying furniture or starting renovation."
 - [ ] [P0][Shared] Add a first-run journey selector with Renovation, Accessibility, Furniture Fit, Designer, and Blank Project options.
 - [ ] [P0][Shared] Make the selected journey persist in project metadata and chat context.
 - [ ] [P0][Shared] Add a project intake panel that collects dwelling type, country or region, units, household profile, budget range, timeline, and main goal.
@@ -57,10 +57,10 @@
 - [ ] [P0][Shared] Add layout schema validation at import, sync, export, and MCP boundaries.
 - [ ] [P0][Shared] Add migration tests for older bundled layouts.
 - [ ] [P0][Shared] Add a product-safe disclaimer block to every exported report.
-- [ ] [P0][Shared] Add Makefile fixes so lint, build, all, and clean match the current repository structure.
-- [ ] [P0][Shared] Restore or replace the repository LICENSE file so package and GitHub metadata are consistent.
-- [ ] [P0][Shared] Align README, pyproject, mcp-manifest, server.json, and release badge versions.
-- [ ] [P0][Shared] Add Playwright to a documented e2e optional dependency or CI job.
+- [x] [P0][Shared] Add Makefile fixes so lint, build, all, and clean match the current repository structure.
+- [x] [P0][Shared] Restore or replace the repository LICENSE file so package and GitHub metadata are consistent.
+- [x] [P0][Shared] Align README, pyproject, mcp-manifest, server.json, and release badge versions.
+- [x] [P0][Shared] Add Playwright to a documented e2e optional dependency or CI job.
 - [ ] [P0][Shared] Add a smoke test that launches haus view, loads editor.html, checks chat status, and drafts a deterministic plan.
 - [ ] [P0][Shared] Add a visual regression screenshot test for the default editor state.
 - [ ] [P0][Shared] Add a fixture floor plan with known scale and expected wall count for upload regression tests.

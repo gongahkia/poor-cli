@@ -1,12 +1,12 @@
-[![](https://img.shields.io/badge/haus_1.0.0-passing-green)](https://github.com/gongahkia/haus/releases/tag/1.0.0)
+[![](https://img.shields.io/badge/haus_0.1.0-passing-green)](https://github.com/gongahkia/haus/releases/tag/0.1.0)
 ![](https://github.com/gongahkia/haus/actions/workflows/ci.yml/badge.svg)
 <!-- mcp-name: io.github.gongahkia/haus -->
 
 # `Haus`
 
-AI floor-plan workbench for uploaded apartment layouts.
+Concept planning and spatial validation workbench for uploaded apartment layouts.
 
-`Haus` lets you upload a floor-plan image, calibrate scale, turn it into editable 3D geometry, ask an AI planner to furnish it, run sightline/walkway checks, and export JSON, SVG, or GLB. It runs locally and exposes an MCP server so agents can work against real layout objects instead of static images.
+`Haus` turns a floor plan into actionable layout options, checks, and client-ready exports. Upload or trace a plan, calibrate scale, compare scenarios, run renovation/accessibility/furniture-fit checks, and export local JSON, SVG, PNG, HTML, or GLB artifacts. It runs locally and exposes an MCP server so agents can work against real layout objects instead of static images.
 
 <div align="center">
   <a href="./asset/demo/hero.mp4">
@@ -29,15 +29,16 @@ In the editor:
 1. Click **Upload Plan** or use **Tools -> Upload Floor Plan**.
 2. Optionally enter a known pixel length and real-world length for calibration.
 3. Review extracted walls/openings.
-4. Ask the planner to furnish or validate the layout.
+4. Pick Renovation, Accessibility, Furniture Fit, Designer, or Blank Project.
+5. Ask the planner to draft, revise, validate, apply, compare, or export a scenario.
 
 Example prompts:
 
 ```text
-Furnish this apartment for a compact work-from-home setup.
-Optimize the living area for sofa, TV sightline, and clear walkway.
-Design a rental bedroom with bed, desk, and storage.
-Check this layout against the selected circulation profile.
+Draft three renovation concepts with conservative, balanced, and ambitious options.
+Run an accessibility review for a walker user and show blocked routes.
+Check whether this sofa fits in the living room and through the entry path.
+Create a client-ready pre-sales summary for this floor plan.
 ```
 
 To connect an MCP client to the same live layout:
@@ -50,11 +51,11 @@ $ uvx --from git+https://github.com/gongahkia/haus haus mcp --layout ~/.haus/vie
 
 ## What It Does
 
-* **Upload-first workflow:** PNG/JPG/WebP floor plans can be vectorized in the browser-backed local server.
-* **Measured layout editing:** calibration and scale metadata keep furniture, walls, and exports in meters.
-* **Agent-native planning:** AI clients can call MCP tools to place furniture, tag rooms, check overlaps, score walkways, and export the result.
-* **Useful fallbacks:** if extraction is weak, load the image as an editable reference overlay and draw walls manually.
-* **Local-first exports:** save JSON, SVG, GLB, screenshots, and semantic layout data.
+* **Journey-first planning:** choose Renovation, Accessibility, Furniture Fit, Designer, or Blank Project and keep that context in project metadata and chat.
+* **Measured layout editing:** calibration and confidence metadata keep furniture, walls, checks, and exports in meters.
+* **Scenario validation:** compare layout versions, assumptions, unknowns, warnings, and room-by-room validation results before applying a plan.
+* **Useful fallbacks:** if extraction is weak, load the image as a reference overlay and open manual tracing tools immediately.
+* **Local-first exports:** save JSON, SVG, GLB, screenshots, shopping lists, and standalone HTML/print reports.
 
 ## Source Checkout
 
@@ -84,7 +85,9 @@ $ haus view
 
 ## Product Boundaries
 
-`Haus` is a planning and visualization tool. It is not IFC/BIM authoring software, a permit package generator, or a code-compliance certificate. Scale inferred from images is approximate unless calibrated by the user.
+`Haus` is a concept planning and spatial validation workbench. It is not BIM authoring software, code certification, medical advice, occupational therapy assessment, contractor-ready documentation, a permit package generator, or a substitute for professional site verification. Scale inferred from images is approximate unless calibrated by the user.
+
+Accessibility output is planning guidance only, not ADA certification, medical advice, or an occupational therapy assessment. Renovation wall and plumbing suggestions are concept-only until verified by a qualified professional on site.
 
 Bundled sample layouts are examples only. The product does not depend on a comprehensive BTO/HDB corpus.
 
@@ -110,7 +113,7 @@ Bundled sample layouts are examples only. The product does not depend on a compr
 * Backend: Python, Starlette, Uvicorn, FastMCP
 * Preprocessing: OpenCV, NumPy, Pillow
 * 3D: Trimesh, Shapely
-* Tests: pytest, ruff, pyright
+* Tests: pytest, ruff, pyright, optional Playwright e2e
 * Package manager: uv
 
 ## Providers

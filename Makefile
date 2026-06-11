@@ -4,7 +4,7 @@ OUT := out
 DEBUG := out/debug
 PORT := 8080
 
-.PHONY: setup test lint vectorize build view mcp clean all help
+.PHONY: setup test lint e2e vectorize build view mcp clean all help
 
 help:
 	@echo "haus — floor plan vectorization + 3D editor"
@@ -18,6 +18,7 @@ help:
 	@echo "  make vectorize  vectorize only (no GLB)"
 	@echo "  make test       run tests"
 	@echo "  make lint       run ruff linter"
+	@echo "  make e2e        run optional Playwright frontend tests"
 	@echo "  make clean      remove out/"
 	@echo ""
 	@echo "typical workflow:"
@@ -36,19 +37,22 @@ test:
 	$(VENV)/pytest tests/ -v
 
 lint:
-	$(VENV)/ruff check src/ tests/ scripts/
+	$(VENV)/ruff check src tests
 
-vectorize: $(wildcard $(CORPUS)/*.jpg)
+e2e:
+	$(VENV)/pytest tests/test_frontend_e2e.py -v
+
+vectorize: $(wildcard $(CORPUS)/cleaned/*.jpg)
 	@mkdir -p $(OUT)
-	@for img in $(CORPUS)/*.jpg; do \
+	@for img in $(CORPUS)/cleaned/*.jpg; do \
 		name=$$(basename "$$img" .jpg); \
 		echo "--- vectorize $$name ---"; \
 		$(VENV)/haus vectorize --image "$$img" --out $(OUT)/$$name --debug-dir $(OUT)/$$name/debug; \
 	done
 
-build: $(wildcard $(CORPUS)/*.jpg)
+build: $(wildcard $(CORPUS)/cleaned/*.jpg)
 	@mkdir -p $(OUT)
-	@for img in $(CORPUS)/*.jpg; do \
+	@for img in $(CORPUS)/cleaned/*.jpg; do \
 		name=$$(basename "$$img" .jpg); \
 		echo "--- build $$name ---"; \
 		$(VENV)/haus build --image "$$img" --out $(OUT)/$$name --debug-dir $(OUT)/$$name/debug; \
@@ -61,6 +65,6 @@ mcp:
 	$(VENV)/haus mcp
 
 clean:
-	rm -rf $(OUT) viewer/mcp-layout.json
+	rm -rf $(OUT) output/playwright viewer/mcp-layout.json
 
 all: lint test build
