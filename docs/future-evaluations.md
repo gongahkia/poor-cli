@@ -226,3 +226,58 @@ Acceptable first experiment:
 - Expand `bim_readiness_report` into a machine-readable mapping coverage report.
   This improves interoperability planning without emitting files that users may
   mistake for professional BIM deliverables.
+
+## Contractor Estimating
+
+Decision: defer.
+
+Haus should not add contractor estimating yet. The current product can describe
+renovation scope, rank disruption and cost complexity, roll up known product
+prices, and export shopping lists. That is not the same as estimating labor,
+materials, subcontractor work, site conditions, demolition, disposal, permits,
+taxes, contingency, or local pricing. A contractor estimate would be taken as a
+financial decision aid, so weak quantities or rates would directly harm users.
+
+Current evidence:
+
+- Renovation scenarios use qualitative cost tiers such as low, medium, high,
+  and unknown.
+- `cost_tier_explanation` explicitly says exact prices are not estimated and
+  professional pricing is required for high-complexity work.
+- `renovation_scope_brief` exports goals, constraints, assumptions, open
+  questions, and professional boundaries rather than a priced bid.
+- `budget_estimate` sums known product prices and marks unknown prices only for
+  product lists.
+- Shopping-list exports include product dimensions, quantities, source URLs, and
+  fit notes, but not contractor labor or renovation quantities.
+
+Why it remains P3:
+
+- Scope items do not yet have measured quantity takeoffs, confidence intervals,
+  unit categories, waste factors, or site-verification status.
+- Product catalog coverage is useful for furniture fit, but not mature enough
+  for renovation materials, fixtures, services, labor, or regional pricing.
+- Renovation changes involving walls, plumbing, electrical, wet areas, stairs,
+  and structural questions are deliberately concept-only.
+- Exact estimates would conflict with Haus's product boundary against
+  contractor-ready documentation.
+
+Promotion gates:
+
+- Add a scope item model with category, room, affected objects, measured
+  quantity, confidence, exclusions, and professional verification flag.
+- Add quantity extraction tests for flooring area, wall length, door count,
+  fixture count, built-in storage footprint, and service-zone impact.
+- Define regional rate provenance, last-checked dates, tax assumptions,
+  contingency ranges, and unknown-price handling.
+- Separate homeowner budget rough-order bands from contractor bid estimates in
+  UI copy, exports, and MCP tool names.
+- Add report tests proving that unverified measurements, structural unknowns,
+  and plumbing/electrical changes cannot appear as exact prices.
+
+Acceptable first experiment:
+
+- A renovation budget risk summary that stays qualitative: scope complexity,
+  likely cost tier, unknown quantity count, items needing professional pricing,
+  and questions to ask contractors. This builds on current scope briefs without
+  pretending to generate a bid.
