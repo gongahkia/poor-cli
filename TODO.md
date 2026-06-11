@@ -236,7 +236,7 @@
 - [x] [P2][Launch] Add issue templates for bug report, feature request, floor plan extraction failure, and journey feedback.
 - [x] [P2][Launch] Add a roadmap section that invites users to choose between homeowner, accessibility, furniture, and designer workflows.
 - [x] [P3][Future] Evaluate real-time collaborative project sharing only after local project workflows are stable.
-- [ ] [P3][Future] Evaluate cloud storage only after local privacy and project bundle exports are strong.
+- [x] [P3][Future] Evaluate cloud storage only after local privacy and project bundle exports are strong.
 - [ ] [P3][Future] Evaluate photorealistic rendering only after spatial planning and report exports are trustworthy.
 - [ ] [P3][Future] Evaluate IFC or BIM export only after semantic layout data is robust and professional boundaries are clear.
 - [ ] [P3][Future] Evaluate contractor estimating only after renovation scopes, quantities, and product catalogs are mature.
