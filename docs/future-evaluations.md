@@ -171,3 +171,58 @@ Acceptable first experiment:
 - Improve non-photorealistic scenario screenshots: clearer lighting, camera
   presets, warning overlays, and side-by-side before/after frames. This supports
   trust in the current planning workflow without implying final design fidelity.
+
+## IFC Or BIM Export
+
+Decision: defer.
+
+Haus should keep semantic layout export and BIM-readiness reporting, but should
+not ship IFC or BIM export yet. IFC files carry professional expectations around
+topology, levels, object classes, openings, materials, MEP systems, quantities,
+and downstream authoring-tool behavior. Haus is a planning workbench, not BIM
+authoring software or contractor-ready documentation.
+
+Current evidence:
+
+- `get_semantic_layout_json` returns `haus.semantic_layout.v1` with rooms,
+  objects, circulation profiles, and BIM-readiness metadata.
+- `bim_readiness_report` explicitly says the output is not an IFC export or
+  compliance certificate.
+- The viewer semantic export notes say GLB/JSON preserve Haus object semantics
+  for visualization and future BIM mapping, not for IFC delivery.
+- `tests/test_mcp_server.py` verifies `not_ifc` is true and that the readiness
+  report lists missing MEP, plumbing, and electrical systems.
+- The README lists semantic export and BIM-readiness tools separately from
+  actual BIM authoring.
+
+Why it remains P3:
+
+- Wall, room, door, and window topology is not yet robust enough to guarantee
+  valid IFC relationships.
+- Structural status is usually unknown, and renovation wall changes are
+  concept-only unless professionally verified.
+- Service zones, plumbing, electrical, materials, levels, slabs, ceilings,
+  fixtures, and construction assemblies are incomplete or intentionally
+  placeholders.
+- Exporting IFC without clear boundaries could imply code certification,
+  permit-readiness, or contractor-ready quantities.
+
+Promotion gates:
+
+- Stabilize a semantic layout schema that includes wall/opening topology,
+  room containment, levels, heights, window metadata, door swings, fixed service
+  zones, and provenance for inferred versus user-confirmed data.
+- Add schema migration tests and golden fixtures for realistic multi-room plans
+  with doors, windows, fixed fixtures, and irregular polygons.
+- Produce a BIM mapping coverage report that lists exactly which IFC entities
+  can be mapped and which are intentionally omitted.
+- Validate exported files with external IFC tooling and add round-trip tests
+  that prove rooms, walls, openings, dimensions, and object categories survive.
+- Keep every IFC-related artifact labeled as concept planning output unless a
+  future professional workflow adds qualified review and sign-off boundaries.
+
+Acceptable first experiment:
+
+- Expand `bim_readiness_report` into a machine-readable mapping coverage report.
+  This improves interoperability planning without emitting files that users may
+  mistake for professional BIM deliverables.
