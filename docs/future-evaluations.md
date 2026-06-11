@@ -117,3 +117,57 @@ Acceptable first experiment:
 - A documented "bring your own storage" workflow that saves and loads Haus
   project bundles from a user-controlled folder. This can validate demand for
   cross-device continuity without making Haus the system of record.
+
+## Photorealistic Rendering
+
+Decision: defer.
+
+Haus should not pursue photorealistic rendering as a near-term feature. The core
+promise is spatial planning: measured scenarios, validation warnings, geometry
+overlays, and client-ready exports. Photorealistic images can be useful later,
+but they can also overstate certainty, hide clearance issues, imply materials or
+products that were never selected, and distract from warnings that users need
+before buying furniture or starting renovation.
+
+Current evidence:
+
+- `README.md` positions Haus around actionable layout options, checks, and
+  exports rather than beauty renders.
+- `LAUNCH.md` explicitly says not to lead with photorealistic AI renders.
+- The viewer already supports 2D review, 3D walk-through, camera bookmarks,
+  screenshots, annotated PNG export, SVG export, GLB export, and HTML/print
+  reports.
+- `tests/test_workbench.py` verifies report filtering, disclaimers, selected
+  scenarios, and project bundle export.
+- `tests/test_frontend_e2e.py` covers the editor and chat journey screens where
+  visuals support planning actions instead of replacing them.
+
+Why it remains P3:
+
+- Photorealistic generation would need product, finish, lighting, view, and
+  material provenance that Haus does not yet model with enough precision.
+- A generated image could contradict measured clearances or validation warnings
+  unless it is derived from the same scenario geometry and checked afterward.
+- External render providers would raise the same privacy and consent issues as
+  cloud storage and LLM image upload.
+- Render quality can create false confidence in renovation feasibility,
+  accessibility safety, and product fit.
+
+Promotion gates:
+
+- Treat measured layout JSON, selected scenario ID, product dimensions,
+  assumptions, and warnings as the render input source of truth.
+- Require visible watermarks or captions that identify renders as concept
+  visualization, not construction documentation or product confirmation.
+- Add a geometry-preservation check proving walls, openings, fixed fixtures, and
+  placed furniture remain consistent between the validated scenario and render.
+- Add source fields for materials, products, and style references, including
+  unknown markers when they are inferred.
+- Add report tests that keep serious and blocked warnings visible beside any
+  generated visual.
+
+Acceptable first experiment:
+
+- Improve non-photorealistic scenario screenshots: clearer lighting, camera
+  presets, warning overlays, and side-by-side before/after frames. This supports
+  trust in the current planning workflow without implying final design fidelity.
