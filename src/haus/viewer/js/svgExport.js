@@ -1,7 +1,8 @@
-import { S } from './state.js';
+import { S, fn } from './state.js';
 import { FURNITURE_NAMES } from './furniture.js';
 export function initSvgExport() {
   document.getElementById('export-svg-btn').addEventListener('click', exportSvg);
+  fn.exportAnnotatedSvg = exportSvg;
 }
 function getLabel(m) {
   if (m.userData.name) return m.userData.name;
@@ -66,6 +67,21 @@ function exportSvg() {
         parts.push(`<text x="0" y="${(fs * 0.35).toFixed(1)}" text-anchor="middle" font-size="${fs.toFixed(1)}" font-family="system-ui, sans-serif" fill="#222">${escXml(label)}</text>`);
       }
     }
+    parts.push(`<text x="0" y="${(rd / 2 + 10).toFixed(1)}" text-anchor="middle" font-size="7" font-family="system-ui, sans-serif" fill="#111">${w.toFixed(2)}m x ${d.toFixed(2)}m</text>`);
+    parts.push('</g>');
+  }
+  const report = S.validationReport;
+  const blocked = report?.overlays?.blocked_areas || [];
+  if (blocked.length) {
+    parts.push('<g fill="rgba(239,68,68,0.20)" stroke="#b91c1c" stroke-width="1.5">');
+    blocked.forEach((rect, index) => {
+      const x = toX(rect.x_min);
+      const y = toY(rect.z_min);
+      const w = (rect.x_max - rect.x_min) * pxPerM;
+      const h = (rect.z_max - rect.z_min) * pxPerM;
+      parts.push(`<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${h.toFixed(1)}"/>`);
+      parts.push(`<text x="${(x + w / 2).toFixed(1)}" y="${(y + h / 2).toFixed(1)}" text-anchor="middle" font-size="11" font-family="system-ui, sans-serif" fill="#7f1d1d">Warning ${index + 1}</text>`);
+    });
     parts.push('</g>');
   }
   // room labels

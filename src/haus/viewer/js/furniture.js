@@ -43,7 +43,7 @@ export function initFurniture() {
   fn.cancelPlaceMode = cancelPlaceMode;
   fn.confirmPlacement = confirmPlacement;
   fn.updatePlaceGhost = updatePlaceGhost;
-  document.querySelectorAll('.furniture-btn').forEach(btn => {
+  document.querySelectorAll('.furniture-btn[data-type]').forEach(btn => {
     btn.addEventListener('click', () => enterPlaceMode(btn.dataset.type));
   });
 }

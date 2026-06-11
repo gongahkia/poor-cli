@@ -2637,6 +2637,7 @@ def _design_chat_payload(
         review = _run_plan_llm_review(provider=provider, api_key=api_key, model=model, mode=planner_mode, plan=raw_plan)
         raw_plan["llm_review"] = review
         if review["status"] == "reviewed":
+            raw_plan.setdefault("planner", {})["provider_reviewed"] = True
             raw_plan["rationale"].append("Provider review was attached, but Haus geometry validation remains the source of applyable placements.")
         if planner_mode == "llm_structured" and review.get("structured_suggestion"):
             raw_plan["structured_suggestion"] = review["structured_suggestion"]

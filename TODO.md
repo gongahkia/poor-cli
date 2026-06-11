@@ -10,63 +10,63 @@
 - [x] [P0][Positioning] Rewrite product copy so the core promise is "turn a floor plan into actionable layout options, checks, and client-ready exports."
 - [x] [P0][Positioning] Define the primary success metric as "user reaches a useful applied plan and export in under 10 minutes."
 - [x] [P0][Positioning] Define the secondary success metric as "user finds at least one actionable spatial risk before buying furniture or starting renovation."
-- [ ] [P0][Shared] Add a first-run journey selector with Renovation, Accessibility, Furniture Fit, Designer, and Blank Project options.
-- [ ] [P0][Shared] Make the selected journey persist in project metadata and chat context.
-- [ ] [P0][Shared] Add a project intake panel that collects dwelling type, country or region, units, household profile, budget range, timeline, and main goal.
-- [ ] [P0][Shared] Add a local project model that stores title, journey, source file, calibration, rooms, layout versions, assumptions, validation reports, and exports.
-- [ ] [P0][Shared] Add project save and load flows backed by local JSON files.
-- [ ] [P0][Shared] Add an autosave indicator for the active local project.
-- [ ] [P0][Shared] Add project version history for draft, applied, revised, exported, and imported states.
-- [ ] [P0][Shared] Add a before and after layout comparison mode.
-- [ ] [P0][Shared] Add named scenarios so users can compare multiple plans for the same floor plan.
-- [ ] [P0][Shared] Add scenario duplication so users can branch from an existing layout.
-- [ ] [P0][Shared] Add scenario scoring summaries for fit, circulation, accessibility, cost complexity, and confidence.
-- [ ] [P0][Shared] Add a calibration wizard that supports drawing a known-length segment on the floor plan image.
-- [ ] [P0][Shared] Store calibration confidence and show when scale is estimated rather than user-confirmed.
-- [ ] [P0][Shared] Add a recalibration command that updates measurements and validation reports without losing objects.
-- [ ] [P0][Shared] Add a room tracing tool for manually outlining rooms when image vectorization is weak.
-- [ ] [P0][Shared] Add a door and opening editor with width, swing direction, sliding door, and no-door opening options.
-- [ ] [P0][Shared] Add a window editor with width, sill height, and wall association.
-- [ ] [P0][Shared] Add fixed element types for structural wall, partition wall, column, household shelter, plumbing stack, cabinet, appliance, and fixture.
-- [ ] [P0][Shared] Add a confidence badge to every extracted wall, room, door, and opening.
-- [ ] [P0][Shared] Add an extraction review checklist that asks the user to confirm walls, rooms, doors, and scale before relying on checks.
-- [ ] [P0][Shared] Add a "use as image only" path that keeps the plan visible and immediately opens manual tracing tools.
-- [ ] [P0][Shared] Add a "what can Haus infer from this plan" summary after upload.
-- [ ] [P0][Shared] Add a chat command router that classifies messages into draft plan, revise plan, apply plan, validate layout, ask question, edit object, and export report.
-- [ ] [P0][Shared] Add journey-specific system prompts that preserve safety boundaries and use the active project metadata.
-- [ ] [P0][Shared] Add user-visible citations or reference notes when web research influences a recommendation.
-- [ ] [P0][Shared] Add deterministic fallbacks for every critical journey so useful planning works without provider API keys.
-- [ ] [P0][Shared] Add an explicit "LLM reviewed" badge only when a provider actually reviewed the deterministic plan.
-- [ ] [P0][Shared] Add an assumptions panel that the user can edit before applying a plan.
-- [ ] [P0][Shared] Add an unknowns panel for missing measurements, unconfirmed walls, missing door widths, and uncertain product dimensions.
+- [x] [P0][Shared] Add a first-run journey selector with Renovation, Accessibility, Furniture Fit, Designer, and Blank Project options.
+- [x] [P0][Shared] Make the selected journey persist in project metadata and chat context.
+- [x] [P0][Shared] Add a project intake panel that collects dwelling type, country or region, units, household profile, budget range, timeline, and main goal.
+- [x] [P0][Shared] Add a local project model that stores title, journey, source file, calibration, rooms, layout versions, assumptions, validation reports, and exports.
+- [x] [P0][Shared] Add project save and load flows backed by local JSON files.
+- [x] [P0][Shared] Add an autosave indicator for the active local project.
+- [x] [P0][Shared] Add project version history for draft, applied, revised, exported, and imported states.
+- [x] [P0][Shared] Add a before and after layout comparison mode.
+- [x] [P0][Shared] Add named scenarios so users can compare multiple plans for the same floor plan.
+- [x] [P0][Shared] Add scenario duplication so users can branch from an existing layout.
+- [x] [P0][Shared] Add scenario scoring summaries for fit, circulation, accessibility, cost complexity, and confidence.
+- [x] [P0][Shared] Add a calibration wizard that supports drawing a known-length segment on the floor plan image.
+- [x] [P0][Shared] Store calibration confidence and show when scale is estimated rather than user-confirmed.
+- [x] [P0][Shared] Add a recalibration command that updates measurements and validation reports without losing objects.
+- [x] [P0][Shared] Add a room tracing tool for manually outlining rooms when image vectorization is weak.
+- [x] [P0][Shared] Add a door and opening editor with width, swing direction, sliding door, and no-door opening options.
+- [x] [P0][Shared] Add a window editor with width, sill height, and wall association.
+- [x] [P0][Shared] Add fixed element types for structural wall, partition wall, column, household shelter, plumbing stack, cabinet, appliance, and fixture.
+- [x] [P0][Shared] Add a confidence badge to every extracted wall, room, door, and opening.
+- [x] [P0][Shared] Add an extraction review checklist that asks the user to confirm walls, rooms, doors, and scale before relying on checks.
+- [x] [P0][Shared] Add a "use as image only" path that keeps the plan visible and immediately opens manual tracing tools.
+- [x] [P0][Shared] Add a "what can Haus infer from this plan" summary after upload.
+- [x] [P0][Shared] Add a chat command router that classifies messages into draft plan, revise plan, apply plan, validate layout, ask question, edit object, and export report.
+- [x] [P0][Shared] Add journey-specific system prompts that preserve safety boundaries and use the active project metadata.
+- [x] [P0][Shared] Add user-visible citations or reference notes when web research influences a recommendation.
+- [x] [P0][Shared] Add deterministic fallbacks for every critical journey so useful planning works without provider API keys.
+- [x] [P0][Shared] Add an explicit "LLM reviewed" badge only when a provider actually reviewed the deterministic plan.
+- [x] [P0][Shared] Add an assumptions panel that the user can edit before applying a plan.
+- [x] [P0][Shared] Add an unknowns panel for missing measurements, unconfirmed walls, missing door widths, and uncertain product dimensions.
 - [x] [P0][Shared] Add a validation report object that can be regenerated after every layout edit.
 - [x] [P0][Shared] Add a validation severity model with info, warning, serious, and blocked states.
 - [x] [P0][Shared] Add room-by-room validation summaries.
 - [x] [P0][Shared] Add a plain-English explanation for every warning and every suggested fix.
-- [ ] [P0][Shared] Add a "show me why" action that highlights the geometry behind any warning.
-- [ ] [P0][Shared] Add visual overlays for walkway corridors, blocked areas, door clearances, turning circles, and product footprints.
-- [ ] [P0][Shared] Add measurements to overlays so users can see actual clearance values.
-- [ ] [P0][Shared] Add a 2D top-down review mode optimized for measurement and reports.
-- [ ] [P0][Shared] Add a 3D walk-through review mode optimized for understanding furniture and sightlines.
-- [ ] [P0][Shared] Add exportable annotated PNG snapshots for each scenario.
-- [ ] [P0][Shared] Add exportable SVG plans with labels, dimensions, furniture, and warning markers.
-- [ ] [P0][Shared] Add an HTML report export that works without external services.
-- [ ] [P0][Shared] Add a PDF report export path or print-optimized HTML fallback.
-- [ ] [P0][Shared] Add a report builder that lets users include or exclude assumptions, warnings, shopping list, scenarios, and images.
+- [x] [P0][Shared] Add a "show me why" action that highlights the geometry behind any warning.
+- [x] [P0][Shared] Add visual overlays for walkway corridors, blocked areas, door clearances, turning circles, and product footprints.
+- [x] [P0][Shared] Add measurements to overlays so users can see actual clearance values.
+- [x] [P0][Shared] Add a 2D top-down review mode optimized for measurement and reports.
+- [x] [P0][Shared] Add a 3D walk-through review mode optimized for understanding furniture and sightlines.
+- [x] [P0][Shared] Add exportable annotated PNG snapshots for each scenario.
+- [x] [P0][Shared] Add exportable SVG plans with labels, dimensions, furniture, and warning markers.
+- [x] [P0][Shared] Add an HTML report export that works without external services.
+- [x] [P0][Shared] Add a PDF report export path or print-optimized HTML fallback.
+- [x] [P0][Shared] Add a report builder that lets users include or exclude assumptions, warnings, shopping list, scenarios, and images.
 - [x] [P0][Shared] Add a source-of-truth layout JSON schema with versioned migrations.
-- [ ] [P0][Shared] Add layout schema validation at import, sync, export, and MCP boundaries.
-- [ ] [P0][Shared] Add migration tests for older bundled layouts.
-- [ ] [P0][Shared] Add a product-safe disclaimer block to every exported report.
+- [x] [P0][Shared] Add layout schema validation at import, sync, export, and MCP boundaries.
+- [x] [P0][Shared] Add migration tests for older bundled layouts.
+- [x] [P0][Shared] Add a product-safe disclaimer block to every exported report.
 - [x] [P0][Shared] Add Makefile fixes so lint, build, all, and clean match the current repository structure.
 - [x] [P0][Shared] Restore or replace the repository LICENSE file so package and GitHub metadata are consistent.
 - [x] [P0][Shared] Align README, pyproject, mcp-manifest, server.json, and release badge versions.
 - [x] [P0][Shared] Add Playwright to a documented e2e optional dependency or CI job.
-- [ ] [P0][Shared] Add a smoke test that launches haus view, loads editor.html, checks chat status, and drafts a deterministic plan.
-- [ ] [P0][Shared] Add a visual regression screenshot test for the default editor state.
-- [ ] [P0][Shared] Add a fixture floor plan with known scale and expected wall count for upload regression tests.
-- [ ] [P0][Renovation] Add a Renovation journey intake form for goals, must-keep rooms, must-change rooms, budget band, style, household profile, and constraints.
-- [ ] [P0][Renovation] Add fields for "allowed wall changes" with options no wall changes, non-structural only, and exploratory concept.
-- [ ] [P0][Renovation] Add room priority inputs such as storage, open space, work-from-home, child-friendly, entertaining, rental, resale, and aging-ready.
+- [x] [P0][Shared] Add a smoke test that launches haus view, loads editor.html, checks chat status, and drafts a deterministic plan.
+- [x] [P0][Shared] Add a visual regression screenshot test for the default editor state.
+- [x] [P0][Shared] Add a fixture floor plan with known scale and expected wall count for upload regression tests.
+- [x] [P0][Renovation] Add a Renovation journey intake form for goals, must-keep rooms, must-change rooms, budget band, style, household profile, and constraints.
+- [x] [P0][Renovation] Add fields for "allowed wall changes" with options no wall changes, non-structural only, and exploratory concept.
+- [x] [P0][Renovation] Add room priority inputs such as storage, open space, work-from-home, child-friendly, entertaining, rental, resale, and aging-ready.
 - [x] [P0][Renovation] Generate at least three renovation scenarios named conservative, balanced, and ambitious.
 - [x] [P0][Renovation] Score renovation scenarios by disruption, likely cost tier, confidence, storage gain, circulation quality, and accessibility impact.
 - [x] [P0][Renovation] Mark every proposed wall removal or opening as concept-only and requiring professional verification.
@@ -88,8 +88,8 @@
 - [x] [P0][Renovation] Add a revision command such as "make it cheaper", "more storage", "less renovation", and "more accessible."
 - [x] [P0][Renovation] Add tests that a renovation draft does not mutate the layout until the user applies a scenario.
 - [x] [P0][Renovation] Add tests that wall removal suggestions are blocked from direct mutation unless explicitly confirmed.
-- [ ] [P0][Renovation] Add a sample renovation report fixture for a compact apartment.
-- [ ] [P0][Accessibility] Add an Accessibility journey intake form for mobility aid, caregiver needs, fall risk, vision constraints, priority rooms, and target profile.
+- [x] [P0][Renovation] Add a sample renovation report fixture for a compact apartment.
+- [x] [P0][Accessibility] Add an Accessibility journey intake form for mobility aid, caregiver needs, fall risk, vision constraints, priority rooms, and target profile.
 - [x] [P0][Accessibility] Add accessibility profiles for general aging-ready, cane, walker, wheelchair, caregiver-assisted, low-vision, and fall-risk bathroom.
 - [x] [P0][Accessibility] Add a standards source model that distinguishes practical guidance from formal code requirements.
 - [x] [P0][Accessibility] Add a required disclaimer that accessibility checks are planning guidance and not ADA certification, medical advice, or occupational therapy assessment.
@@ -116,11 +116,11 @@
 - [x] [P0][Accessibility] Add tests for doorway, corridor, turning circle, bed transfer, and bathroom fixture checks.
 - [x] [P0][Accessibility] Add tests proving accessibility reports include disclaimers and source-type labels.
 - [x] [P0][Accessibility] Add fixture placement examples for an accessible bedroom and bathroom.
-- [ ] [P0][Furniture Fit] Add a Furniture Fit journey intake form for room, budget, style, household needs, existing furniture, must-buy items, and preferred retailers.
+- [x] [P0][Furniture Fit] Add a Furniture Fit journey intake form for room, budget, style, household needs, existing furniture, must-buy items, and preferred retailers.
 - [x] [P0][Furniture Fit] Add a product dimension model with width, depth, height, clearance need, orientation, source URL, source confidence, and last checked date.
 - [x] [P0][Furniture Fit] Add manual product entry for dimensions when catalog search is unavailable or incomplete.
 - [x] [P0][Furniture Fit] Add product import from URL when the page can be safely fetched and dimensions can be extracted.
-- [ ] [P0][Furniture Fit] Add IKEA catalog search as a first-class UI flow rather than only a chat/tool capability.
+- [x] [P0][Furniture Fit] Add IKEA catalog search as a first-class UI flow rather than only a chat/tool capability.
 - [x] [P0][Furniture Fit] Add a generic product catalog cache that can store non-IKEA items.
 - [x] [P0][Furniture Fit] Add product cards with dimensions, source, price if available, and fit status.
 - [x] [P0][Furniture Fit] Add a "will it fit in this room" checker with clearance, door swing, walkway, and usable orientation results.
@@ -139,7 +139,7 @@
 - [x] [P0][Furniture Fit] Add a "what should I measure before buying" checklist.
 - [x] [P0][Furniture Fit] Add tests for product dimension parsing, manual entry, fit scoring, and shopping list export.
 - [x] [P0][Furniture Fit] Add fixtures for common small apartment products such as queen bed, single bed, sofa, desk, wardrobe, dining table, and storage shelf.
-- [ ] [P0][Furniture Fit] Add e2e test coverage for search product, place product, fail fit, choose substitute, and export shopping list.
+- [x] [P0][Furniture Fit] Add e2e test coverage for search product, place product, fail fit, choose substitute, and export shopping list.
 - [ ] [P1][Designer] Add a Designer journey intake form for client name, project type, design brief, style words, budget band, timeline, and meeting date.
 - [ ] [P1][Designer] Add a client brief object with goals, constraints, assumptions, unanswered questions, and selected scenario.
 - [ ] [P1][Designer] Add a lead qualification summary that separates client needs, spatial risks, likely scope, and follow-up questions.

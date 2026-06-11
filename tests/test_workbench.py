@@ -141,6 +141,36 @@ def test_layout_migration_validation_and_project_model() -> None:
     assert duplicate["name"] == "Branch A"
 
 
+def test_bundled_legacy_layout_fixture_migrates() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "layout_v1_legacy.json"
+    migrated = workbench.migrate_layout(json.loads(fixture.read_text()))
+    assert migrated["schema"] == workbench.LAYOUT_SCHEMA_ID
+    assert migrated["layout_schema_version"] == workbench.CURRENT_LAYOUT_SCHEMA_VERSION
+    assert migrated["metadata"]["calibration"]["scale_m_per_px"] == 0.02
+    assert migrated["items"][0]["id"] == "item-1"
+    assert migrated["items"][0]["structural_status"] == "unknown"
+    assert migrated["rooms"][0]["id"] == "room-1"
+
+
+def test_known_scale_floorplan_fixture_metadata() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "known_scale_floorplan.expected.json"
+    metadata = json.loads(fixture.read_text())
+    image_path = fixture.parent / metadata["fixture"]
+    assert image_path.exists()
+    assert metadata["known_scale_m_per_px"] > 0
+    assert metadata["expected_wall_count"] >= 4
+    assert metadata["expected_room_count_min"] >= 1
+
+
+def test_sample_compact_apartment_renovation_report_fixture() -> None:
+    fixture = Path(__file__).parent / "fixtures" / "sample_compact_apartment_renovation_report.md"
+    report = fixture.read_text()
+    assert "Project: Compact Apartment" in report
+    assert "conservative, balanced, and ambitious" in report
+    assert workbench.PRODUCT_SAFE_DISCLAIMER in report
+    assert "professional verification" in report
+
+
 def test_validation_report_contains_severities_overlays_unknowns_and_plain_english() -> None:
     report = workbench.build_validation_report(_layout(), journey="renovation")
     severities = {warning["severity"] for warning in report["warnings"]}

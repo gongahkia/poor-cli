@@ -154,8 +154,160 @@
     <h3>Extraction Review</h3>
     <div id="floorplan-review-summary"></div>
     <div id="floorplan-review-warnings"></div>
+    <div id="floorplan-review-checklist" class="project-checklist">
+      <label><input type="checkbox" data-review-check="walls"> Walls confirmed</label>
+      <label><input type="checkbox" data-review-check="rooms"> Rooms confirmed</label>
+      <label><input type="checkbox" data-review-check="doors"> Doors/openings confirmed</label>
+      <label><input type="checkbox" data-review-check="scale"> Scale confirmed</label>
+    </div>
+    <div id="floorplan-inference-summary"></div>
     <button class="furniture-btn" id="floorplan-overlay-only">Use Image Only</button>
     <button class="furniture-btn" id="floorplan-clear">Clear Layout</button>
+  </div>
+  <div class="section" id="project-workbench-section">
+    <h3>Project</h3>
+    <input type="text" id="project-title" placeholder="Project title" autocomplete="off">
+    <select id="journey-selector">
+      <option value="renovation">Renovation Concept Pack</option>
+      <option value="accessibility">Accessibility Checker</option>
+      <option value="furniture_fit">Furniture Fit Planner</option>
+      <option value="designer">Designer Pre-Sales Assistant</option>
+      <option value="blank">Blank Project</option>
+    </select>
+    <div id="journey-first-run" class="journey-grid">
+      <button data-journey="renovation">Renovation</button>
+      <button data-journey="accessibility">Accessibility</button>
+      <button data-journey="furniture_fit">Furniture Fit</button>
+      <button data-journey="designer">Designer</button>
+      <button data-journey="blank">Blank</button>
+    </div>
+    <div id="autosave-indicator">Autosave idle</div>
+    <div class="project-actions">
+      <button id="project-save-btn">Save JSON</button>
+      <label>Load JSON <input type="file" id="project-load-input" accept=".json,application/json"></label>
+    </div>
+    <div class="project-mini" id="project-version-history"></div>
+  </div>
+  <div class="section" id="project-intake-section">
+    <h3>Intake</h3>
+    <input type="text" id="intake-dwelling" placeholder="Dwelling type" autocomplete="off">
+    <input type="text" id="intake-region" placeholder="Country or region" autocomplete="off">
+    <select id="intake-units"><option value="m">Meters</option><option value="ft">Feet</option></select>
+    <input type="text" id="intake-household" placeholder="Household profile" autocomplete="off">
+    <input type="text" id="intake-budget" placeholder="Budget range" autocomplete="off">
+    <input type="text" id="intake-timeline" placeholder="Timeline" autocomplete="off">
+    <textarea id="intake-goal" placeholder="Main goal"></textarea>
+  </div>
+  <div class="section" id="journey-details-section">
+    <h3>Journey Details</h3>
+    <div class="journey-panel" data-panel="renovation">
+      <textarea id="renovation-goals" placeholder="Goals, must-keep rooms, must-change rooms, style, household profile, constraints"></textarea>
+      <select id="renovation-wall-changes">
+        <option value="no_wall_changes">No wall changes</option>
+        <option value="non_structural_only">Non-structural only</option>
+        <option value="exploratory_concept">Exploratory concept</option>
+      </select>
+      <div class="project-checklist" id="renovation-priorities">
+        <label><input type="checkbox" value="storage"> Storage</label>
+        <label><input type="checkbox" value="open_space"> Open space</label>
+        <label><input type="checkbox" value="work_from_home"> Work-from-home</label>
+        <label><input type="checkbox" value="child_friendly"> Child-friendly</label>
+        <label><input type="checkbox" value="entertaining"> Entertaining</label>
+        <label><input type="checkbox" value="rental"> Rental</label>
+        <label><input type="checkbox" value="resale"> Resale</label>
+        <label><input type="checkbox" value="aging_ready"> Aging-ready</label>
+      </div>
+      <button class="furniture-btn" id="draft-renovation-btn">Draft Renovation Scenarios</button>
+    </div>
+    <div class="journey-panel" data-panel="accessibility">
+      <select id="access-profile">
+        <option value="general_aging_ready">General aging-ready</option>
+        <option value="cane">Cane</option>
+        <option value="walker">Walker</option>
+        <option value="wheelchair">Wheelchair</option>
+        <option value="caregiver_assisted">Caregiver-assisted</option>
+        <option value="low_vision">Low-vision</option>
+        <option value="fall_risk_bathroom">Fall-risk bathroom</option>
+      </select>
+      <textarea id="access-needs" placeholder="Mobility aid, caregiver needs, fall risk, vision constraints, priority rooms, target profile"></textarea>
+      <button class="furniture-btn" id="run-accessibility-btn">Run Accessibility Review</button>
+    </div>
+    <div class="journey-panel" data-panel="furniture_fit">
+      <textarea id="fit-intake" placeholder="Room, budget, style, household needs, existing furniture, must-buy items, preferred retailers"></textarea>
+      <input type="text" id="product-name" placeholder="Product name" autocomplete="off">
+      <div class="toggle-row"><label>Width</label><input type="number" class="dim-input" id="product-width" min="0.01" step="0.01" value="1.20"><span class="snap-val">m</span></div>
+      <div class="toggle-row"><label>Depth</label><input type="number" class="dim-input" id="product-depth" min="0.01" step="0.01" value="0.60"><span class="snap-val">m</span></div>
+      <div class="toggle-row"><label>Height</label><input type="number" class="dim-input" id="product-height" min="0.01" step="0.01" value="0.75"><span class="snap-val">m</span></div>
+      <input type="text" id="product-url" placeholder="Source URL" autocomplete="off">
+      <button class="furniture-btn" id="add-product-btn">Add Product</button>
+      <button class="furniture-btn" id="fit-product-btn">Check Fit</button>
+      <button class="furniture-btn" id="export-shopping-btn">Export Shopping List</button>
+      <div id="product-results"></div>
+    </div>
+    <div class="journey-panel" data-panel="designer">
+      <textarea id="designer-intake" placeholder="Client name, project type, design brief, style words, budget band, timeline, meeting date"></textarea>
+      <button class="furniture-btn" id="draft-designer-btn">Draft Pre-Sales Brief</button>
+    </div>
+  </div>
+  <div class="section" id="assumptions-section">
+    <h3>Assumptions & Unknowns</h3>
+    <textarea id="assumptions-input" placeholder="One editable assumption per line"></textarea>
+    <button class="furniture-btn" id="save-assumptions-btn">Save Assumptions</button>
+    <div id="unknowns-list"></div>
+  </div>
+  <div class="section" id="scenario-section">
+    <h3>Scenarios</h3>
+    <input type="text" id="scenario-name" placeholder="Scenario name" autocomplete="off">
+    <button class="furniture-btn" id="add-scenario-btn">Add Scenario</button>
+    <button class="furniture-btn" id="duplicate-scenario-btn">Duplicate Scenario</button>
+    <button class="furniture-btn" id="compare-scenario-btn">Before / After Compare</button>
+    <div id="scenario-list"></div>
+  </div>
+  <div class="section" id="validation-section">
+    <h3>Validation & Exports</h3>
+    <button class="furniture-btn" id="run-validation-btn">Regenerate Validation</button>
+    <button class="furniture-btn" id="view-2d-btn">2D Review</button>
+    <button class="furniture-btn" id="view-3d-btn">3D Walk-through</button>
+    <button class="furniture-btn" id="export-scenario-png-btn">Annotated PNG</button>
+    <button class="furniture-btn" id="export-report-html-btn">HTML / Print Report</button>
+    <div class="project-checklist">
+      <label><input type="checkbox" id="report-assumptions" checked> Assumptions</label>
+      <label><input type="checkbox" id="report-warnings" checked> Warnings</label>
+      <label><input type="checkbox" id="report-shopping" checked> Shopping list</label>
+      <label><input type="checkbox" id="report-scenarios" checked> Scenarios</label>
+      <label><input type="checkbox" id="report-images" checked> Images</label>
+    </div>
+    <div id="validation-results"></div>
+  </div>
+  <div class="section" id="manual-model-section">
+    <h3>Manual Plan Tools</h3>
+    <button class="furniture-btn" id="calibration-start-btn">Draw Calibration Segment</button>
+    <button class="furniture-btn" id="recalibrate-btn">Recalibrate</button>
+    <input type="text" id="trace-room-label" placeholder="Room label" autocomplete="off">
+    <button class="furniture-btn" id="trace-room-btn">Trace Room Rectangle</button>
+    <div class="toggle-row"><label>Door width</label><input type="number" class="dim-input" id="door-width" min="0.1" step="0.01" value="0.8"><span class="snap-val">m</span></div>
+    <select id="door-kind">
+      <option value="swing_left">Swing left</option>
+      <option value="swing_right">Swing right</option>
+      <option value="sliding">Sliding door</option>
+      <option value="no_door">No-door opening</option>
+    </select>
+    <button class="furniture-btn" id="add-door-btn">Add Door / Opening</button>
+    <div class="toggle-row"><label>Window width</label><input type="number" class="dim-input" id="window-width" min="0.1" step="0.01" value="1.2"><span class="snap-val">m</span></div>
+    <div class="toggle-row"><label>Sill</label><input type="number" class="dim-input" id="window-sill" min="0" step="0.05" value="0.9"><span class="snap-val">m</span></div>
+    <input type="text" id="window-wall" placeholder="Wall association" autocomplete="off">
+    <button class="furniture-btn" id="add-window-btn">Add Window</button>
+    <select id="fixed-element-type">
+      <option value="structural_wall">Structural wall</option>
+      <option value="partition_wall">Partition wall</option>
+      <option value="column">Column</option>
+      <option value="household_shelter">Household shelter</option>
+      <option value="plumbing_stack">Plumbing stack</option>
+      <option value="cabinet">Cabinet</option>
+      <option value="appliance">Appliance</option>
+      <option value="fixture">Fixture</option>
+    </select>
+    <button class="furniture-btn" id="add-fixed-btn">Add Fixed Element</button>
   </div>
   <div class="section">
     <h3>Room Capture</h3>

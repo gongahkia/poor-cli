@@ -533,7 +533,7 @@ function appendPlanCard(plan) {
 
   const badge = document.createElement('span');
   badge.className = 'chat-plan-badge';
-  badge.textContent = plan.status || 'draft';
+  badge.textContent = plan.planner?.provider_reviewed ? 'LLM reviewed' : (plan.status || 'draft');
 
   header.appendChild(title);
   header.appendChild(badge);
@@ -814,6 +814,7 @@ async function send() {
   const plannerMode = plannerModeSel.value || 'auto';
   const standardsProfile = standardsProfileSel.value || 'apartment_compact';
   const transcriptText = attachmentTranscript(text, attachmentsForSend);
+  const projectContext = fn.getProjectChatContext ? fn.getProjectChatContext(text) : null;
 
   inputEl.value = '';
   clearAttachments();
@@ -842,6 +843,8 @@ async function send() {
         api_key: apiKey,
         planner_mode: plannerMode,
         standards_profile: standardsProfile,
+        project_context: projectContext,
+        command_route: projectContext?.route || '',
         attachments: attachmentsForSend,
       }),
     });

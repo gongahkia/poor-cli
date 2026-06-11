@@ -38,11 +38,13 @@ function renderReview(body) {
   const section = $('floorplan-review-section');
   const summary = $('floorplan-review-summary');
   const warnings = $('floorplan-review-warnings');
+  const inference = $('floorplan-inference-summary');
   if (!section || !summary || !warnings) return;
   const meta = body.layout?.metadata || {};
   section.style.display = '';
   summary.innerHTML = '';
   warnings.innerHTML = '';
+  if (inference) inference.innerHTML = '';
   appendLine(summary, 'file', meta.source_filename || lastFile?.name || 'uploaded plan');
   appendLine(summary, 'walls', meta.wall_count ?? body.metadata?.walls?.total_segments ?? 0);
   appendLine(summary, 'openings', meta.opening_count ?? body.metadata?.openings?.total ?? 0);
@@ -52,6 +54,14 @@ function renderReview(body) {
     appendLine(warnings, 'status', 'ready for visual review');
   } else {
     warningList.forEach((warning) => appendLine(warnings, 'warning', warning));
+  }
+  if (inference) {
+    const wallCount = meta.wall_count ?? body.metadata?.walls?.total_segments ?? 0;
+    const roomCount = Array.isArray(body.layout?.rooms) ? body.layout.rooms.length : 0;
+    const scaleState = meta.calibration?.confidence || (meta.scale_m_per_px ? 'estimated' : 'unknown');
+    appendLine(inference, 'Haus can infer', wallCount ? 'approximate wall geometry' : 'image-only reference until tracing');
+    appendLine(inference, 'Rooms', roomCount ? `${roomCount} extracted` : 'manual tracing recommended');
+    appendLine(inference, 'Checks', scaleState === 'confirmed' ? 'measurement checks available' : 'confirm scale before relying on checks');
   }
 }
 
@@ -105,6 +115,7 @@ async function useImageOnly() {
     });
     if (fn.pushLayoutToServer) await fn.pushLayoutToServer();
     if (fn.frameScene) fn.frameScene();
+    if (fn.openManualTracingTools) fn.openManualTracingTools();
     setStatus('Loaded uploaded image as an editable reference.');
   } catch (err) {
     setStatus(err.message || String(err), 'error');

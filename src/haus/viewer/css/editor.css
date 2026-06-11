@@ -73,16 +73,62 @@ canvas { display: block; position: fixed; top: 0; left: var(--planner-w); }
   width: 100%; background: var(--input-bg); border: 1px solid var(--border-mid);
   color: var(--fg-dim); border-radius: 4px; padding: 6px 8px; font-size: 11px;
 }
-#room-openings { min-height: 54px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+#project-title, #journey-selector, #project-workbench-section input[type="text"],
+#project-intake-section input, #project-intake-section select, #project-intake-section textarea,
+#journey-details-section input, #journey-details-section select, #journey-details-section textarea,
+#assumptions-section textarea, #scenario-section input, #manual-model-section input,
+#manual-model-section select {
+  width: 100%; background: var(--input-bg); border: 1px solid var(--border-mid);
+  color: var(--fg-dim); border-radius: 4px; padding: 6px 8px; font-size: 11px;
+}
+#room-openings, #project-intake-section textarea, #journey-details-section textarea, #assumptions-section textarea {
+  min-height: 54px; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 #room-capture-status, #floorplan-upload-status {
   color: var(--fg-accent); font-size: 10px; line-height: 1.35; min-height: 14px;
 }
-#floorplan-review-summary, #floorplan-review-warnings {
+#floorplan-review-summary, #floorplan-review-warnings, #floorplan-inference-summary {
   color: var(--fg-dim); font-size: 10px; line-height: 1.35;
   padding: 6px; background: var(--input-bg); border: 1px solid var(--border);
   border-radius: 4px; display: flex; flex-direction: column; gap: 4px;
 }
 #floorplan-review-warnings { color: #fbbf24; }
+.project-checklist {
+  display: flex; flex-direction: column; gap: 3px; color: var(--fg-dim); font-size: 10px;
+}
+.project-checklist label { display: flex; gap: 6px; align-items: center; }
+.project-actions, .journey-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px;
+}
+.project-actions button, .project-actions label, .journey-grid button, .validation-card button {
+  background: var(--btn-bg); border: 1px solid var(--border-mid); color: var(--fg-dim);
+  border-radius: 4px; padding: 6px; cursor: pointer; font-size: 10px;
+}
+.project-actions input[type="file"] { display: none; }
+#autosave-indicator, .project-mini, #unknowns-list, #scenario-list, #validation-results, #product-results {
+  color: var(--fg-muted); font-size: 10px; line-height: 1.35;
+}
+.project-mini div, .unknown-row, .scenario-row, .validation-card, .product-card {
+  background: var(--input-bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 6px; display: flex; flex-direction: column; gap: 3px;
+}
+.scenario-row { cursor: pointer; }
+.scenario-row.active { border-color: var(--fg-accent); background: var(--sel-active-bg); }
+.scenario-row button {
+  align-self: flex-start; background: var(--btn-bg); border: 1px solid var(--border-mid);
+  color: var(--fg-dim); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 10px;
+}
+.validation-card.info { border-left: 2px solid #2563eb; }
+.validation-card.warning { border-left: 2px solid #f59e0b; }
+.validation-card.serious, .validation-card.blocked { border-left: 2px solid #ef4444; }
+.validation-card strong, .scenario-row strong, .product-card strong { color: var(--fg); }
+.validation-card p { margin: 0; }
+.si-badge {
+  max-width: 58px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--fg-accent); border: 1px solid var(--border); border-radius: 3px;
+  padding: 1px 3px; font-size: 9px;
+}
+.si-lock { color: #fbbf24; }
 #catalog-results { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
 .catalog-card {
   display: flex; flex-direction: column; gap: 3px; padding: 6px;

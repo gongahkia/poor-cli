@@ -25,6 +25,7 @@ export const S = {
   layoutMetadata: null, layoutRooms: [],
   roomCapture: null,
   uploadedFloorPlan: null,
+  project: null, activeScenarioId: null, validationReport: null, validationOverlayGroup: null,
   raycaster: new THREE.Raycaster(), mouse: new THREE.Vector2(),
   dragPlane: new THREE.Plane(new THREE.Vector3(0, 1, 0), 0),
 };

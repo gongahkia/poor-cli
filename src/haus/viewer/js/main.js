@@ -21,6 +21,7 @@ import { initBtoLibrary } from './btoLibrary.js';
 import { initRoomCapture } from './roomCapture.js';
 import { initCatalog } from './catalog.js';
 import { initFloorplanUpload } from './floorplanUpload.js';
+import { initProjectWorkbench } from './project.js';
 initScene();
 initGrid();
 initCollision();
@@ -35,6 +36,7 @@ initBtoLibrary();
 initFloorplanUpload();
 initRoomCapture();
 initCatalog();
+initProjectWorkbench();
 const actionsToggle = document.getElementById('actions-toggle');
 const toolbar = document.getElementById('toolbar');
 if (actionsToggle && toolbar) {

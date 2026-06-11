@@ -1,13 +1,47 @@
 from __future__ import annotations
 
+import os
 import json
+import socket
+import subprocess
+import sys
 import threading
+import time
+import importlib.util
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
 import pytest
 
-playwright = pytest.importorskip("playwright.sync_api", reason="Playwright is required for frontend E2E checks")
+HAS_PLAYWRIGHT = importlib.util.find_spec("playwright") is not None
+pytestmark = pytest.mark.skipif(not HAS_PLAYWRIGHT, reason="Playwright is required for frontend E2E checks")
+if HAS_PLAYWRIGHT:
+    from playwright.sync_api import sync_playwright
+
+
+def _free_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def _wait_for_http(url: str, proc: subprocess.Popen[str], timeout: float = 15.0) -> None:
+    deadline = time.monotonic() + timeout
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            stderr = proc.stderr.read() if proc.stderr else ""
+            raise AssertionError(f"haus view exited early with {proc.returncode}: {stderr}")
+        try:
+            with urlopen(url, timeout=1.0) as res:
+                if res.status < 500:
+                    return
+        except URLError as exc:
+            last_error = exc
+        time.sleep(0.2)
+    raise AssertionError(f"Timed out waiting for {url}: {last_error}")
 
 
 @pytest.fixture(scope="module")
@@ -34,7 +68,7 @@ def viewer_base_url() -> str:
 
 @pytest.fixture()
 def browser_page():
-    with playwright.sync_playwright() as p:
+    with sync_playwright() as p:
         try:
             browser = p.chromium.launch(headless=True)
         except Exception as exc:  # pragma: no cover - environment dependent
@@ -45,6 +79,33 @@ def browser_page():
         finally:
             page.close()
             browser.close()
+
+
+@pytest.fixture()
+def haus_view_url():
+    port = _free_port()
+    env = os.environ.copy()
+    env["BROWSER"] = "true"
+    env["HAUS_ENABLE_WEB_SEARCH"] = "0"
+    proc = subprocess.Popen(
+        [sys.executable, "-m", "haus.cli", "view", "--port", str(port)],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    base = f"http://127.0.0.1:{port}"
+    try:
+        _wait_for_http(f"{base}/api/chat/status", proc)
+        yield base
+    finally:
+        proc.terminate()
+        try:
+            proc.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate(timeout=5)
 
 
 def _mock_editor_backend(page) -> None:
@@ -200,7 +261,7 @@ def test_chat_transcript_persists_across_reload(browser_page, viewer_base_url: s
     )
     browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
 
-    browser_page.click("#chat-btn")
+    browser_page.wait_for_selector("#chat-panel.open")
     browser_page.fill("#chat-input", "Move sofa 0.5m right")
     browser_page.click("#chat-send")
     browser_page.wait_for_selector(".chat-assistant", timeout=6000)
@@ -210,8 +271,7 @@ def test_chat_transcript_persists_across_reload(browser_page, viewer_base_url: s
     assert "Applied safely." in transcript_before
 
     browser_page.reload(wait_until="domcontentloaded")
-    browser_page.wait_for_selector("#chat-btn")
-    browser_page.click("#chat-btn")
+    browser_page.wait_for_selector("#chat-panel.open")
     browser_page.wait_for_function(
         """
         () => document.querySelector("#chat-panel")?.classList.contains("open")
@@ -262,7 +322,7 @@ def test_chat_sends_image_reference_attachment(browser_page, viewer_base_url: st
     )
     browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
 
-    browser_page.click("#chat-btn")
+    browser_page.wait_for_selector("#chat-panel.open")
     browser_page.set_input_files(
         "#chat-image-input",
         {
@@ -441,7 +501,7 @@ def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_ur
     )
     browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
 
-    browser_page.click("#chat-btn")
+    browser_page.wait_for_selector("#chat-panel.open")
     browser_page.fill("#chat-input", "Design a compact 4-room HDB")
     browser_page.click("#chat-send")
     browser_page.wait_for_selector(".chat-plan-card", timeout=6000)
@@ -456,7 +516,7 @@ def test_chat_renders_pending_plan_and_plan_actions(browser_page, viewer_base_ur
     browser_page.get_by_role("button", name="Revise").click()
     assert browser_page.locator("#chat-input").input_value() == "Revise plan plan-e2e-1: "
 
-    browser_page.get_by_role("button", name="Apply").click()
+    browser_page.locator("#chat-messages").get_by_role("button", name="Apply").click()
     browser_page.wait_for_function(
         "() => document.querySelector('#chat-messages')?.innerText.includes('Applied plan plan-e2e-1')"
     )
@@ -547,3 +607,154 @@ def test_chat_renders_and_confirms_destructive_tool_card(browser_page, viewer_ba
     browser_page.wait_for_function(
         "() => document.querySelector('#chat-messages')?.innerText.includes('Removed [0] chair.')"
     )
+
+
+def test_project_workbench_smoke_launches_haus_view_and_drafts_deterministic_plan(
+    browser_page,
+    haus_view_url: str,
+) -> None:
+    browser_page.add_init_script(
+        """
+        localStorage.removeItem("haus_project_state");
+        localStorage.removeItem("haus_api_keys");
+        localStorage.removeItem("haus_chat_history");
+        localStorage.removeItem("haus_chat_transcript");
+        """
+    )
+    browser_page.goto(f"{haus_view_url}/viewer/editor.html")
+    browser_page.wait_for_function(
+        "() => document.querySelector('#chat-status')?.innerText.includes('Deterministic planner available')"
+    )
+
+    browser_page.click("#tools-toggle")
+    browser_page.click("#journey-first-run button[data-journey='renovation']")
+    browser_page.fill("#project-title", "Smoke Renovation")
+    browser_page.fill("#intake-dwelling", "Apartment")
+    browser_page.fill("#intake-region", "US")
+    browser_page.fill("#intake-goal", "Find risks before renovation")
+    browser_page.fill("#renovation-goals", "More storage, less renovation")
+    browser_page.click("#draft-renovation-btn")
+    browser_page.wait_for_function(
+        "() => document.querySelector('#scenario-list')?.innerText.includes('conservative')"
+    )
+
+    browser_page.fill("#chat-input", "Draft a deterministic renovation plan")
+    browser_page.click("#chat-send")
+    browser_page.wait_for_selector(".chat-plan-card", timeout=10_000)
+
+    transcript = browser_page.locator("#chat-messages").inner_text()
+    assert "Draft a deterministic renovation plan" in transcript
+    assert "Deterministic Haus room-kit planner" in transcript
+    project = json.loads(browser_page.evaluate("() => localStorage.getItem('haus_project_state')"))
+    assert project["journey"] == "renovation"
+
+
+def test_visual_regression_default_editor_state(browser_page, viewer_base_url: str) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+    browser_page.wait_for_selector("#chat-panel.open")
+    output = Path(__file__).resolve().parents[1] / "output" / "playwright" / "default-editor-state.png"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    browser_page.screenshot(path=str(output), full_page=True)
+    assert output.exists()
+    assert output.stat().st_size > 10_000
+
+
+def test_furniture_fit_flow_fails_suggests_substitute_and_exports(browser_page, viewer_base_url: str) -> None:
+    _mock_editor_backend(browser_page)
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+    browser_page.route(
+        "**/api/catalog/ikea/search?*",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "ok": True,
+                    "items": [
+                        {
+                            "id": "ikea-test-sofa",
+                            "name": "Test IKEA sofa",
+                            "category": "sofa",
+                            "dimensions_m": {"width": 1.8, "depth": 0.82, "height": 0.78},
+                            "price": 399,
+                            "currency": "SGD",
+                            "source_provider": "seed",
+                        }
+                    ],
+                    "catalog": {"fallback_used": False, "source_providers": ["seed"]},
+                }
+            ),
+        ),
+    )
+    browser_page.route(
+        "**/api/catalog/ikea/items/ikea-test-sofa/layout-item",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "ok": True,
+                    "layout_item": {
+                        "id": "ikea-test-sofa",
+                        "type": "furniture",
+                        "furnitureType": "ikea:ikea-test-sofa",
+                        "name": "Test IKEA sofa",
+                        "pos": [0, 0.39, 0],
+                        "geo": [1.8, 0.78, 0.82],
+                        "rot": 0,
+                        "color": 4473924,
+                        "visible": True,
+                        "catalog": {
+                            "source": "ikea",
+                            "price": 399,
+                            "url": "https://www.ikea.com/sg/en/",
+                        },
+                    },
+                }
+            ),
+        ),
+    )
+    browser_page.add_init_script("localStorage.removeItem('haus_project_state');")
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+
+    browser_page.click("#tools-toggle")
+    browser_page.click("#journey-first-run button[data-journey='furniture_fit']")
+    browser_page.fill("#catalog-query", "sofa")
+    browser_page.click("#catalog-search-btn")
+    browser_page.wait_for_function(
+        "() => document.querySelector('#catalog-results')?.innerText.includes('Test IKEA sofa')"
+    )
+    browser_page.locator("#catalog-results").get_by_role("button", name="Place").click()
+    browser_page.wait_for_function(
+        "() => document.querySelector('#catalog-results')?.innerText.includes('Placed')"
+    )
+    browser_page.wait_for_function(
+        "() => document.querySelector('#scene-list')?.innerText.includes('Test IKEA sofa')"
+    )
+
+    browser_page.fill("#product-name", "Oversized sofa")
+    browser_page.fill("#product-width", "9.0")
+    browser_page.fill("#product-depth", "4.0")
+    browser_page.fill("#product-height", "0.8")
+    browser_page.click("#add-product-btn")
+    browser_page.click("#fit-product-btn")
+    browser_page.wait_for_function(
+        "() => document.querySelector('#product-results')?.innerText.includes('fails')"
+    )
+    text = browser_page.locator("#product-results").inner_text()
+    assert "Oversized sofa" in text
+    assert "Buy nothing yet" in text
+    assert "Compact sofa" in text
+
+    with browser_page.expect_download() as download_info:
+        browser_page.click("#export-shopping-btn")
+    download = download_info.value
+    assert download.suggested_filename.endswith("shopping-list.csv")

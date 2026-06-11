@@ -35,6 +35,19 @@ function refreshSceneList() {
     const name = document.createElement('span');
     name.className = 'si-name'; name.textContent = getLabel(m);
     row.appendChild(name);
+    const confidence = m.userData.layoutMeta?.confidence;
+    if (confidence) {
+      const badge = document.createElement('span');
+      badge.className = 'si-badge';
+      badge.textContent = confidence;
+      row.appendChild(badge);
+    }
+    if (m.userData.layoutMeta?.locked || m.userData.layoutMeta?.do_not_touch) {
+      const lock = document.createElement('span');
+      lock.className = 'si-badge si-lock';
+      lock.textContent = 'locked';
+      row.appendChild(lock);
+    }
     const visBtn = document.createElement('button');
     visBtn.className = 'si-btn'; visBtn.textContent = m.visible ? 'V' : '-'; visBtn.title = m.visible ? 'Hide' : 'Show';
     visBtn.addEventListener('click', (e) => {

@@ -5,6 +5,11 @@ import { S, fn } from './state.js';
 import { FURNITURE } from './furniture.js';
 import { createSceneMaterial, prepareMeshForScene } from './scene.js';
 const loader = new GLTFLoader();
+const PRESERVED_LAYOUT_KEYS = [
+  'id', 'confidence', 'width_m', 'depth_m', 'height_m', 'swing_direction', 'sill_height_m',
+  'wall_association', 'fixed_type', 'locked', 'do_not_touch', 'hazard', 'structural_status',
+  'structural_confidence', 'concept_only', 'source_confidence', 'source_url',
+];
 export function initIO() {
   const params = new URLSearchParams(location.search);
   const glbParam = params.get('glb');
@@ -83,6 +88,10 @@ function buildMeshFromLayoutItem(item) {
   mesh.rotation.y = item.rot;
   mesh.userData.draggable = true;
   mesh.visible = item.visible !== false;
+  mesh.userData.layoutMeta = {};
+  for (const key of PRESERVED_LAYOUT_KEYS) {
+    if (item[key] !== undefined) mesh.userData.layoutMeta[key] = item[key];
+  }
 
   if (item.type === 'wall') {
     mesh.userData.isWall = true;
@@ -181,13 +190,41 @@ function serializeLayout() {
     }
     if (m.userData.name) entry.name = m.userData.name;
     if (m.userData.room) entry.room = m.userData.room;
+    if (m.userData.layoutMeta) {
+      for (const key of PRESERVED_LAYOUT_KEYS) {
+        if (m.userData.layoutMeta[key] !== undefined) entry[key] = m.userData.layoutMeta[key];
+      }
+    }
     items.push(entry);
     semanticObjects.push(semanticRecordForMesh(m, index));
   }
-  const layout = { version: 1, items };
+  const layout = { version: 1, schema: 'haus.layout.v2', layout_schema_version: 2, items };
   if (S.layoutMetadata) layout.metadata = S.layoutMetadata;
   if (Array.isArray(S.layoutRooms) && S.layoutRooms.length > 0) layout.rooms = S.layoutRooms;
   if (S.roomCapture) layout.room_capture = S.roomCapture;
+  if (S.project) {
+    layout.assumptions = S.project.assumptions || [];
+    layout.validation_reports = S.project.validation_reports || [];
+    layout.exports = S.project.exports || [];
+    layout.layout_versions = (S.project.layout_versions || []).map((entry) => ({
+      id: entry.id,
+      status: entry.status,
+      created_at: entry.created_at,
+      note: entry.note,
+      item_count: entry.item_count,
+      room_count: entry.room_count,
+    }));
+    layout.scenarios = (S.project.scenarios || []).map((scenario) => ({
+      id: scenario.id,
+      name: scenario.name,
+      journey: scenario.journey,
+      status: scenario.status,
+      score: scenario.score,
+      created_at: scenario.created_at,
+      applied_at: scenario.applied_at,
+      parent_scenario_id: scenario.parent_scenario_id,
+    }));
+  }
   layout.semantic = {
     schema: 'haus.semantic_layout.v1',
     units: 'meters',
@@ -390,7 +427,13 @@ function importJSON(e) {
         console.warn('JSON import missing items array');
         return;
       }
-      applyLayoutData(data);
+      const migrated = fn.migrateLayoutData ? fn.migrateLayoutData(data) : data;
+      const validation = fn.validateProjectLayout ? fn.validateProjectLayout(migrated) : { warnings: [] };
+      if (validation.warnings?.some((warning) => warning.severity === 'blocked')) {
+        console.warn('JSON import has blocking validation warnings', validation.warnings);
+      }
+      applyLayoutData(migrated);
+      if (fn.recordProjectVersion) fn.recordProjectVersion('imported', `Imported ${file.name}`);
     } catch (err) { console.error('JSON import failed', err); }
   };
   reader.readAsText(file);
