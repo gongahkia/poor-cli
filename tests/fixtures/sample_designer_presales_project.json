@@ -1,0 +1,79 @@
+{
+  "schema": "haus.project.v1",
+  "project_schema_version": 1,
+  "id": "project-designer-sample",
+  "title": "Avery Lee Condo Refresh",
+  "journey": "designer",
+  "journey_label": "Designer Pre-Sales Assistant",
+  "source_file": "[redacted]/avery-condo-plan.png",
+  "intake": {
+    "dwelling_type": "condo",
+    "country_or_region": "SG",
+    "units": "m",
+    "household_profile": "couple working from home",
+    "budget_range": "medium",
+    "timeline": "8 weeks",
+    "main_goal": "calmer living room and more storage"
+  },
+  "designer": {
+    "client_brief": {
+      "schema": "haus.client_brief.v1",
+      "client_name": "Avery Lee",
+      "project_type": "Condo refresh",
+      "design_brief": "More storage and a calmer living room",
+      "style_words": ["warm", "minimal"],
+      "budget_band": "medium",
+      "timeline": "8 weeks",
+      "meeting_date": "2026-07-01",
+      "goals": ["More storage", "Calmer living room", "Keep work-from-home corner"],
+      "constraints": ["Confirm scale", "Keep existing sofa if it fits"],
+      "assumptions": ["Concept planning only until site verification"],
+      "unanswered_questions": ["Which storage zones are highest priority?", "Which pieces must stay?"],
+      "selected_scenario": "Base"
+    },
+    "branded_report_settings": {
+      "business_name": "Studio A",
+      "contact": "hello@example.com",
+      "accent_color": "#123abc"
+    }
+  },
+  "layout": {
+    "version": 1,
+    "schema": "haus.layout.v2",
+    "layout_schema_version": 2,
+    "metadata": {
+      "calibration": {
+        "scale_m_per_px": 0.01,
+        "confidence": "confirmed",
+        "user_confirmed": true
+      }
+    },
+    "rooms": [
+      {
+        "id": "living",
+        "label": "Living",
+        "kind": "living",
+        "bounds": {"x_min": 0, "z_min": 0, "x_max": 4, "z_max": 3},
+        "confidence": "user_confirmed"
+      }
+    ],
+    "items": []
+  },
+  "scenarios": [
+    {
+      "id": "scenario-base",
+      "name": "Base",
+      "journey": "designer",
+      "status": "draft",
+      "score": {"fit": 80, "circulation": 80, "accessibility": 70, "cost_complexity": 20, "confidence": 75},
+      "warnings": [],
+      "created_at": "2026-06-11T00:00:00+00:00",
+      "applied_at": null,
+      "parent_scenario_id": null
+    }
+  ],
+  "assumptions": ["Scale has been confirmed from supplied plan"],
+  "unknowns": [],
+  "validation_reports": [],
+  "exports": []
+}

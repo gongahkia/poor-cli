@@ -464,3 +464,62 @@ def test_layout_normalizer_preserves_metadata_rooms_and_wall_classification(isol
     assert loaded["rooms"][0]["label"] == "living"
     assert loaded["items"][0]["hdb_type"] == "structural"
     assert loaded["items"][0]["wall_type"] == "structural"
+
+
+def test_mcp_project_scenario_report_and_journey_tools(isolated_layout: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HAUS_RUNTIME_ROOT", str(tmp_path))
+    layout = {
+        "version": 1,
+        "metadata": {"calibration": {"scale_m_per_px": 0.01, "user_confirmed": True}},
+        "rooms": [{"id": "living", "label": "Living", "bounds": {"x_min": 0, "z_min": 0, "x_max": 4, "z_max": 3}}],
+        "items": [
+            _obj(item_type="furniture", furniture_type="sofa_2", x=1.0, z=1.0, w=1.5, h=0.8, d=0.8),
+            _obj(item_type="door", x=0.0, z=1.5, w=0.7, h=2.0, d=0.08),
+        ],
+    }
+    layout["items"][1]["id"] = "door"
+    layout["items"][1]["width_m"] = 0.7
+    assert mcp_server._save_layout(layout) is None
+
+    created = json.loads(mcp_server.create_project("MCP Client", "designer"))
+    assert created["ok"] is True
+    project_id = created["project"]["id"]
+
+    projects = json.loads(mcp_server.list_projects())
+    assert any(project["id"] == project_id for project in projects["projects"])
+
+    loaded = json.loads(mcp_server.load_project(project_id))
+    assert loaded["ok"] is True
+    scenarios = json.loads(mcp_server.list_scenarios(project_id))
+    scenario_id = scenarios["scenarios"][0]["id"]
+    duplicated = json.loads(mcp_server.duplicate_scenario(project_id, scenario_id, "Option B"))
+    assert duplicated["scenario"]["parent_scenario_id"] == scenario_id
+
+    renovation = json.loads(mcp_server.draft_renovation_options(project_id))
+    assert [scenario["name"] for scenario in renovation["scenarios"]] == ["conservative", "balanced", "ambitious"]
+    accessibility = json.loads(mcp_server.draft_accessibility_review(project_id, "wheelchair"))
+    assert accessibility["report"]["title"] == "Home Accessibility Planning Review"
+    furniture = json.loads(
+        mcp_server.check_furniture_fit(
+            json.dumps({"name": "Small chair", "width_m": 0.5, "depth_m": 0.5, "height_m": 0.8}),
+            "Living",
+        )
+    )
+    assert furniture["fit"]["status"] in {"fits", "fails"}
+    designer = json.loads(
+        mcp_server.create_designer_brief(
+            project_id,
+            client_name="Avery Lee",
+            project_type="Condo refresh",
+            design_brief="More storage",
+            style_words="warm,minimal",
+            budget_band="medium",
+            timeline="8 weeks",
+            meeting_date="2026-07-01",
+        )
+    )
+    assert designer["brief"]["client_name"] == "Avery Lee"
+
+    report = json.loads(mcp_server.export_report(project_id, "designer", [scenario_id]))
+    assert report["ok"] is True
+    assert Path(report["path"]).exists()

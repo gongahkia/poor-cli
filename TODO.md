@@ -168,45 +168,45 @@
 - [ ] [P1][Chat UX] Add transcript persistence per project instead of global localStorage only.
 - [ ] [P1][Chat UX] Add plan and report links in the chat transcript for completed actions.
 - [ ] [P1][Chat UX] Add error recovery messages that tell the user exactly what measurement or input is missing.
-- [ ] [P1][Validation] Refactor geometry checks into reusable modules shared by MCP tools, chat planning, and report generation.
-- [ ] [P1][Validation] Add unit tests for rotated furniture clearance against room polygons.
-- [ ] [P1][Validation] Add unit tests for door swing conflicts against furniture and fixtures.
-- [ ] [P1][Validation] Add unit tests for room-bound plan application with irregular polygons.
-- [ ] [P1][Validation] Add validation snapshots to project history.
-- [ ] [P1][Validation] Add validation diffing between scenarios.
-- [ ] [P1][Validation] Add "confidence is low because" explanations for weak extraction, missing scale, missing openings, or unverified product dimensions.
-- [ ] [P1][Catalog] Extend the furniture catalog with clearance rules, pull-out zones, delivery constraints, category aliases, and default substitutions.
-- [ ] [P1][Catalog] Add catalog item provenance so users know whether data came from seed, manual entry, web search, or a product page.
-- [ ] [P1][Catalog] Add stale catalog warnings for live product dimensions and prices.
-- [ ] [P1][Catalog] Add product categories for accessibility aids such as shower chair, grab bar placeholder, walker parking, wheelchair turning space, and bedside commode placeholder.
-- [ ] [P1][Catalog] Add product categories for renovation placeholders such as built-in storage, island, peninsula, partition, sliding door, and glass divider.
-- [ ] [P1][Reports] Add a shared report component library for title page, project summary, scenario table, annotated plan, warnings, assumptions, and next steps.
-- [ ] [P1][Reports] Add journey-specific report templates for renovation concept pack, accessibility review, furniture fit report, and designer pre-sales pack.
+- [x] [P1][Validation] Refactor geometry checks into reusable modules shared by MCP tools, chat planning, and report generation.
+- [x] [P1][Validation] Add unit tests for rotated furniture clearance against room polygons.
+- [x] [P1][Validation] Add unit tests for door swing conflicts against furniture and fixtures.
+- [x] [P1][Validation] Add unit tests for room-bound plan application with irregular polygons.
+- [x] [P1][Validation] Add validation snapshots to project history.
+- [x] [P1][Validation] Add validation diffing between scenarios.
+- [x] [P1][Validation] Add "confidence is low because" explanations for weak extraction, missing scale, missing openings, or unverified product dimensions.
+- [x] [P1][Catalog] Extend the furniture catalog with clearance rules, pull-out zones, delivery constraints, category aliases, and default substitutions.
+- [x] [P1][Catalog] Add catalog item provenance so users know whether data came from seed, manual entry, web search, or a product page.
+- [x] [P1][Catalog] Add stale catalog warnings for live product dimensions and prices.
+- [x] [P1][Catalog] Add product categories for accessibility aids such as shower chair, grab bar placeholder, walker parking, wheelchair turning space, and bedside commode placeholder.
+- [x] [P1][Catalog] Add product categories for renovation placeholders such as built-in storage, island, peninsula, partition, sliding door, and glass divider.
+- [x] [P1][Reports] Add a shared report component library for title page, project summary, scenario table, annotated plan, warnings, assumptions, and next steps.
+- [x] [P1][Reports] Add journey-specific report templates for renovation concept pack, accessibility review, furniture fit report, and designer pre-sales pack.
 - [ ] [P1][Reports] Add an export preview screen before downloading reports.
-- [ ] [P1][Reports] Add report filename conventions based on project title, journey, scenario, and date.
-- [ ] [P1][Reports] Add tests that exported reports include selected scenarios and exclude unselected drafts.
-- [ ] [P1][MCP] Add MCP tools for create_project, list_projects, load_project, save_project, list_scenarios, duplicate_scenario, and export_report.
-- [ ] [P1][MCP] Add MCP tools for draft_renovation_options, draft_accessibility_review, check_furniture_fit, and create_designer_brief.
-- [ ] [P1][MCP] Add MCP tool schemas that use structured JSON outputs for reports and validation rather than text-only responses.
-- [ ] [P1][MCP] Add MCP tests for each selected customer journey.
-- [ ] [P1][Data] Add room semantic fields for room kind, room label, occupancy, priority, locked state, and confidence.
-- [ ] [P1][Data] Add opening semantic fields for type, width, swing direction, threshold height, and confidence.
-- [ ] [P1][Data] Add item semantic fields for movable, fixed, existing, proposed, removed, locked, source, and scenario status.
-- [ ] [P1][Data] Add scenario semantic fields for journey, status, score, warnings, created_at, applied_at, and parent_scenario_id.
-- [ ] [P1][Data] Add report semantic fields for journey, selected_scenarios, generated_at, source_references, and disclaimers.
-- [ ] [P1][Import] Add import support for simple room dimensions when no image is available.
-- [ ] [P1][Import] Add import support for existing Haus JSON with multiple scenarios.
-- [ ] [P1][Import] Add import warnings for missing scale, unsupported schema version, and broken catalog references.
-- [ ] [P1][Import] Add a repair flow for malformed layouts rather than silently dropping data.
-- [ ] [P1][Export] Add export support for project bundle ZIP with layout JSON, reports, screenshots, source images, and catalog cache.
-- [ ] [P1][Export] Add export support for scenario-only JSON.
-- [ ] [P1][Export] Add export support for validation-only Markdown.
-- [ ] [P1][Export] Add export support for shopping-list CSV.
+- [x] [P1][Reports] Add report filename conventions based on project title, journey, scenario, and date.
+- [x] [P1][Reports] Add tests that exported reports include selected scenarios and exclude unselected drafts.
+- [x] [P1][MCP] Add MCP tools for create_project, list_projects, load_project, save_project, list_scenarios, duplicate_scenario, and export_report.
+- [x] [P1][MCP] Add MCP tools for draft_renovation_options, draft_accessibility_review, check_furniture_fit, and create_designer_brief.
+- [x] [P1][MCP] Add MCP tool schemas that use structured JSON outputs for reports and validation rather than text-only responses.
+- [x] [P1][MCP] Add MCP tests for each selected customer journey.
+- [x] [P1][Data] Add room semantic fields for room kind, room label, occupancy, priority, locked state, and confidence.
+- [x] [P1][Data] Add opening semantic fields for type, width, swing direction, threshold height, and confidence.
+- [x] [P1][Data] Add item semantic fields for movable, fixed, existing, proposed, removed, locked, source, and scenario status.
+- [x] [P1][Data] Add scenario semantic fields for journey, status, score, warnings, created_at, applied_at, and parent_scenario_id.
+- [x] [P1][Data] Add report semantic fields for journey, selected_scenarios, generated_at, source_references, and disclaimers.
+- [x] [P1][Import] Add import support for simple room dimensions when no image is available.
+- [x] [P1][Import] Add import support for existing Haus JSON with multiple scenarios.
+- [x] [P1][Import] Add import warnings for missing scale, unsupported schema version, and broken catalog references.
+- [x] [P1][Import] Add a repair flow for malformed layouts rather than silently dropping data.
+- [x] [P1][Export] Add export support for project bundle ZIP with layout JSON, reports, screenshots, source images, and catalog cache.
+- [x] [P1][Export] Add export support for scenario-only JSON.
+- [x] [P1][Export] Add export support for validation-only Markdown.
+- [x] [P1][Export] Add export support for shopping-list CSV.
 - [ ] [P1][Privacy] Add local-only privacy copy explaining that uploaded floor plans stay on the user's machine unless web or LLM providers are used.
 - [ ] [P1][Privacy] Add a provider data warning before sending images or layout details to an external LLM.
 - [ ] [P1][Privacy] Add a setting to disable web search completely.
 - [ ] [P1][Privacy] Add a setting to disable saving API keys in browser storage.
-- [ ] [P1][Privacy] Add redaction of source file paths from exported client-facing reports.
+- [x] [P1][Privacy] Add redaction of source file paths from exported client-facing reports.
 - [ ] [P1][QA] Add an end-to-end test for the Renovation journey from upload to three scenarios to report export.
 - [ ] [P1][QA] Add an end-to-end test for the Accessibility journey from sample layout to blocked route warning to report export.
 - [ ] [P1][QA] Add an end-to-end test for the Furniture Fit journey from product search to failed fit to substitute to shopping list export.

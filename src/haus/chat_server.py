@@ -34,6 +34,7 @@ from starlette.staticfiles import StaticFiles
 import uvicorn
 
 from . import mcp_server as _mcp_server
+from . import geometry
 from .agent_loop import RoomPlan, plan_flat, plan_room
 from .catalog import catalog_item_to_layout_item, catalog_search_meta, get_catalog_item, search_ikea_catalog
 from .logging_utils import configure_logging, new_request_id
@@ -1798,6 +1799,14 @@ def _post_apply_validation(
 ) -> dict[str, Any]:
     room_areas = {plan.room_id: compute_room_area(plan.room_id) for plan in room_plans}
     applied_indices = [idx for indices in applied_by_room.values() for idx in indices]
+    room_bounds = {
+        plan.room_id: geometry.room_bound_plan_application(
+            data,
+            plan.room_id,
+            [data["items"][idx] for idx in applied_by_room.get(plan.room_id, []) if idx < len(data["items"])],
+        )
+        for plan in room_plans
+    }
 
     overlap_checks: list[str] = []
     for pos, left_idx in enumerate(applied_indices[:8]):
@@ -1829,6 +1838,7 @@ def _post_apply_validation(
         "layout_summary": get_layout_summary(),
         "rooms": list_rooms(),
         "room_areas": room_areas,
+        "room_bound_plan_application": room_bounds,
         "walkway": walkway,
         "quality_profile": profile_name,
         "layout_quality": score_layout(profile_name),

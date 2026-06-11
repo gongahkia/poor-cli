@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import re
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -26,7 +27,76 @@ _CATEGORY_DEFAULTS = {
     "storage": {"w": 0.8, "h": 1.2, "d": 0.4, "color": 0x6B4226},
     "lighting": {"w": 0.3, "h": 1.4, "d": 0.3, "color": 0xEAB308},
     "rug": {"w": 1.6, "h": 0.04, "d": 2.3, "color": 0x9CA3AF},
+    "shower_chair": {"w": 0.5, "h": 0.48, "d": 0.5, "color": 0x60A5FA},
+    "grab_bar": {"w": 0.6, "h": 0.08, "d": 0.08, "color": 0x93C5FD},
+    "walker_parking": {"w": 0.7, "h": 0.9, "d": 0.35, "color": 0x22C55E},
+    "wheelchair_turning_space": {"w": 1.5, "h": 0.02, "d": 1.5, "color": 0x86EFAC},
+    "bedside_commode": {"w": 0.55, "h": 0.8, "d": 0.55, "color": 0x38BDF8},
+    "built_in_storage": {"w": 1.6, "h": 2.4, "d": 0.45, "color": 0xA16207},
+    "island": {"w": 1.8, "h": 0.9, "d": 0.9, "color": 0x78716C},
+    "peninsula": {"w": 1.6, "h": 0.9, "d": 0.75, "color": 0x78716C},
+    "partition": {"w": 1.5, "h": 2.4, "d": 0.10, "color": 0x94A3B8},
+    "sliding_door": {"w": 0.9, "h": 2.1, "d": 0.08, "color": 0x7DD3FC},
+    "glass_divider": {"w": 1.2, "h": 2.2, "d": 0.08, "color": 0xBAE6FD},
     "furniture": {"w": 1.0, "h": 0.75, "d": 0.6, "color": 0x888888},
+}
+
+_CATEGORY_ALIASES = {
+    "bookcase": "storage",
+    "shelving": "storage",
+    "shelf": "storage",
+    "cabinet": "storage",
+    "accessibility shower chair": "shower_chair",
+    "bath chair": "shower_chair",
+    "grab rail": "grab_bar",
+    "grab bar": "grab_bar",
+    "walker": "walker_parking",
+    "wheelchair turning": "wheelchair_turning_space",
+    "commode": "bedside_commode",
+    "built in": "built_in_storage",
+    "built-in": "built_in_storage",
+    "kitchen island": "island",
+    "peninsula": "peninsula",
+    "partition": "partition",
+    "sliding door": "sliding_door",
+    "glass divider": "glass_divider",
+}
+
+_CATEGORY_RULES = {
+    "bed": {"front_clearance_m": 0.75, "side_clearance_m": 0.6},
+    "sofa": {"front_clearance_m": 0.75, "side_clearance_m": 0.45},
+    "table": {"chair_pullout_m": 0.9, "walkway_m": 0.75},
+    "desk": {"chair_pullout_m": 0.75, "daylight_preference": True},
+    "wardrobe": {"pullout_m": 0.8, "front_clearance_m": 0.75},
+    "storage": {"front_clearance_m": 0.45},
+    "shower_chair": {"transfer_clearance_m": 0.75},
+    "grab_bar": {"verify_mounting": True},
+    "walker_parking": {"clear_zone_m": 0.7},
+    "wheelchair_turning_space": {"diameter_m": 1.5},
+    "bedside_commode": {"transfer_clearance_m": 0.75},
+    "built_in_storage": {"professional_verification": True, "front_clearance_m": 0.75},
+    "island": {"walkway_m": 0.9, "service_verification": True},
+    "peninsula": {"walkway_m": 0.9, "service_verification": True},
+    "partition": {"concept_only": True, "professional_verification": True},
+    "sliding_door": {"opening_width_m": 0.8},
+    "glass_divider": {"concept_only": True},
+}
+
+_PULLOUT_ZONES = {
+    "wardrobe": {"front_m": 0.8, "reason": "door/drawer pull-out"},
+    "table": {"front_m": 0.9, "reason": "chair pull-out"},
+    "desk": {"front_m": 0.75, "reason": "desk chair pull-out"},
+    "sofa": {"front_m": 1.2, "reason": "sofa bed or recliner check"},
+    "storage": {"front_m": 0.6, "reason": "drawer/door pull-out"},
+}
+
+_DEFAULT_SUBSTITUTIONS = {
+    "bed": ["single bed", "storage bed with smaller frame"],
+    "sofa": ["compact sofa", "armchair pair"],
+    "wardrobe": ["narrow wardrobe", "open rail"],
+    "table": ["drop-leaf table", "round compact table"],
+    "desk": ["wall desk", "narrow desk"],
+    "storage": ["shallow shelf", "wall-mounted cabinet"],
 }
 
 _SEED_ITEMS = [
@@ -90,6 +160,51 @@ _SEED_ITEMS = [
         "source_provider": "seed",
         "raw": {},
     },
+    {
+        "id": "haus-seed-shower-chair-placeholder",
+        "source": "haus",
+        "region": "global",
+        "name": "Shower chair placeholder",
+        "category": "shower_chair",
+        "dimensions_m": {"width": 0.50, "height": 0.48, "depth": 0.50},
+        "price": None,
+        "currency": "unknown",
+        "image_url": "",
+        "product_url": "",
+        "availability": "placeholder",
+        "source_provider": "seed",
+        "raw": {},
+    },
+    {
+        "id": "haus-seed-sliding-door-placeholder",
+        "source": "haus",
+        "region": "global",
+        "name": "Sliding door partition placeholder",
+        "category": "sliding_door",
+        "dimensions_m": {"width": 0.90, "height": 2.10, "depth": 0.08},
+        "price": None,
+        "currency": "unknown",
+        "image_url": "",
+        "product_url": "",
+        "availability": "placeholder",
+        "source_provider": "seed",
+        "raw": {},
+    },
+    {
+        "id": "haus-seed-kitchen-island-placeholder",
+        "source": "haus",
+        "region": "global",
+        "name": "Kitchen island placeholder",
+        "category": "island",
+        "dimensions_m": {"width": 1.80, "height": 0.90, "depth": 0.90},
+        "price": None,
+        "currency": "unknown",
+        "image_url": "",
+        "product_url": "",
+        "availability": "placeholder",
+        "source_provider": "seed",
+        "raw": {},
+    },
 ]
 
 
@@ -126,6 +241,9 @@ def _collapse(text: Any) -> str:
 
 def _category(text: str) -> str:
     lower = text.lower()
+    for needle, category in _CATEGORY_ALIASES.items():
+        if needle in lower:
+            return category
     checks = (
         ("wardrobe", "wardrobe"),
         ("bookcase", "storage"),
@@ -261,7 +379,7 @@ def _normalize_item(
     category = _category(text)
     price, currency = _parse_price(text)
     image_url = _collapse(raw.get("image") or raw.get("image_url") or raw.get("thumbnail"))
-    return {
+    item = {
         "schema_version": _CATALOG_VERSION,
         "id": _item_id(name, url),
         "source": "ikea",
@@ -275,8 +393,60 @@ def _normalize_item(
         "product_url": url,
         "availability": "unknown",
         "source_provider": provider,
+        "last_checked_date": date.today().isoformat() if provider != "seed" else None,
         "raw": raw,
     }
+    return enrich_catalog_item(item)
+
+
+def _stale_warning(item: dict[str, Any]) -> str | None:
+    provider = str(item.get("source_provider") or "")
+    if provider in {"seed", "manual"}:
+        return "Seed/manual catalog dimensions and prices should be verified before purchase."
+    checked = item.get("last_checked_date")
+    if not checked:
+        return "Live product dimensions or prices have no last-checked date."
+    try:
+        checked_day = datetime.fromisoformat(str(checked)).date()
+    except ValueError:
+        return "Live product dimensions or prices have an invalid last-checked date."
+    if (date.today() - checked_day).days > 30:
+        return "Live product dimensions or prices may be stale; refresh before purchase."
+    return None
+
+
+def enrich_catalog_item(item: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(item)
+    category = str(enriched.get("category") or "furniture")
+    enriched["category"] = category
+    enriched.setdefault("clearance_rules", _CATEGORY_RULES.get(category, {"front_clearance_m": 0.6}))
+    enriched.setdefault("pullout_zones", _PULLOUT_ZONES.get(category, {}))
+    enriched.setdefault(
+        "delivery_constraints",
+        {
+            "checkpoints": ["entry door", "corridor", "room door", "elevator placeholder", "stair placeholder"],
+            "requires_manual_measurement": True,
+        },
+    )
+    enriched.setdefault(
+        "category_aliases",
+        sorted(alias for alias, mapped in _CATEGORY_ALIASES.items() if mapped == category),
+    )
+    enriched.setdefault("default_substitutions", _DEFAULT_SUBSTITUTIONS.get(category, []))
+    provider = str(enriched.get("source_provider") or "unknown")
+    enriched.setdefault(
+        "provenance",
+        {
+            "source": enriched.get("source", "catalog"),
+            "provider": provider,
+            "source_url": enriched.get("product_url", ""),
+            "retrieved_at": enriched.get("last_checked_date"),
+        },
+    )
+    warning = _stale_warning(enriched)
+    if warning:
+        enriched["stale_warning"] = warning
+    return enriched
 
 
 def _save_item(item: dict[str, Any]) -> None:
@@ -332,7 +502,7 @@ def search_ikea_catalog(
     deduped: dict[str, dict[str, Any]] = {}
     for item in candidates:
         if _matches(item, clean_query):
-            deduped[str(item["id"])] = item
+            deduped[str(item["id"])] = enrich_catalog_item(item)
     results = list(deduped.values())[:limit]
 
     query_path = _ikea_dir() / "queries" / f"{_slug(clean_query)}.json"
@@ -365,10 +535,10 @@ def get_catalog_item(item_id: str) -> dict[str, Any] | None:
         except json.JSONDecodeError:
             payload = None
         if isinstance(payload, dict):
-            return payload
+            return enrich_catalog_item(payload)
     for item in _SEED_ITEMS:
         if item["id"] == item_id:
-            return dict(item)
+            return enrich_catalog_item(dict(item))
     return None
 
 
@@ -422,6 +592,14 @@ def catalog_item_to_layout_item(
             "price": item.get("price"),
             "currency": item.get("currency"),
             "category": category,
+            "source_provider": item.get("source_provider"),
+            "source_confidence": item.get("source_provider") or "unknown",
+            "last_checked_date": item.get("last_checked_date"),
+            "provenance": item.get("provenance"),
+            "stale_warning": item.get("stale_warning"),
+            "clearance_rules": item.get("clearance_rules"),
+            "pullout_zones": item.get("pullout_zones"),
+            "delivery_constraints": item.get("delivery_constraints"),
         },
     }
 

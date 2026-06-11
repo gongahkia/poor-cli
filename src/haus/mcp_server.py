@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -23,10 +24,40 @@ from .catalog import (
     refresh_catalog_item,
     search_ikea_catalog as _search_ikea_catalog,
 )
+from . import geometry
 from .logging_utils import configure_logging
-from .workbench import migrate_layout, validate_layout_schema
+from .workbench import (
+    accessibility_report,
+    check_product_fit,
+    client_brief_object,
+    duplicate_scenario as duplicate_project_scenario,
+    manual_product_entry,
+    new_project,
+    renovation_scenarios,
+    render_journey_report,
+    validate_layout_schema,
+    migrate_layout,
+)
 
 LAYOUT_PATH = Path(os.environ.get("HAUS_LAYOUT_PATH", "viewer/mcp-layout.json"))
+
+
+def _runtime_root() -> Path:
+    configured = os.environ.get("HAUS_RUNTIME_ROOT")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    return (Path.home() / ".haus").resolve()
+
+
+def _projects_root() -> Path:
+    path = _runtime_root() / "projects"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _project_path(project_id: str) -> Path:
+    safe = re.sub(r"[^a-zA-Z0-9_.-]+", "-", project_id).strip("-") or "project"
+    return _projects_root() / f"{safe}.haus-project.json"
 
 FURNITURE_CATALOG = {
     "bed_single": {"w": 0.9, "h": 0.5, "d": 1.9, "color": 0x88BBEE},
@@ -403,6 +434,34 @@ def _save_layout(data: dict[str, Any]) -> str | None:
     return None
 
 
+def _read_project(project_id: str) -> dict[str, Any] | None:
+    path = _project_path(project_id)
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    payload["layout"] = migrate_layout(payload.get("layout", {}))
+    payload["scenarios"] = payload.get("scenarios") if isinstance(payload.get("scenarios"), list) else []
+    return payload
+
+
+def _write_project(project: dict[str, Any]) -> Path:
+    project_id = str(project.get("id") or "project")
+    project["layout"] = migrate_layout(project.get("layout", {}))
+    path = _project_path(project_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(project, indent=2, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def _json_result(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True)
+
+
 def _item_label(item: dict[str, Any]) -> str:
     return str(item.get("furnitureType") or item.get("type", "object"))
 
@@ -448,30 +507,7 @@ def _point_in_rect(point: tuple[float, float], rect: tuple[float, float, float, 
 
 
 def _item_polygon(item: dict[str, Any], padding: float = 0.0) -> list[tuple[float, float]]:
-    pos = item.get("pos", [0.0, 0.0, 0.0])
-    geo = item.get("geo", [1.0, 1.0, 1.0])
-    rot = _coerce_float(item.get("rot", 0.0), 0.0)
-
-    cx = _coerce_float(pos[0], 0.0)
-    cz = _coerce_float(pos[2], 0.0)
-    half_w = max(0.005, _coerce_float(geo[0], 1.0) / 2 + max(0.0, padding))
-    half_d = max(0.005, _coerce_float(geo[2], 1.0) / 2 + max(0.0, padding))
-
-    corners_local = [
-        (-half_w, -half_d),
-        (half_w, -half_d),
-        (half_w, half_d),
-        (-half_w, half_d),
-    ]
-    cos_r = math.cos(rot)
-    sin_r = math.sin(rot)
-
-    corners_world: list[tuple[float, float]] = []
-    for lx, lz in corners_local:
-        wx = cx + lx * cos_r + lz * sin_r
-        wz = cz - lx * sin_r + lz * cos_r
-        corners_world.append((wx, wz))
-    return corners_world
+    return geometry.item_polygon(item, padding=padding)
 
 
 def _polygon_edges(polygon: list[tuple[float, float]]) -> list[tuple[tuple[float, float], tuple[float, float]]]:
@@ -501,15 +537,7 @@ def _project_polygon(
 
 
 def _polygons_intersect(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> bool:
-    if not a or not b:
-        return False
-
-    for axis in _polygon_axes(a) + _polygon_axes(b):
-        a0, a1 = _project_polygon(a, axis)
-        b0, b1 = _project_polygon(b, axis)
-        if a1 < b0 or b1 < a0:
-            return False
-    return True
+    return geometry.polygons_intersect(a, b)
 
 
 def _orientation(a: tuple[float, float], b: tuple[float, float], c: tuple[float, float]) -> int:
@@ -578,39 +606,11 @@ def _distance_point_to_segment(
     a: tuple[float, float],
     b: tuple[float, float],
 ) -> float:
-    ab_x = b[0] - a[0]
-    ab_z = b[1] - a[1]
-    ab_len_sq = ab_x * ab_x + ab_z * ab_z
-    if ab_len_sq <= 1e-12:
-        return math.hypot(point[0] - a[0], point[1] - a[1])
-
-    ap_x = point[0] - a[0]
-    ap_z = point[1] - a[1]
-    t = max(0.0, min(1.0, (ap_x * ab_x + ap_z * ab_z) / ab_len_sq))
-    proj_x = a[0] + t * ab_x
-    proj_z = a[1] + t * ab_z
-    return math.hypot(point[0] - proj_x, point[1] - proj_z)
+    return geometry.distance_point_to_segment(point, a, b)
 
 
 def _point_in_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
-    if len(polygon) < 3:
-        return False
-
-    for a, b in _polygon_edges(polygon):
-        if _distance_point_to_segment(point, a, b) <= 1e-9:
-            return True
-
-    inside = False
-    px, pz = point
-    for i, (x1, z1) in enumerate(polygon):
-        x2, z2 = polygon[(i + 1) % len(polygon)]
-        crosses = (z1 > pz) != (z2 > pz)
-        if not crosses:
-            continue
-        at_x = (x2 - x1) * (pz - z1) / max(z2 - z1, 1e-12) + x1
-        if px < at_x:
-            inside = not inside
-    return inside
+    return geometry.point_in_polygon(point, polygon)
 
 
 def _segment_intersects_polygon(
@@ -661,17 +661,7 @@ def _item_inside_room_zone(item: dict[str, Any], zone: RoomZone, inset: float = 
 
 
 def _polygon_distance(a: list[tuple[float, float]], b: list[tuple[float, float]]) -> float:
-    if _polygons_intersect(a, b):
-        return 0.0
-
-    min_dist = float("inf")
-    for point in a:
-        for edge_start, edge_end in _polygon_edges(b):
-            min_dist = min(min_dist, _distance_point_to_segment(point, edge_start, edge_end))
-    for point in b:
-        for edge_start, edge_end in _polygon_edges(a):
-            min_dist = min(min_dist, _distance_point_to_segment(point, edge_start, edge_end))
-    return min_dist
+    return geometry.polygon_distance(a, b)
 
 
 def _segment_progress(
@@ -1351,6 +1341,172 @@ def refresh_ikea_catalog(query: str, max_results: int = 12, region: str = "sg") 
     except ValueError as exc:
         return f"Error: {exc}"
     return format_catalog_items(items)
+
+
+@mcp.tool()
+def create_project(title: str = "Untitled Haus Project", journey: str = "blank") -> str:
+    """Create a local Haus project from the current layout."""
+    project = new_project(title=title, journey=journey, layout=_load_layout())
+    path = _write_project(project)
+    return _json_result({"ok": True, "project": project, "path": str(path)})
+
+
+@mcp.tool()
+def list_projects() -> str:
+    """List local Haus projects stored under the Haus runtime root."""
+    projects = []
+    for path in sorted(_projects_root().glob("*.haus-project.json")):
+        try:
+            project = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if isinstance(project, dict):
+            projects.append(
+                {
+                    "id": project.get("id"),
+                    "title": project.get("title"),
+                    "journey": project.get("journey"),
+                    "updated_at": project.get("updated_at"),
+                    "path": str(path),
+                }
+            )
+    return _json_result({"ok": True, "projects": projects})
+
+
+@mcp.tool()
+def load_project(project_id: str) -> str:
+    """Load a local Haus project by ID and sync its layout to the active editor layout file."""
+    project = _read_project(project_id)
+    if project is None:
+        return _json_result({"ok": False, "error": f"Project '{project_id}' was not found."})
+    save_err = _save_layout(project.get("layout", {}))
+    return _json_result({"ok": save_err is None, "project": project, "sync_error": save_err})
+
+
+@mcp.tool()
+def save_project(project_json: str = "") -> str:
+    """Save a structured Haus project JSON payload, or save the current layout as a new project."""
+    if project_json.strip():
+        try:
+            project = json.loads(project_json)
+        except json.JSONDecodeError as exc:
+            return _json_result({"ok": False, "error": f"Invalid project JSON: {exc}"})
+        if not isinstance(project, dict):
+            return _json_result({"ok": False, "error": "Project JSON must be an object."})
+        if project.get("schema") != "haus.project.v1":
+            project = new_project(project.get("title", "MCP Project"), project.get("journey", "blank"), project.get("layout", _load_layout()))
+    else:
+        project = new_project(title="MCP Saved Project", journey="blank", layout=_load_layout())
+    path = _write_project(project)
+    return _json_result({"ok": True, "project_id": project.get("id"), "path": str(path)})
+
+
+@mcp.tool()
+def list_scenarios(project_id: str) -> str:
+    """List scenarios for a saved Haus project."""
+    project = _read_project(project_id)
+    if project is None:
+        return _json_result({"ok": False, "error": f"Project '{project_id}' was not found."})
+    return _json_result({"ok": True, "project_id": project_id, "scenarios": project.get("scenarios", [])})
+
+
+@mcp.tool()
+def duplicate_scenario(project_id: str, scenario_id: str, name: str = "") -> str:
+    """Duplicate one saved project scenario and persist the project."""
+    project = _read_project(project_id)
+    if project is None:
+        return _json_result({"ok": False, "error": f"Project '{project_id}' was not found."})
+    scenario = next((item for item in project.get("scenarios", []) if isinstance(item, dict) and item.get("id") == scenario_id), None)
+    if scenario is None:
+        return _json_result({"ok": False, "error": f"Scenario '{scenario_id}' was not found."})
+    clone = duplicate_project_scenario(scenario, name or None)
+    project.setdefault("scenarios", []).append(clone)
+    path = _write_project(project)
+    return _json_result({"ok": True, "scenario": clone, "path": str(path)})
+
+
+@mcp.tool()
+def export_report(project_id: str, journey: str = "", selected_scenario_ids: list[str] | None = None) -> str:
+    """Export a structured journey report for a saved project."""
+    project = _read_project(project_id)
+    if project is None:
+        return _json_result({"ok": False, "error": f"Project '{project_id}' was not found."})
+    active_journey = journey or str(project.get("journey") or "blank")
+    rendered = render_journey_report(project, active_journey, selected_ids=selected_scenario_ids or [])
+    report_dir = _runtime_root() / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    report_path = report_dir / rendered["filename"]
+    report_path.write_text(rendered["html"], encoding="utf-8")
+    project.setdefault("exports", []).append({"kind": "html_report", "filename": rendered["filename"], "path": str(report_path)})
+    _write_project(project)
+    return _json_result({"ok": True, "report": {k: v for k, v in rendered.items() if k != "html"}, "path": str(report_path)})
+
+
+@mcp.tool()
+def draft_renovation_options(project_id: str = "") -> str:
+    """Draft conservative, balanced, and ambitious renovation options as structured JSON."""
+    project = _read_project(project_id) if project_id else None
+    layout = project.get("layout", {}) if project else _load_layout()
+    scenarios = renovation_scenarios(layout)
+    if project:
+        project["scenarios"] = scenarios
+        _write_project(project)
+    return _json_result({"ok": True, "scenarios": scenarios})
+
+
+@mcp.tool()
+def draft_accessibility_review(project_id: str = "", profile: str = "general_aging_ready") -> str:
+    """Draft a structured accessibility review for a project or the current layout."""
+    project = _read_project(project_id) if project_id else None
+    layout = project.get("layout", {}) if project else _load_layout()
+    report = accessibility_report(layout, profile)
+    if project:
+        project.setdefault("validation_reports", []).append(report)
+        _write_project(project)
+    return _json_result({"ok": True, "report": report})
+
+
+@mcp.tool()
+def check_furniture_fit(product_json: str, room_name: str = "") -> str:
+    """Check a product JSON object against the current layout and return structured validation."""
+    try:
+        raw_product = json.loads(product_json)
+    except json.JSONDecodeError as exc:
+        return _json_result({"ok": False, "error": f"Invalid product JSON: {exc}"})
+    if not isinstance(raw_product, dict):
+        return _json_result({"ok": False, "error": "Product JSON must be an object."})
+    product = manual_product_entry(raw_product)
+    fit = check_product_fit(_load_layout(), product, room_name=room_name)
+    return _json_result({"ok": True, "product": product, "fit": fit})
+
+
+@mcp.tool()
+def create_designer_brief(
+    project_id: str = "",
+    client_name: str = "",
+    project_type: str = "",
+    design_brief: str = "",
+    style_words: str = "",
+    budget_band: str = "",
+    timeline: str = "",
+    meeting_date: str = "",
+) -> str:
+    """Create a structured designer pre-sales brief for a saved project or current layout."""
+    intake = {
+        "client_name": client_name,
+        "project_type": project_type,
+        "design_brief": design_brief,
+        "style_words": [word.strip() for word in style_words.split(",") if word.strip()],
+        "budget_band": budget_band,
+        "timeline": timeline,
+        "meeting_date": meeting_date,
+    }
+    brief = client_brief_object(intake)
+    project = _read_project(project_id) if project_id else None
+    if project:
+        project.setdefault("designer", {})["client_brief"] = brief
+        _write_project(project)
+    return _json_result({"ok": True, "brief": brief})
 
 
 @mcp.tool()
