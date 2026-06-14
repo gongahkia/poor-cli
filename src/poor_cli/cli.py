@@ -137,7 +137,7 @@ def _inspect(args: argparse.Namespace, store: RunStore) -> int:
 
 
 def _replay(args: argparse.Namespace, store: RunStore) -> int:
-    state = replay_summary(store, args.run_id)
+    state = replay_summary(store, args.run_id, args.from_event)
     if args.json:
         print(json.dumps(state, indent=2, sort_keys=True))
         return 0

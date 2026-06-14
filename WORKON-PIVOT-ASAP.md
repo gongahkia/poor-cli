@@ -11,6 +11,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added provider request/response contracts plus a `CachedReplayProvider` that records live calls and fails closed on replay cache misses. Evidence: `tests/test_providers.py`.
 - 2026-06-14: added replayable `ToolDispatcher` and v0 built-ins: `read_file`, `write_file`, `edit`, `glob`, `grep`, `shell`, `replay_emit`. Evidence: `tests/test_tools.py`.
 - 2026-06-14: added per-run filesystem replay mirrors: `.poor-cli/v6/runs/<run_id>/meta.json` and `events.jsonl`. Evidence: `tests/test_store.py::test_store_writes_run_meta_and_events_jsonl`.
+- 2026-06-14: implemented event-window replay via `poor-cli replay --from-event`, deriving run/task state from event history. Evidence: `tests/test_replay.py`.
 
 ## TL;DR
 

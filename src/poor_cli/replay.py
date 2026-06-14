@@ -8,7 +8,7 @@ class ReplayError(RuntimeError):
 
 
 def replay_summary(store: RunStore, run_id: str, from_event: str | None = None) -> dict[str, object]:
-    run = store.get_run(run_id)
+    store.get_run(run_id)
     events = _event_window(store.list_events(run_id), from_event)
     tasks = store.list_tasks(run_id)
     state = {
