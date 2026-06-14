@@ -82,6 +82,26 @@ Checked-in snapshot: `bench/results/phase1-acceptance.json`.
 
 Current acceptance status: all Phase 1 acceptance checks pass from checked-in evidence.
 
+## Graph vs grep
+
+Synthetic graph-mode benchmark:
+
+```sh
+uv run --locked python bench/graph_vs_grep.py --output bench/results/graph-vs-grep-synthetic.json
+```
+
+The fixture generator creates a 50,000-LOC Python repo and runs the same symbol-tracing task in two modes:
+- grep mode scans import/function/call lines.
+- graph mode uses `definition_of` plus `callers_of`.
+
+Checked-in synthetic result:
+
+| result file | LOC | grep tokens | graph tokens | reduction | correctness |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `bench/results/graph-vs-grep-synthetic.json` | 50,000 | 19,246 | 49 | 99.7% | equal/pass |
+
+This is a deterministic scaffold for Phase 2 measurement. It is not a substitute for the fixed 10-task SWE-bench graph-mode target.
+
 ## SWE-bench Lite 10
 
 Fixed seed set: `tests/fixtures/swe-lite-10/manifest.json`.

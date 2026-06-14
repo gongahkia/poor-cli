@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from bench.graph_vs_grep import graph_vs_grep_payload
 from bench.local_fixture_bugs import compact_payload, run_fixture_suite
 from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
@@ -207,6 +208,29 @@ def test_checked_in_phase1_acceptance_snapshot() -> None:
     assert payload["checks"]["swe_lite_10"]["total_instances"] == 10
     assert payload["checks"]["swe_lite_10"]["resolved_instances"] == 9
     assert payload["checks"]["swe_lite_10"]["unresolved_ids"] == ["astropy__astropy-14182"]
+
+
+def test_graph_vs_grep_payload_schema() -> None:
+    payload = graph_vs_grep_payload(modules=12, filler_lines=4, min_loc=0)
+
+    assert payload["schema_version"] == "poor-cli-graph-vs-grep-v1"
+    assert payload["accepted"] is True
+    assert payload["modes"]["grep"]["correct"] is True
+    assert payload["modes"]["graph"]["correct"] is True
+    assert payload["modes"]["graph"]["input_tokens"] < payload["modes"]["grep"]["input_tokens"]
+    assert payload["token_reduction"] >= 0.30
+
+
+def test_checked_in_graph_vs_grep_snapshot() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "graph-vs-grep-synthetic.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "poor-cli-graph-vs-grep-v1"
+    assert payload["accepted"] is True
+    assert payload["fixture"]["line_count"] >= 50_000
+    assert payload["modes"]["grep"]["correct"] is True
+    assert payload["modes"]["graph"]["correct"] is True
+    assert payload["token_reduction"] >= 0.30
 
 
 def test_swe_lite_runner_applies_manifest_order_and_validates_pin() -> None:

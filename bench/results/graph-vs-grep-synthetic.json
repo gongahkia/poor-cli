@@ -1,0 +1,48 @@
+{
+  "accepted": true,
+  "fixture": {
+    "filler_lines_per_module": 96,
+    "line_count": 50000,
+    "modules": 500
+  },
+  "min_loc": 50000,
+  "min_reduction": 0.3,
+  "modes": {
+    "graph": {
+      "context_lines": 2,
+      "correct": true,
+      "input_tokens": 49,
+      "output": {
+        "caller_paths": [
+          "module_0497.py"
+        ],
+        "definition_path": "module_0498.py"
+      },
+      "strategy": "definition_of plus callers_of"
+    },
+    "grep": {
+      "context_lines": 1000,
+      "correct": true,
+      "input_tokens": 19246,
+      "output": {
+        "caller_paths": [
+          "module_0497.py"
+        ],
+        "definition_path": "module_0498.py"
+      },
+      "strategy": "grep import/function/call lines"
+    }
+  },
+  "schema_version": "poor-cli-graph-vs-grep-v1",
+  "task": {
+    "expected": {
+      "caller_paths": [
+        "module_0497.py"
+      ],
+      "definition_path": "module_0498.py"
+    },
+    "objective": "find the target function definition and its direct callers",
+    "target_symbol": "function_0498"
+  },
+  "token_reduction": 0.9974540164189961
+}

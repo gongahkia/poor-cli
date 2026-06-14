@@ -31,3 +31,17 @@ Checked-in SWE-bench Lite rows:
 | fixed 10-task | 10 | 7/10 | 10/10 | 9/10 |
 
 The 10-task unresolved instance is `astropy__astropy-14182`.
+
+## Graph vs Grep
+
+```sh
+uv run --locked python bench/graph_vs_grep.py --output bench/results/graph-vs-grep-synthetic.json
+```
+
+Checked-in synthetic row:
+
+| LOC | grep tokens | graph tokens | reduction | correctness |
+| ---: | ---: | ---: | ---: | --- |
+| 50,000 | 19,246 | 49 | 99.7% | equal/pass |
+
+This is a deterministic Phase 2 scaffold, not the final SWE-bench graph-mode result.
