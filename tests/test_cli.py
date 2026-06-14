@@ -55,3 +55,18 @@ def test_cli_plan_run_inspect_replay(tmp_path: Path) -> None:
     )
     state = json.loads(replay.stdout)
     assert state["tasks"][payload["tasks"][0]["task_id"]]["status"] == "completed"
+
+
+def test_cli_exposes_tui_help(tmp_path: Path) -> None:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    result = subprocess.run(
+        [sys.executable, "-m", "poor_cli", "--store-dir", str(tmp_path / "store"), "tui", "--help"],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert "--run-id" in result.stdout

@@ -24,6 +24,7 @@ poor-cli run "make a small scoped change" --yes
 poor-cli runs
 poor-cli inspect <run_id> --events --context
 poor-cli replay <run_id>
+poor-cli tui --run-id <run_id>
 ```
 
 `poor-cli run` records the plan first. Without `--yes` or `--dry-run`, it requires confirmation before invoking write-capable agents.

@@ -46,6 +46,8 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
         return _inspect(args, store)
     if args.command == "replay":
         return _replay(args, store)
+    if args.command == "tui":
+        return _tui(args, store)
     raise RuntimeError("missing command")
 
 
@@ -147,6 +149,13 @@ def _replay(args: argparse.Namespace, store: RunStore) -> int:
     return 0
 
 
+def _tui(args: argparse.Namespace, store: RunStore) -> int:
+    from .tui import run_tui
+
+    run_tui(store.root, args.run_id)
+    return 0
+
+
 def _budget(args: argparse.Namespace) -> Budget:
     return Budget(mode=args.mode, max_usd=args.budget, max_parallel_agents=max(1, args.parallel))
 
@@ -197,6 +206,9 @@ def _parser() -> argparse.ArgumentParser:
     replay.add_argument("--dry", action="store_true")
     replay.add_argument("--from-event")
     replay.add_argument("--json", action="store_true")
+
+    tui = sub.add_parser("tui")
+    tui.add_argument("--run-id")
     return parser
 
 

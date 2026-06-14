@@ -23,7 +23,9 @@ classifiers = [
     "Topic :: Utilities",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "textual>=0.80",
+]
 
 [project.optional-dependencies]
 dev = [
