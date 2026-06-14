@@ -259,7 +259,7 @@ def poor_cli_env(args: argparse.Namespace, planner: Path | None = None) -> dict[
     old_pythonpath = env.get("PYTHONPATH")
     env["PYTHONPATH"] = src if not old_pythonpath else f"{src}{os.pathsep}{old_pythonpath}"
     if planner is not None:
-        env["POOR_CLI_PLANNER_COMMAND"] = f"{args.python} {shlex.quote(str(planner))}"
+        env["POOR_CLI_PLANNER_COMMAND"] = shlex.join([args.python, str(planner.resolve())])
     return env
 
 

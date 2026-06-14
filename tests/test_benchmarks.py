@@ -197,9 +197,12 @@ def test_swe_lite_runner_uses_v6_run_and_planner_payload(tmp_path: Path) -> None
 
     command = swe_run.poor_cli_run_command(args, tmp_path / "store", "Fix the bug")
     payload = swe_run.planner_payload(task, "claude")
+    planner = swe_run.write_planner(tmp_path / "result" / "planner.py", task, "claude")
+    env = swe_run.poor_cli_env(args, planner)
 
     assert "exec" not in command
     assert command[-5:] == ["run", "Fix the bug", "--yes", "--budget", "2.5"]
+    assert str(planner.resolve()) in env["POOR_CLI_PLANNER_COMMAND"]
     assert payload["tasks"][0]["suggested_agent"] == "claude"
     assert payload["tasks"][0]["objective"] == "Fix the bug"
     assert swe_run.extract_run_id("run_id: run_123\n1. task -> claude\n") == "run_123"

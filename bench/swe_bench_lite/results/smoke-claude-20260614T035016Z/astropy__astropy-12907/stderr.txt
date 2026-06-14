@@ -1,0 +1,1 @@
+error: planner command failed: /Users/gongahkia/Desktop/coding/projects/poor-cli/.venv/bin/python3: can't open file '/Users/gongahkia/Desktop/coding/projects/poor-cli/.poor-cli/bench/swe_bench_lite/worktrees/astropy__astropy-12907/bench/swe_bench_lite/results/smoke-claude-20260614T035016Z/astropy__astropy-12907/planner.py': [Errno 2] No such file or directory
