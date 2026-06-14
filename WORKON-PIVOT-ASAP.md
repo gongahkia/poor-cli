@@ -41,6 +41,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added SQLite run lookup by user-goal prefix plus `poor-cli runs --prefix`, covering the prompt-prefix index path. Evidence: `tests/test_store.py::test_store_filters_runs_by_goal_prefix` and `tests/test_cli.py::test_cli_runs_filters_by_prefix`.
 - 2026-06-14: persisted task `validation` and planner metadata through SQLite so generic shell tasks can execute planner-specified commands. Evidence: `tests/test_store.py::test_store_preserves_task_metadata_and_validation` and `tests/test_cli.py::test_cli_run_executes_generic_command_metadata`.
 - 2026-06-14: added three local fixture bugs and an end-to-end `poor-cli run --yes` harness that fixes each fixture and validates with pytest. Evidence: `tests/fixtures/bug-{1,2,3}/` and `tests/test_fixture_bugs.py::test_three_fixture_bugs_solve_end_to_end`. Live Anthropic calibration remains pending.
+- 2026-06-14: verified `poor-cli --offline replay <run_id> --verify` works after clearing planner configuration, proving replay does not require live agent/provider credentials. Evidence: `tests/test_cli.py::test_cli_main_in_process_run_inspect_replay`.
 
 ## TL;DR
 

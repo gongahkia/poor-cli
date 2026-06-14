@@ -105,6 +105,18 @@ def test_cli_main_in_process_run_inspect_replay(tmp_path: Path, monkeypatch, cap
     assert before_verify == after_verify
     assert json.loads(first_verify)["verification"]["verified"] is True
 
+    monkeypatch.delenv("POOR_CLI_PLANNER_COMMAND", raising=False)
+    old_offline = os.environ.get("POOR_CLI_OFFLINE")
+    try:
+        assert main(["--offline", "--store-dir", str(store), "replay", run_id, "--verify", "--json"]) == 0
+        offline_replay = json.loads(capsys.readouterr().out)
+        assert offline_replay["verification"]["verified"] is True
+    finally:
+        if old_offline is None:
+            os.environ.pop("POOR_CLI_OFFLINE", None)
+        else:
+            os.environ["POOR_CLI_OFFLINE"] = old_offline
+
 
 def test_cli_exposes_tui_help(tmp_path: Path) -> None:
     env = os.environ.copy()
