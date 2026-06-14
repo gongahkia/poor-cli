@@ -81,3 +81,66 @@ def test_cli_exposes_tui_help(tmp_path: Path) -> None:
     )
 
     assert "--run-id" in result.stdout
+
+
+def test_cli_run_without_yes_records_confirmation_event(tmp_path: Path) -> None:
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Record','objective':'record execution','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n"
+    )
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    env["POOR_CLI_PLANNER_COMMAND"] = f"{sys.executable} {planner}"
+    store = tmp_path / "store"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "poor_cli", "--store-dir", str(store), "run", "test goal"],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    run_id = next(line.split(":", 1)[1].strip() for line in result.stdout.splitlines() if line.startswith("run_id:"))
+    run_store = RunStore(store)
+    try:
+        events = [event["type"] for event in run_store.list_events(run_id)]
+        assert result.returncode == 1
+        assert "run.confirmation_required" in events
+        assert "agent.started" not in events
+        assert run_store.get_run(run_id)["status"] == "awaiting_confirmation"
+    finally:
+        run_store.close()
+
+
+def test_cli_plan_failure_records_structured_events(tmp_path: Path) -> None:
+    planner = tmp_path / "planner.py"
+    planner.write_text("import sys\nsys.stderr.write('planner broke')\nsys.exit(2)\n")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    env["POOR_CLI_PLANNER_COMMAND"] = f"{sys.executable} {planner}"
+    store = tmp_path / "store"
+
+    result = subprocess.run(
+        [sys.executable, "-m", "poor_cli", "--store-dir", str(store), "plan", "test goal"],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    run_store = RunStore(store)
+    try:
+        run = run_store.list_runs()[0]
+        events = [event["type"] for event in run_store.list_events(run["run_id"])]
+        assert result.returncode == 1
+        assert run["status"] == "failed"
+        assert "planner.failed" in events
+        assert "run.failed" in events
+        assert run_store.list_artifacts(run["run_id"], "planner.error")
+    finally:
+        run_store.close()

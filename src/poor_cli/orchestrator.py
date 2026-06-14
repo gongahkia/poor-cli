@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .agents import AgentRunner, build_agent_prompt, detect_agents
+from .agents import AgentResult, AgentRunner, build_agent_prompt, detect_agents
 from .models import Budget, ContextPacket, Plan, TaskSpec, make_id, to_jsonable
 from .planner import Planner
 from .store import RunStore
@@ -22,7 +22,18 @@ class Orchestrator:
         self.store.insert_agents(run_id, agents)
         self.store.append_event(run_id, "agents.detected", {"agents": [asdict(agent) for agent in agents]})
         planner = Planner(self.repo_path, agents)
-        plan, prompt, response = planner.create(goal)
+        try:
+            plan, prompt, response = planner.create(goal)
+        except Exception as exc:
+            error_art = self.store.put_artifact(
+                run_id=run_id,
+                kind="planner.error",
+                data={"type": type(exc).__name__, "error": str(exc)},
+            )
+            self.store.append_event(run_id, "planner.failed", {"artifact_id": error_art.artifact_id, "error": str(exc)})
+            self.store.set_run_status(run_id, "failed", "planner failed")
+            self.store.append_event(run_id, "run.failed", {"summary": "planner failed"})
+            raise
         prompt_art = self.store.put_artifact(run_id=run_id, kind="planner.prompt", data=prompt, media_type="text/plain")
         response_art = self.store.put_artifact(run_id=run_id, kind="planner.response", data=response, media_type="text/plain")
         plan_art = self.store.put_artifact(run_id=run_id, kind="plan.json", data=to_jsonable(plan))
@@ -80,18 +91,23 @@ class Orchestrator:
             )
             self.store.append_event(run_id, "agent.input.created", {"artifact_id": input_art.artifact_id}, task.task_id)
             self.store.append_event(run_id, "agent.started", {"agent_id": agent.agent_id, "command": agent.command}, task.task_id)
-            result = runner.run(
-                agent,
-                goal=str(run["user_goal"]),
-                task=task,
-                context=packet.task_prompt,
-                workdir=self.repo_path,
-                budget_usd=budget.max_usd,
-            )
+            try:
+                result = runner.run(
+                    agent,
+                    goal=str(run["user_goal"]),
+                    task=task,
+                    context=packet.task_prompt,
+                    workdir=self.repo_path,
+                    budget_usd=budget.max_usd,
+                )
+                agent_event = "agent.completed"
+            except Exception as exc:
+                result = AgentResult(agent.agent_id, [], 1, "", f"{type(exc).__name__}: {exc}")
+                agent_event = "agent.failed"
             result_art = self.store.put_artifact(run_id=run_id, task_id=task.task_id, kind="agent.result", data=to_jsonable(result))
             self.store.append_event(
                 run_id,
-                "agent.completed",
+                agent_event,
                 {"agent_id": result.agent_id, "returncode": result.returncode, "artifact_id": result_art.artifact_id},
                 task.task_id,
             )

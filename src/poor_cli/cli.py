@@ -92,6 +92,8 @@ def _run(args: argparse.Namespace, store: RunStore) -> int:
         return orchestrator.run(run_id, budget, _selected(args), dry_run=True)
     if not args.yes:
         if not sys.stdin.isatty():
+            store.set_run_status(run_id, "awaiting_confirmation", "confirmation required")
+            store.append_event(run_id, "run.confirmation_required", {"reason": "non-interactive stdin"})
             raise RuntimeError("confirmation required; rerun with --yes or --dry-run")
         answer = input("Execute this plan with write-capable agents? [y/N] ").strip().lower()
         if answer not in {"y", "yes"}:
