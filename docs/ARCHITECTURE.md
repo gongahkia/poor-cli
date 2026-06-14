@@ -29,4 +29,4 @@
 
 ## Boundaries
 
-The alpha intentionally excludes worktree isolation, parallel scheduling, TUI, local GPU providers, MCP, and benchmark automation.
+The alpha intentionally excludes worktree isolation, parallel scheduling, local GPU providers, and MCP server hosting. The TUI, MCP client, and benchmark harness are present but intentionally small.
