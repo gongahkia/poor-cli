@@ -206,3 +206,20 @@ def test_swe_lite_runner_uses_v6_run_and_planner_payload(tmp_path: Path) -> None
     assert payload["tasks"][0]["suggested_agent"] == "claude"
     assert payload["tasks"][0]["objective"] == "Fix the bug"
     assert swe_run.extract_run_id("run_id: run_123\n1. task -> claude\n") == "run_123"
+
+
+def test_checked_in_swe_lite_smoke_result() -> None:
+    run_dir = Path(__file__).resolve().parents[1] / "bench" / "swe_bench_lite" / "results" / "smoke-claude-20260614T035359Z"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    result = json.loads((run_dir / "astropy__astropy-12907" / "result.json").read_text(encoding="utf-8"))
+
+    assert summary["task_count"] == 1
+    assert summary["completed_exec_count"] == 1
+    assert summary["replay_verified_count"] == 1
+    assert summary["budget_usd"] == 1.0
+    assert summary["official_evaluation"] == {}
+    assert result["instance_id"] == "astropy__astropy-12907"
+    assert result["exit_code"] == 0
+    assert result["replay_verified"] is True
+    assert result["patch_bytes"] == 506
+    assert len(result["replay_trace_sha256"]) == 64

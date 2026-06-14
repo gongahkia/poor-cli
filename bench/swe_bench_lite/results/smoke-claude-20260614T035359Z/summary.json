@@ -1,0 +1,23 @@
+{
+  "agent": "claude",
+  "benchmark": "SWE-bench Lite",
+  "budget_usd": 1.0,
+  "completed_exec_count": 1,
+  "dataset_name": "princeton-nlp/SWE-bench_Lite",
+  "dataset_revision": "",
+  "mean_cost_usd": 0.0,
+  "mean_tokens": 0.0,
+  "mean_wall_time_seconds": 125.091,
+  "model": "claude-sonnet-4-20250514",
+  "official_evaluation": {},
+  "p50_wall_time_seconds": 125.091,
+  "p95_wall_time_seconds": 125.091,
+  "provider": "anthropic",
+  "replay_verified_count": 1,
+  "run_id": "smoke-claude-20260614T035359Z",
+  "seed": 0,
+  "split": "test",
+  "task_count": 1,
+  "total_cost_usd": 0.0,
+  "total_tokens": 0
+}

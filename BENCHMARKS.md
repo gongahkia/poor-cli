@@ -1,6 +1,6 @@
 # poor-cli v6 benchmarks
 
-Status: local generic and live Anthropic fixture result rows exist. SWE-bench Lite results are still pending.
+Status: local generic, live Anthropic fixture, and 1-task SWE-bench Lite smoke results exist. Full SWE-bench Lite pass-rate results are still pending.
 
 ## Task format
 
@@ -76,7 +76,7 @@ Current snapshot status: all readiness prerequisites pass. This does not replace
 
 Fixed seed set: `tests/fixtures/swe-lite-10/manifest.json`.
 
-Source: `SWE-bench/SWE-bench_Lite`, `default/test`, offset `0`, length `10`. This pins IDs and base commits only; Docker evaluation and run results are not checked in yet.
+Source: `SWE-bench/SWE-bench_Lite`, `default/test`, offset `0`, length `10`. This pins IDs and base commits. Full Docker-evaluated 10-task run results are not checked in yet.
 
 Install benchmark dependencies:
 
@@ -95,5 +95,11 @@ The runner loads the pinned manifest against the official `princeton-nlp/SWE-ben
 Smoke without official Docker evaluation:
 
 ```sh
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --limit 1 --no-evaluate --confirm-cost --budget-usd 2.0
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --limit 1 --no-evaluate --confirm-cost --budget-usd 1.0 --timeout-seconds 1200
 ```
+
+Checked-in smoke:
+
+| run dir | task | completed | replay verified | patch bytes | official eval |
+| --- | --- | ---: | ---: | ---: | --- |
+| `bench/swe_bench_lite/results/smoke-claude-20260614T035359Z` | `astropy__astropy-12907` | 1/1 | 1/1 | 506 | skipped |
