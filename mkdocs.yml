@@ -12,6 +12,7 @@ nav:
   - Graph Tools: graph.md
   - Local First: local-first.md
   - Benchmarks: benchmarks.md
+  - Launch: launch.md
 markdown_extensions:
   - admonition
   - toc:
