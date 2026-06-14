@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from poor_cli.cli import main
 from poor_cli.store import RunStore
 
 
@@ -66,6 +67,33 @@ def test_cli_plan_run_inspect_replay(tmp_path: Path) -> None:
     )
     state = json.loads(replay.stdout)
     assert state["tasks"][payload["tasks"][0]["task_id"]]["status"] == "completed"
+
+
+def test_cli_main_in_process_run_inspect_replay(tmp_path: Path, monkeypatch, capsys) -> None:
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Record','objective':'record execution','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n"
+    )
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    assert main(["--store-dir", str(store), "run", "test goal", "--yes"]) == 0
+    run_output = capsys.readouterr().out
+    run_id = next(line.split(":", 1)[1].strip() for line in run_output.splitlines() if line.startswith("run_id:"))
+
+    assert main(["--store-dir", str(store), "inspect", run_id, "--events", "--context"]) == 0
+    inspect_output = capsys.readouterr().out
+    assert "agent.completed" in inspect_output
+    assert "handoff " in inspect_output
+
+    assert main(["--store-dir", str(store), "replay", run_id]) == 0
+    replay_output = capsys.readouterr().out
+    assert "completed" in replay_output
 
 
 def test_cli_exposes_tui_help(tmp_path: Path) -> None:

@@ -21,6 +21,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: closed GitHub issue #50 after replay state reconstruction, `--from-event`, and missing-artifact failure paths were covered.
 - 2026-06-14: added structured planner failure, agent failure, and non-interactive confirmation-required events. Evidence: `tests/test_cli.py::test_cli_plan_failure_records_structured_events` and `tests/test_cli.py::test_cli_run_without_yes_records_confirmation_event`.
 - 2026-06-14: closed GitHub issue #51 after confirmation, budget placeholder, and structured failure-event coverage landed.
+- 2026-06-14: raised the milestone suite to an in-process CLI smoke plus CI coverage gate at `--cov-fail-under=60`. Evidence: `tests/test_cli.py::test_cli_main_in_process_run_inspect_replay`.
 
 ## TL;DR
 

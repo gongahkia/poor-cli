@@ -27,6 +27,6 @@ jobs:
       - name: Lint
         run: ruff check src/poor_cli tests
       - name: Test
-        run: python -m pytest tests/
+        run: python -m pytest --cov=src/poor_cli --cov-fail-under=60 tests/
       - name: LOC gate
         run: python bench/loc_gate.py
