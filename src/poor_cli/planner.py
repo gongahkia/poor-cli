@@ -100,9 +100,9 @@ def parse_plan(text: str) -> Plan:
                 complexity=str(raw.get("complexity") or "medium"),
                 risk=str(raw.get("risk") or "medium"),
                 required_context=str(raw.get("required_context") or "small"),
-                dependencies=[str(item) for item in raw.get("dependencies") or []],
+                dependencies=_string_list(raw.get("dependencies")),
                 suggested_agent=_clean_agent(raw.get("suggested_agent")),
-                validation=[str(item) for item in raw.get("validation") or []],
+                validation=_string_list(raw.get("validation")),
                 metadata={k: v for k, v in raw.items() if k not in _TASK_KEYS},
             )
         )
@@ -112,10 +112,10 @@ def parse_plan(text: str) -> Plan:
         plan_id=make_id("plan"),
         problem_summary=str(data.get("problem_summary") or ""),
         architecture_assessment=str(data.get("architecture_assessment") or ""),
-        assumptions=[str(item) for item in data.get("assumptions") or []],
-        risks=[str(item) for item in data.get("risks") or []],
+        assumptions=_string_list(data.get("assumptions")),
+        risks=_string_list(data.get("risks")),
         tasks=tasks,
-        validation_strategy=[str(item) for item in data.get("validation_strategy") or []],
+        validation_strategy=_string_list(data.get("validation_strategy")),
         routing_strategy=str(data.get("routing_strategy") or ""),
         estimated_cost=data.get("estimated_cost") if isinstance(data.get("estimated_cost"), dict) else {"tokens": None, "usd": None},
         requires_user_confirmation=bool(data.get("requires_user_confirmation", True)),
@@ -146,6 +146,17 @@ def _clean_agent(value: Any) -> str | None:
         return None
     text = str(value).strip().lower()
     return text or None
+
+
+def _string_list(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        return [text] if text else []
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item).strip()]
+    return [str(value)]
 
 
 _TASK_KEYS = {"title", "objective", "task_type", "complexity", "risk", "required_context", "dependencies", "suggested_agent", "validation"}

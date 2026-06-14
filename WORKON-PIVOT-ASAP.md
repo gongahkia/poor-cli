@@ -2,7 +2,11 @@
 
 Authoritative plan for the pivot. Supersedes README positioning until merged back in.
 
-Status: draft, 2026-05-15. Owner: gongahkia.
+Status: in progress, 2026-06-14. Owner: gongahkia.
+
+## Implementation log
+
+- 2026-06-14: hardened planner schema parsing so scalar list fields from Claude/Codex/custom planners are normalized as one-item lists instead of character arrays. Evidence: `tests/test_planner.py::test_parse_plan_accepts_string_list_fields`.
 
 ## TL;DR
 
