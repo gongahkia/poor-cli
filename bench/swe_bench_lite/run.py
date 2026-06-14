@@ -50,6 +50,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--timeout-seconds", type=int, default=3600)
     parser.add_argument("--budget-usd", type=float, help="Pass a max model budget to poor-cli run.")
+    parser.add_argument("--graph", action="store_true", help="Pass --graph to poor-cli run and planner payloads")
     parser.add_argument("--permission-mode", default="acceptEdits")
     parser.add_argument("--sandbox-preset", default="workspace-write")
     parser.add_argument("--auto-approve", action=argparse.BooleanOptionalAction, default=True)
@@ -218,12 +219,17 @@ def git_commit() -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def planner_payload(task: dict[str, Any], agent: str) -> dict[str, Any]:
+def planner_payload(task: dict[str, Any], agent: str, *, graph: bool = False) -> dict[str, Any]:
     prompt = benchmark_prompt(task)
+    assumptions = (
+        ["use graph-mode file navigation; prefer find_symbol, definition_of, callers_of, imports_of, and subgraph"]
+        if graph
+        else ["use grep-mode file navigation; do not use graph tools"]
+    )
     return {
         "problem_summary": f"SWE-bench Lite task {task.get('instance_id')}",
         "architecture_assessment": "external benchmark repository",
-        "assumptions": ["use grep-mode file navigation; do not use graph tools"],
+        "assumptions": assumptions,
         "risks": ["benchmark patch may need repository-specific test context"],
         "tasks": [
             {
@@ -245,8 +251,8 @@ def planner_payload(task: dict[str, Any], agent: str) -> dict[str, Any]:
     }
 
 
-def write_planner(path: Path, task: dict[str, Any], agent: str) -> Path:
-    payload = planner_payload(task, agent)
+def write_planner(path: Path, task: dict[str, Any], agent: str, *, graph: bool = False) -> Path:
+    payload = planner_payload(task, agent, graph=graph)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(f"import json, sys\nsys.stdin.read()\nprint({json.dumps(payload)!r})\n", encoding="utf-8")
     return path
@@ -279,8 +285,10 @@ def poor_cli_run_command(args: argparse.Namespace, store_dir: Path, prompt: str)
         str(store_dir),
         "run",
         prompt,
-        "--yes",
     ]
+    if args.graph:
+        command.append("--graph")
+    command.append("--yes")
     if args.budget_usd is not None:
         command.extend(["--budget", str(args.budget_usd)])
     return command
@@ -334,7 +342,7 @@ def run_task(task: dict[str, Any], args: argparse.Namespace, run_dir: Path, work
         prompt = benchmark_prompt(task)
         if not prompt:
             raise RuntimeError("empty SWE-bench problem_statement")
-        planner = write_planner(task_out / "planner.py", task, args.agent)
+        planner = write_planner(task_out / "planner.py", task, args.agent, graph=args.graph)
         command = poor_cli_run_command(args, store_dir, prompt)
         run_result = run_command(command, cwd=task_dir, timeout=args.timeout_seconds, env=poor_cli_env(args, planner))
         run_id = extract_run_id(run_result.stdout)
@@ -367,6 +375,7 @@ def run_task(task: dict[str, Any], args: argparse.Namespace, run_dir: Path, work
         "replay_verified": bool(replay["verified"]),
         "replay_trace_sha256": replay["trace_sha256"],
         "agent": args.agent,
+        "graph_mode": args.graph,
         "model": args.model,
         "provider": args.provider,
         "dataset_name": args.dataset_name,
@@ -406,6 +415,7 @@ def summarize(records: list[dict[str, Any]], args: argparse.Namespace, run_id: s
         "provider": args.provider,
         "model": args.model,
         "agent": args.agent,
+        "graph_mode": args.graph,
         "budget_usd": args.budget_usd,
         "seed": args.seed,
         "task_count": len(records),
@@ -592,6 +602,7 @@ def main(argv: list[str] | None = None) -> int:
             "provider": args.provider,
             "model": args.model,
             "agent": args.agent,
+            "graph_mode": args.graph,
             "budget_usd": args.budget_usd,
             "permission_mode": args.permission_mode,
             "sandbox_preset": args.sandbox_preset,

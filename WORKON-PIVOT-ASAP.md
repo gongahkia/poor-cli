@@ -67,6 +67,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: made graph tools refresh stale Python indexes before uncached queries when files are added or changed during a run. Evidence: `tests/test_repo_graph.py::test_repo_graph_refreshes_after_python_file_mutation` and `tests/test_repo_graph.py::test_graph_tools_refresh_after_codebase_mutation`.
 - 2026-06-14: added a deterministic 50k-LOC synthetic graph-vs-grep benchmark scaffold: equal correctness, 19,246 grep-mode input-token proxy vs 49 graph-mode input-token proxy, 99.7% reduction. Evidence: `bench/graph_vs_grep.py`, `bench/results/graph-vs-grep-synthetic.json`, and `tests/test_benchmarks.py::test_checked_in_graph_vs_grep_snapshot`. Fixed 10-task SWE-bench graph-mode comparison remains pending.
 - 2026-06-14: upgraded repo graph refresh from full rebuild to incremental changed-file reparse plus deleted-file removal before uncached graph queries. Evidence: `tests/test_repo_graph.py::test_repo_graph_incremental_refresh_reparses_changed_files_only`.
+- 2026-06-14: added `--graph` support to the pinned SWE-bench Lite runner so the fixed 10-task Phase 2 graph-mode row can be generated with graph-biased planner payloads. Evidence: `bench/swe_bench_lite/run.py --graph` and `tests/test_benchmarks.py::test_swe_lite_runner_supports_graph_mode`. Live graph-mode SWE-bench result remains pending.
 
 ## TL;DR
 

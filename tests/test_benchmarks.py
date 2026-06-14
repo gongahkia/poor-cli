@@ -270,6 +270,20 @@ def test_swe_lite_runner_uses_v6_run_and_planner_payload(tmp_path: Path) -> None
     assert swe_run.extract_run_id("run_id: run_123\n1. task -> claude\n") == "run_123"
 
 
+def test_swe_lite_runner_supports_graph_mode(tmp_path: Path) -> None:
+    args = swe_run.parse_args(["--confirm-cost", "--no-evaluate", "--limit", "1", "--agent", "claude", "--graph"])
+    task = {"instance_id": "repo__proj-1", "problem_statement": "Fix the bug", "repo": "repo/proj"}
+
+    command = swe_run.poor_cli_run_command(args, tmp_path / "store", "Fix the bug")
+    payload = swe_run.planner_payload(task, "claude", graph=True)
+    summary = swe_run.summarize([], args, "run-graph")
+
+    assert command[-2:] == ["--graph", "--yes"]
+    assert "graph-mode" in payload["assumptions"][0]
+    assert "find_symbol" in payload["assumptions"][0]
+    assert summary["graph_mode"] is True
+
+
 def test_swe_lite_runner_evaluates_existing_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     run_dir = tmp_path / "results" / "run-1"
     run_dir.mkdir(parents=True)

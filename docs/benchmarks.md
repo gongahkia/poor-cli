@@ -23,6 +23,12 @@ The fixed 10-task manifest is `tests/fixtures/swe-lite-10/manifest.json`.
 uv run --locked --extra bench python bench/swe_bench_lite/run.py --confirm-cost --budget-usd 2.0
 ```
 
+Graph-mode row generation:
+
+```sh
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --no-evaluate --confirm-cost --budget-usd 1.0
+```
+
 Checked-in SWE-bench Lite rows:
 
 | run | tasks | run completed | replay verified | official eval |

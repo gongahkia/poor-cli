@@ -121,11 +121,18 @@ uv run --locked --extra bench python bench/swe_bench_lite/run.py --confirm-cost 
 ```
 
 The runner loads the pinned manifest against the official `princeton-nlp/SWE-bench_Lite` dataset, runs each task through v6 `poor-cli run --yes`, writes `predictions.jsonl`, and verifies `poor-cli --offline replay <run_id> --verify` before optional official SWE-bench Docker evaluation.
+Pass `--graph` to generate the Phase 2 graph-mode row with `poor-cli run --graph --yes` and graph-biased planner payloads.
 
 Smoke without official Docker evaluation:
 
 ```sh
 uv run --locked --extra bench python bench/swe_bench_lite/run.py --limit 1 --no-evaluate --confirm-cost --budget-usd 1.0 --timeout-seconds 1200
+```
+
+Graph-mode generation command:
+
+```sh
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --no-evaluate --confirm-cost --budget-usd 1.0 --timeout-seconds 1200 --run-id swe10-graph-YYYYMMDDTHHMMSSZ
 ```
 
 Evaluate an existing run without regenerating model patches:
