@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from poor_cli.hooks import Hook, HookManager
 from poor_cli.store import RunStore
 
 from .builtin import builtin_tools
@@ -55,12 +56,14 @@ class ToolDispatcher:
         workdir: Path | None = None,
         tools: dict[str, ToolFn] | None = None,
         replay_only: bool = False,
+        hooks: Iterable[Hook] | HookManager | None = None,
     ):
         self.store = store
         self.run_id = run_id
         self.workdir = (workdir or Path.cwd()).resolve()
         self.tools = tools if tools is not None else builtin_tools(self.workdir)
         self.replay_only = replay_only
+        self.hooks = hooks if isinstance(hooks, HookManager) else HookManager.from_hooks(hooks)
 
     def call(self, name: str, args: dict[str, Any] | None = None, task_id: str | None = None) -> ToolResult:
         request = ToolRequest(name=name, args=args or {})
@@ -68,7 +71,9 @@ class ToolDispatcher:
         cached = self._cached_result(request_hash)
         if cached is not None:
             self.store.append_event(self.run_id, "tool.cache_hit", {"tool": name, "request_hash": request_hash}, task_id)
-            return replace(cached, cached=True)
+            result = replace(cached, cached=True)
+            self.hooks.after_tool_call(_hook_context(self.run_id, name, request_hash, task_id, cached=True), result)
+            return result
 
         self.store.append_event(self.run_id, "tool.cache_miss", {"tool": name, "request_hash": request_hash}, task_id)
         if self.replay_only:
@@ -106,6 +111,7 @@ class ToolDispatcher:
             {"tool": name, "request_hash": request_hash, "artifact_id": result_artifact.artifact_id, "ok": result.ok},
             task_id,
         )
+        self.hooks.after_tool_call(_hook_context(self.run_id, name, request_hash, task_id, cached=False), result)
         return result
 
     def _cached_result(self, request_hash: str) -> ToolResult | None:
@@ -129,3 +135,7 @@ class ToolDispatcher:
 
 def _stable_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _hook_context(run_id: str, tool: str, request_hash: str, task_id: str | None, cached: bool) -> dict[str, Any]:
+    return {"run_id": run_id, "tool": tool, "request_hash": request_hash, "task_id": task_id, "cached": cached}

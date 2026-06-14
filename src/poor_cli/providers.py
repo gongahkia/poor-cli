@@ -3,8 +3,10 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import asdict, dataclass, field, replace
+from collections.abc import Iterable
 from typing import Any, Protocol
 
+from .hooks import Hook, HookManager
 from .store import RunStore
 
 
@@ -39,11 +41,19 @@ class Provider(Protocol):
 
 
 class CachedReplayProvider:
-    def __init__(self, store: RunStore, run_id: str, wrapped: Provider | None = None, replay_only: bool = False):
+    def __init__(
+        self,
+        store: RunStore,
+        run_id: str,
+        wrapped: Provider | None = None,
+        replay_only: bool = False,
+        hooks: Iterable[Hook] | HookManager | None = None,
+    ):
         self.store = store
         self.run_id = run_id
         self.wrapped = wrapped
         self.replay_only = replay_only
+        self.hooks = hooks if isinstance(hooks, HookManager) else HookManager.from_hooks(hooks)
 
     def call(self, request: ProviderRequest) -> ProviderResponse:
         request_hash = request.request_hash()
@@ -74,6 +84,9 @@ class CachedReplayProvider:
                 "request_hash": request_hash,
                 "artifact_id": request_artifact.artifact_id,
             },
+        )
+        self.hooks.before_model_call(
+            {"run_id": self.run_id, "provider": request.provider, "model": request.model, "request_hash": request_hash}
         )
         response = replace(self.wrapped.call(request), cached=False)
         response_artifact = self.store.put_artifact(

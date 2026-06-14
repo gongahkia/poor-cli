@@ -8,6 +8,7 @@ from typing import Any
 
 from . import __version__
 from .agents import detect_agents
+from .hooks import load_hooks
 from .models import Budget, to_jsonable
 from .orchestrator import Orchestrator
 from .replay import replay_summary
@@ -70,7 +71,7 @@ def _agents(args: argparse.Namespace) -> int:
 
 def _plan(args: argparse.Namespace, store: RunStore) -> int:
     budget = _budget(args)
-    run_id, plan = Orchestrator(store).plan(" ".join(args.goal), budget)
+    run_id, plan = Orchestrator(store, hooks=load_hooks()).plan(" ".join(args.goal), budget)
     if args.json:
         print(json.dumps({"run_id": run_id, "plan": to_jsonable(plan)}, indent=2, sort_keys=True))
         return 0
@@ -83,7 +84,7 @@ def _plan(args: argparse.Namespace, store: RunStore) -> int:
 
 def _run(args: argparse.Namespace, store: RunStore) -> int:
     budget = _budget(args)
-    orchestrator = Orchestrator(store)
+    orchestrator = Orchestrator(store, hooks=load_hooks())
     run_id, plan = orchestrator.plan(" ".join(args.goal), budget)
     print(f"run_id: {run_id}")
     for index, task in enumerate(plan.tasks, 1):

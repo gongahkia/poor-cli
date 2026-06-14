@@ -1,20 +1,23 @@
 from __future__ import annotations
 
 import subprocess
+from collections.abc import Iterable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
 from .agents import AgentResult, AgentRunner, build_agent_prompt, detect_agents
+from .hooks import Hook, HookManager
 from .models import Budget, ContextPacket, Plan, TaskSpec, make_id, to_jsonable
 from .planner import Planner
 from .store import RunStore
 
 
 class Orchestrator:
-    def __init__(self, store: RunStore, repo_path: Path | None = None):
+    def __init__(self, store: RunStore, repo_path: Path | None = None, hooks: Iterable[Hook] | HookManager | None = None):
         self.store = store
         self.repo_path = (repo_path or Path.cwd()).resolve()
+        self.hooks = hooks if isinstance(hooks, HookManager) else HookManager.from_hooks(hooks)
 
     def plan(self, goal: str, budget: Budget) -> tuple[str, Plan]:
         run_id = self._create_run(goal, budget)
@@ -68,6 +71,7 @@ class Orchestrator:
         exit_code = 0
         for task in tasks:
             agent = runner.choose(task.suggested_agent)
+            self.hooks.before_turn({"run_id": run_id, "task_id": task.task_id, "title": task.title, "agent": agent.name})
             packet = self._context_packet(run, task)
             packet_art = self.store.put_artifact(run_id=run_id, task_id=task.task_id, kind="context.packet", data=to_jsonable(packet))
             self.store.set_task_status(task.task_id, "assigned", assigned_agent=agent.name, context_packet_id=packet_art.artifact_id)
@@ -132,6 +136,7 @@ class Orchestrator:
         summary = self._summary(run_id)
         self.store.set_run_status(run_id, final_status, summary)
         self.store.append_event(run_id, f"run.{final_status}", {"summary": summary})
+        self.hooks.after_run({"run_id": run_id, "status": final_status, "summary": summary})
         return exit_code
 
     def _create_run(self, goal: str, budget: Budget) -> str:
