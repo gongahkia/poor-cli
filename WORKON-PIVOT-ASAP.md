@@ -42,6 +42,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: persisted task `validation` and planner metadata through SQLite so generic shell tasks can execute planner-specified commands. Evidence: `tests/test_store.py::test_store_preserves_task_metadata_and_validation` and `tests/test_cli.py::test_cli_run_executes_generic_command_metadata`.
 - 2026-06-14: added three local fixture bugs and an end-to-end `poor-cli run --yes` harness that fixes each fixture and validates with pytest. Evidence: `tests/fixtures/bug-{1,2,3}/` and `tests/test_fixture_bugs.py::test_three_fixture_bugs_solve_end_to_end`. Live Anthropic calibration remains pending.
 - 2026-06-14: verified `poor-cli --offline replay <run_id> --verify` works after clearing planner configuration, proving replay does not require live agent/provider credentials. Evidence: `tests/test_cli.py::test_cli_main_in_process_run_inspect_replay`.
+- 2026-06-14: added `bench/local_fixture_bugs.py` to run the three local fixture bugs through `poor-cli`, validate pytest, and verify offline replay per fixture. Evidence: `tests/test_benchmarks.py::test_local_fixture_bug_benchmark_runs_poor_cli_generic`. Live Anthropic and SWE-bench Lite result rows remain pending.
 
 ## TL;DR
 

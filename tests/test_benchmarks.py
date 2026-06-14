@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from bench.local_fixture_bugs import run_fixture_suite
+
 
 def test_v6_baseline_task_fixture_schema() -> None:
     path = Path(__file__).resolve().parents[1] / "bench" / "fixtures" / "v6_baseline_tasks.json"
@@ -41,3 +43,17 @@ def test_swe_lite_10_manifest_schema() -> None:
         assert len(item["base_commit"]) == 40
         assert item["fail_to_pass_count"] >= 1
         assert item["pass_to_pass_count"] >= 0
+
+
+def test_local_fixture_bug_benchmark_runs_poor_cli_generic(tmp_path: Path) -> None:
+    payload = run_fixture_suite(agent="generic", work_root=tmp_path)
+
+    assert payload["schema_version"] == "poor-cli-local-fixture-bugs-v1"
+    assert payload["mode"] == "poor-cli"
+    assert payload["agent"] == "generic"
+    assert payload["fixture_count"] == 3
+    for result in payload["results"]:
+        assert result["completed"] is True
+        assert result["tests_passed"] is True
+        assert result["replay_verified"] is True
+        assert result["run_id"]
