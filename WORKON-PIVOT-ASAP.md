@@ -13,6 +13,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added per-run filesystem replay mirrors: `.poor-cli/v6/runs/<run_id>/meta.json` and `events.jsonl`. Evidence: `tests/test_store.py::test_store_writes_run_meta_and_events_jsonl`.
 - 2026-06-14: implemented event-window replay via `poor-cli replay --from-event`, deriving run/task state from event history. Evidence: `tests/test_replay.py`.
 - 2026-06-14: added initial `poor-cli tui` Textual surface with transcript, activity, and composer panes. Evidence: `tests/test_cli.py::test_cli_exposes_tui_help`.
+- 2026-06-14: closed GitHub issues #42-#47 after local implementation and verification evidence existed for bootstrap, store, core types, CLI skeleton, agent detection, and planner.
 
 ## TL;DR
 
