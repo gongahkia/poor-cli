@@ -191,6 +191,34 @@ def test_cli_plan_graph_stores_graph_prompt_bias(tmp_path: Path, monkeypatch, ca
         run_store.close()
 
 
+def test_cli_run_graph_stores_graph_agent_prompt(tmp_path: Path, monkeypatch, capsys) -> None:
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Trace','objective':'trace symbols','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n",
+        encoding="utf-8",
+    )
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    assert main(["--store-dir", str(store), "run", "trace parser flow", "--graph", "--yes"]) == 0
+    run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
+    run_store = RunStore(store)
+    try:
+        task = run_store.list_tasks(run_id)[0]
+        agent_input = json.loads(run_store.artifact_payload(run_store.list_artifacts(run_id, "agent.input")[0]["artifact_id"]))
+        assert task["metadata"]["graph_mode"] is True
+        assert "Graph mode:" in agent_input["prompt"]
+        assert "find_symbol" in agent_input["prompt"]
+        assert "subgraph" in agent_input["prompt"]
+    finally:
+        run_store.close()
+
+
 def test_cli_run_executes_generic_command_metadata(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
     command = f"{sys.executable} -c \"from pathlib import Path; Path('fixed.txt').write_text('ok')\""

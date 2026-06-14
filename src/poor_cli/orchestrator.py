@@ -37,6 +37,9 @@ class Orchestrator:
             self.store.set_run_status(run_id, "failed", "planner failed")
             self.store.append_event(run_id, "run.failed", {"summary": "planner failed"})
             raise
+        if graph_mode:
+            for task in plan.tasks:
+                task.metadata["graph_mode"] = True
         prompt_art = self.store.put_artifact(run_id=run_id, kind="planner.prompt", data=prompt, media_type="text/plain")
         response_art = self.store.put_artifact(run_id=run_id, kind="planner.response", data=response, media_type="text/plain")
         plan_art = self.store.put_artifact(run_id=run_id, kind="plan.json", data=to_jsonable(plan))
@@ -154,16 +157,24 @@ class Orchestrator:
         return run_id
 
     def _context_packet(self, run: dict[str, Any], task: TaskSpec) -> ContextPacket:
-        prompt = "\n".join(
+        lines = [
+            f"Run: {run['run_id']}",
+            f"Goal: {run['user_goal']}",
+            f"Task objective: {task.objective}",
+            f"Dependencies: {', '.join(task.dependencies) if task.dependencies else 'none'}",
+        ]
+        if task.metadata.get("graph_mode") is True:
+            lines.append(
+                "Graph mode: prefer symbolic repo navigation before grep; "
+                "use find_symbol, definition_of, callers_of, imports_of, and subgraph when available."
+            )
+        lines.extend(
             [
-                f"Run: {run['run_id']}",
-                f"Goal: {run['user_goal']}",
-                f"Task objective: {task.objective}",
-                f"Dependencies: {', '.join(task.dependencies) if task.dependencies else 'none'}",
                 "Constraints: preserve repo intent; keep changes scoped; record validation.",
                 "Expected output: changed files if needed plus concise validation summary.",
             ]
         )
+        prompt = "\n".join(lines)
         return ContextPacket(
             packet_id=make_id("ctx"),
             run_id=str(run["run_id"]),
