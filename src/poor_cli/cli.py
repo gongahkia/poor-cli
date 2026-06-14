@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -9,6 +10,7 @@ from typing import Any
 from . import __version__
 from .agents import detect_agents
 from .hooks import load_hooks
+from .mcp_client import call_mcp_tool, list_mcp_tools
 from .models import Budget, to_jsonable
 from .offline import enable_offline
 from .orchestrator import Orchestrator
@@ -50,6 +52,8 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
         return _inspect(args, store)
     if args.command == "replay":
         return _replay(args, store)
+    if args.command == "mcp":
+        return _mcp(args)
     if args.command == "tui":
         return _tui(args, store)
     raise RuntimeError("missing command")
@@ -166,6 +170,24 @@ def _replay(args: argparse.Namespace, store: RunStore) -> int:
     return 0
 
 
+def _mcp(args: argparse.Namespace) -> int:
+    if args.mcp_command == "list":
+        tools = asyncio.run(list_mcp_tools(Path.cwd()))
+        if args.json:
+            print(json.dumps({"tools": tools}, indent=2, sort_keys=True))
+            return 0
+        for tool in tools:
+            print(f"{tool['name']}\t{tool.get('description', '')}")
+        return 0
+    if args.mcp_command == "call":
+        arguments = json.loads(args.args)
+        if not isinstance(arguments, dict):
+            raise RuntimeError("--args must decode to a JSON object")
+        print(asyncio.run(call_mcp_tool(Path.cwd(), args.tool, arguments)))
+        return 0
+    raise RuntimeError("missing mcp command")
+
+
 def _tui(args: argparse.Namespace, store: RunStore) -> int:
     from .tui import run_tui
 
@@ -225,6 +247,14 @@ def _parser() -> argparse.ArgumentParser:
     replay.add_argument("--from-event")
     replay.add_argument("--verify", action="store_true")
     replay.add_argument("--json", action="store_true")
+
+    mcp = sub.add_parser("mcp")
+    mcp_sub = mcp.add_subparsers(dest="mcp_command")
+    mcp_list = mcp_sub.add_parser("list")
+    mcp_list.add_argument("--json", action="store_true")
+    mcp_call = mcp_sub.add_parser("call")
+    mcp_call.add_argument("tool")
+    mcp_call.add_argument("--args", default="{}")
 
     tui = sub.add_parser("tui")
     tui.add_argument("--run-id")

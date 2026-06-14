@@ -16,6 +16,7 @@
 - Tool entry points use the `poor_cli.tools` group and merge with built-ins at dispatcher startup.
 - Provider entry points use the `poor_cli.providers` group and return provider instances behind the shared `Provider` contract.
 - Provider adapters wrap Anthropic, OpenAI Responses, Gemini, and Ollama clients behind the shared replayable provider contract.
+- MCP is client-only in v6.0.0: `poor-cli mcp list` and `poor-cli mcp call server:tool` consume configured stdio MCP servers.
 
 ## Commands
 
@@ -24,6 +25,7 @@
 - `poor-cli run`: create a plan, require confirmation unless `--yes` or `--dry-run`, then execute tasks.
 - `poor-cli inspect`: inspect run internals.
 - `poor-cli replay`: reconstruct orchestration state from events.
+- `poor-cli mcp`: list or call external stdio MCP server tools.
 
 ## Boundaries
 

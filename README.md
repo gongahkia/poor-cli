@@ -24,6 +24,8 @@ poor-cli run "make a small scoped change" --yes
 poor-cli runs
 poor-cli inspect <run_id> --events --context
 poor-cli replay <run_id>
+poor-cli mcp list
+poor-cli mcp call server:tool --args '{"text":"hello"}'
 poor-cli tui --run-id <run_id>
 ```
 
