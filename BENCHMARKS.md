@@ -72,6 +72,16 @@ Checked-in snapshot: `bench/results/phase1-readiness.json`.
 
 Current snapshot status: all readiness prerequisites pass.
 
+Phase 1 acceptance audit:
+
+```sh
+uv run --locked python bench/phase1_acceptance.py --output bench/results/phase1-acceptance.json
+```
+
+Checked-in snapshot: `bench/results/phase1-acceptance.json`.
+
+Current acceptance status: all Phase 1 acceptance checks pass from checked-in evidence.
+
 ## SWE-bench Lite 10
 
 Fixed seed set: `tests/fixtures/swe-lite-10/manifest.json`.

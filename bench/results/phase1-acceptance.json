@@ -1,0 +1,46 @@
+{
+  "accepted": true,
+  "checks": {
+    "anthropic_fixture_bugs": {
+      "accepted": true,
+      "completed_count": 3,
+      "evidence": "bench/results/local-fixture-bugs-claude.json",
+      "fixture_count": 3,
+      "replay_verified_count": 3,
+      "tests_passed_count": 3
+    },
+    "offline_replay_determinism": {
+      "accepted": true,
+      "evidence": "tests/test_cli.py::test_cli_main_in_process_run_inspect_replay",
+      "missing_fragments": []
+    },
+    "source_loc": {
+      "accepted": true,
+      "evidence": "bench/loc_gate.py",
+      "file_count": 20,
+      "max_total": 5000,
+      "over_file_limit": {},
+      "total": 2553
+    },
+    "swe_lite_10": {
+      "accepted": true,
+      "evidence": "bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/summary.json",
+      "minimum_pass_rate": 0.3,
+      "model": "claude-sonnet-4-20250514",
+      "pass_rate": 0.9,
+      "resolved_instances": 9,
+      "total_instances": 10,
+      "unresolved_ids": [
+        "astropy__astropy-14182"
+      ]
+    },
+    "system_prompt_budget": {
+      "accepted": true,
+      "bytes": 372,
+      "evidence": "tests/test_gates.py::test_system_prompt_under_1000_token_ceiling",
+      "max_bytes": 1000
+    }
+  },
+  "remaining": [],
+  "schema_version": "poor-cli-phase1-acceptance-v1"
+}

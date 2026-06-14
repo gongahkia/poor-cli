@@ -61,6 +61,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added a MkDocs Material docs skeleton with Quickstart, Architecture, Hooks, Providers, Replay, and Benchmarks pages. Evidence: `mkdocs.yml` and `docs/`.
 - 2026-06-14: added CI docs-build gates so the MkDocs site is checked with `mkdocs build --strict` on main and v6 workflows. Evidence: `.github/workflows/ci.yml` and `.github/workflows/v6.yml`.
 - 2026-06-14: pointed README status at the current pivot roadmap now that no stale `ROADMAP.md` link exists. Evidence: `README.md`.
+- 2026-06-14: added a machine-checkable Phase 1 acceptance audit from checked-in evidence: Anthropic fixture bugs 3/3, offline replay determinism test evidence present, source LOC 2553/5000, system prompt 372 bytes, and SWE-bench Lite 9/10 resolved. Evidence: `bench/phase1_acceptance.py`, `bench/results/phase1-acceptance.json`, and `tests/test_benchmarks.py::test_checked_in_phase1_acceptance_snapshot`.
 
 ## TL;DR
 

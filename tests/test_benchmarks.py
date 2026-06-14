@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from bench.local_fixture_bugs import compact_payload, run_fixture_suite
+from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
 from bench.swe_bench_lite import run as swe_run
 
@@ -169,6 +170,43 @@ def test_checked_in_phase1_readiness_snapshot() -> None:
     assert "orgId" not in redacted
     assert "orgName" not in redacted
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
+
+
+def test_phase1_acceptance_payload_schema() -> None:
+    payload = acceptance_payload()
+
+    assert payload["schema_version"] == "poor-cli-phase1-acceptance-v1"
+    assert set(payload["checks"]) == {
+        "anthropic_fixture_bugs",
+        "offline_replay_determinism",
+        "source_loc",
+        "system_prompt_budget",
+        "swe_lite_10",
+    }
+    assert payload["checks"]["anthropic_fixture_bugs"]["tests_passed_count"] == 3
+    assert payload["checks"]["offline_replay_determinism"]["missing_fragments"] == []
+    assert payload["checks"]["source_loc"]["total"] <= 5000
+    assert payload["checks"]["system_prompt_budget"]["bytes"] <= 1000
+    assert payload["checks"]["swe_lite_10"]["pass_rate"] >= 0.30
+    assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["accepted"]}
+
+
+def test_checked_in_phase1_acceptance_snapshot() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "phase1-acceptance.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "poor-cli-phase1-acceptance-v1"
+    assert payload["accepted"] is True
+    assert payload["remaining"] == []
+    assert payload["checks"]["anthropic_fixture_bugs"]["completed_count"] == 3
+    assert payload["checks"]["anthropic_fixture_bugs"]["tests_passed_count"] == 3
+    assert payload["checks"]["anthropic_fixture_bugs"]["replay_verified_count"] == 3
+    assert payload["checks"]["offline_replay_determinism"]["accepted"] is True
+    assert payload["checks"]["source_loc"]["total"] <= 5000
+    assert payload["checks"]["system_prompt_budget"]["bytes"] <= 1000
+    assert payload["checks"]["swe_lite_10"]["total_instances"] == 10
+    assert payload["checks"]["swe_lite_10"]["resolved_instances"] == 9
+    assert payload["checks"]["swe_lite_10"]["unresolved_ids"] == ["astropy__astropy-14182"]
 
 
 def test_swe_lite_runner_applies_manifest_order_and_validates_pin() -> None:
