@@ -11,7 +11,7 @@ from .agents import detect_agents
 from .hooks import load_hooks
 from .models import Budget, to_jsonable
 from .orchestrator import Orchestrator
-from .replay import replay_summary
+from .replay import replay_summary, replay_verify
 from .store import RunStore, StoreError
 
 
@@ -146,12 +146,20 @@ def _inspect(args: argparse.Namespace, store: RunStore) -> int:
 
 def _replay(args: argparse.Namespace, store: RunStore) -> int:
     state = replay_summary(store, args.run_id, args.from_event)
+    if args.verify:
+        state["verification"] = replay_verify(store, args.run_id)
     if args.json:
         print(json.dumps(state, indent=2, sort_keys=True))
         return 0
     print(f"replay: {state['run_id']} [{state['status']}] events={state['event_count']}")
     for task_id, task in state["tasks"].items():
         print(f"- {task_id} {task['status']} {task['title']} -> {task.get('agent') or 'unassigned'}")
+    if args.verify:
+        verification = state["verification"]
+        print(
+            f"verified: events={verification['event_count']} artifacts={verification['artifact_count']} "
+            f"bytes={verification['artifact_bytes']} trace={verification['trace_sha256']}"
+        )
     return 0
 
 
@@ -211,6 +219,7 @@ def _parser() -> argparse.ArgumentParser:
     replay.add_argument("run_id")
     replay.add_argument("--dry", action="store_true")
     replay.add_argument("--from-event")
+    replay.add_argument("--verify", action="store_true")
     replay.add_argument("--json", action="store_true")
 
     tui = sub.add_parser("tui")

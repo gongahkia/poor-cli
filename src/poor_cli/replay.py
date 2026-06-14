@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
 from .store import RunStore
 
 
@@ -48,3 +51,44 @@ def _event_window(events: list[dict[str, object]], from_event: str | None) -> li
         if event.get("event_id") == from_event:
             return events[index:]
     raise ReplayError(f"unknown replay event: {from_event}")
+
+
+def replay_verify(store: RunStore, run_id: str) -> dict[str, object]:
+    store.get_run(run_id)
+    events = store.list_events(run_id)
+    artifacts = store.list_artifacts(run_id)
+    event_bytes = _verify_event_mirror(store, run_id, events)
+    trace = hashlib.sha256()
+    trace.update(b"events\x00")
+    trace.update(event_bytes)
+    artifact_bytes = 0
+    for artifact in artifacts:
+        payload = store.artifact_payload(str(artifact["artifact_id"]))
+        artifact_bytes += len(payload)
+        trace.update(f"artifact\x00{artifact['artifact_id']}\x00{artifact['sha256']}\x00".encode())
+        trace.update(payload)
+    return {
+        "verified": True,
+        "event_count": len(events),
+        "artifact_count": len(artifacts),
+        "artifact_bytes": artifact_bytes,
+        "trace_sha256": trace.hexdigest(),
+    }
+
+
+def _verify_event_mirror(store: RunStore, run_id: str, events: list[dict[str, object]]) -> bytes:
+    path = store.runs_root / run_id / "events.jsonl"
+    if not path.exists():
+        raise ReplayError(f"missing replay event mirror: {path}")
+    raw = path.read_bytes()
+    lines = raw.splitlines()
+    if len(lines) != len(events):
+        raise ReplayError(f"event mirror length mismatch: {len(lines)} != {len(events)}")
+    for line, event in zip(lines, events, strict=True):
+        try:
+            mirrored = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise ReplayError(f"invalid event mirror JSON: {exc}") from exc
+        if mirrored.get("event_id") != event.get("event_id"):
+            raise ReplayError(f"event mirror mismatch: {mirrored.get('event_id')} != {event.get('event_id')}")
+    return raw

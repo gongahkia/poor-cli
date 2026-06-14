@@ -28,6 +28,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added the v6 hook protocol and entry-point loader for `poor_cli.hooks`, wired into run turns, provider model calls, tool calls, and run completion. Evidence: `tests/test_hooks.py`.
 - 2026-06-14: added Anthropic, OpenAI Responses, Gemini, and Ollama provider adapters behind the shared replayable provider contract. Evidence: `tests/test_provider_adapters.py`; OpenAI call shape checked against official Responses API docs.
 - 2026-06-14: added entry-point loading for `poor_cli.tools` and `poor_cli.providers`, completing the phase-1 hooks/tools/providers extension lane. Evidence: `tests/test_tools.py::test_tool_entry_points_extend_dispatcher_defaults` and `tests/test_providers.py::test_provider_entry_points_load_provider_instances`.
+- 2026-06-14: added replay integrity verification for event mirrors and CAS artifacts via `poor-cli replay --verify`, including stable repeated JSON replay output. Evidence: `tests/test_replay.py::test_replay_verify_checks_event_mirror_and_cas` and `tests/test_cli.py::test_cli_main_in_process_run_inspect_replay`.
 
 ## TL;DR
 

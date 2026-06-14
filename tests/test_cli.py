@@ -95,6 +95,13 @@ def test_cli_main_in_process_run_inspect_replay(tmp_path: Path, monkeypatch, cap
     replay_output = capsys.readouterr().out
     assert "completed" in replay_output
 
+    assert main(["--store-dir", str(store), "replay", run_id, "--verify", "--json"]) == 0
+    first_verify = capsys.readouterr().out
+    assert main(["--store-dir", str(store), "replay", run_id, "--verify", "--json"]) == 0
+    second_verify = capsys.readouterr().out
+    assert first_verify == second_verify
+    assert json.loads(first_verify)["verification"]["verified"] is True
+
 
 def test_cli_exposes_tui_help(tmp_path: Path) -> None:
     env = os.environ.copy()
