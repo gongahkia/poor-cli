@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from threading import Event, RLock, Thread
 from typing import Any
 
 GraphSignature = tuple[int, int]
@@ -31,40 +32,73 @@ class RepoGraphError(RuntimeError):
     pass
 
 
+class GraphWatch:
+    def __init__(self, graph: RepoGraph, interval_seconds: float = 0.25):
+        self.graph = graph
+        self.interval_seconds = interval_seconds
+        self._stop = Event()
+        self._thread = Thread(target=self._run, name="poor-cli-repo-graph-watch", daemon=True)
+
+    def start(self) -> GraphWatch:
+        self._thread.start()
+        return self
+
+    def stop(self, timeout: float = 2.0) -> None:
+        self._stop.set()
+        self._thread.join(timeout)
+
+    def __enter__(self) -> GraphWatch:
+        return self.start()
+
+    def __exit__(self, *_exc: object) -> None:
+        self.stop()
+
+    def _run(self) -> None:
+        while not self._stop.is_set():
+            self.graph.refresh_if_stale()
+            self._stop.wait(self.interval_seconds)
+
+
 class RepoGraph:
     def __init__(self, root: Path):
         self.root = root.resolve()
         self.modules: dict[str, ParsedModule] = {}
         self._symbol_index: dict[str, list[GraphSymbol]] = {}
         self._fingerprint: GraphFingerprint = {}
+        self._lock = RLock()
 
     def build_index(self) -> RepoGraph:
-        modules = {}
-        files = self._python_files()
-        for path in files:
-            module = _parse_python(self.root, path)
-            modules[module.path] = module
-        self.modules = modules
-        self._rebuild_symbol_index()
-        self._fingerprint = self._fingerprint_for(files)
-        return self
+        with self._lock:
+            modules = {}
+            files = self._python_files()
+            for path in files:
+                module = _parse_python(self.root, path)
+                modules[module.path] = module
+            self.modules = modules
+            self._rebuild_symbol_index()
+            self._fingerprint = self._fingerprint_for(files)
+            return self
 
     def refresh_if_stale(self) -> RepoGraph:
-        current = self._scan_fingerprint()
-        if current == self._fingerprint:
+        with self._lock:
+            current = self._scan_fingerprint()
+            if current == self._fingerprint:
+                return self
+            if not self.modules:
+                return self.build_index()
+            changed = [self.root / path for path, signature in current.items() if self._fingerprint.get(path) != signature]
+            removed = set(self._fingerprint) - set(current)
+            for rel_path in removed:
+                self.modules.pop(rel_path, None)
+            for file_path in changed:
+                module = _parse_python(self.root, file_path)
+                self.modules[module.path] = module
+            self._rebuild_symbol_index()
+            self._fingerprint = current
             return self
-        if not self.modules:
-            return self.build_index()
-        changed = [self.root / path for path, signature in current.items() if self._fingerprint.get(path) != signature]
-        removed = set(self._fingerprint) - set(current)
-        for rel_path in removed:
-            self.modules.pop(rel_path, None)
-        for file_path in changed:
-            module = _parse_python(self.root, file_path)
-            self.modules[module.path] = module
-        self._rebuild_symbol_index()
-        self._fingerprint = current
-        return self
+
+    def watch(self, *, interval_seconds: float = 0.25) -> GraphWatch:
+        return GraphWatch(self, interval_seconds=interval_seconds)
 
     def _rebuild_symbol_index(self) -> None:
         self._symbol_index = {}
@@ -73,61 +107,66 @@ class RepoGraph:
                 self._symbol_index.setdefault(symbol.name, []).append(symbol)
 
     def find_symbol(self, query: str, *, max_results: int = 20) -> list[dict[str, Any]]:
-        needle = query.lower()
-        matches = [
-            symbol
-            for symbols in self._symbol_index.values()
-            for symbol in symbols
-            if not needle or needle in symbol.name.lower() or needle in f"{symbol.scope}.{symbol.name}".lower()
-        ]
-        return [asdict(symbol) for symbol in sorted(matches, key=lambda item: (item.path, item.line_start, item.name))[:max_results]]
+        with self._lock:
+            needle = query.lower()
+            matches = [
+                symbol
+                for symbols in self._symbol_index.values()
+                for symbol in symbols
+                if not needle or needle in symbol.name.lower() or needle in f"{symbol.scope}.{symbol.name}".lower()
+            ]
+            return [asdict(symbol) for symbol in sorted(matches, key=lambda item: (item.path, item.line_start, item.name))[:max_results]]
 
     def definition_of(self, symbol_name: str) -> dict[str, Any] | None:
-        symbols = self._symbol_index.get(symbol_name, [])
-        return asdict(sorted(symbols, key=lambda item: (item.path, item.line_start))[0]) if symbols else None
+        with self._lock:
+            symbols = self._symbol_index.get(symbol_name, [])
+            return asdict(sorted(symbols, key=lambda item: (item.path, item.line_start))[0]) if symbols else None
 
     def imports_of(self, path: str) -> dict[str, Any]:
-        module = self._module(path)
-        return {"path": module.path, "imports": module.imports}
+        with self._lock:
+            module = self._module(path)
+            return {"path": module.path, "imports": module.imports}
 
     def callers_of(self, symbol_name: str, *, max_results: int = 20) -> list[dict[str, Any]]:
-        callers = []
-        for module in self.modules.values():
-            if symbol_name in module.calls:
-                callers.append({"path": module.path, "calls": symbol_name, "call_count": module.calls.count(symbol_name)})
-        return sorted(callers, key=lambda item: (str(item["path"]), int(str(item["call_count"]))))[:max_results]
+        with self._lock:
+            callers = []
+            for module in self.modules.values():
+                if symbol_name in module.calls:
+                    callers.append({"path": module.path, "calls": symbol_name, "call_count": module.calls.count(symbol_name)})
+            return sorted(callers, key=lambda item: (str(item["path"]), int(str(item["call_count"]))))[:max_results]
 
     def subgraph(self, seed: str, *, max_depth: int = 1) -> dict[str, Any]:
-        start_paths = {seed} if seed in self.modules else {symbol.path for symbol in self._symbol_index.get(seed, [])}
-        seen_paths: set[str] = set()
-        frontier = set(start_paths)
-        for _ in range(max(0, max_depth) + 1):
-            next_frontier: set[str] = set()
-            for path in frontier:
-                if path in seen_paths or path not in self.modules:
-                    continue
-                seen_paths.add(path)
-                module = self.modules[path]
-                for imported in module.imports:
-                    resolved = self._resolve_import(module.path, imported)
-                    if resolved and resolved not in seen_paths:
-                        next_frontier.add(resolved)
-                for call in module.calls:
-                    for symbol in self._symbol_index.get(call, []):
-                        if symbol.path not in seen_paths:
-                            next_frontier.add(symbol.path)
-            frontier = next_frontier
-        return {
-            "seed": seed,
-            "files": [
-                {
-                    "path": path,
-                    "symbols": [asdict(symbol) for symbol in self.modules[path].symbols],
-                    "imports": self.modules[path].imports,
-                }
-                for path in sorted(seen_paths)
-            ],
-        }
+        with self._lock:
+            start_paths = {seed} if seed in self.modules else {symbol.path for symbol in self._symbol_index.get(seed, [])}
+            seen_paths: set[str] = set()
+            frontier = set(start_paths)
+            for _ in range(max(0, max_depth) + 1):
+                next_frontier: set[str] = set()
+                for path in frontier:
+                    if path in seen_paths or path not in self.modules:
+                        continue
+                    seen_paths.add(path)
+                    module = self.modules[path]
+                    for imported in module.imports:
+                        resolved = self._resolve_import(module.path, imported)
+                        if resolved and resolved not in seen_paths:
+                            next_frontier.add(resolved)
+                    for call in module.calls:
+                        for symbol in self._symbol_index.get(call, []):
+                            if symbol.path not in seen_paths:
+                                next_frontier.add(symbol.path)
+                frontier = next_frontier
+            return {
+                "seed": seed,
+                "files": [
+                    {
+                        "path": path,
+                        "symbols": [asdict(symbol) for symbol in self.modules[path].symbols],
+                        "imports": self.modules[path].imports,
+                    }
+                    for path in sorted(seen_paths)
+                ],
+            }
 
     def _module(self, path: str) -> ParsedModule:
         normalized = str(Path(path))

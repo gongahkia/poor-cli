@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import poor_cli.repo_graph as repo_graph
@@ -73,6 +74,24 @@ def test_repo_graph_incremental_refresh_reparses_changed_files_only(tmp_path: Pa
 
     assert calls == ["utils.py"]
     assert graph.definition_of("extra")["path"] == "utils.py"
+
+
+def test_repo_graph_watch_refreshes_changed_files(tmp_path: Path) -> None:
+    _sample_repo(tmp_path)
+    graph = RepoGraph(tmp_path).build_index()
+
+    with graph.watch(interval_seconds=0.01):
+        (tmp_path / "extra.py").write_text("def watched_entry() -> str:\n    return 'new'\n", encoding="utf-8")
+        deadline = time.monotonic() + 2.0
+        definition = None
+        while time.monotonic() < deadline:
+            definition = graph.definition_of("watched_entry")
+            if definition is not None:
+                break
+            time.sleep(0.02)
+
+    assert definition is not None
+    assert definition["path"] == "extra.py"
 
 
 def test_graph_tools_are_replayable_builtin_tools(tmp_path: Path) -> None:
