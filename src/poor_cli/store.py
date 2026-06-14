@@ -75,6 +75,7 @@ class RunStore:
               final_summary TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_runs_created ON runs(created_at);
+            CREATE INDEX IF NOT EXISTS idx_runs_goal ON runs(user_goal);
             CREATE TABLE IF NOT EXISTS tasks (
               task_id TEXT PRIMARY KEY,
               run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -305,11 +306,17 @@ class RunStore:
             raise StoreError(f"unknown run: {run_id}")
         return self._row(row)
 
-    def list_runs(self, failed_only: bool = False) -> list[dict[str, Any]]:
+    def list_runs(self, failed_only: bool = False, prompt_prefix: str | None = None) -> list[dict[str, Any]]:
+        filters = []
+        params: list[Any] = []
         if failed_only:
-            rows = self.conn.execute("SELECT * FROM runs WHERE status = 'failed' ORDER BY created_at DESC").fetchall()
-        else:
-            rows = self.conn.execute("SELECT * FROM runs ORDER BY created_at DESC").fetchall()
+            filters.append("status = ?")
+            params.append("failed")
+        if prompt_prefix:
+            filters.append("user_goal LIKE ?")
+            params.append(f"{prompt_prefix}%")
+        where = f" WHERE {' AND '.join(filters)}" if filters else ""
+        rows = self.conn.execute(f"SELECT * FROM runs{where} ORDER BY created_at DESC", params).fetchall()
         return [self._row(row) for row in rows]
 
     def list_tasks(self, run_id: str) -> list[dict[str, Any]]:

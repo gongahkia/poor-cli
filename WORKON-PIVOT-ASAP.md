@@ -38,6 +38,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: wired the remaining v6 CI gates for `ruff format --check` and `mypy --strict src/poor_cli`, and fixed current strict typing failures. Evidence: `.github/workflows/v6.yml`, `.github/workflows/ci.yml`, `.github/workflows/tests.yml`.
 - 2026-06-14: added a replay determinism gate that snapshots `.poor-cli/v6/runs/<run_id>/` and asserts `poor-cli replay --verify` is byte-non-mutating. Evidence: `tests/test_cli.py::test_cli_main_in_process_run_inspect_replay`.
 - 2026-06-14: ported a minimal v6 shell sandbox guard that blocks network shell commands and writes outside the tool workdir. Evidence: `src/poor_cli/sandbox.py` and `tests/test_tools.py::test_shell_tool_blocks_network_and_outside_writes`.
+- 2026-06-14: added SQLite run lookup by user-goal prefix plus `poor-cli runs --prefix`, covering the prompt-prefix index path. Evidence: `tests/test_store.py::test_store_filters_runs_by_goal_prefix` and `tests/test_cli.py::test_cli_runs_filters_by_prefix`.
 
 ## TL;DR
 

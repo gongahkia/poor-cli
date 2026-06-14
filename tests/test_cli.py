@@ -137,6 +137,19 @@ def test_cli_sets_offline_env(capsys) -> None:
             os.environ["POOR_CLI_OFFLINE"] = old
 
 
+def test_cli_runs_filters_by_prefix(tmp_path: Path, capsys) -> None:
+    store = RunStore(tmp_path / "store")
+    first = store.create_run(user_goal="alpha fix parser", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    store.create_run(user_goal="beta fix tools", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    store.close()
+
+    assert main(["--store-dir", str(tmp_path / "store"), "runs", "--prefix", "alpha"]) == 0
+    output = capsys.readouterr().out
+
+    assert first in output
+    assert "beta fix tools" not in output
+
+
 def test_cli_run_without_yes_records_confirmation_event(tmp_path: Path) -> None:
     planner = tmp_path / "planner.py"
     planner.write_text(

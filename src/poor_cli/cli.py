@@ -113,7 +113,7 @@ def _run(args: argparse.Namespace, store: RunStore) -> int:
 
 
 def _runs(args: argparse.Namespace, store: RunStore) -> int:
-    for run in store.list_runs(failed_only=args.failed):
+    for run in store.list_runs(failed_only=args.failed, prompt_prefix=args.prefix):
         print(f"{run['run_id']}\t{run['status']}\t{run['created_at']}\t{run['user_goal'][:80]}")
     return 0
 
@@ -232,6 +232,7 @@ def _parser() -> argparse.ArgumentParser:
 
     runs = sub.add_parser("runs")
     runs.add_argument("--failed", action="store_true")
+    runs.add_argument("--prefix", help="Filter runs by goal prefix")
 
     inspect = sub.add_parser("inspect")
     inspect.add_argument("run_id")

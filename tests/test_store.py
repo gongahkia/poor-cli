@@ -62,3 +62,14 @@ def test_store_accepts_parallel_event_writers(tmp_path: Path) -> None:
 
     assert len(events) == 20
     assert {event["payload"]["index"] for event in events} == set(range(20))
+
+
+def test_store_filters_runs_by_goal_prefix(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    alpha = store.create_run(user_goal="alpha fix parser", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    store.create_run(user_goal="beta fix tools", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+
+    matches = store.list_runs(prompt_prefix="alpha")
+
+    assert [run["run_id"] for run in matches] == [alpha]
+    store.close()
