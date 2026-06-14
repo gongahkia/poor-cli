@@ -162,6 +162,35 @@ def test_cli_runs_filters_by_prefix(tmp_path: Path, capsys) -> None:
     assert "beta fix tools" not in output
 
 
+def test_cli_plan_graph_stores_graph_prompt_bias(tmp_path: Path, monkeypatch, capsys) -> None:
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Trace','objective':'trace symbols','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n",
+        encoding="utf-8",
+    )
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    assert main(["--store-dir", str(store), "plan", "trace parser flow", "--graph", "--json"]) == 0
+    run_id = json.loads(capsys.readouterr().out)["run_id"]
+    run_store = RunStore(store)
+    try:
+        prompt_artifact = run_store.list_artifacts(run_id, "planner.prompt")[0]
+        prompt = run_store.artifact_payload(prompt_artifact["artifact_id"]).decode()
+        plan_events = [event for event in run_store.list_events(run_id) if event["type"] == "plan.created"]
+        assert "Graph mode:" in prompt
+        assert "find_symbol" in prompt
+        assert "subgraph" in prompt
+        assert plan_events[0]["payload"]["graph_mode"] is True
+    finally:
+        run_store.close()
+
+
 def test_cli_run_executes_generic_command_metadata(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
     command = f"{sys.executable} -c \"from pathlib import Path; Path('fixed.txt').write_text('ok')\""

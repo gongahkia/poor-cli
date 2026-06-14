@@ -28,7 +28,8 @@
 - `poor-cli replay`: reconstruct orchestration state from events.
 - `poor-cli mcp`: list or call external stdio MCP server tools.
 - Graph tools: `find_symbol`, `definition_of`, `imports_of`, `callers_of`, and `subgraph`.
+- `poor-cli plan --graph` and `poor-cli run --graph` bias planner prompts toward symbolic-first graph navigation.
 
 ## Boundaries
 
-The alpha intentionally excludes worktree isolation, parallel scheduling, local GPU providers, MCP server hosting, multi-language graph indexing, and graph-mode benchmarking. The TUI, MCP client, benchmark harness, and Python graph tools are present but intentionally small.
+The alpha intentionally excludes worktree isolation, parallel scheduling, local GPU providers, MCP server hosting, multi-language graph indexing, incremental graph indexing, and graph-mode benchmarking. The TUI, MCP client, benchmark harness, and Python graph tools are present but intentionally small.

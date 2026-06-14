@@ -13,10 +13,11 @@ Phase 2 starts with a tree-sitter-backed Python repo graph. The graph currently 
 ## Example
 
 ```sh
-poor-cli run "use find_symbol and subgraph to inspect the parser flow" --yes
+poor-cli run "inspect the parser flow" --graph --yes
 ```
 
 Tool calls are recorded through the same `ToolDispatcher` cache as the v0 file/shell tools, so graph queries are replayable.
+`--graph` is available on `plan` and `run`; it adds planner prompt bias toward `find_symbol`, `definition_of`, `callers_of`, `imports_of`, and `subgraph` before grep-based navigation.
 
 ## Scope
 
@@ -24,5 +25,4 @@ This is the first graph slice. Remaining Phase 2 work:
 
 - Multi-language tree-sitter grammars.
 - Incremental indexing on file watch.
-- `--graph` mode prompt bias.
 - Token and correctness comparison against grep-mode on the fixed benchmark set.

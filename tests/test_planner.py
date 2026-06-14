@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from poor_cli.planner import Planner, PlannerError, parse_plan
+from poor_cli.planner import GRAPH_MODE_PROMPT, Planner, PlannerError, parse_plan
 
 
 def test_parse_plan_schema() -> None:
@@ -55,6 +55,18 @@ def test_parse_plan_accepts_string_list_fields() -> None:
     assert plan.validation_strategy == ["run tests"]
     assert plan.tasks[0].dependencies == ["prior task"]
     assert plan.tasks[0].validation == ["pytest"]
+
+
+def test_graph_mode_adds_symbolic_navigation_bias(tmp_path: Path) -> None:
+    prompt = Planner(tmp_path, [], graph_mode=True)._prompt("trace parser flow")
+
+    assert GRAPH_MODE_PROMPT in prompt
+    assert "find_symbol" in prompt
+    assert "definition_of" in prompt
+    assert "callers_of" in prompt
+    assert "imports_of" in prompt
+    assert "subgraph" in prompt
+    assert GRAPH_MODE_PROMPT not in Planner(tmp_path, [])._prompt("trace parser flow")
 
 
 def test_offline_planner_requires_custom_command(tmp_path: Path, monkeypatch) -> None:

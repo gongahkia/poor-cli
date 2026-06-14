@@ -14,7 +14,9 @@ poor-cli --version
 ```sh
 poor-cli agents
 poor-cli plan "inspect this repo and propose a task graph"
+poor-cli plan "trace the parser flow" --graph
 poor-cli run "make a small scoped change" --yes
+poor-cli run "fix the caller lookup" --graph --yes
 poor-cli runs
 poor-cli inspect <run_id> --events --context
 poor-cli replay <run_id> --verify

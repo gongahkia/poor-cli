@@ -17,6 +17,11 @@ class PlannerError(RuntimeError):
     pass
 
 
+GRAPH_MODE_PROMPT = (
+    "Graph mode: for code navigation, prefer symbolic-first built-in tools before grep: "
+    "find_symbol, definition_of, callers_of, imports_of, subgraph."
+)
+
 SYSTEM_PROMPT = """Return only valid JSON for a poor-cli orchestration plan.
 Fields: problem_summary, architecture_assessment, assumptions, risks, tasks,
 validation_strategy, routing_strategy, estimated_cost, requires_user_confirmation.
@@ -25,9 +30,10 @@ dependencies, suggested_agent, validation. Prefer small sequential tasks."""
 
 
 class Planner:
-    def __init__(self, repo_path: Path, agents: list[AgentInfo] | None = None):
+    def __init__(self, repo_path: Path, agents: list[AgentInfo] | None = None, *, graph_mode: bool = False):
         self.repo_path = repo_path
         self.agents = agents or detect_agents()
+        self.graph_mode = graph_mode
 
     def create(self, goal: str) -> tuple[Plan, str, str]:
         prompt = self._prompt(goal)
@@ -37,16 +43,17 @@ class Planner:
 
     def _prompt(self, goal: str) -> str:
         agent_lines = [f"- {agent.name}: {', '.join(agent.capabilities)}" for agent in self.agents]
-        return "\n".join(
-            [
-                SYSTEM_PROMPT,
-                "",
-                f"Goal: {goal}",
-                f"Repository: {self.repo_path}",
-                "Available agents:",
-                *agent_lines,
-            ]
-        )
+        lines = [
+            SYSTEM_PROMPT,
+            "",
+            f"Goal: {goal}",
+            f"Repository: {self.repo_path}",
+            "Available agents:",
+            *agent_lines,
+        ]
+        if self.graph_mode:
+            lines.extend(["", GRAPH_MODE_PROMPT])
+        return "\n".join(lines)
 
     def _call(self, prompt: str) -> str:
         env_command = os.environ.get("POOR_CLI_PLANNER_COMMAND")

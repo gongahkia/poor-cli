@@ -19,12 +19,12 @@ class Orchestrator:
         self.repo_path = (repo_path or Path.cwd()).resolve()
         self.hooks = hooks if isinstance(hooks, HookManager) else HookManager.from_hooks(hooks)
 
-    def plan(self, goal: str, budget: Budget) -> tuple[str, Plan]:
+    def plan(self, goal: str, budget: Budget, *, graph_mode: bool = False) -> tuple[str, Plan]:
         run_id = self._create_run(goal, budget)
         agents = detect_agents()
         self.store.insert_agents(run_id, agents)
         self.store.append_event(run_id, "agents.detected", {"agents": [asdict(agent) for agent in agents]})
-        planner = Planner(self.repo_path, agents)
+        planner = Planner(self.repo_path, agents, graph_mode=graph_mode)
         try:
             plan, prompt, response = planner.create(goal)
         except Exception as exc:
@@ -51,6 +51,7 @@ class Orchestrator:
                 "prompt_artifact_id": prompt_art.artifact_id,
                 "response_artifact_id": response_art.artifact_id,
                 "task_count": len(plan.tasks),
+                "graph_mode": graph_mode,
             },
         )
         for task in plan.tasks:

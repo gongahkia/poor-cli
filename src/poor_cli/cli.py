@@ -78,7 +78,7 @@ def _agents(args: argparse.Namespace) -> int:
 
 def _plan(args: argparse.Namespace, store: RunStore) -> int:
     budget = _budget(args)
-    run_id, plan = Orchestrator(store, hooks=load_hooks()).plan(" ".join(args.goal), budget)
+    run_id, plan = Orchestrator(store, hooks=load_hooks()).plan(" ".join(args.goal), budget, graph_mode=args.graph)
     if args.json:
         print(json.dumps({"run_id": run_id, "plan": to_jsonable(plan)}, indent=2, sort_keys=True))
         return 0
@@ -92,7 +92,7 @@ def _plan(args: argparse.Namespace, store: RunStore) -> int:
 def _run(args: argparse.Namespace, store: RunStore) -> int:
     budget = _budget(args)
     orchestrator = Orchestrator(store, hooks=load_hooks())
-    run_id, plan = orchestrator.plan(" ".join(args.goal), budget)
+    run_id, plan = orchestrator.plan(" ".join(args.goal), budget, graph_mode=args.graph)
     print(f"run_id: {run_id}")
     for index, task in enumerate(plan.tasks, 1):
         print(f"{index}. {task.title} -> {task.suggested_agent or 'auto'}")
@@ -221,11 +221,13 @@ def _parser() -> argparse.ArgumentParser:
     plan = sub.add_parser("plan")
     _goal_args(plan)
     _budget_args(plan)
+    _graph_arg(plan)
     plan.add_argument("--json", action="store_true")
 
     run = sub.add_parser("run")
     _goal_args(run)
     _budget_args(run)
+    _graph_arg(run)
     run.add_argument("--agents")
     run.add_argument("--yes", action="store_true")
     run.add_argument("--dry-run", action="store_true")
@@ -270,3 +272,7 @@ def _budget_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--budget", type=float)
     parser.add_argument("--mode", choices=("cheap", "balanced", "best", "local-only", "manual"), default="balanced")
     parser.add_argument("--parallel", type=int, default=1)
+
+
+def _graph_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--graph", action="store_true", help="Bias planning toward symbolic repo-graph navigation")
