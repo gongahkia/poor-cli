@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import poor_cli.repo_graph as repo_graph
 from poor_cli.repo_graph import RepoGraph
 from poor_cli.store import RunStore
 from poor_cli.tools import ToolDispatcher
@@ -53,6 +54,25 @@ def test_repo_graph_refreshes_after_python_file_mutation(tmp_path: Path) -> None
     definition = graph.refresh_if_stale().definition_of("new_entry")
     assert definition is not None
     assert definition["path"] == "extra.py"
+
+
+def test_repo_graph_incremental_refresh_reparses_changed_files_only(tmp_path: Path, monkeypatch) -> None:
+    _sample_repo(tmp_path)
+    graph = RepoGraph(tmp_path).build_index()
+    calls = []
+    original_parse = repo_graph._parse_python
+
+    def spy_parse(root: Path, path: Path):
+        calls.append(path.name)
+        return original_parse(root, path)
+
+    monkeypatch.setattr(repo_graph, "_parse_python", spy_parse)
+    (tmp_path / "utils.py").write_text("def helper() -> str:\n    return 'ok'\n\ndef extra() -> str:\n    return 'new'\n", encoding="utf-8")
+
+    graph.refresh_if_stale()
+
+    assert calls == ["utils.py"]
+    assert graph.definition_of("extra")["path"] == "utils.py"
 
 
 def test_graph_tools_are_replayable_builtin_tools(tmp_path: Path) -> None:

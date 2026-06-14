@@ -5,7 +5,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-GraphFingerprint = tuple[tuple[str, int, int], ...]
+GraphSignature = tuple[int, int]
+GraphFingerprint = dict[str, GraphSignature]
 
 
 @dataclass(frozen=True)
@@ -35,7 +36,7 @@ class RepoGraph:
         self.root = root.resolve()
         self.modules: dict[str, ParsedModule] = {}
         self._symbol_index: dict[str, list[GraphSymbol]] = {}
-        self._fingerprint: GraphFingerprint = ()
+        self._fingerprint: GraphFingerprint = {}
 
     def build_index(self) -> RepoGraph:
         modules = {}
@@ -44,15 +45,32 @@ class RepoGraph:
             module = _parse_python(self.root, path)
             modules[module.path] = module
         self.modules = modules
-        self._symbol_index = {}
-        for module in modules.values():
-            for symbol in module.symbols:
-                self._symbol_index.setdefault(symbol.name, []).append(symbol)
+        self._rebuild_symbol_index()
         self._fingerprint = self._fingerprint_for(files)
         return self
 
     def refresh_if_stale(self) -> RepoGraph:
-        return self.build_index() if self._scan_fingerprint() != self._fingerprint else self
+        current = self._scan_fingerprint()
+        if current == self._fingerprint:
+            return self
+        if not self.modules:
+            return self.build_index()
+        changed = [self.root / path for path, signature in current.items() if self._fingerprint.get(path) != signature]
+        removed = set(self._fingerprint) - set(current)
+        for rel_path in removed:
+            self.modules.pop(rel_path, None)
+        for file_path in changed:
+            module = _parse_python(self.root, file_path)
+            self.modules[module.path] = module
+        self._rebuild_symbol_index()
+        self._fingerprint = current
+        return self
+
+    def _rebuild_symbol_index(self) -> None:
+        self._symbol_index = {}
+        for module in self.modules.values():
+            for symbol in module.symbols:
+                self._symbol_index.setdefault(symbol.name, []).append(symbol)
 
     def find_symbol(self, query: str, *, max_results: int = 20) -> list[dict[str, Any]]:
         needle = query.lower()
@@ -131,14 +149,14 @@ class RepoGraph:
         return sorted(path for path in self.root.rglob("*.py") if "__pycache__" not in path.parts and path.is_file())
 
     def _fingerprint_for(self, paths: Iterable[Path]) -> GraphFingerprint:
-        rows = []
+        rows = {}
         for path in paths:
             try:
                 stat = path.stat()
             except FileNotFoundError:
                 continue
-            rows.append((str(path.resolve().relative_to(self.root)), stat.st_mtime_ns, stat.st_size))
-        return tuple(sorted(rows))
+            rows[str(path.resolve().relative_to(self.root))] = (stat.st_mtime_ns, stat.st_size)
+        return rows
 
 
 def graph_tools(root: Path) -> dict[str, Any]:

@@ -17,7 +17,7 @@
 - Provider entry points use the `poor_cli.providers` group and return provider instances behind the shared `Provider` contract.
 - Provider adapters wrap Anthropic, OpenAI Responses, Gemini, and Ollama clients behind the shared replayable provider contract.
 - MCP is client-only in v6.0.0: `poor-cli mcp list` and `poor-cli mcp call server:tool` consume configured stdio MCP servers.
-- Graph tools use tree-sitter-backed Python indexing and are exposed through the replayable `ToolDispatcher`.
+- Graph tools use tree-sitter-backed Python indexing, incrementally refresh changed Python files before uncached queries, and are exposed through the replayable `ToolDispatcher`.
 
 ## Commands
 
@@ -32,4 +32,4 @@
 
 ## Boundaries
 
-The alpha intentionally excludes worktree isolation, parallel scheduling, local GPU providers, MCP server hosting, multi-language graph indexing, incremental graph indexing, and graph-mode benchmarking. The TUI, MCP client, benchmark harness, and Python graph tools are present but intentionally small.
+The alpha intentionally excludes worktree isolation, parallel scheduling, local GPU providers, MCP server hosting, multi-language graph indexing, OS file-watch integration, and live graph-mode SWE-bench benchmarking. The TUI, MCP client, benchmark harness, and Python graph tools are present but intentionally small.
