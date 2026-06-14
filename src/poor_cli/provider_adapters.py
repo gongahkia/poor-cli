@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import urllib.request
 from typing import Any
@@ -13,21 +14,21 @@ class AnthropicProvider:
 
     def __init__(self, client: Any | None = None):
         if client is None:
-            from anthropic import Anthropic  # type: ignore[import-not-found]
-
-            client = Anthropic()
+            client = importlib.import_module("anthropic").Anthropic()
         self.client = client
 
     def call(self, request: ProviderRequest) -> ProviderResponse:
         require_online("anthropic provider")
         kwargs = dict(request.params)
-        message = self.client.messages.create(
-            model=request.model,
-            system=request.system_prompt or None,
-            messages=[{"role": "user", "content": request.prompt}],
-            max_tokens=int(kwargs.pop("max_tokens", 4096)),
+        create_args: dict[str, Any] = {
+            "model": request.model,
+            "messages": [{"role": "user", "content": request.prompt}],
+            "max_tokens": int(kwargs.pop("max_tokens", 4096)),
             **kwargs,
-        )
+        }
+        if request.system_prompt:
+            create_args["system"] = request.system_prompt
+        message = self.client.messages.create(**create_args)
         return ProviderResponse(provider=self.name, model=request.model, content=_anthropic_text(message), raw=_raw(message))
 
 
@@ -36,9 +37,7 @@ class OpenAIProvider:
 
     def __init__(self, client: Any | None = None):
         if client is None:
-            from openai import OpenAI  # type: ignore[import-not-found]
-
-            client = OpenAI()
+            client = importlib.import_module("openai").OpenAI()
         self.client = client
 
     def call(self, request: ProviderRequest) -> ProviderResponse:
@@ -58,9 +57,7 @@ class GeminiProvider:
 
     def __init__(self, client: Any | None = None):
         if client is None:
-            from google import genai  # type: ignore[import-not-found]
-
-            client = genai.Client()
+            client = importlib.import_module("google.genai").Client()
         self.client = client
 
     def call(self, request: ProviderRequest) -> ProviderResponse:
