@@ -87,3 +87,19 @@ def test_tool_entry_points_extend_dispatcher_defaults(tmp_path: Path, monkeypatc
 
     assert result.output == {"value": 7}
     store.close()
+
+
+def test_shell_tool_blocks_network_and_outside_writes(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    run_id = _run_id(store, tmp_path)
+    dispatcher = ToolDispatcher(store, run_id, workdir=tmp_path)
+
+    network = dispatcher.call("shell", {"command": "curl https://example.com"})
+    outside = dispatcher.call("shell", {"command": "touch ../outside.txt"})
+
+    assert network.ok is False
+    assert "network" in str(network.error)
+    assert outside.ok is False
+    assert "outside workdir" in str(outside.error)
+    assert not (tmp_path.parent / "outside.txt").exists()
+    store.close()

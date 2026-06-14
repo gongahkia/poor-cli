@@ -5,6 +5,8 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from poor_cli.sandbox import validate_shell_command
+
 if TYPE_CHECKING:
     from .dispatcher import ToolResult
 
@@ -96,6 +98,7 @@ def _shell(root: Path, args: dict[str, Any]) -> ToolResult:
     timeout = int(args.get("timeout") or 30)
     if not command:
         raise ValueError("shell requires command")
+    validate_shell_command(root, command)
     result = subprocess.run(command, cwd=root, shell=True, text=True, capture_output=True, timeout=timeout, check=False)
     return _result(
         "shell",
