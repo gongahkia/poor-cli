@@ -60,6 +60,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: verified distribution cleanup already landed: `LICENSE` contains MIT terms with 2026 poor-cli contributors, and `README.md` has no stale `ROADMAP.md` link. Evidence: `LICENSE`, `README.md`, and `pyproject.toml` `license = "MIT"`.
 - 2026-06-14: added a MkDocs Material docs skeleton with Quickstart, Architecture, Hooks, Providers, Replay, and Benchmarks pages. Evidence: `mkdocs.yml` and `docs/`.
 - 2026-06-14: added CI docs-build gates so the MkDocs site is checked with `mkdocs build --strict` on main and v6 workflows. Evidence: `.github/workflows/ci.yml` and `.github/workflows/v6.yml`.
+- 2026-06-14: pointed README status at the current pivot roadmap now that no stale `ROADMAP.md` link exists. Evidence: `README.md`.
 
 ## TL;DR
 
