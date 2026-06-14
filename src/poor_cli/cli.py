@@ -10,6 +10,7 @@ from . import __version__
 from .agents import detect_agents
 from .hooks import load_hooks
 from .models import Budget, to_jsonable
+from .offline import enable_offline
 from .orchestrator import Orchestrator
 from .replay import replay_summary, replay_verify
 from .store import RunStore, StoreError
@@ -18,6 +19,8 @@ from .store import RunStore, StoreError
 def main(argv: list[str] | None = None) -> int:
     parser = _parser()
     args = parser.parse_args(argv)
+    if args.offline:
+        enable_offline()
     if args.version:
         print(__version__)
         return 0
@@ -183,6 +186,7 @@ def _selected(args: argparse.Namespace) -> set[str] | None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="poor-cli")
     parser.add_argument("--store-dir", help="Override .poor-cli/v6 storage directory")
+    parser.add_argument("--offline", action="store_true", help="Fail before live network-backed provider or agent calls")
     parser.add_argument("--version", action="store_true")
     sub = parser.add_subparsers(dest="command")
 

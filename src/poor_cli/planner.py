@@ -10,6 +10,7 @@ from typing import Any
 
 from .agents import detect_agents
 from .models import AgentInfo, Plan, TaskSpec, make_id
+from .offline import offline_enabled
 
 
 class PlannerError(RuntimeError):
@@ -56,6 +57,8 @@ class Planner:
             if result.returncode != 0:
                 raise PlannerError(f"planner command failed: {result.stderr.strip()}")
             return result.stdout
+        if offline_enabled():
+            raise PlannerError("offline mode requires POOR_CLI_PLANNER_COMMAND")
         claude = shutil.which("claude")
         if claude:
             result = subprocess.run(

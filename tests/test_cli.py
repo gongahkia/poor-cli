@@ -118,6 +118,22 @@ def test_cli_exposes_tui_help(tmp_path: Path) -> None:
     assert "--run-id" in result.stdout
 
 
+def test_cli_sets_offline_env(capsys) -> None:
+    old = os.environ.get("POOR_CLI_OFFLINE")
+    os.environ.pop("POOR_CLI_OFFLINE", None)
+
+    try:
+        assert main(["--offline", "--version"]) == 0
+
+        assert os.environ["POOR_CLI_OFFLINE"] == "1"
+        assert capsys.readouterr().out.strip() == "6.0.0a1"
+    finally:
+        if old is None:
+            os.environ.pop("POOR_CLI_OFFLINE", None)
+        else:
+            os.environ["POOR_CLI_OFFLINE"] = old
+
+
 def test_cli_run_without_yes_records_confirmation_event(tmp_path: Path) -> None:
     planner = tmp_path / "planner.py"
     planner.write_text(

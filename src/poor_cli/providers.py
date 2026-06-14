@@ -8,6 +8,7 @@ from typing import Any, Protocol
 
 from .extensions import ExtensionLoadError, load_entry_point_values
 from .hooks import Hook, HookManager
+from .offline import require_online
 from .store import RunStore
 
 
@@ -78,6 +79,7 @@ class CachedReplayProvider:
         )
         if self.replay_only or self.wrapped is None:
             raise ProviderReplayMiss(f"missing cached provider response: {request_hash}")
+        require_online(f"provider {request.provider}")
 
         request_artifact = self.store.put_artifact(run_id=self.run_id, kind="provider.request", data=asdict(request))
         self.store.append_event(

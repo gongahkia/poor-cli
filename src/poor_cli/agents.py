@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .models import AgentInfo, TaskSpec
+from .offline import require_online
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,8 @@ class AgentRunner:
         budget_usd: float | None = None,
     ) -> AgentResult:
         prompt = build_agent_prompt(goal, task, context)
+        if agent.provider != "local":
+            require_online(f"agent {agent.name}")
         if agent.invocation_adapter == "claude":
             command = [agent.command, "-p", "--permission-mode", "acceptEdits", "--output-format", "text"]
             if budget_usd is not None:

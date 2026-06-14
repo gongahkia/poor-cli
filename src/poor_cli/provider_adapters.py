@@ -4,6 +4,7 @@ import json
 import urllib.request
 from typing import Any
 
+from .offline import require_online
 from .providers import ProviderRequest, ProviderResponse
 
 
@@ -18,6 +19,7 @@ class AnthropicProvider:
         self.client = client
 
     def call(self, request: ProviderRequest) -> ProviderResponse:
+        require_online("anthropic provider")
         kwargs = dict(request.params)
         message = self.client.messages.create(
             model=request.model,
@@ -40,6 +42,7 @@ class OpenAIProvider:
         self.client = client
 
     def call(self, request: ProviderRequest) -> ProviderResponse:
+        require_online("openai provider")
         kwargs = dict(request.params)
         response = self.client.responses.create(
             model=request.model,
@@ -61,6 +64,7 @@ class GeminiProvider:
         self.client = client
 
     def call(self, request: ProviderRequest) -> ProviderResponse:
+        require_online("gemini provider")
         kwargs = dict(request.params)
         config = kwargs.pop("config", None)
         if request.system_prompt:
@@ -77,6 +81,7 @@ class OllamaProvider:
         self.opener = opener or urllib.request.urlopen
 
     def call(self, request: ProviderRequest) -> ProviderResponse:
+        require_online("ollama provider")
         payload = {
             "model": request.model,
             "prompt": request.prompt,

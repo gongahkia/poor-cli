@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
+
+from poor_cli.offline import OfflineModeError
 from poor_cli.provider_adapters import AnthropicProvider, GeminiProvider, OllamaProvider, OpenAIProvider
 from poor_cli.providers import ProviderRequest
 
@@ -92,3 +95,14 @@ def test_ollama_provider_posts_generate_request() -> None:
     assert seen["payload"]["prompt"] == "hello"
     assert seen["payload"]["system"] == "sys"
     assert seen["payload"]["options"] == {"temperature": 0}
+
+
+def test_provider_adapters_block_offline_calls(monkeypatch) -> None:
+    class Messages:
+        def create(self, **kwargs):
+            raise AssertionError("network client should not be called")
+
+    monkeypatch.setenv("POOR_CLI_OFFLINE", "1")
+
+    with pytest.raises(OfflineModeError):
+        AnthropicProvider(SimpleNamespace(messages=Messages())).call(ProviderRequest(provider="anthropic", model="m", prompt="p"))

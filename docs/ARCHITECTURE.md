@@ -11,6 +11,7 @@
 - Every important transition emits an append-only event.
 - Agent inputs, planner prompts/responses, context packets, and agent results are stored as artifacts.
 - `poor-cli replay --verify` checks the per-run event mirror and CAS artifact hashes, then emits a stable trace digest.
+- `poor-cli --offline` sets `POOR_CLI_OFFLINE=1`; provider adapters, provider cache misses, and non-local delegated agents fail before live network calls.
 - Hook entry points use the `poor_cli.hooks` group and receive lifecycle callbacks for turns, model calls, tool calls, and run completion.
 - Tool entry points use the `poor_cli.tools` group and merge with built-ins at dispatcher startup.
 - Provider entry points use the `poor_cli.providers` group and return provider instances behind the shared `Provider` contract.

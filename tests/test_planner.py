@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
-from poor_cli.planner import parse_plan
+import pytest
+
+from poor_cli.planner import Planner, PlannerError, parse_plan
 
 
 def test_parse_plan_schema() -> None:
@@ -52,3 +55,11 @@ def test_parse_plan_accepts_string_list_fields() -> None:
     assert plan.validation_strategy == ["run tests"]
     assert plan.tasks[0].dependencies == ["prior task"]
     assert plan.tasks[0].validation == ["pytest"]
+
+
+def test_offline_planner_requires_custom_command(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("POOR_CLI_OFFLINE", "1")
+    monkeypatch.delenv("POOR_CLI_PLANNER_COMMAND", raising=False)
+
+    with pytest.raises(PlannerError, match="offline mode requires"):
+        Planner(tmp_path, []).create("goal")
