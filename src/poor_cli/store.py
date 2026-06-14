@@ -49,9 +49,11 @@ class RunStore:
         self.runs_root.mkdir(parents=True, exist_ok=True)
         self.cas = CAS(self.root / "cas")
         self.db_path = self.root / "runs.sqlite3"
-        self.conn = sqlite3.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, timeout=5)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
+        self.conn.execute("PRAGMA journal_mode = WAL")
+        self.conn.execute("PRAGMA busy_timeout = 5000")
         self.migrate()
 
     def close(self) -> None:
@@ -72,6 +74,7 @@ class RunStore:
               status TEXT NOT NULL,
               final_summary TEXT
             );
+            CREATE INDEX IF NOT EXISTS idx_runs_created ON runs(created_at);
             CREATE TABLE IF NOT EXISTS tasks (
               task_id TEXT PRIMARY KEY,
               run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -89,6 +92,7 @@ class RunStore:
               result_artifact_id TEXT,
               ordinal INTEGER NOT NULL
             );
+            CREATE INDEX IF NOT EXISTS idx_tasks_run_ordinal ON tasks(run_id, ordinal);
             CREATE TABLE IF NOT EXISTS events (
               event_id TEXT PRIMARY KEY,
               run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -110,6 +114,7 @@ class RunStore:
               path TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_artifacts_run ON artifacts(run_id, kind);
+            CREATE INDEX IF NOT EXISTS idx_artifacts_sha ON artifacts(sha256);
             CREATE TABLE IF NOT EXISTS agents (
               agent_id TEXT NOT NULL,
               run_id TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,

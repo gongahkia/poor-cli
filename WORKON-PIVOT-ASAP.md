@@ -32,6 +32,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added `poor-cli --offline` plus `POOR_CLI_OFFLINE` guards for provider adapters, provider cache misses, planners without a custom command, and non-local delegated agents. Evidence: `tests/test_providers.py::test_cached_replay_provider_blocks_live_call_when_offline`, `tests/test_provider_adapters.py::test_provider_adapters_block_offline_calls`, `tests/test_planner.py::test_offline_planner_requires_custom_command`, and `tests/test_agents.py::test_offline_mode_blocks_network_backed_agents`.
 - 2026-06-14: ported a v6 stdio MCP client surface with `poor-cli mcp list` and `poor-cli mcp call server:tool`, keeping MCP client-only for v6.0.0. Evidence: `tests/test_mcp_client.py`.
 - 2026-06-14: pinned the phase-1 SWE-bench Lite 10 fixture manifest from `SWE-bench/SWE-bench_Lite` test offset 0, length 10. Evidence: `tests/fixtures/swe-lite-10/manifest.json` and `tests/test_benchmarks.py::test_swe_lite_10_manifest_schema`.
+- 2026-06-14: hardened the SQLite run index for multi-connection writes with WAL, busy timeout, and run/task/artifact lookup indexes. Evidence: `tests/test_store.py::test_store_accepts_parallel_event_writers`.
 
 ## TL;DR
 
