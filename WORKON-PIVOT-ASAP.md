@@ -23,6 +23,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: closed GitHub issue #51 after confirmation, budget placeholder, and structured failure-event coverage landed.
 - 2026-06-14: raised the milestone suite to an in-process CLI smoke plus CI coverage gate at `--cov-fail-under=60`. Evidence: `tests/test_cli.py::test_cli_main_in_process_run_inspect_replay`.
 - 2026-06-14: closed GitHub issue #52 after milestone tests, ruff, coverage, and LOC gates passed locally and were wired into CI.
+- 2026-06-14: added benchmark task schema, 10 candidate poor-cli issue tasks, and baseline comparison plan for Claude-only, Codex-only, and poor-cli modes. Evidence: `BENCHMARKS.md`, `bench/fixtures/v6_baseline_tasks.json`, `tests/test_benchmarks.py`.
 
 ## TL;DR
 
