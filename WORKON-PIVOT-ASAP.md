@@ -14,6 +14,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: implemented event-window replay via `poor-cli replay --from-event`, deriving run/task state from event history. Evidence: `tests/test_replay.py`.
 - 2026-06-14: added initial `poor-cli tui` Textual surface with transcript, activity, and composer panes. Evidence: `tests/test_cli.py::test_cli_exposes_tui_help`.
 - 2026-06-14: closed GitHub issues #42-#47 after local implementation and verification evidence existed for bootstrap, store, core types, CLI skeleton, agent detection, and planner.
+- 2026-06-14: added explicit `agent.input` artifacts before delegated subprocess execution so confirmed runs persist both agent inputs and results. Evidence: `tests/test_cli.py::test_cli_plan_run_inspect_replay`.
 
 ## TL;DR
 

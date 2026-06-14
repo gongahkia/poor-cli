@@ -67,7 +67,7 @@ class AgentRunner:
         workdir: Path,
         budget_usd: float | None = None,
     ) -> AgentResult:
-        prompt = _task_prompt(goal, task, context)
+        prompt = build_agent_prompt(goal, task, context)
         if agent.invocation_adapter == "claude":
             command = [agent.command, "-p", "--permission-mode", "acceptEdits", "--output-format", "text"]
             if budget_usd is not None:
@@ -118,7 +118,7 @@ def _version(command: list[str]) -> str:
     return text[0][:160] if text else "unknown"
 
 
-def _task_prompt(goal: str, task: TaskSpec, context: str) -> str:
+def build_agent_prompt(goal: str, task: TaskSpec, context: str) -> str:
     return "\n".join(
         [
             "You are running as a delegated coding agent under poor-cli.",

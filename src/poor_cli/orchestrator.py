@@ -5,7 +5,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .agents import AgentRunner, detect_agents
+from .agents import AgentRunner, build_agent_prompt, detect_agents
 from .models import Budget, ContextPacket, Plan, TaskSpec, make_id, to_jsonable
 from .planner import Planner
 from .store import RunStore
@@ -71,6 +71,14 @@ class Orchestrator:
                 self.store.set_task_status(task.task_id, "skipped")
                 self.store.append_event(run_id, "task.skipped", {"reason": "dry-run"}, task.task_id)
                 continue
+            agent_prompt = build_agent_prompt(str(run["user_goal"]), task, packet.task_prompt)
+            input_art = self.store.put_artifact(
+                run_id=run_id,
+                task_id=task.task_id,
+                kind="agent.input",
+                data={"agent_id": agent.agent_id, "agent": agent.name, "prompt": agent_prompt},
+            )
+            self.store.append_event(run_id, "agent.input.created", {"artifact_id": input_art.artifact_id}, task.task_id)
             self.store.append_event(run_id, "agent.started", {"agent_id": agent.agent_id, "command": agent.command}, task.task_id)
             result = runner.run(
                 agent,
