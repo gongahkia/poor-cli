@@ -52,6 +52,34 @@ Default local endpoints:
 - SGLang: `http://localhost:30000/v1/chat/completions`
 - Ollama: `http://localhost:11434/api/generate`
 
+## Local Structured Output
+
+For vLLM and SGLang, `ProviderRequest.params` accepts OpenAI-compatible pass-through params plus two shorthand shims:
+
+- `json_schema`: converted to `response_format={"type":"json_schema", ...}`.
+- `function_tools`: converted to `tools=[{"type":"function", ...}]` with default `tool_choice="auto"`.
+
+Example:
+
+```python
+ProviderRequest(
+    provider="vllm",
+    model="Qwen/Qwen2.5-Coder-32B-Instruct",
+    prompt="Return JSON.",
+    params={
+        "json_schema": {
+            "name": "PatchPlan",
+            "schema": {
+                "type": "object",
+                "properties": {"files": {"type": "array", "items": {"type": "string"}}},
+                "required": ["files"],
+                "additionalProperties": False,
+            },
+        }
+    },
+)
+```
+
 ## Entry Point
 
 ```toml

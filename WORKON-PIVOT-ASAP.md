@@ -75,6 +75,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added cache-aware provider batching: `CachedReplayProvider.call_many()` replays cached requests and sends only misses through a wrapped provider `call_many()` path when available. Evidence: `tests/test_providers.py::test_cached_replay_provider_batches_uncached_requests_then_replays`. Provider-native prefix/KV-cache controls remain pending.
 - 2026-06-14: added a no-cost Phase 3 local-first readiness probe and checked-in snapshot. Current snapshot: setup script and provider adapters ready; this host lacks Linux/CUDA and vLLM/SGLang packages. Evidence: `bench/phase3_readiness.py`, `bench/results/phase3-readiness.json`, and `tests/test_benchmarks.py::test_checked_in_phase3_readiness_snapshot`.
 - 2026-06-14: added launch-site copy and phase-specific demo checklist for the MkDocs site, including the replay, graph, and local-first screencast slots. Evidence: `docs/launch.md` and `mkdocs.yml`.
+- 2026-06-14: added OpenAI-compatible local structured-output and function-tool shims for vLLM/SGLang: `json_schema` maps to `response_format`, and `function_tools` maps to `tools` plus `tool_choice=auto`. Evidence: `tests/test_provider_adapters.py::test_openai_compatible_provider_normalizes_json_schema_response_format` and `tests/test_provider_adapters.py::test_openai_compatible_provider_normalizes_function_tools`. Checked against vLLM/SGLang public docs for OpenAI-compatible tool/structured APIs.
 
 ## TL;DR
 

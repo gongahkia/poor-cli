@@ -110,7 +110,7 @@ class OpenAICompatibleChatProvider:
         if request.system_prompt:
             messages.append({"role": "system", "content": request.system_prompt})
         messages.append({"role": "user", "content": request.prompt})
-        payload = {"model": request.model, "messages": messages, **request.params}
+        payload = {"model": request.model, "messages": messages, **_chat_params(request.params)}
         http_request = urllib.request.Request(
             f"{self.base_url}/v1/chat/completions",
             data=json.dumps(payload).encode(),
@@ -134,6 +134,48 @@ class SGLangProvider(OpenAICompatibleChatProvider):
 
     def __init__(self, base_url: str = "http://localhost:30000", opener: Any | None = None):
         super().__init__(base_url, opener)
+
+
+def json_schema_response_format(name: str, schema: dict[str, Any], *, strict: bool = True) -> dict[str, Any]:
+    return {"type": "json_schema", "json_schema": {"name": name, "schema": schema, "strict": strict}}
+
+
+def function_tool(name: str, description: str, parameters: dict[str, Any], *, strict: bool = True) -> dict[str, Any]:
+    return {"type": "function", "function": {"name": name, "description": description, "parameters": parameters, "strict": strict}}
+
+
+def _chat_params(params: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(params)
+    schema = normalized.pop("json_schema", None)
+    if schema is not None and "response_format" not in normalized:
+        if not isinstance(schema, dict):
+            raise TypeError("json_schema param must be an object")
+        name = str(schema.get("name") or "structured_output")
+        raw_schema = schema.get("schema")
+        if not isinstance(raw_schema, dict):
+            raise TypeError("json_schema.schema param must be an object")
+        normalized["response_format"] = json_schema_response_format(name, raw_schema, strict=bool(schema.get("strict", True)))
+    function_tools = normalized.pop("function_tools", None)
+    if function_tools is not None and "tools" not in normalized:
+        if not isinstance(function_tools, list):
+            raise TypeError("function_tools param must be a list")
+        normalized["tools"] = [_function_tool_from_param(tool) for tool in function_tools]
+        normalized.setdefault("tool_choice", "auto")
+    return normalized
+
+
+def _function_tool_from_param(tool: Any) -> dict[str, Any]:
+    if not isinstance(tool, dict):
+        raise TypeError("function tool must be an object")
+    parameters = tool.get("parameters")
+    if not isinstance(parameters, dict):
+        raise TypeError("function tool parameters must be an object")
+    return function_tool(
+        str(tool.get("name") or ""),
+        str(tool.get("description") or ""),
+        parameters,
+        strict=bool(tool.get("strict", True)),
+    )
 
 
 def _anthropic_text(message: Any) -> str:

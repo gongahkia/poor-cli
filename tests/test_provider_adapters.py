@@ -6,7 +6,16 @@ from types import SimpleNamespace
 import pytest
 
 from poor_cli.offline import OfflineModeError
-from poor_cli.provider_adapters import AnthropicProvider, GeminiProvider, OllamaProvider, OpenAIProvider, SGLangProvider, VLLMProvider
+from poor_cli.provider_adapters import (
+    AnthropicProvider,
+    GeminiProvider,
+    OllamaProvider,
+    OpenAIProvider,
+    SGLangProvider,
+    VLLMProvider,
+    function_tool,
+    json_schema_response_format,
+)
 from poor_cli.providers import ProviderRequest
 
 
@@ -151,6 +160,69 @@ def test_sglang_provider_posts_openai_chat_completion_request() -> None:
     assert response.provider == "sglang"
     assert seen["url"] == "http://sglang.test/v1/chat/completions"
     assert seen["payload"]["messages"] == [{"role": "user", "content": "hello"}]
+
+
+def test_openai_compatible_provider_normalizes_json_schema_response_format() -> None:
+    seen = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"{\\"ok\\":true}"}}]}'
+
+    def opener(request):
+        seen["payload"] = json.loads(request.data.decode())
+        return FakeResponse()
+
+    schema = {"type": "object", "properties": {"ok": {"type": "boolean"}}, "required": ["ok"], "additionalProperties": False}
+    response = VLLMProvider("http://vllm.test", opener).call(
+        ProviderRequest(
+            provider="vllm",
+            model="qwen",
+            prompt="json",
+            params={"json_schema": {"name": "OkResult", "schema": schema, "strict": True}},
+        )
+    )
+
+    assert response.content == '{"ok":true}'
+    assert seen["payload"]["response_format"] == json_schema_response_format("OkResult", schema, strict=True)
+
+
+def test_openai_compatible_provider_normalizes_function_tools() -> None:
+    seen = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def read(self):
+            return b'{"choices":[{"message":{"tool_calls":[{"function":{"name":"find_symbol","arguments":"{}"}}]}}]}'
+
+    def opener(request):
+        seen["payload"] = json.loads(request.data.decode())
+        return FakeResponse()
+
+    parameters = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
+    response = SGLangProvider("http://sglang.test", opener).call(
+        ProviderRequest(
+            provider="sglang",
+            model="qwen",
+            prompt="call tool",
+            params={"function_tools": [{"name": "find_symbol", "description": "search symbols", "parameters": parameters}]},
+        )
+    )
+
+    assert response.raw["choices"][0]["message"]["tool_calls"][0]["function"]["name"] == "find_symbol"
+    assert seen["payload"]["tools"] == [function_tool("find_symbol", "search symbols", parameters)]
+    assert seen["payload"]["tool_choice"] == "auto"
 
 
 def test_provider_adapters_block_offline_calls(monkeypatch) -> None:
