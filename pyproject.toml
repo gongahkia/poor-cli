@@ -60,6 +60,7 @@ include = ["poor_cli*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+norecursedirs = ["tests/fixtures"]
 
 [tool.ruff]
 line-length = 140
