@@ -55,6 +55,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--auto-approve", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--confirm-cost", action="store_true", help="Acknowledge API/Docker cost before generation")
     parser.add_argument("--no-evaluate", action="store_true", help="Skip official SWE-bench Docker evaluation")
+    parser.add_argument("--evaluate-existing-run", help="Run official evaluation for an existing run id or run directory.")
     parser.add_argument("--skip-replay-verify", action="store_true", help="Skip poor-cli offline replay verification")
     parser.add_argument("--eval-max-workers", type=int, default=8)
     parser.add_argument("--keep-worktrees", action="store_true")
@@ -423,11 +424,12 @@ def percentile(values: list[float], pct: int) -> float:
     return round(ordered[index], 3)
 
 
-def confirm_cost(args: argparse.Namespace, task_count: int) -> None:
+def confirm_cost(args: argparse.Namespace, task_count: int, *, model_calls: bool = True) -> None:
+    cost_scope = "model API charges and Docker evaluation costs" if model_calls else "Docker evaluation costs"
+    action = "run poor-cli on" if model_calls else "evaluate predictions for"
     warning_text = (
-        f"COST WARNING: this will run poor-cli on {task_count} SWE-bench Lite task(s) "
-        f"with provider={args.provider} model={args.model}. This can incur model API charges "
-        "and Docker evaluation costs."
+        f"COST WARNING: this will {action} {task_count} SWE-bench Lite task(s) "
+        f"with provider={args.provider} model={args.model}. This can incur {cost_scope}."
     )
     if args.confirm_cost:
         print(warning_text, file=sys.stderr)
@@ -476,9 +478,41 @@ def run_official_evaluation(args: argparse.Namespace, run_dir: Path, run_id: str
     }
 
 
+def resolve_existing_run_dir(args: argparse.Namespace) -> Path:
+    run_dir = Path(str(args.evaluate_existing_run))
+    if not run_dir.exists():
+        run_dir = Path(args.results_dir) / str(args.evaluate_existing_run)
+    return run_dir
+
+
+def count_prediction_rows(path: Path) -> int:
+    return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+def evaluate_existing_run(args: argparse.Namespace) -> int:
+    run_dir = resolve_existing_run_dir(args)
+    predictions = run_dir / "predictions.jsonl"
+    if not predictions.exists():
+        raise SystemExit(f"missing predictions.jsonl: {predictions}")
+    task_count = count_prediction_rows(predictions)
+    if task_count == 0:
+        raise SystemExit(f"empty predictions.jsonl: {predictions}")
+    confirm_cost(args, task_count, model_calls=False)
+    summary_path = run_dir / "summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8")) if summary_path.exists() else {"run_id": run_dir.name}
+    if not isinstance(summary, dict):
+        raise SystemExit(f"summary root must be object: {summary_path}")
+    summary["official_evaluation"] = run_official_evaluation(args, run_dir, run_dir.name)
+    write_json(summary_path, summary)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return int(summary["official_evaluation"].get("exit_code") or 0)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     random.seed(args.seed)
+    if args.evaluate_existing_run:
+        return evaluate_existing_run(args)
     manifest = load_manifest(args.manifest)
     tasks = select_tasks(
         apply_manifest(load_tasks(args.dataset_name, args.split, args.dataset_revision), manifest),

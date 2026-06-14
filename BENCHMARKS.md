@@ -98,6 +98,12 @@ Smoke without official Docker evaluation:
 uv run --locked --extra bench python bench/swe_bench_lite/run.py --limit 1 --no-evaluate --confirm-cost --budget-usd 1.0 --timeout-seconds 1200
 ```
 
+Evaluate an existing run without regenerating model patches:
+
+```sh
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --evaluate-existing-run smoke-claude-20260614T035359Z --confirm-cost
+```
+
 Checked-in smoke:
 
 | run dir | task | completed | replay verified | patch bytes | official eval |

@@ -208,6 +208,29 @@ def test_swe_lite_runner_uses_v6_run_and_planner_payload(tmp_path: Path) -> None
     assert swe_run.extract_run_id("run_id: run_123\n1. task -> claude\n") == "run_123"
 
 
+def test_swe_lite_runner_evaluates_existing_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    run_dir = tmp_path / "results" / "run-1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "predictions.jsonl").write_text('{"instance_id":"repo__proj-1","model_patch":""}\n', encoding="utf-8")
+    (run_dir / "summary.json").write_text('{"run_id":"run-1","official_evaluation":{}}\n', encoding="utf-8")
+    calls = {}
+
+    def fake_evaluation(args: object, received_run_dir: Path, run_id: str) -> dict[str, object]:
+        calls["run_dir"] = received_run_dir
+        calls["run_id"] = run_id
+        return {"exit_code": 0, "wall_time_seconds": 1.0, "results": {"resolved": []}}
+
+    monkeypatch.setattr(swe_run, "run_official_evaluation", fake_evaluation)
+
+    code = swe_run.main(["--results-dir", str(tmp_path / "results"), "--evaluate-existing-run", "run-1", "--confirm-cost"])
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+
+    assert code == 0
+    assert calls == {"run_dir": run_dir, "run_id": "run-1"}
+    assert summary["official_evaluation"]["exit_code"] == 0
+    assert summary["official_evaluation"]["results"] == {"resolved": []}
+
+
 def test_checked_in_swe_lite_smoke_result() -> None:
     run_dir = Path(__file__).resolve().parents[1] / "bench" / "swe_bench_lite" / "results" / "smoke-claude-20260614T035359Z"
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
