@@ -1,0 +1,35 @@
+{
+  "agent": "generic",
+  "completed_count": 3,
+  "fixture_count": 3,
+  "mode": "poor-cli",
+  "replay_verified_count": 3,
+  "results": [
+    {
+      "completed": true,
+      "fixture": "bug-1",
+      "replay_verified": true,
+      "run_id": "run_862df29dc7bb4770",
+      "tests_passed": true,
+      "trace_sha256": "30d5d024efdbb4197ec2286ac2710974ffa54e325eb02e0af3b2ac2809d2e4d8"
+    },
+    {
+      "completed": true,
+      "fixture": "bug-2",
+      "replay_verified": true,
+      "run_id": "run_9dfad320ee6c4129",
+      "tests_passed": true,
+      "trace_sha256": "86659ec745886c5f7b88614e46341c937422dc9f91864fd8764c79a1af52c294"
+    },
+    {
+      "completed": true,
+      "fixture": "bug-3",
+      "replay_verified": true,
+      "run_id": "run_2b4f387387254a62",
+      "tests_passed": true,
+      "trace_sha256": "314a0f6acf090b644a404f1198a03be1946a7c0dabe1d8e81ddb566ac16abc9e"
+    }
+  ],
+  "schema_version": "poor-cli-local-fixture-bugs-result-v1",
+  "tests_passed_count": 3
+}

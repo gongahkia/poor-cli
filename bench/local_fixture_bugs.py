@@ -46,6 +46,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--fixture", action="append", choices=sorted(FIXTURES), help="Fixture to run; repeatable.")
     parser.add_argument("--work-root", type=Path)
     parser.add_argument("--output", type=Path, help="Write JSON summary to this path.")
+    parser.add_argument("--compact", action="store_true", help="Only emit result-row fields suitable for committing.")
     parser.add_argument("--keep-workdirs", action="store_true")
     args = parser.parse_args(argv)
 
@@ -55,6 +56,8 @@ def main(argv: list[str] | None = None) -> int:
         work_root=args.work_root,
         keep_workdirs=args.keep_workdirs,
     )
+    if args.compact:
+        payload = compact_payload(payload)
     text = json.dumps(payload, indent=2, sort_keys=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -62,6 +65,29 @@ def main(argv: list[str] | None = None) -> int:
     print(text)
     ok = all(item["completed"] and item["tests_passed"] and item["replay_verified"] for item in payload["results"])
     return 0 if ok else 1
+
+
+def compact_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "schema_version": "poor-cli-local-fixture-bugs-result-v1",
+        "mode": payload["mode"],
+        "agent": payload["agent"],
+        "fixture_count": payload["fixture_count"],
+        "completed_count": sum(1 for result in payload["results"] if result["completed"]),
+        "tests_passed_count": sum(1 for result in payload["results"] if result["tests_passed"]),
+        "replay_verified_count": sum(1 for result in payload["results"] if result["replay_verified"]),
+        "results": [
+            {
+                "fixture": result["fixture"],
+                "run_id": result["run_id"],
+                "completed": result["completed"],
+                "tests_passed": result["tests_passed"],
+                "replay_verified": result["replay_verified"],
+                "trace_sha256": _trace_sha256(str(result["stdout"]["replay"])),
+            }
+            for result in payload["results"]
+        ],
+    }
 
 
 def run_fixture_suite(
@@ -204,6 +230,13 @@ def _extract_run_id(stdout: str) -> str | None:
         if line.startswith("run_id:"):
             return line.split(":", 1)[1].strip()
     return None
+
+
+def _trace_sha256(stdout: str) -> str:
+    try:
+        return str(json.loads(stdout)["verification"]["trace_sha256"])
+    except (KeyError, json.JSONDecodeError, TypeError):
+        return ""
 
 
 def _tail(value: str, limit: int = 4000) -> str:

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from bench.local_fixture_bugs import run_fixture_suite
+from bench.local_fixture_bugs import compact_payload, run_fixture_suite
 from bench.swe_bench_lite import run as swe_run
 
 
@@ -60,6 +60,36 @@ def test_local_fixture_bug_benchmark_runs_poor_cli_generic(tmp_path: Path) -> No
         assert result["tests_passed"] is True
         assert result["replay_verified"] is True
         assert result["run_id"]
+
+
+def test_local_fixture_bug_compact_result_schema(tmp_path: Path) -> None:
+    payload = run_fixture_suite(agent="generic", fixtures=["bug-1"], work_root=tmp_path)
+    compact = compact_payload(payload)
+
+    assert compact["schema_version"] == "poor-cli-local-fixture-bugs-result-v1"
+    assert compact["fixture_count"] == 1
+    assert compact["completed_count"] == 1
+    assert compact["tests_passed_count"] == 1
+    assert compact["replay_verified_count"] == 1
+    assert compact["results"][0]["fixture"] == "bug-1"
+    assert compact["results"][0]["run_id"]
+    assert len(compact["results"][0]["trace_sha256"]) == 64
+
+
+def test_checked_in_local_fixture_bug_result_row() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "local-fixture-bugs-generic.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "poor-cli-local-fixture-bugs-result-v1"
+    assert payload["mode"] == "poor-cli"
+    assert payload["agent"] == "generic"
+    assert payload["fixture_count"] == 3
+    assert payload["completed_count"] == 3
+    assert payload["tests_passed_count"] == 3
+    assert payload["replay_verified_count"] == 3
+    assert {result["fixture"] for result in payload["results"]} == {"bug-1", "bug-2", "bug-3"}
+    assert all(result["run_id"].startswith("run_") for result in payload["results"])
+    assert all(len(result["trace_sha256"]) == 64 for result in payload["results"])
 
 
 def test_swe_lite_runner_applies_manifest_order_and_validates_pin() -> None:

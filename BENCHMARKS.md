@@ -41,7 +41,7 @@ Initial comparison:
 The local fixture bug harness is reproducible without external credentials:
 
 ```sh
-python3 bench/local_fixture_bugs.py --agent generic --output bench/results/local-fixture-bugs.json
+python3 bench/local_fixture_bugs.py --agent generic --compact --output bench/results/local-fixture-bugs-generic.json
 ```
 
 It copies `tests/fixtures/bug-{1,2,3}`, runs each through `poor-cli run --yes`, validates with `python -m pytest -q`, then verifies `poor-cli --offline replay <run_id> --verify`.
@@ -54,6 +54,12 @@ python3 bench/local_fixture_bugs.py --agent codex --output bench/results/local-f
 ```
 
 Until live runs exist, external-model results must be checked in as explicit rows with commands, commit SHA, model/tool versions, and replay IDs.
+
+Checked-in local fixture result:
+
+| result file | mode | agent | completed | tests passed | replay verified |
+| --- | --- | --- | ---: | ---: | ---: |
+| `bench/results/local-fixture-bugs-generic.json` | `poor-cli` | `generic` | 3/3 | 3/3 | 3/3 |
 
 ## SWE-bench Lite 10
 
