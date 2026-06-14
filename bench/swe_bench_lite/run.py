@@ -68,9 +68,7 @@ def load_tasks(dataset_name: str, split: str, revision: str) -> list[dict[str, A
     try:
         from datasets import load_dataset
     except ImportError as exc:
-        raise SystemExit(
-            "Missing bench deps. Run: python -m pip install -r bench/swe_bench_lite/requirements.txt"
-        ) from exc
+        raise SystemExit("Missing bench deps. Run: python -m pip install -r bench/swe_bench_lite/requirements.txt") from exc
     kwargs: dict[str, Any] = {"split": split}
     if revision:
         kwargs["revision"] = revision
@@ -182,9 +180,7 @@ def cost_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "total_tokens": int(cost.get("total_tokens") or cost.get("totalTokens") or 0),
         "cost_usd": float(cost.get("estimated_cost_usd") or cost.get("estimatedCost") or 0.0),
         "cache_read_input_tokens": int(cost.get("cache_read_input_tokens") or cost.get("cacheReadInputTokens") or 0),
-        "cache_creation_input_tokens": int(
-            cost.get("cache_creation_input_tokens") or cost.get("cacheCreationInputTokens") or 0
-        ),
+        "cache_creation_input_tokens": int(cost.get("cache_creation_input_tokens") or cost.get("cacheCreationInputTokens") or 0),
     }
 
 
