@@ -7,6 +7,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 ## Implementation log
 
 - 2026-06-14: hardened planner schema parsing so scalar list fields from Claude/Codex/custom planners are normalized as one-item lists instead of character arrays. Evidence: `tests/test_planner.py::test_parse_plan_accepts_string_list_fields`.
+- 2026-06-14: added initial v6 release gates for source LOC and system-prompt budget, wired into CI. Evidence: `bench/loc_gate.py`, `tests/test_gates.py::test_system_prompt_under_1000_token_ceiling`, `.github/workflows/v6.yml`.
 
 ## TL;DR
 
