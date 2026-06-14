@@ -39,3 +39,9 @@ Initial comparison:
 5. For `poor-cli`, attach the replay `run_id` and verify `poor-cli replay <run_id>` offline.
 
 Full automation remains deferred. Until then, results must be checked in as explicit rows with commands, commit SHA, model/tool versions, and replay IDs.
+
+## SWE-bench Lite 10
+
+Fixed seed set: `tests/fixtures/swe-lite-10/manifest.json`.
+
+Source: `SWE-bench/SWE-bench_Lite`, `default/test`, offset `0`, length `10`. This pins IDs and base commits only; Docker evaluation and run results are not checked in yet.

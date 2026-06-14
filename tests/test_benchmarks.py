@@ -22,3 +22,22 @@ def test_v6_baseline_task_fixture_schema() -> None:
         assert task["phase"].startswith("phase-")
         assert task["prompt"].strip()
         assert task["success_criteria"]
+
+
+def test_swe_lite_10_manifest_schema() -> None:
+    path = Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "swe-lite-10" / "manifest.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    instances = payload["instances"]
+
+    assert payload["schema_version"] == "swe-lite-10-v1"
+    assert payload["dataset"] == "SWE-bench/SWE-bench_Lite"
+    assert payload["split"] == "test"
+    assert payload["selection"] == {"offset": 0, "length": 10}
+    assert len(instances) == 10
+    assert len({item["instance_id"] for item in instances}) == 10
+    for item in instances:
+        assert "__" in item["instance_id"]
+        assert "/" in item["repo"]
+        assert len(item["base_commit"]) == 40
+        assert item["fail_to_pass_count"] >= 1
+        assert item["pass_to_pass_count"] >= 0
