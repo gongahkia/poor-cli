@@ -25,6 +25,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: closed GitHub issue #52 after milestone tests, ruff, coverage, and LOC gates passed locally and were wired into CI.
 - 2026-06-14: added benchmark task schema, 10 candidate poor-cli issue tasks, and baseline comparison plan for Claude-only, Codex-only, and poor-cli modes. Evidence: `BENCHMARKS.md`, `bench/fixtures/v6_baseline_tasks.json`, `tests/test_benchmarks.py`.
 - 2026-06-14: closed GitHub issue #53 after the benchmark schema and baseline plan landed.
+- 2026-06-14: added the v6 hook protocol and entry-point loader for `poor_cli.hooks`, wired into run turns, provider model calls, tool calls, and run completion. Evidence: `tests/test_hooks.py`.
 
 ## TL;DR
 

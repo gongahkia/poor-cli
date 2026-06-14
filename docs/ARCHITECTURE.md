@@ -10,6 +10,7 @@
 - `meta.json` stores the latest run metadata; `events.jsonl` stores the append-only event stream.
 - Every important transition emits an append-only event.
 - Agent inputs, planner prompts/responses, context packets, and agent results are stored as artifacts.
+- Hook entry points use the `poor_cli.hooks` group and receive lifecycle callbacks for turns, model calls, tool calls, and run completion.
 
 ## Commands
 

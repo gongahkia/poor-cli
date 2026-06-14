@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field, replace
 from collections.abc import Iterable
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Protocol
 
 from .hooks import Hook, HookManager
