@@ -6,7 +6,7 @@
 
 - `RunStore` persists runs, tasks, agents, events, and artifact references in SQLite.
 - `CAS` stores durable payloads by SHA-256 under `.poor-cli/v6/cas/`.
-- Each run mirrors replay-critical state under `.poor-cli/v6/runs/<run_id>/`.
+- Each run mirrors replay-critical state under `.poor-cli/v6/runs/<run_id>/`, including `cas/<sha256>` payloads.
 - `meta.json` stores the latest run metadata; `events.jsonl` stores the append-only event stream.
 - Every important transition emits an append-only event.
 - Agent inputs, planner prompts/responses, context packets, and agent results are stored as artifacts.

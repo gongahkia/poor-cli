@@ -64,6 +64,7 @@ def replay_verify(store: RunStore, run_id: str) -> dict[str, object]:
     artifact_bytes = 0
     for artifact in artifacts:
         payload = store.artifact_payload(str(artifact["artifact_id"]))
+        _verify_run_blob(store, run_id, str(artifact["sha256"]), payload)
         artifact_bytes += len(payload)
         trace.update(f"artifact\x00{artifact['artifact_id']}\x00{artifact['sha256']}\x00".encode())
         trace.update(payload)
@@ -92,3 +93,11 @@ def _verify_event_mirror(store: RunStore, run_id: str, events: list[dict[str, ob
         if mirrored.get("event_id") != event.get("event_id"):
             raise ReplayError(f"event mirror mismatch: {mirrored.get('event_id')} != {event.get('event_id')}")
     return raw
+
+
+def _verify_run_blob(store: RunStore, run_id: str, digest: str, payload: bytes) -> None:
+    path = store.runs_root / run_id / "cas" / digest
+    if not path.exists():
+        raise ReplayError(f"missing replay CAS mirror: {path}")
+    if path.read_bytes() != payload:
+        raise ReplayError(f"replay CAS mirror mismatch: {digest}")

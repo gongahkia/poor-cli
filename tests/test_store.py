@@ -15,6 +15,7 @@ def test_store_events_and_cas_round_trip(tmp_path: Path) -> None:
 
     assert store.list_events(run_id)[0]["event_id"] == event.event_id
     assert store.artifact_payload(artifact.artifact_id) == b'{"value":1}'
+    assert (tmp_path / "store" / "runs" / run_id / "cas" / artifact.sha256).read_bytes() == b'{"value":1}'
     assert store.get_run(run_id)["status"] == "created"
     store.close()
 

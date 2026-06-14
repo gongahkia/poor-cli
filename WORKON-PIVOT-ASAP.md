@@ -33,6 +33,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: ported a v6 stdio MCP client surface with `poor-cli mcp list` and `poor-cli mcp call server:tool`, keeping MCP client-only for v6.0.0. Evidence: `tests/test_mcp_client.py`.
 - 2026-06-14: pinned the phase-1 SWE-bench Lite 10 fixture manifest from `SWE-bench/SWE-bench_Lite` test offset 0, length 10. Evidence: `tests/fixtures/swe-lite-10/manifest.json` and `tests/test_benchmarks.py::test_swe_lite_10_manifest_schema`.
 - 2026-06-14: hardened the SQLite run index for multi-connection writes with WAL, busy timeout, and run/task/artifact lookup indexes. Evidence: `tests/test_store.py::test_store_accepts_parallel_event_writers`.
+- 2026-06-14: added per-run CAS mirrors under `.poor-cli/v6/runs/<run_id>/cas/<sha256>` and made replay verification check the mirrors. Evidence: `tests/test_store.py::test_store_events_and_cas_round_trip` and `tests/test_replay.py::test_replay_verify_rejects_cas_mirror_mismatch`.
 
 ## TL;DR
 

@@ -76,3 +76,17 @@ def test_replay_verify_rejects_event_mirror_mismatch(tmp_path: Path) -> None:
         replay_verify(store, run_id)
 
     store.close()
+
+
+def test_replay_verify_rejects_cas_mirror_mismatch(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    store.append_event(run_id, "run.created", {"ok": True})
+    artifact = store.put_artifact(run_id=run_id, kind="note", data={"value": 1})
+    mirror = tmp_path / "store" / "runs" / run_id / "cas" / artifact.sha256
+    mirror.write_text("changed", encoding="utf-8")
+
+    with pytest.raises(ReplayError):
+        replay_verify(store, run_id)
+
+    store.close()

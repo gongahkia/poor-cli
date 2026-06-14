@@ -178,6 +178,7 @@ class RunStore:
     ) -> Artifact:
         raw = self._artifact_bytes(data)
         digest, path = self.cas.write(raw)
+        self._mirror_run_blob(run_id, digest, raw)
         artifact = Artifact(make_id("art"), run_id, task_id, kind, digest, len(raw), media_type, utc_now(), str(path))
         self.conn.execute(
             """
@@ -359,6 +360,14 @@ class RunStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("a", encoding="utf-8") as handle:
             handle.write(self._json(event) + "\n")
+
+    def _mirror_run_blob(self, run_id: str, digest: str, raw: bytes) -> None:
+        path = self._run_dir(run_id) / "cas" / digest
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if not path.exists():
+            tmp = path.with_suffix(".tmp")
+            tmp.write_bytes(raw)
+            tmp.replace(path)
 
     def _artifact_bytes(self, data: bytes | str | dict[str, Any] | list[Any]) -> bytes:
         if isinstance(data, bytes):
