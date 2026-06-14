@@ -70,6 +70,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added `--graph` support to the pinned SWE-bench Lite runner so the fixed 10-task Phase 2 graph-mode row can be generated with graph-biased planner payloads. Evidence: `bench/swe_bench_lite/run.py --graph` and `tests/test_benchmarks.py::test_swe_lite_runner_supports_graph_mode`. Live graph-mode SWE-bench result remains pending.
 - 2026-06-14: added a dependency-free polling watch handle for long-lived repo graph users, backed by the incremental refresh path. Evidence: `RepoGraph.watch()` and `tests/test_repo_graph.py::test_repo_graph_watch_refreshes_changed_files`.
 - 2026-06-14: extended repo graph indexing from Python to JavaScript via `tree-sitter-javascript`, covering JS imports, `require`, functions, classes, methods, calls, and subgraph traversal. Evidence: `tests/test_repo_graph.py::test_repo_graph_indexes_javascript_symbols_imports_and_callers`.
+- 2026-06-14: started Phase 3 local-first provider work with first-class vLLM and SGLang OpenAI-compatible chat adapters alongside existing Ollama. Evidence: `src/poor_cli/provider_adapters.py`, `tests/test_provider_adapters.py::test_vllm_provider_posts_openai_chat_completion_request`, and `tests/test_provider_adapters.py::test_sglang_provider_posts_openai_chat_completion_request`. Batched prompt caching remains pending.
 
 ## TL;DR
 

@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from poor_cli.offline import OfflineModeError
-from poor_cli.provider_adapters import AnthropicProvider, GeminiProvider, OllamaProvider, OpenAIProvider
+from poor_cli.provider_adapters import AnthropicProvider, GeminiProvider, OllamaProvider, OpenAIProvider, SGLangProvider, VLLMProvider
 from poor_cli.providers import ProviderRequest
 
 
@@ -95,6 +95,62 @@ def test_ollama_provider_posts_generate_request() -> None:
     assert seen["payload"]["prompt"] == "hello"
     assert seen["payload"]["system"] == "sys"
     assert seen["payload"]["options"] == {"temperature": 0}
+
+
+def test_vllm_provider_posts_openai_chat_completion_request() -> None:
+    seen = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"ok"}}]}'
+
+    def opener(request):
+        seen["url"] = request.full_url
+        seen["payload"] = json.loads(request.data.decode())
+        return FakeResponse()
+
+    response = VLLMProvider("http://vllm.test", opener).call(
+        ProviderRequest(provider="vllm", model="qwen", prompt="hello", system_prompt="sys", params={"temperature": 0})
+    )
+
+    assert response.content == "ok"
+    assert response.provider == "vllm"
+    assert seen["url"] == "http://vllm.test/v1/chat/completions"
+    assert seen["payload"]["model"] == "qwen"
+    assert seen["payload"]["messages"] == [{"role": "system", "content": "sys"}, {"role": "user", "content": "hello"}]
+    assert seen["payload"]["temperature"] == 0
+
+
+def test_sglang_provider_posts_openai_chat_completion_request() -> None:
+    seen = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":[{"text":"o"},{"text":"k"}]}}]}'
+
+    def opener(request):
+        seen["url"] = request.full_url
+        seen["payload"] = json.loads(request.data.decode())
+        return FakeResponse()
+
+    response = SGLangProvider("http://sglang.test", opener).call(ProviderRequest(provider="sglang", model="qwen", prompt="hello"))
+
+    assert response.content == "ok"
+    assert response.provider == "sglang"
+    assert seen["url"] == "http://sglang.test/v1/chat/completions"
+    assert seen["payload"]["messages"] == [{"role": "user", "content": "hello"}]
 
 
 def test_provider_adapters_block_offline_calls(monkeypatch) -> None:

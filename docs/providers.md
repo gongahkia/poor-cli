@@ -39,8 +39,16 @@ The alpha includes adapters for:
 - OpenAI Responses
 - Gemini
 - Ollama
+- vLLM OpenAI-compatible chat server
+- SGLang OpenAI-compatible chat server
 
 Network-backed adapters call `require_online()` before live requests, so `poor-cli --offline` fails before a network call.
+
+Default local endpoints:
+
+- vLLM: `http://localhost:8000/v1/chat/completions`
+- SGLang: `http://localhost:30000/v1/chat/completions`
+- Ollama: `http://localhost:11434/api/generate`
 
 ## Entry Point
 

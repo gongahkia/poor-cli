@@ -97,6 +97,45 @@ class OllamaProvider:
         return ProviderResponse(provider=self.name, model=request.model, content=str(raw.get("response") or ""), raw=raw)
 
 
+class OpenAICompatibleChatProvider:
+    name = "openai-compatible"
+
+    def __init__(self, base_url: str, opener: Any | None = None):
+        self.base_url = base_url.rstrip("/")
+        self.opener = opener or urllib.request.urlopen
+
+    def call(self, request: ProviderRequest) -> ProviderResponse:
+        require_online(f"{self.name} provider")
+        messages = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+        messages.append({"role": "user", "content": request.prompt})
+        payload = {"model": request.model, "messages": messages, **request.params}
+        http_request = urllib.request.Request(
+            f"{self.base_url}/v1/chat/completions",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with self.opener(http_request) as response:
+            raw = json.loads(response.read().decode())
+        return ProviderResponse(provider=self.name, model=request.model, content=_chat_completion_text(raw), raw=raw)
+
+
+class VLLMProvider(OpenAICompatibleChatProvider):
+    name = "vllm"
+
+    def __init__(self, base_url: str = "http://localhost:8000", opener: Any | None = None):
+        super().__init__(base_url, opener)
+
+
+class SGLangProvider(OpenAICompatibleChatProvider):
+    name = "sglang"
+
+    def __init__(self, base_url: str = "http://localhost:30000", opener: Any | None = None):
+        super().__init__(base_url, opener)
+
+
 def _anthropic_text(message: Any) -> str:
     parts = []
     for block in getattr(message, "content", []) or []:
@@ -121,6 +160,22 @@ def _openai_text(response: Any) -> str:
 def _gemini_text(response: Any) -> str:
     text = getattr(response, "text", None)
     return str(text or "")
+
+
+def _chat_completion_text(raw: dict[str, Any]) -> str:
+    choices = raw.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return ""
+    first = choices[0]
+    if not isinstance(first, dict):
+        return ""
+    message = first.get("message")
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, list):
+        return "".join(str(part.get("text") or "") if isinstance(part, dict) else str(part) for part in content)
+    return str(content or "")
 
 
 def _raw(value: Any) -> dict[str, Any]:
