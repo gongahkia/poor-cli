@@ -46,10 +46,13 @@ def test_cli_plan_run_inspect_replay(tmp_path: Path) -> None:
     assert payload["run"]["status"] == "completed"
     assert payload["tasks"][0]["status"] == "completed"
     assert any(event["type"] == "agent.completed" for event in payload["events"])
+    assert payload["context_artifacts"]
+    assert payload["handoff_artifacts"]
     run_store = RunStore(store)
     try:
         assert run_store.list_artifacts(run_id, "agent.input")
         assert run_store.list_artifacts(run_id, "agent.result")
+        assert run_store.list_artifacts(run_id, "handoff.packet")
     finally:
         run_store.close()
 

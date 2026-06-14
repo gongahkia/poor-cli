@@ -96,11 +96,15 @@ class Orchestrator:
                 task.task_id,
             )
             if result.returncode == 0:
+                handoff_art = self._handoff_packet(run_id, task, agent.name, "completed", result_art.artifact_id, result.returncode)
                 self.store.set_task_status(task.task_id, "completed", result_artifact_id=result_art.artifact_id)
+                self.store.append_event(run_id, "handoff.created", {"artifact_id": handoff_art.artifact_id}, task.task_id)
                 self.store.append_event(run_id, "task.completed", {"result_artifact_id": result_art.artifact_id}, task.task_id)
             else:
                 exit_code = result.returncode or 1
+                handoff_art = self._handoff_packet(run_id, task, agent.name, "failed", result_art.artifact_id, result.returncode)
                 self.store.set_task_status(task.task_id, "failed", result_artifact_id=result_art.artifact_id)
+                self.store.append_event(run_id, "handoff.created", {"artifact_id": handoff_art.artifact_id}, task.task_id)
                 self.store.append_event(
                     run_id,
                     "task.failed",
@@ -149,6 +153,23 @@ class Orchestrator:
             task_prompt=prompt,
             validation_instructions=task.validation,
             handoff_instructions=["summarize changes", "list commands run", "list unresolved blockers"],
+        )
+
+    def _handoff_packet(self, run_id: str, task: TaskSpec, agent: str, status: str, result_artifact_id: str, returncode: int) -> Any:
+        return self.store.put_artifact(
+            run_id=run_id,
+            task_id=task.task_id,
+            kind="handoff.packet",
+            data={
+                "run_id": run_id,
+                "task_id": task.task_id,
+                "title": task.title,
+                "status": status,
+                "agent": agent,
+                "result_artifact_id": result_artifact_id,
+                "returncode": returncode,
+                "next_steps": task.validation,
+            },
         )
 
     def _summary(self, run_id: str) -> str:

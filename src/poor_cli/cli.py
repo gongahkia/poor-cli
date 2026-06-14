@@ -116,6 +116,7 @@ def _inspect(args: argparse.Namespace, store: RunStore) -> int:
             payload["events"] = store.list_events(args.run_id)
         if args.context:
             payload["context_artifacts"] = store.list_artifacts(args.run_id, "context.packet")
+            payload["handoff_artifacts"] = store.list_artifacts(args.run_id, "handoff.packet")
         if args.cost:
             payload["budget"] = run.get("budget")
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -133,6 +134,8 @@ def _inspect(args: argparse.Namespace, store: RunStore) -> int:
     if args.context:
         for artifact in store.list_artifacts(args.run_id, "context.packet"):
             print(f"context {artifact['artifact_id']} {artifact['sha256']} {artifact['size']}b")
+        for artifact in store.list_artifacts(args.run_id, "handoff.packet"):
+            print(f"handoff {artifact['artifact_id']} {artifact['sha256']} {artifact['size']}b")
     if args.cost:
         print(json.dumps(run.get("budget"), sort_keys=True))
     return 0
