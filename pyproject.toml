@@ -34,6 +34,11 @@ dev = [
     "pytest-cov>=5.0",
     "ruff>=0.9.0",
 ]
+bench = [
+    "datasets==4.8.4",
+    "swebench==4.1.0",
+    "tqdm==4.67.3",
+]
 providers = [
     "anthropic>=0.60",
     "google-genai>=1.0",

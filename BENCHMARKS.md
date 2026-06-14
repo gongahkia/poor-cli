@@ -81,6 +81,12 @@ Fixed seed set: `tests/fixtures/swe-lite-10/manifest.json`.
 
 Source: `SWE-bench/SWE-bench_Lite`, `default/test`, offset `0`, length `10`. This pins IDs and base commits only; Docker evaluation and run results are not checked in yet.
 
+Install benchmark dependencies:
+
+```sh
+python3 -m pip install -e ".[bench]"
+```
+
 Runner:
 
 ```sh

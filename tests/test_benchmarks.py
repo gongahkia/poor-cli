@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -28,6 +29,17 @@ def test_v6_baseline_task_fixture_schema() -> None:
         assert task["phase"].startswith("phase-")
         assert task["prompt"].strip()
         assert task["success_criteria"]
+
+
+def test_bench_extra_matches_swe_lite_requirements() -> None:
+    root = Path(__file__).resolve().parents[1]
+    pyproject = root / "pyproject.toml"
+    requirements = root / "bench" / "swe_bench_lite" / "requirements.txt"
+    payload = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    bench_extra = payload["project"]["optional-dependencies"]["bench"]
+    requirement_lines = [line.strip() for line in requirements.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    assert sorted(bench_extra) == sorted(requirement_lines)
 
 
 def test_swe_lite_10_manifest_schema() -> None:
@@ -108,6 +120,7 @@ def test_phase1_readiness_payload_schema() -> None:
     }
     assert payload["checks"]["local_fixture_generic_result"]["ready"] is True
     assert payload["checks"]["swe_lite_manifest"]["instance_count"] == 10
+    assert payload["checks"]["swe_lite_python_deps"]["install"] == "python -m pip install -e '.[bench]'"
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 
@@ -127,6 +140,7 @@ def test_checked_in_phase1_readiness_snapshot() -> None:
     }
     assert payload["checks"]["local_fixture_generic_result"]["ready"] is True
     assert payload["checks"]["swe_lite_manifest"]["ready"] is True
+    assert payload["checks"]["swe_lite_python_deps"]["install"] == "python -m pip install -e '.[bench]'"
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 

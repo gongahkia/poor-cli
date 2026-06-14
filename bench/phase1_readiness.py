@@ -90,7 +90,7 @@ def _swe_lite_manifest() -> dict[str, Any]:
 
 def _python_deps(*names: str) -> dict[str, Any]:
     modules = {name: importlib.util.find_spec(name) is not None for name in names}
-    return {"ready": all(modules.values()), "modules": modules}
+    return {"ready": all(modules.values()), "modules": modules, "install": "python -m pip install -e '.[bench]'"}
 
 
 def _docker() -> dict[str, Any]:

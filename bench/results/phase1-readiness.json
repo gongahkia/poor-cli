@@ -37,6 +37,7 @@
       "schema_version": "swe-lite-10-v1"
     },
     "swe_lite_python_deps": {
+      "install": "python -m pip install -e '.[bench]'",
       "modules": {
         "datasets": false,
         "swebench": false
