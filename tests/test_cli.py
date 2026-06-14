@@ -95,11 +95,14 @@ def test_cli_main_in_process_run_inspect_replay(tmp_path: Path, monkeypatch, cap
     replay_output = capsys.readouterr().out
     assert "completed" in replay_output
 
+    before_verify = _tree_bytes(store / "runs" / run_id)
     assert main(["--store-dir", str(store), "replay", run_id, "--verify", "--json"]) == 0
     first_verify = capsys.readouterr().out
     assert main(["--store-dir", str(store), "replay", run_id, "--verify", "--json"]) == 0
     second_verify = capsys.readouterr().out
+    after_verify = _tree_bytes(store / "runs" / run_id)
     assert first_verify == second_verify
+    assert before_verify == after_verify
     assert json.loads(first_verify)["verification"]["verified"] is True
 
 
@@ -195,3 +198,7 @@ def test_cli_plan_failure_records_structured_events(tmp_path: Path) -> None:
         assert run_store.list_artifacts(run["run_id"], "planner.error")
     finally:
         run_store.close()
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes]:
+    return {str(path.relative_to(root)): path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}

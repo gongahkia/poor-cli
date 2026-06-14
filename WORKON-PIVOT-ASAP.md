@@ -36,6 +36,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added per-run CAS mirrors under `.poor-cli/v6/runs/<run_id>/cas/<sha256>` and made replay verification check the mirrors. Evidence: `tests/test_store.py::test_store_events_and_cas_round_trip` and `tests/test_replay.py::test_replay_verify_rejects_cas_mirror_mismatch`.
 - 2026-06-14: wired the TUI composer to dispatch `run --dry`, `run --yes`, and `replay <run_id>` through a testable command handler. Evidence: `tests/test_tui.py::test_tui_command_handler_runs_and_replays`.
 - 2026-06-14: wired the remaining v6 CI gates for `ruff format --check` and `mypy --strict src/poor_cli`, and fixed current strict typing failures. Evidence: `.github/workflows/v6.yml`, `.github/workflows/ci.yml`, `.github/workflows/tests.yml`.
+- 2026-06-14: added a replay determinism gate that snapshots `.poor-cli/v6/runs/<run_id>/` and asserts `poor-cli replay --verify` is byte-non-mutating. Evidence: `tests/test_cli.py::test_cli_main_in_process_run_inspect_replay`.
 
 ## TL;DR
 
