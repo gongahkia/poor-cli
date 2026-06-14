@@ -43,6 +43,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added three local fixture bugs and an end-to-end `poor-cli run --yes` harness that fixes each fixture and validates with pytest. Evidence: `tests/fixtures/bug-{1,2,3}/` and `tests/test_fixture_bugs.py::test_three_fixture_bugs_solve_end_to_end`. Live Anthropic calibration remains pending.
 - 2026-06-14: verified `poor-cli --offline replay <run_id> --verify` works after clearing planner configuration, proving replay does not require live agent/provider credentials. Evidence: `tests/test_cli.py::test_cli_main_in_process_run_inspect_replay`.
 - 2026-06-14: added `bench/local_fixture_bugs.py` to run the three local fixture bugs through `poor-cli`, validate pytest, and verify offline replay per fixture. Evidence: `tests/test_benchmarks.py::test_local_fixture_bug_benchmark_runs_poor_cli_generic`. Live Anthropic and SWE-bench Lite result rows remain pending.
+- 2026-06-14: rewired `bench/swe_bench_lite/run.py` from the removed `poor_cli exec` path to v6 `poor-cli run --yes`, pinned manifest selection, `predictions.jsonl`, persisted per-task stores, and offline replay verification. Evidence: `tests/test_benchmarks.py::test_swe_lite_runner_applies_manifest_order_and_validates_pin` and `tests/test_benchmarks.py::test_swe_lite_runner_uses_v6_run_and_planner_payload`. Live SWE-bench pass-rate rows remain pending.
 
 ## TL;DR
 

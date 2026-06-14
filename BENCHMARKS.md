@@ -60,3 +60,17 @@ Until live runs exist, external-model results must be checked in as explicit row
 Fixed seed set: `tests/fixtures/swe-lite-10/manifest.json`.
 
 Source: `SWE-bench/SWE-bench_Lite`, `default/test`, offset `0`, length `10`. This pins IDs and base commits only; Docker evaluation and run results are not checked in yet.
+
+Runner:
+
+```sh
+python3 bench/swe_bench_lite/run.py --confirm-cost
+```
+
+The runner loads the pinned manifest against the official `princeton-nlp/SWE-bench_Lite` dataset, runs each task through v6 `poor-cli run --yes`, writes `predictions.jsonl`, and verifies `poor-cli --offline replay <run_id> --verify` before optional official SWE-bench Docker evaluation.
+
+Smoke without official Docker evaluation:
+
+```sh
+python3 bench/swe_bench_lite/run.py --limit 1 --no-evaluate --confirm-cost
+```

@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from bench.local_fixture_bugs import run_fixture_suite
+from bench.swe_bench_lite import run as swe_run
 
 
 def test_v6_baseline_task_fixture_schema() -> None:
@@ -57,3 +60,37 @@ def test_local_fixture_bug_benchmark_runs_poor_cli_generic(tmp_path: Path) -> No
         assert result["tests_passed"] is True
         assert result["replay_verified"] is True
         assert result["run_id"]
+
+
+def test_swe_lite_runner_applies_manifest_order_and_validates_pin() -> None:
+    manifest = {
+        "instances": [
+            {"instance_id": "repo__proj-2", "repo": "repo/proj", "base_commit": "b" * 40},
+            {"instance_id": "repo__proj-1", "repo": "repo/proj", "base_commit": "a" * 40},
+        ]
+    }
+    tasks = [
+        {"instance_id": "repo__proj-1", "repo": "repo/proj", "base_commit": "a" * 40},
+        {"instance_id": "repo__proj-2", "repo": "repo/proj", "base_commit": "b" * 40},
+        {"instance_id": "repo__proj-extra", "repo": "repo/proj", "base_commit": "c" * 40},
+    ]
+
+    selected = swe_run.apply_manifest(tasks, manifest)
+
+    assert [task["instance_id"] for task in selected] == ["repo__proj-2", "repo__proj-1"]
+    with pytest.raises(SystemExit):
+        swe_run.apply_manifest(tasks, {"instances": [{"instance_id": "repo__proj-1", "repo": "repo/proj", "base_commit": "d" * 40}]})
+
+
+def test_swe_lite_runner_uses_v6_run_and_planner_payload(tmp_path: Path) -> None:
+    args = swe_run.parse_args(["--confirm-cost", "--no-evaluate", "--limit", "1", "--agent", "claude"])
+    task = {"instance_id": "repo__proj-1", "problem_statement": "Fix the bug", "repo": "repo/proj"}
+
+    command = swe_run.poor_cli_run_command(args, tmp_path / "store", "Fix the bug")
+    payload = swe_run.planner_payload(task, "claude")
+
+    assert "exec" not in command
+    assert command[-3:] == ["run", "Fix the bug", "--yes"]
+    assert payload["tasks"][0]["suggested_agent"] == "claude"
+    assert payload["tasks"][0]["objective"] == "Fix the bug"
+    assert swe_run.extract_run_id("run_id: run_123\n1. task -> claude\n") == "run_123"

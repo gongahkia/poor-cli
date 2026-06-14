@@ -9,15 +9,16 @@ import json
 import os
 import random
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-
-DATASET_NAME = "SWE-bench/SWE-bench_Lite"
+DATASET_NAME = "princeton-nlp/SWE-bench_Lite"
 DATASET_REVISION = ""
 DEFAULT_PROVIDER = "anthropic"
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
@@ -36,7 +37,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dataset-name", default=DATASET_NAME)
     parser.add_argument("--dataset-revision", default=DATASET_REVISION)
     parser.add_argument("--split", default="test")
-    parser.add_argument("--manifest", type=Path, default=PINNED_MANIFEST, help="Pinned SWE task manifest; use '' to disable.")
+    parser.add_argument("--manifest", default=str(PINNED_MANIFEST), help="Pinned SWE task manifest; use '' to disable.")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--run-id")
     parser.add_argument("--task-subset-filter", help="Regex matched against instance_id")
@@ -60,7 +61,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def utc_run_id() -> str:
-    return dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return dt.datetime.now(dt.UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
 def load_tasks(dataset_name: str, split: str, revision: str) -> list[dict[str, Any]]:
@@ -76,12 +77,15 @@ def load_tasks(dataset_name: str, split: str, revision: str) -> list[dict[str, A
     return [dict(row) for row in load_dataset(dataset_name, **kwargs)]
 
 
-def load_manifest(path: Path | None) -> dict[str, Any] | None:
-    if path is None or str(path) == "":
+def load_manifest(path: str) -> dict[str, Any] | None:
+    if not path:
         return None
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    manifest_path = Path(path)
+    if not manifest_path.is_absolute():
+        manifest_path = (Path.cwd() / manifest_path).resolve()
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     if not isinstance(payload, dict):
-        raise SystemExit(f"manifest root must be object: {path}")
+        raise SystemExit(f"manifest root must be object: {manifest_path}")
     return payload
 
 
@@ -262,6 +266,19 @@ def poor_cli_env(args: argparse.Namespace, planner: Path | None = None) -> dict[
     return env
 
 
+def poor_cli_run_command(args: argparse.Namespace, store_dir: Path, prompt: str) -> list[str]:
+    return [
+        args.python,
+        "-m",
+        "poor_cli",
+        "--store-dir",
+        str(store_dir),
+        "run",
+        prompt,
+        "--yes",
+    ]
+
+
 def run_replay_verify(args: argparse.Namespace, task_dir: Path, store_dir: Path, run_id: str) -> dict[str, Any]:
     if args.skip_replay_verify or not run_id:
         return {"verified": False, "returncode": 0, "stdout": "", "stderr": "", "trace_sha256": "", "command": []}
@@ -294,7 +311,7 @@ def run_task(task: dict[str, Any], args: argparse.Namespace, run_dir: Path, work
     task_out = run_dir / instance_id
     task_out.mkdir(parents=True, exist_ok=True)
     store_dir = Path(args.store_root).resolve() / run_dir.name / instance_id
-    started_at = dt.datetime.now(dt.timezone.utc).isoformat()
+    started_at = dt.datetime.now(dt.UTC).isoformat()
     wall_start = time.monotonic()
     checkout_error = ""
     timed_out = False
@@ -311,16 +328,7 @@ def run_task(task: dict[str, Any], args: argparse.Namespace, run_dir: Path, work
         if not prompt:
             raise RuntimeError("empty SWE-bench problem_statement")
         planner = write_planner(task_out / "planner.py", task, args.agent)
-        command = [
-            args.python,
-            "-m",
-            "poor_cli",
-            "--store-dir",
-            str(store_dir),
-            "run",
-            prompt,
-            "--yes",
-        ]
+        command = poor_cli_run_command(args, store_dir, prompt)
         run_result = run_command(command, cwd=task_dir, timeout=args.timeout_seconds, env=poor_cli_env(args, planner))
         run_id = extract_run_id(run_result.stdout)
         patch = git_diff(task_dir)
@@ -358,7 +366,7 @@ def run_task(task: dict[str, Any], args: argparse.Namespace, run_dir: Path, work
         "dataset_revision": args.dataset_revision,
         "seed": args.seed,
         "started_at": started_at,
-        "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+        "finished_at": dt.datetime.now(dt.UTC).isoformat(),
         "wall_time_seconds": round(time.monotonic() - wall_start, 3),
         "exit_code": run_result.returncode if run_result is not None else 124 if timed_out else 1,
         "cost": cost_from_payload({}),
@@ -390,9 +398,11 @@ def summarize(records: list[dict[str, Any]], args: argparse.Namespace, run_id: s
         "split": args.split,
         "provider": args.provider,
         "model": args.model,
+        "agent": args.agent,
         "seed": args.seed,
         "task_count": len(records),
         "completed_exec_count": sum(1 for record in records if int(record.get("exit_code", 1)) == 0),
+        "replay_verified_count": sum(1 for record in records if record.get("replay_verified")),
         "total_cost_usd": round(sum(costs), 6),
         "mean_cost_usd": round(sum(costs) / len(costs), 6) if costs else 0.0,
         "total_tokens": sum(total_tokens),
@@ -435,12 +445,16 @@ def run_official_evaluation(args: argparse.Namespace, run_dir: Path, run_id: str
         "swebench.harness.run_evaluation",
         "--dataset_name",
         args.dataset_name,
+        "--split",
+        args.split,
         "--predictions_path",
         str((run_dir / "predictions.jsonl").resolve()),
         "--max_workers",
         str(args.eval_max_workers),
         "--run_id",
         run_id,
+        "--report_dir",
+        str((run_dir / "evaluation").resolve()),
     ]
     started = time.monotonic()
     result = run_command(command, cwd=run_dir)
@@ -464,14 +478,17 @@ def run_official_evaluation(args: argparse.Namespace, run_dir: Path, run_id: str
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     random.seed(args.seed)
+    manifest = load_manifest(args.manifest)
     tasks = select_tasks(
-        load_tasks(args.dataset_name, args.split, args.dataset_revision),
+        apply_manifest(load_tasks(args.dataset_name, args.split, args.dataset_revision), manifest),
         instance_ids=args.instance_id,
         task_subset_filter=args.task_subset_filter,
         limit=args.limit,
         shuffle=args.shuffle,
         seed=args.seed,
     )
+    if not tasks:
+        raise SystemExit("no SWE-bench tasks selected")
     confirm_cost(args, len(tasks))
     run_id = args.run_id or utc_run_id()
     run_dir = Path(args.results_dir) / run_id
@@ -489,9 +506,11 @@ def main(argv: list[str] | None = None) -> int:
             "commit": git_commit(),
             "dataset_name": args.dataset_name,
             "dataset_revision": args.dataset_revision,
+            "manifest": args.manifest,
             "seed": args.seed,
             "provider": args.provider,
             "model": args.model,
+            "agent": args.agent,
             "permission_mode": args.permission_mode,
             "sandbox_preset": args.sandbox_preset,
             "auto_approve": args.auto_approve,
