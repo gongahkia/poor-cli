@@ -49,6 +49,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added the `poor-cli[bench]` optional dependency extra and wired the readiness snapshot to point SWE-bench dependency misses at `python -m pip install -e '.[bench]'`. Evidence: `pyproject.toml`, `bench/swe_bench_lite/requirements.txt`, and `tests/test_benchmarks.py::test_bench_extra_matches_swe_lite_requirements`.
 - 2026-06-14: regenerated the Phase 1 readiness snapshot through `uv run --locked --extra bench`, verifying `datasets` and `swebench` import successfully under the locked benchmark environment. Evidence: `bench/results/phase1-readiness.json` and `tests/test_benchmarks.py::test_checked_in_phase1_readiness_snapshot`. Remaining blockers are live auth env and Docker daemon readiness.
 - 2026-06-14: started Docker.app and refreshed the Phase 1 readiness snapshot with Docker daemon ready (`29.5.3`), leaving only live Anthropic/Codex auth prerequisites. Evidence: `bench/results/phase1-readiness.json` and `tests/test_benchmarks.py::test_checked_in_phase1_readiness_snapshot`.
+- 2026-06-14: added redacted no-cost CLI auth probes for Claude and Codex readiness, then refreshed the Phase 1 readiness snapshot to `ready: true` with no remaining prerequisite blockers. Evidence: `bench/phase1_readiness.py`, `bench/results/phase1-readiness.json`, and `tests/test_benchmarks.py::test_checked_in_phase1_readiness_snapshot`. Live Anthropic fixture and SWE-bench result rows remain pending.
 
 ## TL;DR
 

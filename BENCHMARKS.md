@@ -69,9 +69,7 @@ uv run --locked --extra bench python bench/phase1_readiness.py --output bench/re
 
 Checked-in snapshot: `bench/results/phase1-readiness.json`.
 
-Current remaining live prerequisites from that snapshot:
-- `live_anthropic_fixture_prereqs`
-- `live_codex_fixture_prereqs`
+Current snapshot status: all readiness prerequisites pass. This does not replace the required live Anthropic fixture result row or SWE-bench pass-rate row.
 
 ## SWE-bench Lite 10
 

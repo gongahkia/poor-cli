@@ -146,6 +146,16 @@ def test_checked_in_phase1_readiness_snapshot() -> None:
     assert payload["checks"]["docker"]["ready"] is True
     assert payload["checks"]["docker"]["daemon"] is True
     assert payload["checks"]["docker"]["version"]
+    assert payload["checks"]["live_anthropic_fixture_prereqs"]["ready"] is True
+    assert payload["checks"]["live_anthropic_fixture_prereqs"]["cli_auth"]["ready"] is True
+    assert payload["checks"]["live_codex_fixture_prereqs"]["ready"] is True
+    assert payload["checks"]["live_codex_fixture_prereqs"]["cli_auth"]["ready"] is True
+    assert payload["ready"] is True
+    assert payload["remaining"] == []
+    redacted = json.dumps(payload)
+    assert "email" not in redacted
+    assert "orgId" not in redacted
+    assert "orgName" not in redacted
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 

@@ -30,8 +30,8 @@ def main(argv: list[str] | None = None) -> int:
 def readiness_payload() -> dict[str, Any]:
     checks = {
         "local_fixture_generic_result": _local_fixture_result(),
-        "live_anthropic_fixture_prereqs": _live_agent_prereqs("claude", "ANTHROPIC_API_KEY"),
-        "live_codex_fixture_prereqs": _live_agent_prereqs("codex", "OPENAI_API_KEY"),
+        "live_anthropic_fixture_prereqs": _live_agent_prereqs("claude", "ANTHROPIC_API_KEY", _claude_auth_status),
+        "live_codex_fixture_prereqs": _live_agent_prereqs("codex", "OPENAI_API_KEY", _codex_auth_status),
         "swe_lite_manifest": _swe_lite_manifest(),
         "swe_lite_python_deps": _python_deps("datasets", "swebench"),
         "docker": _docker(),
@@ -64,19 +64,41 @@ def _local_fixture_result() -> dict[str, Any]:
     }
 
 
-def _live_agent_prereqs(command: str, key_env: str) -> dict[str, Any]:
+def _live_agent_prereqs(command: str, key_env: str, auth_probe: Any) -> dict[str, Any]:
     path = shutil.which(command)
     version = _version(path) if path else ""
     key_set = bool(os.environ.get(key_env))
+    cli_auth = auth_probe(path) if path else {"ready": False, "checked": False}
     return {
-        "ready": bool(path and key_set),
+        "ready": bool(path and (key_set or cli_auth["ready"])),
         "command": command,
         "available": bool(path),
         "version": version,
         "auth_env": key_env,
         "auth_env_set": key_set,
-        "auth_note": "CLI login state is not verified by this no-cost probe.",
+        "cli_auth": cli_auth,
     }
+
+
+def _claude_auth_status(path: str) -> dict[str, Any]:
+    result = _status_command([path, "auth", "status"])
+    payload = _json_object(result.stdout)
+    logged_in = bool(payload.get("loggedIn")) if payload else False
+    return {
+        "checked": True,
+        "ready": result.returncode == 0 and logged_in,
+        "method": str(payload.get("authMethod") or "") if payload else "",
+        "provider": str(payload.get("apiProvider") or "") if payload else "",
+        "returncode": result.returncode,
+    }
+
+
+def _codex_auth_status(path: str) -> dict[str, Any]:
+    result = _status_command([path, "login", "status"])
+    text = (result.stdout or result.stderr).strip()
+    logged_in = result.returncode == 0 and text.lower().startswith("logged in")
+    method = text.removeprefix("Logged in using ").strip() if logged_in else ""
+    return {"checked": True, "ready": logged_in, "method": method, "returncode": result.returncode}
 
 
 def _swe_lite_manifest() -> dict[str, Any]:
@@ -104,6 +126,18 @@ def _docker() -> dict[str, Any]:
 def _version(path: str) -> str:
     result = subprocess.run([path, "--version"], text=True, capture_output=True, timeout=10, check=False)
     return (result.stdout or result.stderr).strip().splitlines()[0][:160] if (result.stdout or result.stderr).strip() else ""
+
+
+def _status_command(command: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(command, text=True, capture_output=True, timeout=10, check=False)
+
+
+def _json_object(text: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 if __name__ == "__main__":

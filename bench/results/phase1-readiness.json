@@ -9,19 +9,30 @@
     "live_anthropic_fixture_prereqs": {
       "auth_env": "ANTHROPIC_API_KEY",
       "auth_env_set": false,
-      "auth_note": "CLI login state is not verified by this no-cost probe.",
       "available": true,
+      "cli_auth": {
+        "checked": true,
+        "method": "claude.ai",
+        "provider": "firstParty",
+        "ready": true,
+        "returncode": 0
+      },
       "command": "claude",
-      "ready": false,
+      "ready": true,
       "version": "2.1.119 (Claude Code)"
     },
     "live_codex_fixture_prereqs": {
       "auth_env": "OPENAI_API_KEY",
       "auth_env_set": false,
-      "auth_note": "CLI login state is not verified by this no-cost probe.",
       "available": true,
+      "cli_auth": {
+        "checked": true,
+        "method": "ChatGPT",
+        "ready": true,
+        "returncode": 0
+      },
       "command": "codex",
-      "ready": false,
+      "ready": true,
       "version": "codex-cli 0.139.0"
     },
     "local_fixture_generic_result": {
@@ -45,10 +56,7 @@
       "ready": true
     }
   },
-  "ready": false,
-  "remaining": [
-    "live_anthropic_fixture_prereqs",
-    "live_codex_fixture_prereqs"
-  ],
+  "ready": true,
+  "remaining": [],
   "schema_version": "poor-cli-phase1-readiness-v1"
 }
