@@ -39,17 +39,16 @@
     "swe_lite_python_deps": {
       "install": "python -m pip install -e '.[bench]'",
       "modules": {
-        "datasets": false,
-        "swebench": false
+        "datasets": true,
+        "swebench": true
       },
-      "ready": false
+      "ready": true
     }
   },
   "ready": false,
   "remaining": [
     "live_anthropic_fixture_prereqs",
     "live_codex_fixture_prereqs",
-    "swe_lite_python_deps",
     "docker"
   ],
   "schema_version": "poor-cli-phase1-readiness-v1"

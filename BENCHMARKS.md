@@ -64,7 +64,7 @@ Checked-in local fixture result:
 Phase 1 readiness probe:
 
 ```sh
-python3 bench/phase1_readiness.py --output bench/results/phase1-readiness.json
+uv run --locked --extra bench python bench/phase1_readiness.py --output bench/results/phase1-readiness.json
 ```
 
 Checked-in snapshot: `bench/results/phase1-readiness.json`.
@@ -72,7 +72,6 @@ Checked-in snapshot: `bench/results/phase1-readiness.json`.
 Current remaining live prerequisites from that snapshot:
 - `live_anthropic_fixture_prereqs`
 - `live_codex_fixture_prereqs`
-- `swe_lite_python_deps`
 - `docker`
 
 ## SWE-bench Lite 10
