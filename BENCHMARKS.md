@@ -113,3 +113,9 @@ Checked-in smoke:
 | run dir | task | run completed | replay verified | patch bytes | official eval |
 | --- | --- | ---: | ---: | ---: | --- |
 | `bench/swe_bench_lite/results/smoke-claude-20260614T035359Z` | `astropy__astropy-12907` | 1/1 | 1/1 | 506 | 1/1 resolved |
+
+Checked-in 10-task generation run:
+
+| run dir | tasks | run completed | replay verified | official eval |
+| --- | ---: | ---: | ---: | --- |
+| `bench/swe_bench_lite/results/swe10-claude-20260614T105615Z` | 10 | 7/10 | 10/10 | pending |

@@ -1,0 +1,33 @@
+{
+  "agent": "claude",
+  "base_commit": "d16bfe05a744909de4b27f5875fe0d4ed41ce607",
+  "cost": {
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "dataset_name": "princeton-nlp/SWE-bench_Lite",
+  "dataset_revision": "",
+  "error": "",
+  "exit_code": 0,
+  "finished_at": "2026-06-14T11:00:20.962297+00:00",
+  "git_status": " M astropy/modeling/separable.py\n",
+  "instance_id": "astropy__astropy-12907",
+  "model": "claude-sonnet-4-20250514",
+  "patch_bytes": 506,
+  "poor_cli_run_id": "run_051a9ee553074ddf",
+  "poor_cli_store_dir": "/Users/gongahkia/Desktop/coding/projects/poor-cli/.poor-cli/bench/swe_bench_lite/stores/swe10-claude-20260614T105615Z/astropy__astropy-12907",
+  "provider": "anthropic",
+  "replay_returncode": 0,
+  "replay_trace_sha256": "e02a6bbd68d5ffdacff2eae40aaad84ef1e5cccebf5895c6416e67de72eb6933",
+  "replay_verified": true,
+  "repo": "astropy/astropy",
+  "seed": 0,
+  "started_at": "2026-06-14T10:56:22.769563+00:00",
+  "stderr_path": "bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/astropy__astropy-12907/stderr.txt",
+  "stdout_path": "bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/astropy__astropy-12907/stdout.txt",
+  "wall_time_seconds": 238.194
+}

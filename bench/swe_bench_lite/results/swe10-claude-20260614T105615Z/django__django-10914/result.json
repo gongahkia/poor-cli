@@ -1,0 +1,33 @@
+{
+  "agent": "claude",
+  "base_commit": "e7fd69d051eaa67cb17f172a39b57253e9cb831a",
+  "cost": {
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 0,
+    "cost_usd": 0.0,
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  },
+  "dataset_name": "princeton-nlp/SWE-bench_Lite",
+  "dataset_revision": "",
+  "error": "",
+  "exit_code": 0,
+  "finished_at": "2026-06-14T11:21:05.804563+00:00",
+  "git_status": " M django/conf/global_settings.py\n M docs/ref/settings.txt\n M docs/releases/3.0.txt\n M tests/test_utils/tests.py\n",
+  "instance_id": "django__django-10914",
+  "model": "claude-sonnet-4-20250514",
+  "patch_bytes": 2333,
+  "poor_cli_run_id": "run_b150ab2e86ab458c",
+  "poor_cli_store_dir": "/Users/gongahkia/Desktop/coding/projects/poor-cli/.poor-cli/bench/swe_bench_lite/stores/swe10-claude-20260614T105615Z/django__django-10914",
+  "provider": "anthropic",
+  "replay_returncode": 0,
+  "replay_trace_sha256": "db3210d6092119259a439e39af9cf1855c3e3b37db6d93aee3c17b52bb072c5e",
+  "replay_verified": true,
+  "repo": "django/django",
+  "seed": 0,
+  "started_at": "2026-06-14T11:16:34.483854+00:00",
+  "stderr_path": "bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/django__django-10914/stderr.txt",
+  "stdout_path": "bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/django__django-10914/stdout.txt",
+  "wall_time_seconds": 271.321
+}

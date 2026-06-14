@@ -306,3 +306,20 @@ def test_checked_in_swe_lite_smoke_result() -> None:
     assert result["replay_verified"] is True
     assert result["patch_bytes"] == 506
     assert len(result["replay_trace_sha256"]) == 64
+
+
+def test_checked_in_swe_lite_10_generation_result() -> None:
+    run_dir = Path(__file__).resolve().parents[1] / "bench" / "swe_bench_lite" / "results" / "swe10-claude-20260614T105615Z"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    rows = [json.loads(line) for line in (run_dir / "task_results.jsonl").read_text(encoding="utf-8").splitlines()]
+
+    assert summary["task_count"] == 10
+    assert summary["completed_exec_count"] == 7
+    assert summary["replay_verified_count"] == 10
+    assert summary["budget_usd"] == 1.0
+    assert summary["official_evaluation"] == {}
+    assert len(rows) == 10
+    assert sum(1 for row in rows if row["exit_code"] == 0) == 7
+    assert all(row["replay_verified"] is True for row in rows)
+    assert all(row["patch_bytes"] > 0 for row in rows)
+    assert all(len(row["replay_trace_sha256"]) == 64 for row in rows)
