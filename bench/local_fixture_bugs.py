@@ -43,6 +43,8 @@ FIXTURES: dict[str, dict[str, str]] = {
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the local poor-cli fixture bug benchmark.")
     parser.add_argument("--agent", choices=["generic", "claude", "codex"], default="generic")
+    parser.add_argument("--budget-usd", type=float, help="Pass a max model budget to poor-cli run for live agents.")
+    parser.add_argument("--confirm-cost", action="store_true", help="Required for non-generic agents.")
     parser.add_argument("--fixture", action="append", choices=sorted(FIXTURES), help="Fixture to run; repeatable.")
     parser.add_argument("--work-root", type=Path)
     parser.add_argument("--output", type=Path, help="Write JSON summary to this path.")
@@ -55,6 +57,8 @@ def main(argv: list[str] | None = None) -> int:
         fixtures=args.fixture or sorted(FIXTURES),
         work_root=args.work_root,
         keep_workdirs=args.keep_workdirs,
+        budget_usd=args.budget_usd,
+        confirm_cost=args.confirm_cost,
     )
     if args.compact:
         payload = compact_payload(payload)
@@ -72,6 +76,7 @@ def compact_payload(payload: dict[str, Any]) -> dict[str, Any]:
         "schema_version": "poor-cli-local-fixture-bugs-result-v1",
         "mode": payload["mode"],
         "agent": payload["agent"],
+        "budget_usd": payload["budget_usd"],
         "fixture_count": payload["fixture_count"],
         "completed_count": sum(1 for result in payload["results"] if result["completed"]),
         "tests_passed_count": sum(1 for result in payload["results"] if result["tests_passed"]),
@@ -96,18 +101,22 @@ def run_fixture_suite(
     fixtures: list[str] | None = None,
     work_root: Path | None = None,
     keep_workdirs: bool = False,
+    budget_usd: float | None = None,
+    confirm_cost: bool = False,
 ) -> dict[str, Any]:
     selected = fixtures or sorted(FIXTURES)
+    _require_cost_confirmation(agent, selected, budget_usd, confirm_cost)
     root = (work_root or Path(tempfile.mkdtemp(prefix="poor-cli-local-fixtures-"))).resolve()
     root.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
-    results = [_run_fixture(name, agent, root) for name in selected]
+    results = [_run_fixture(name, agent, root, budget_usd) for name in selected]
     if not keep_workdirs and work_root is None:
         shutil.rmtree(root, ignore_errors=True)
     return {
         "schema_version": "poor-cli-local-fixture-bugs-v1",
         "mode": "poor-cli",
         "agent": agent,
+        "budget_usd": budget_usd,
         "fixture_count": len(results),
         "duration_seconds": round(time.perf_counter() - started, 3),
         "work_root": str(root),
@@ -115,7 +124,16 @@ def run_fixture_suite(
     }
 
 
-def _run_fixture(name: str, agent: str, work_root: Path) -> dict[str, Any]:
+def _require_cost_confirmation(agent: str, fixtures: list[str], budget_usd: float | None, confirm_cost: bool) -> None:
+    if agent == "generic":
+        return
+    if confirm_cost:
+        return
+    budget = f" with --budget-usd {budget_usd}" if budget_usd is not None else ""
+    raise SystemExit(f"--confirm-cost is required to run {len(fixtures)} fixture(s) with live agent {agent}{budget}")
+
+
+def _run_fixture(name: str, agent: str, work_root: Path, budget_usd: float | None) -> dict[str, Any]:
     source = FIXTURE_ROOT / name
     if not source.is_dir():
         raise RuntimeError(f"unknown fixture: {name}")
@@ -130,6 +148,8 @@ def _run_fixture(name: str, agent: str, work_root: Path) -> dict[str, Any]:
 
     started = time.perf_counter()
     run_cmd = [sys.executable, "-m", "poor_cli", "--store-dir", str(store_dir), "run", FIXTURES[name]["prompt"], "--yes"]
+    if budget_usd is not None:
+        run_cmd.extend(["--budget", str(budget_usd)])
     run = subprocess.run(run_cmd, cwd=workdir, env=env, text=True, capture_output=True, check=False)
     run_id = _extract_run_id(run.stdout)
 

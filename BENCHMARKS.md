@@ -1,6 +1,6 @@
 # poor-cli v6 benchmarks
 
-Status: local fixture harness exists. Live Anthropic and SWE-bench Lite results are still pending.
+Status: local generic and live Anthropic fixture result rows exist. SWE-bench Lite results are still pending.
 
 ## Task format
 
@@ -49,17 +49,18 @@ It copies `tests/fixtures/bug-{1,2,3}`, runs each through `poor-cli run --yes`, 
 Live calibration remains explicit:
 
 ```sh
-python3 bench/local_fixture_bugs.py --agent claude --output bench/results/local-fixture-bugs-claude.json
+python3 bench/local_fixture_bugs.py --agent claude --budget-usd 1.0 --confirm-cost --compact --output bench/results/local-fixture-bugs-claude.json
 python3 bench/local_fixture_bugs.py --agent codex --output bench/results/local-fixture-bugs-codex.json
 ```
 
-Until live runs exist, external-model results must be checked in as explicit rows with commands, commit SHA, model/tool versions, and replay IDs.
+Additional external-model results must be checked in as explicit rows with commands, commit SHA, model/tool versions, and replay IDs.
 
 Checked-in local fixture result:
 
 | result file | mode | agent | completed | tests passed | replay verified |
 | --- | --- | --- | ---: | ---: | ---: |
 | `bench/results/local-fixture-bugs-generic.json` | `poor-cli` | `generic` | 3/3 | 3/3 | 3/3 |
+| `bench/results/local-fixture-bugs-claude.json` | `poor-cli` | `claude` | 3/3 | 3/3 | 3/3 |
 
 Phase 1 readiness probe:
 

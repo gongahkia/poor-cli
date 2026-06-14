@@ -76,10 +76,11 @@ def test_local_fixture_bug_benchmark_runs_poor_cli_generic(tmp_path: Path) -> No
 
 
 def test_local_fixture_bug_compact_result_schema(tmp_path: Path) -> None:
-    payload = run_fixture_suite(agent="generic", fixtures=["bug-1"], work_root=tmp_path)
+    payload = run_fixture_suite(agent="generic", fixtures=["bug-1"], work_root=tmp_path, budget_usd=0.25)
     compact = compact_payload(payload)
 
     assert compact["schema_version"] == "poor-cli-local-fixture-bugs-result-v1"
+    assert compact["budget_usd"] == 0.25
     assert compact["fixture_count"] == 1
     assert compact["completed_count"] == 1
     assert compact["tests_passed_count"] == 1
@@ -89,20 +90,31 @@ def test_local_fixture_bug_compact_result_schema(tmp_path: Path) -> None:
     assert len(compact["results"][0]["trace_sha256"]) == 64
 
 
-def test_checked_in_local_fixture_bug_result_row() -> None:
-    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "local-fixture-bugs-generic.json"
-    payload = json.loads(path.read_text(encoding="utf-8"))
+def test_live_fixture_bug_benchmark_requires_cost_confirmation(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit):
+        run_fixture_suite(agent="claude", fixtures=["bug-1"], work_root=tmp_path, budget_usd=0.25)
 
-    assert payload["schema_version"] == "poor-cli-local-fixture-bugs-result-v1"
-    assert payload["mode"] == "poor-cli"
-    assert payload["agent"] == "generic"
-    assert payload["fixture_count"] == 3
-    assert payload["completed_count"] == 3
-    assert payload["tests_passed_count"] == 3
-    assert payload["replay_verified_count"] == 3
-    assert {result["fixture"] for result in payload["results"]} == {"bug-1", "bug-2", "bug-3"}
-    assert all(result["run_id"].startswith("run_") for result in payload["results"])
-    assert all(len(result["trace_sha256"]) == 64 for result in payload["results"])
+
+def test_checked_in_local_fixture_bug_result_rows() -> None:
+    root = Path(__file__).resolve().parents[1] / "bench" / "results"
+    rows = {
+        "generic": json.loads((root / "local-fixture-bugs-generic.json").read_text(encoding="utf-8")),
+        "claude": json.loads((root / "local-fixture-bugs-claude.json").read_text(encoding="utf-8")),
+    }
+
+    assert rows["generic"]["budget_usd"] is None
+    assert rows["claude"]["budget_usd"] == 1.0
+    for agent, payload in rows.items():
+        assert payload["schema_version"] == "poor-cli-local-fixture-bugs-result-v1"
+        assert payload["mode"] == "poor-cli"
+        assert payload["agent"] == agent
+        assert payload["fixture_count"] == 3
+        assert payload["completed_count"] == 3
+        assert payload["tests_passed_count"] == 3
+        assert payload["replay_verified_count"] == 3
+        assert {result["fixture"] for result in payload["results"]} == {"bug-1", "bug-2", "bug-3"}
+        assert all(result["run_id"].startswith("run_") for result in payload["results"])
+        assert all(len(result["trace_sha256"]) == 64 for result in payload["results"])
 
 
 def test_phase1_readiness_payload_schema() -> None:

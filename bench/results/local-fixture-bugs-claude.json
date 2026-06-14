@@ -1,6 +1,6 @@
 {
-  "agent": "generic",
-  "budget_usd": null,
+  "agent": "claude",
+  "budget_usd": 1.0,
   "completed_count": 3,
   "fixture_count": 3,
   "mode": "poor-cli",
@@ -10,25 +10,25 @@
       "completed": true,
       "fixture": "bug-1",
       "replay_verified": true,
-      "run_id": "run_a88a428132a44575",
+      "run_id": "run_9215be83d63e41fa",
       "tests_passed": true,
-      "trace_sha256": "e7dd18bf3dd35bf48b3e1f4a99c2b7433044068454048767519d91cd0e9232db"
+      "trace_sha256": "1e919a5611e43e701bf7dc6ebb108d3635b26bfff8e4c352da5e30f63aa3c5dd"
     },
     {
       "completed": true,
       "fixture": "bug-2",
       "replay_verified": true,
-      "run_id": "run_2c463adc43314b3d",
+      "run_id": "run_702ee10082804a39",
       "tests_passed": true,
-      "trace_sha256": "0f246d0623d93a2cb5d6aa54d54cc0f79c26f463d1452afdcc0e3fdb75c0d41e"
+      "trace_sha256": "4fefbdfa8538110297b52e8880ddaa32de4cffaa69a95aa36e4e76cd4513010d"
     },
     {
       "completed": true,
       "fixture": "bug-3",
       "replay_verified": true,
-      "run_id": "run_2254b586212242e4",
+      "run_id": "run_862ebafb37024ba6",
       "tests_passed": true,
-      "trace_sha256": "981a782f88d7889e88b17335fb9ade1e485a880fef25df81b3d67f15aceb53aa"
+      "trace_sha256": "a77bcbf468d8f400c6b0d80632e4b1e1fbfba926cc3547c51ddf50239f02610d"
     }
   ],
   "schema_version": "poor-cli-local-fixture-bugs-result-v1",
