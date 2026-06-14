@@ -9,7 +9,62 @@
   "mean_tokens": 0.0,
   "mean_wall_time_seconds": 233.818,
   "model": "claude-sonnet-4-20250514",
-  "official_evaluation": {},
+  "official_evaluation": {
+    "exit_code": 0,
+    "results": {
+      "completed_ids": [
+        "astropy__astropy-12907",
+        "astropy__astropy-14182",
+        "astropy__astropy-14365",
+        "astropy__astropy-14995",
+        "astropy__astropy-6938",
+        "astropy__astropy-7746",
+        "django__django-10914",
+        "django__django-10924",
+        "django__django-11001",
+        "django__django-11019"
+      ],
+      "completed_instances": 10,
+      "empty_patch_ids": [],
+      "empty_patch_instances": 0,
+      "error_ids": [],
+      "error_instances": 0,
+      "incomplete_ids": [],
+      "resolved_ids": [
+        "astropy__astropy-12907",
+        "astropy__astropy-14365",
+        "astropy__astropy-14995",
+        "astropy__astropy-6938",
+        "astropy__astropy-7746",
+        "django__django-10914",
+        "django__django-10924",
+        "django__django-11001",
+        "django__django-11019"
+      ],
+      "resolved_instances": 9,
+      "schema_version": 2,
+      "submitted_ids": [
+        "astropy__astropy-12907",
+        "astropy__astropy-14182",
+        "astropy__astropy-14365",
+        "astropy__astropy-14995",
+        "astropy__astropy-6938",
+        "astropy__astropy-7746",
+        "django__django-10914",
+        "django__django-10924",
+        "django__django-11001",
+        "django__django-11019"
+      ],
+      "submitted_instances": 10,
+      "total_instances": 10,
+      "unresolved_ids": [
+        "astropy__astropy-14182"
+      ],
+      "unresolved_instances": 1
+    },
+    "results_json": "bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/claude-sonnet-4-20250514.swe10-claude-20260614T105615Z.json",
+    "wall_time_seconds": 4316.465
+  },
   "p50_wall_time_seconds": 238.194,
   "p95_wall_time_seconds": 338.621,
   "provider": "anthropic",

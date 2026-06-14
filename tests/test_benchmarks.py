@@ -308,16 +308,27 @@ def test_checked_in_swe_lite_smoke_result() -> None:
     assert len(result["replay_trace_sha256"]) == 64
 
 
-def test_checked_in_swe_lite_10_generation_result() -> None:
+def test_checked_in_swe_lite_10_result() -> None:
     run_dir = Path(__file__).resolve().parents[1] / "bench" / "swe_bench_lite" / "results" / "swe10-claude-20260614T105615Z"
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
     rows = [json.loads(line) for line in (run_dir / "task_results.jsonl").read_text(encoding="utf-8").splitlines()]
+    official_report = json.loads((run_dir / "claude-sonnet-4-20250514.swe10-claude-20260614T105615Z.json").read_text(encoding="utf-8"))
 
     assert summary["task_count"] == 10
     assert summary["completed_exec_count"] == 7
     assert summary["replay_verified_count"] == 10
     assert summary["budget_usd"] == 1.0
-    assert summary["official_evaluation"] == {}
+    official = summary["official_evaluation"]
+    assert official["exit_code"] == 0
+    assert official["results_json"].endswith("claude-sonnet-4-20250514.swe10-claude-20260614T105615Z.json")
+    assert official["results"]["submitted_instances"] == 10
+    assert official["results"]["completed_instances"] == 10
+    assert official["results"]["resolved_instances"] == 9
+    assert official["results"]["unresolved_instances"] == 1
+    assert official["results"]["error_instances"] == 0
+    assert official["results"]["unresolved_ids"] == ["astropy__astropy-14182"]
+    assert official_report["resolved_instances"] == 9
+    assert official_report["unresolved_ids"] == ["astropy__astropy-14182"]
     assert len(rows) == 10
     assert sum(1 for row in rows if row["exit_code"] == 0) == 7
     assert all(row["replay_verified"] is True for row in rows)

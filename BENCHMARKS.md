@@ -1,6 +1,6 @@
 # poor-cli v6 benchmarks
 
-Status: local generic, live Anthropic fixture, and 1-task SWE-bench Lite smoke results exist. Full SWE-bench Lite pass-rate results are still pending.
+Status: local generic, live Anthropic fixture, 1-task SWE-bench Lite smoke, and fixed 10-task SWE-bench Lite results exist.
 
 ## Task format
 
@@ -70,13 +70,13 @@ uv run --locked --extra bench python bench/phase1_readiness.py --output bench/re
 
 Checked-in snapshot: `bench/results/phase1-readiness.json`.
 
-Current snapshot status: all readiness prerequisites pass. This does not replace the required live Anthropic fixture result row or SWE-bench pass-rate row.
+Current snapshot status: all readiness prerequisites pass.
 
 ## SWE-bench Lite 10
 
 Fixed seed set: `tests/fixtures/swe-lite-10/manifest.json`.
 
-Source: `SWE-bench/SWE-bench_Lite`, `default/test`, offset `0`, length `10`. This pins IDs and base commits. Full Docker-evaluated 10-task run results are not checked in yet.
+Source: `SWE-bench/SWE-bench_Lite`, `default/test`, offset `0`, length `10`. This pins IDs and base commits.
 
 Install benchmark dependencies:
 
@@ -114,8 +114,10 @@ Checked-in smoke:
 | --- | --- | ---: | ---: | ---: | --- |
 | `bench/swe_bench_lite/results/smoke-claude-20260614T035359Z` | `astropy__astropy-12907` | 1/1 | 1/1 | 506 | 1/1 resolved |
 
-Checked-in 10-task generation run:
+Checked-in 10-task run:
 
 | run dir | tasks | run completed | replay verified | official eval |
 | --- | ---: | ---: | ---: | --- |
-| `bench/swe_bench_lite/results/swe10-claude-20260614T105615Z` | 10 | 7/10 | 10/10 | pending |
+| `bench/swe_bench_lite/results/swe10-claude-20260614T105615Z` | 10 | 7/10 | 10/10 | 9/10 resolved |
+
+Official Docker eval completed 10/10 submitted instances with 0 errors. Unresolved: `astropy__astropy-14182`.
