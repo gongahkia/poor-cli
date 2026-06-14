@@ -150,6 +150,27 @@ def test_cli_runs_filters_by_prefix(tmp_path: Path, capsys) -> None:
     assert "beta fix tools" not in output
 
 
+def test_cli_run_executes_generic_command_metadata(tmp_path: Path, monkeypatch, capsys) -> None:
+    planner = tmp_path / "planner.py"
+    command = f"{sys.executable} -c \"from pathlib import Path; Path('fixed.txt').write_text('ok')\""
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        f"command = {command!r}\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Fix','objective':'write file','suggested_agent':'generic','command':command}],"
+        "'validation_strategy':['check file'],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    assert main(["--store-dir", str(tmp_path / "store"), "run", "fixture bug", "--yes"]) == 0
+
+    assert (tmp_path / "fixed.txt").read_text(encoding="utf-8") == "ok"
+    assert "run_id:" in capsys.readouterr().out
+
+
 def test_cli_run_without_yes_records_confirmation_event(tmp_path: Path) -> None:
     planner = tmp_path / "planner.py"
     planner.write_text(

@@ -4,6 +4,7 @@ import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from poor_cli.models import TaskSpec
 from poor_cli.store import RunStore
 
 
@@ -72,4 +73,24 @@ def test_store_filters_runs_by_goal_prefix(tmp_path: Path) -> None:
     matches = store.list_runs(prompt_prefix="alpha")
 
     assert [run["run_id"] for run in matches] == [alpha]
+    store.close()
+
+
+def test_store_preserves_task_metadata_and_validation(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    task = TaskSpec(
+        task_id="task_1",
+        title="Run command",
+        objective="obj",
+        suggested_agent="generic",
+        validation=["check file"],
+        metadata={"command": "printf ok"},
+    )
+
+    store.insert_tasks(run_id, [task])
+    row = store.list_tasks(run_id)[0]
+
+    assert row["validation"] == ["check file"]
+    assert row["metadata"] == {"command": "printf ok"}
     store.close()

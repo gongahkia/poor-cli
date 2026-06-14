@@ -201,6 +201,7 @@ class Orchestrator:
 
 
 def _task_from_row(row: dict[str, Any]) -> TaskSpec:
+    metadata = row.get("metadata")
     return TaskSpec(
         task_id=str(row["task_id"]),
         title=str(row["title"]),
@@ -211,7 +212,8 @@ def _task_from_row(row: dict[str, Any]) -> TaskSpec:
         required_context=str(row["required_context"]),
         dependencies=list(row.get("dependencies") or []),
         suggested_agent=row.get("assigned_agent") or None,
-        validation=[],
+        validation=list(row.get("validation") or []),
+        metadata=metadata if isinstance(metadata, dict) else {},
     )
 
 

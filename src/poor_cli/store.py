@@ -87,6 +87,8 @@ class RunStore:
               risk TEXT NOT NULL,
               required_context TEXT NOT NULL,
               dependencies_json TEXT NOT NULL,
+              validation_json TEXT NOT NULL,
+              metadata_json TEXT NOT NULL,
               assigned_agent TEXT,
               status TEXT NOT NULL,
               context_packet_id TEXT,
@@ -133,6 +135,8 @@ class RunStore:
             );
             """
         )
+        self._ensure_column("tasks", "validation_json", "TEXT NOT NULL DEFAULT '[]'")
+        self._ensure_column("tasks", "metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         self.conn.commit()
 
     def create_run(
@@ -247,6 +251,8 @@ class RunStore:
                     task.risk,
                     task.required_context,
                     self._json(task.dependencies),
+                    self._json(task.validation),
+                    self._json(task.metadata),
                     task.suggested_agent,
                     "pending",
                     None,
@@ -258,8 +264,8 @@ class RunStore:
             """
             INSERT INTO tasks(
               task_id, run_id, parent_task_id, title, objective, task_type, complexity, risk, required_context,
-              dependencies_json, assigned_agent, status, context_packet_id, result_artifact_id, ordinal
-            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              dependencies_json, validation_json, metadata_json, assigned_agent, status, context_packet_id, result_artifact_id, ordinal
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             rows,
         )
@@ -351,6 +357,11 @@ class RunStore:
                 item[key[:-5]] = json.loads(value)
                 del item[key]
         return item
+
+    def _ensure_column(self, table: str, column: str, definition: str) -> None:
+        rows = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+        if column not in {str(row["name"]) for row in rows}:
+            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     def _run_dir(self, run_id: str) -> Path:
         return self.runs_root / run_id
