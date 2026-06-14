@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+GraphFingerprint = tuple[tuple[str, int, int], ...]
 
 
 @dataclass(frozen=True)
@@ -32,12 +35,12 @@ class RepoGraph:
         self.root = root.resolve()
         self.modules: dict[str, ParsedModule] = {}
         self._symbol_index: dict[str, list[GraphSymbol]] = {}
+        self._fingerprint: GraphFingerprint = ()
 
     def build_index(self) -> RepoGraph:
         modules = {}
-        for path in sorted(self.root.rglob("*.py")):
-            if "__pycache__" in path.parts or not path.is_file():
-                continue
+        files = self._python_files()
+        for path in files:
             module = _parse_python(self.root, path)
             modules[module.path] = module
         self.modules = modules
@@ -45,7 +48,11 @@ class RepoGraph:
         for module in modules.values():
             for symbol in module.symbols:
                 self._symbol_index.setdefault(symbol.name, []).append(symbol)
+        self._fingerprint = self._fingerprint_for(files)
         return self
+
+    def refresh_if_stale(self) -> RepoGraph:
+        return self.build_index() if self._scan_fingerprint() != self._fingerprint else self
 
     def find_symbol(self, query: str, *, max_results: int = 20) -> list[dict[str, Any]]:
         needle = query.lower()
@@ -117,22 +124,39 @@ class RepoGraph:
         base = str(Path(from_path).parent / (imported.rsplit(".", 1)[-1] + ".py"))
         return base if base in self.modules else None
 
+    def _scan_fingerprint(self) -> GraphFingerprint:
+        return self._fingerprint_for(self._python_files())
+
+    def _python_files(self) -> list[Path]:
+        return sorted(path for path in self.root.rglob("*.py") if "__pycache__" not in path.parts and path.is_file())
+
+    def _fingerprint_for(self, paths: Iterable[Path]) -> GraphFingerprint:
+        rows = []
+        for path in paths:
+            try:
+                stat = path.stat()
+            except FileNotFoundError:
+                continue
+            rows.append((str(path.resolve().relative_to(self.root)), stat.st_mtime_ns, stat.st_size))
+        return tuple(sorted(rows))
+
 
 def graph_tools(root: Path) -> dict[str, Any]:
     graph = RepoGraph(root).build_index()
     return {
         "find_symbol": lambda args: _tool_result(
             "find_symbol",
-            graph.find_symbol(str(args.get("query") or ""), max_results=int(args.get("max_results") or 20)),
+            graph.refresh_if_stale().find_symbol(str(args.get("query") or ""), max_results=int(args.get("max_results") or 20)),
         ),
-        "definition_of": lambda args: _tool_result("definition_of", graph.definition_of(str(args.get("symbol") or ""))),
-        "imports_of": lambda args: _tool_result("imports_of", graph.imports_of(str(args.get("path") or ""))),
+        "definition_of": lambda args: _tool_result("definition_of", graph.refresh_if_stale().definition_of(str(args.get("symbol") or ""))),
+        "imports_of": lambda args: _tool_result("imports_of", graph.refresh_if_stale().imports_of(str(args.get("path") or ""))),
         "callers_of": lambda args: _tool_result(
-            "callers_of", graph.callers_of(str(args.get("symbol") or ""), max_results=int(args.get("max_results") or 20))
+            "callers_of",
+            graph.refresh_if_stale().callers_of(str(args.get("symbol") or ""), max_results=int(args.get("max_results") or 20)),
         ),
         "subgraph": lambda args: _tool_result(
             "subgraph",
-            graph.subgraph(str(args.get("seed") or ""), max_depth=int(args.get("max_depth") or 1)),
+            graph.refresh_if_stale().subgraph(str(args.get("seed") or ""), max_depth=int(args.get("max_depth") or 1)),
         ),
     }
 

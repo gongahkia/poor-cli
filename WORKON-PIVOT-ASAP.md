@@ -64,6 +64,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added a machine-checkable Phase 1 acceptance audit from checked-in evidence: Anthropic fixture bugs 3/3, offline replay determinism test evidence present, source LOC under 5000, system prompt 372 bytes, and SWE-bench Lite 9/10 resolved. Evidence: `bench/phase1_acceptance.py`, `bench/results/phase1-acceptance.json`, and `tests/test_benchmarks.py::test_checked_in_phase1_acceptance_snapshot`.
 - 2026-06-14: started Phase 2 graph-aware tooling with a tree-sitter-backed Python repo graph plus replayable built-in tools: `find_symbol`, `definition_of`, `imports_of`, `callers_of`, and `subgraph`. Evidence: `src/poor_cli/repo_graph.py`, `tests/test_repo_graph.py`, and `docs/graph.md`.
 - 2026-06-14: added `--graph` on `plan` and `run` so planner prompts bias toward symbolic-first navigation with `find_symbol`, `definition_of`, `callers_of`, `imports_of`, and `subgraph`. Evidence: `tests/test_planner.py::test_graph_mode_adds_symbolic_navigation_bias` and `tests/test_cli.py::test_cli_plan_graph_stores_graph_prompt_bias`.
+- 2026-06-14: made graph tools refresh stale Python indexes before uncached queries when files are added or changed during a run. Evidence: `tests/test_repo_graph.py::test_repo_graph_refreshes_after_python_file_mutation` and `tests/test_repo_graph.py::test_graph_tools_refresh_after_codebase_mutation`.
 
 ## TL;DR
 

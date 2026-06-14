@@ -18,6 +18,7 @@ poor-cli run "inspect the parser flow" --graph --yes
 
 Tool calls are recorded through the same `ToolDispatcher` cache as the v0 file/shell tools, so graph queries are replayable.
 `--graph` is available on `plan` and `run`; it adds planner prompt bias toward `find_symbol`, `definition_of`, `callers_of`, `imports_of`, and `subgraph` before grep-based navigation.
+Graph tools refresh the tree-sitter index before uncached queries when Python file mtimes or sizes change.
 
 ## Scope
 

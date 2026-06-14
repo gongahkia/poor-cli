@@ -43,6 +43,18 @@ def test_repo_graph_indexes_python_symbols_imports_and_callers(tmp_path: Path) -
     assert {item["path"] for item in graph.subgraph("execute", max_depth=2)["files"]} == {"cli.py", "core.py", "utils.py"}
 
 
+def test_repo_graph_refreshes_after_python_file_mutation(tmp_path: Path) -> None:
+    _sample_repo(tmp_path)
+    graph = RepoGraph(tmp_path).build_index()
+    assert graph.definition_of("new_entry") is None
+
+    (tmp_path / "extra.py").write_text("def new_entry() -> str:\n    return 'new'\n", encoding="utf-8")
+
+    definition = graph.refresh_if_stale().definition_of("new_entry")
+    assert definition is not None
+    assert definition["path"] == "extra.py"
+
+
 def test_graph_tools_are_replayable_builtin_tools(tmp_path: Path) -> None:
     _sample_repo(tmp_path)
     store = RunStore(tmp_path / "store")
@@ -61,4 +73,18 @@ def test_graph_tools_are_replayable_builtin_tools(tmp_path: Path) -> None:
     assert {item["path"] for item in callers.output} == {"cli.py", "core.py"}
     assert {item["path"] for item in subgraph.output["files"]} == {"cli.py", "core.py"}
     assert len(store.list_artifacts(run_id, "tool.result")) == 5
+    store.close()
+
+
+def test_graph_tools_refresh_after_codebase_mutation(tmp_path: Path) -> None:
+    _sample_repo(tmp_path)
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="graph", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    dispatcher = ToolDispatcher(store, run_id, workdir=tmp_path)
+    assert dispatcher.call("definition_of", {"symbol": "new_entry"}).output is None
+
+    (tmp_path / "extra.py").write_text("def new_entry() -> str:\n    return 'new'\n", encoding="utf-8")
+
+    found = dispatcher.call("find_symbol", {"query": "new_entry"})
+    assert found.output[0]["path"] == "extra.py"
     store.close()
