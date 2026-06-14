@@ -1,0 +1,55 @@
+{
+  "checks": {
+    "docker": {
+      "available": true,
+      "daemon": false,
+      "ready": false,
+      "version": ""
+    },
+    "live_anthropic_fixture_prereqs": {
+      "auth_env": "ANTHROPIC_API_KEY",
+      "auth_env_set": false,
+      "auth_note": "CLI login state is not verified by this no-cost probe.",
+      "available": true,
+      "command": "claude",
+      "ready": false,
+      "version": "2.1.119 (Claude Code)"
+    },
+    "live_codex_fixture_prereqs": {
+      "auth_env": "OPENAI_API_KEY",
+      "auth_env_set": false,
+      "auth_note": "CLI login state is not verified by this no-cost probe.",
+      "available": true,
+      "command": "codex",
+      "ready": false,
+      "version": "codex-cli 0.139.0"
+    },
+    "local_fixture_generic_result": {
+      "completed_count": 3,
+      "fixture_count": 3,
+      "ready": true,
+      "replay_verified_count": 3,
+      "tests_passed_count": 3
+    },
+    "swe_lite_manifest": {
+      "instance_count": 10,
+      "ready": true,
+      "schema_version": "swe-lite-10-v1"
+    },
+    "swe_lite_python_deps": {
+      "modules": {
+        "datasets": false,
+        "swebench": false
+      },
+      "ready": false
+    }
+  },
+  "ready": false,
+  "remaining": [
+    "live_anthropic_fixture_prereqs",
+    "live_codex_fixture_prereqs",
+    "swe_lite_python_deps",
+    "docker"
+  ],
+  "schema_version": "poor-cli-phase1-readiness-v1"
+}

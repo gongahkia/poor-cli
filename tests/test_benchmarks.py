@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from bench.local_fixture_bugs import compact_payload, run_fixture_suite
+from bench.phase1_readiness import readiness_payload
 from bench.swe_bench_lite import run as swe_run
 
 
@@ -90,6 +91,43 @@ def test_checked_in_local_fixture_bug_result_row() -> None:
     assert {result["fixture"] for result in payload["results"]} == {"bug-1", "bug-2", "bug-3"}
     assert all(result["run_id"].startswith("run_") for result in payload["results"])
     assert all(len(result["trace_sha256"]) == 64 for result in payload["results"])
+
+
+def test_phase1_readiness_payload_schema() -> None:
+    payload = readiness_payload()
+
+    assert payload["schema_version"] == "poor-cli-phase1-readiness-v1"
+    assert isinstance(payload["ready"], bool)
+    assert set(payload["checks"]) == {
+        "local_fixture_generic_result",
+        "live_anthropic_fixture_prereqs",
+        "live_codex_fixture_prereqs",
+        "swe_lite_manifest",
+        "swe_lite_python_deps",
+        "docker",
+    }
+    assert payload["checks"]["local_fixture_generic_result"]["ready"] is True
+    assert payload["checks"]["swe_lite_manifest"]["instance_count"] == 10
+    assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
+
+
+def test_checked_in_phase1_readiness_snapshot() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "phase1-readiness.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "poor-cli-phase1-readiness-v1"
+    assert isinstance(payload["ready"], bool)
+    assert set(payload["checks"]) == {
+        "local_fixture_generic_result",
+        "live_anthropic_fixture_prereqs",
+        "live_codex_fixture_prereqs",
+        "swe_lite_manifest",
+        "swe_lite_python_deps",
+        "docker",
+    }
+    assert payload["checks"]["local_fixture_generic_result"]["ready"] is True
+    assert payload["checks"]["swe_lite_manifest"]["ready"] is True
+    assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 
 def test_swe_lite_runner_applies_manifest_order_and_validates_pin() -> None:
