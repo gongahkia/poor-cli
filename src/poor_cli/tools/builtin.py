@@ -3,7 +3,10 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .dispatcher import ToolResult
 
 
 def builtin_tools(root: Path) -> dict[str, Any]:
@@ -19,7 +22,7 @@ def builtin_tools(root: Path) -> dict[str, Any]:
     }
 
 
-def _read_file(root: Path, args: dict[str, Any]):
+def _read_file(root: Path, args: dict[str, Any]) -> "ToolResult":
     path = _resolve_path(root, args.get("path"))
     max_bytes = int(args.get("max_bytes") or 200_000)
     data = path.read_bytes()
@@ -28,7 +31,7 @@ def _read_file(root: Path, args: dict[str, Any]):
     return _result("read_file", True, {"path": _relative(root, path), "content": text, "truncated": truncated, "size": len(data)})
 
 
-def _write_file(root: Path, args: dict[str, Any]):
+def _write_file(root: Path, args: dict[str, Any]) -> "ToolResult":
     path = _resolve_path(root, args.get("path"))
     content = str(args.get("content") or "")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -36,7 +39,7 @@ def _write_file(root: Path, args: dict[str, Any]):
     return _result("write_file", True, {"path": _relative(root, path), "bytes": len(content.encode())})
 
 
-def _edit(root: Path, args: dict[str, Any]):
+def _edit(root: Path, args: dict[str, Any]) -> "ToolResult":
     path = _resolve_path(root, args.get("path"))
     old = str(args.get("old") or "")
     new = str(args.get("new") or "")
@@ -52,7 +55,7 @@ def _edit(root: Path, args: dict[str, Any]):
     return _result("edit", True, {"path": _relative(root, path), "replacements": hits})
 
 
-def _glob(root: Path, args: dict[str, Any]):
+def _glob(root: Path, args: dict[str, Any]) -> "ToolResult":
     pattern = str(args.get("pattern") or "*")
     max_results = int(args.get("max_results") or 200)
     paths = []
@@ -65,7 +68,7 @@ def _glob(root: Path, args: dict[str, Any]):
     return _result("glob", True, {"matches": paths, "truncated": len(paths) >= max_results})
 
 
-def _grep(root: Path, args: dict[str, Any]):
+def _grep(root: Path, args: dict[str, Any]) -> "ToolResult":
     pattern = str(args.get("pattern") or "")
     if not pattern:
         raise ValueError("grep requires pattern")
@@ -88,7 +91,7 @@ def _grep(root: Path, args: dict[str, Any]):
     return _result("grep", True, {"matches": matches, "truncated": False})
 
 
-def _shell(root: Path, args: dict[str, Any]):
+def _shell(root: Path, args: dict[str, Any]) -> "ToolResult":
     command = str(args.get("command") or "")
     timeout = int(args.get("timeout") or 30)
     if not command:
@@ -102,7 +105,7 @@ def _shell(root: Path, args: dict[str, Any]):
     )
 
 
-def _replay_emit(args: dict[str, Any]):
+def _replay_emit(args: dict[str, Any]) -> "ToolResult":
     return _result("replay_emit", True, {"value": args.get("value"), "args": args})
 
 
@@ -128,7 +131,7 @@ def _relative(root: Path, path: Path) -> str:
     return str(path.relative_to(root))
 
 
-def _result(name: str, ok: bool, output: Any = None, error: str | None = None):
+def _result(name: str, ok: bool, output: Any = None, error: str | None = None) -> "ToolResult":
     from .dispatcher import ToolResult
 
     return ToolResult(name=name, ok=ok, output=output, error=error)

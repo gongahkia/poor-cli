@@ -174,7 +174,8 @@ def _spec_from_mapping(name: str, raw: dict[str, Any]) -> McpServerSpec:
     if transport != "stdio":
         raise McpError(f"unsupported MCP transport for {name}: {transport}")
     command = _command(raw)
-    env = raw.get("env") if isinstance(raw.get("env"), dict) else {}
+    env_raw = raw.get("env")
+    env = env_raw if isinstance(env_raw, dict) else {}
     return McpServerSpec(
         name=name,
         command=command,

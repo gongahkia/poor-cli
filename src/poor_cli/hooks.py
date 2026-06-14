@@ -6,17 +6,13 @@ from typing import Any, Protocol
 
 
 class Hook(Protocol):
-    def before_turn(self, context: Mapping[str, Any]) -> None:
-        ...
+    def before_turn(self, context: Mapping[str, Any]) -> None: ...
 
-    def after_tool_call(self, context: Mapping[str, Any], result: Any) -> None:
-        ...
+    def after_tool_call(self, context: Mapping[str, Any], result: Any) -> None: ...
 
-    def before_model_call(self, context: Mapping[str, Any]) -> None:
-        ...
+    def before_model_call(self, context: Mapping[str, Any]) -> None: ...
 
-    def after_run(self, context: Mapping[str, Any]) -> None:
-        ...
+    def after_run(self, context: Mapping[str, Any]) -> None: ...
 
 
 class BaseHook:
@@ -68,10 +64,7 @@ class HookManager:
 
 def load_hooks(group: str = "poor_cli.hooks") -> HookManager:
     loaded: list[Hook] = []
-    try:
-        selected = entry_points().select(group=group)
-    except AttributeError:
-        selected = entry_points().get(group, [])
+    selected = entry_points().select(group=group)
     for entry_point in selected:
         try:
             value = entry_point.load()

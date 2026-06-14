@@ -127,12 +127,13 @@ class ToolDispatcher:
             result = payload.get("result")
             if not isinstance(result, dict):
                 continue
+            raw = result.get("raw")
             return ToolResult(
                 name=str(result.get("name") or ""),
                 ok=bool(result.get("ok")),
                 output=result.get("output"),
                 error=str(result["error"]) if result.get("error") is not None else None,
-                raw=result.get("raw") if isinstance(result.get("raw"), dict) else {},
+                raw=raw if isinstance(raw, dict) else {},
                 cached=bool(result.get("cached")),
             )
         return None

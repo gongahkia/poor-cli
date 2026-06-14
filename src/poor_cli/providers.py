@@ -42,8 +42,7 @@ class ProviderResponse:
 
 
 class Provider(Protocol):
-    def call(self, request: ProviderRequest) -> ProviderResponse:
-        ...
+    def call(self, request: ProviderRequest) -> ProviderResponse: ...
 
 
 class CachedReplayProvider:
@@ -121,11 +120,12 @@ class CachedReplayProvider:
             response = payload.get("response")
             if not isinstance(response, dict):
                 continue
+            raw = response.get("raw")
             return ProviderResponse(
                 provider=str(response.get("provider") or ""),
                 model=str(response.get("model") or ""),
                 content=str(response.get("content") or ""),
-                raw=response.get("raw") if isinstance(response.get("raw"), dict) else {},
+                raw=raw if isinstance(raw, dict) else {},
                 cached=bool(response.get("cached")),
             )
         return None

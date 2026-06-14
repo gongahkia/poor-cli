@@ -10,10 +10,7 @@ class ExtensionLoadError(RuntimeError):
 
 def load_entry_point_values(group: str) -> list[tuple[str, Any]]:
     loaded: list[tuple[str, Any]] = []
-    try:
-        selected = entry_points().select(group=group)
-    except AttributeError:
-        selected = entry_points().get(group, [])
+    selected = entry_points().select(group=group)
     for entry_point in selected:
         try:
             loaded.append((entry_point.name, entry_point.load()))

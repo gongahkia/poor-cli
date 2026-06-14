@@ -13,7 +13,7 @@ class AnthropicProvider:
 
     def __init__(self, client: Any | None = None):
         if client is None:
-            from anthropic import Anthropic
+            from anthropic import Anthropic  # type: ignore[import-not-found]
 
             client = Anthropic()
         self.client = client
@@ -36,7 +36,7 @@ class OpenAIProvider:
 
     def __init__(self, client: Any | None = None):
         if client is None:
-            from openai import OpenAI
+            from openai import OpenAI  # type: ignore[import-not-found]
 
             client = OpenAI()
         self.client = client
@@ -58,7 +58,7 @@ class GeminiProvider:
 
     def __init__(self, client: Any | None = None):
         if client is None:
-            from google import genai
+            from google import genai  # type: ignore[import-not-found]
 
             client = genai.Client()
         self.client = client

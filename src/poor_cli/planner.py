@@ -111,6 +111,8 @@ def parse_plan(text: str) -> Plan:
         )
     if not tasks:
         raise PlannerError("planner returned no tasks")
+    estimated_cost_raw = data.get("estimated_cost")
+    estimated_cost: dict[str, Any] = dict(estimated_cost_raw) if isinstance(estimated_cost_raw, dict) else {"tokens": None, "usd": None}
     return Plan(
         plan_id=make_id("plan"),
         problem_summary=str(data.get("problem_summary") or ""),
@@ -120,7 +122,7 @@ def parse_plan(text: str) -> Plan:
         tasks=tasks,
         validation_strategy=_string_list(data.get("validation_strategy")),
         routing_strategy=str(data.get("routing_strategy") or ""),
-        estimated_cost=data.get("estimated_cost") if isinstance(data.get("estimated_cost"), dict) else {"tokens": None, "usd": None},
+        estimated_cost=estimated_cost,
         requires_user_confirmation=bool(data.get("requires_user_confirmation", True)),
     )
 

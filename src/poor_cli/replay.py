@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import Any
 
 from .store import RunStore
 
@@ -10,16 +11,19 @@ class ReplayError(RuntimeError):
     pass
 
 
-def replay_summary(store: RunStore, run_id: str, from_event: str | None = None) -> dict[str, object]:
+def replay_summary(store: RunStore, run_id: str, from_event: str | None = None) -> dict[str, Any]:
     store.get_run(run_id)
     events = _event_window(store.list_events(run_id), from_event)
     tasks = store.list_tasks(run_id)
-    state = {
+    task_state: dict[str, dict[str, Any]] = {
+        str(task["task_id"]): {"title": task["title"], "status": "pending", "agent": task.get("assigned_agent")} for task in tasks
+    }
+    state: dict[str, Any] = {
         "run_id": run_id,
         "status": "created",
         "event_count": len(events),
         "from_event": from_event,
-        "tasks": {task["task_id"]: {"title": task["title"], "status": "pending", "agent": task.get("assigned_agent")} for task in tasks},
+        "tasks": task_state,
     }
     for event in events:
         if event["type"] == "plan.created":
@@ -31,20 +35,20 @@ def replay_summary(store: RunStore, run_id: str, from_event: str | None = None) 
         elif event["type"] == "run.cancelled":
             state["status"] = "cancelled"
         task_id = event.get("task_id")
-        if task_id and task_id in state["tasks"]:
+        if isinstance(task_id, str) and task_id in task_state:
             if event["type"] == "task.assigned":
-                state["tasks"][task_id]["status"] = "assigned"
-                state["tasks"][task_id]["agent"] = event["payload"].get("agent")
+                task_state[task_id]["status"] = "assigned"
+                task_state[task_id]["agent"] = event["payload"].get("agent")
             elif event["type"] == "task.completed":
-                state["tasks"][task_id]["status"] = "completed"
+                task_state[task_id]["status"] = "completed"
             elif event["type"] == "task.failed":
-                state["tasks"][task_id]["status"] = "failed"
+                task_state[task_id]["status"] = "failed"
             elif event["type"] == "task.skipped":
-                state["tasks"][task_id]["status"] = "skipped"
+                task_state[task_id]["status"] = "skipped"
     return state
 
 
-def _event_window(events: list[dict[str, object]], from_event: str | None) -> list[dict[str, object]]:
+def _event_window(events: list[dict[str, Any]], from_event: str | None) -> list[dict[str, Any]]:
     if from_event is None:
         return events
     for index, event in enumerate(events):
@@ -77,7 +81,7 @@ def replay_verify(store: RunStore, run_id: str) -> dict[str, object]:
     }
 
 
-def _verify_event_mirror(store: RunStore, run_id: str, events: list[dict[str, object]]) -> bytes:
+def _verify_event_mirror(store: RunStore, run_id: str, events: list[dict[str, Any]]) -> bytes:
     path = store.runs_root / run_id / "events.jsonl"
     if not path.exists():
         raise ReplayError(f"missing replay event mirror: {path}")
