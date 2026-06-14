@@ -49,6 +49,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--store-root", default=".poor-cli/bench/swe_bench_lite/stores")
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--timeout-seconds", type=int, default=3600)
+    parser.add_argument("--budget-usd", type=float, help="Pass a max model budget to poor-cli run.")
     parser.add_argument("--permission-mode", default="acceptEdits")
     parser.add_argument("--sandbox-preset", default="workspace-write")
     parser.add_argument("--auto-approve", action=argparse.BooleanOptionalAction, default=True)
@@ -263,7 +264,7 @@ def poor_cli_env(args: argparse.Namespace, planner: Path | None = None) -> dict[
 
 
 def poor_cli_run_command(args: argparse.Namespace, store_dir: Path, prompt: str) -> list[str]:
-    return [
+    command = [
         args.python,
         "-m",
         "poor_cli",
@@ -273,6 +274,9 @@ def poor_cli_run_command(args: argparse.Namespace, store_dir: Path, prompt: str)
         prompt,
         "--yes",
     ]
+    if args.budget_usd is not None:
+        command.extend(["--budget", str(args.budget_usd)])
+    return command
 
 
 def run_replay_verify(args: argparse.Namespace, task_dir: Path, store_dir: Path, run_id: str) -> dict[str, Any]:
@@ -395,6 +399,7 @@ def summarize(records: list[dict[str, Any]], args: argparse.Namespace, run_id: s
         "provider": args.provider,
         "model": args.model,
         "agent": args.agent,
+        "budget_usd": args.budget_usd,
         "seed": args.seed,
         "task_count": len(records),
         "completed_exec_count": sum(1 for record in records if int(record.get("exit_code", 1)) == 0),
@@ -507,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
             "provider": args.provider,
             "model": args.model,
             "agent": args.agent,
+            "budget_usd": args.budget_usd,
             "permission_mode": args.permission_mode,
             "sandbox_preset": args.sandbox_preset,
             "auto_approve": args.auto_approve,

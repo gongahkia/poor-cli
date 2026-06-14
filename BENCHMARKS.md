@@ -87,7 +87,7 @@ python3 -m pip install -e ".[bench]"
 Runner:
 
 ```sh
-python3 bench/swe_bench_lite/run.py --confirm-cost
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --confirm-cost --budget-usd 2.0
 ```
 
 The runner loads the pinned manifest against the official `princeton-nlp/SWE-bench_Lite` dataset, runs each task through v6 `poor-cli run --yes`, writes `predictions.jsonl`, and verifies `poor-cli --offline replay <run_id> --verify` before optional official SWE-bench Docker evaluation.
@@ -95,5 +95,5 @@ The runner loads the pinned manifest against the official `princeton-nlp/SWE-ben
 Smoke without official Docker evaluation:
 
 ```sh
-python3 bench/swe_bench_lite/run.py --limit 1 --no-evaluate --confirm-cost
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --limit 1 --no-evaluate --confirm-cost --budget-usd 2.0
 ```

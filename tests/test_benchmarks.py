@@ -192,14 +192,14 @@ def test_swe_lite_runner_applies_manifest_order_and_validates_pin() -> None:
 
 
 def test_swe_lite_runner_uses_v6_run_and_planner_payload(tmp_path: Path) -> None:
-    args = swe_run.parse_args(["--confirm-cost", "--no-evaluate", "--limit", "1", "--agent", "claude"])
+    args = swe_run.parse_args(["--confirm-cost", "--no-evaluate", "--limit", "1", "--agent", "claude", "--budget-usd", "2.5"])
     task = {"instance_id": "repo__proj-1", "problem_statement": "Fix the bug", "repo": "repo/proj"}
 
     command = swe_run.poor_cli_run_command(args, tmp_path / "store", "Fix the bug")
     payload = swe_run.planner_payload(task, "claude")
 
     assert "exec" not in command
-    assert command[-3:] == ["run", "Fix the bug", "--yes"]
+    assert command[-5:] == ["run", "Fix the bug", "--yes", "--budget", "2.5"]
     assert payload["tasks"][0]["suggested_agent"] == "claude"
     assert payload["tasks"][0]["objective"] == "Fix the bug"
     assert swe_run.extract_run_id("run_id: run_123\n1. task -> claude\n") == "run_123"
