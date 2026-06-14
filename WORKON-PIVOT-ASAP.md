@@ -17,6 +17,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added explicit `agent.input` artifacts before delegated subprocess execution so confirmed runs persist both agent inputs and results. Evidence: `tests/test_cli.py::test_cli_plan_run_inspect_replay`.
 - 2026-06-14: closed GitHub issue #48 after confirmed sequential execution recorded plan, agent input, agent result, and failure-stop events.
 - 2026-06-14: added `handoff.packet` artifacts after completed or failed task execution and exposed them through `poor-cli inspect --context`. Evidence: `tests/test_cli.py::test_cli_plan_run_inspect_replay`.
+- 2026-06-14: closed GitHub issue #49 after context and handoff artifacts were inspectable.
 
 ## TL;DR
 
