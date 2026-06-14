@@ -72,7 +72,6 @@ Checked-in snapshot: `bench/results/phase1-readiness.json`.
 Current remaining live prerequisites from that snapshot:
 - `live_anthropic_fixture_prereqs`
 - `live_codex_fixture_prereqs`
-- `docker`
 
 ## SWE-bench Lite 10
 

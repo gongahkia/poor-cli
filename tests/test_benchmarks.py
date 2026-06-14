@@ -143,6 +143,9 @@ def test_checked_in_phase1_readiness_snapshot() -> None:
     assert payload["checks"]["swe_lite_python_deps"]["install"] == "python -m pip install -e '.[bench]'"
     assert payload["checks"]["swe_lite_python_deps"]["ready"] is True
     assert payload["checks"]["swe_lite_python_deps"]["modules"] == {"datasets": True, "swebench": True}
+    assert payload["checks"]["docker"]["ready"] is True
+    assert payload["checks"]["docker"]["daemon"] is True
+    assert payload["checks"]["docker"]["version"]
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 

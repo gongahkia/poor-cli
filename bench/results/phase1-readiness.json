@@ -2,9 +2,9 @@
   "checks": {
     "docker": {
       "available": true,
-      "daemon": false,
-      "ready": false,
-      "version": ""
+      "daemon": true,
+      "ready": true,
+      "version": "29.5.3"
     },
     "live_anthropic_fixture_prereqs": {
       "auth_env": "ANTHROPIC_API_KEY",
@@ -48,8 +48,7 @@
   "ready": false,
   "remaining": [
     "live_anthropic_fixture_prereqs",
-    "live_codex_fixture_prereqs",
-    "docker"
+    "live_codex_fixture_prereqs"
   ],
   "schema_version": "poor-cli-phase1-readiness-v1"
 }
