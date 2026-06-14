@@ -73,6 +73,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: started Phase 3 local-first provider work with first-class vLLM and SGLang OpenAI-compatible chat adapters alongside existing Ollama. Evidence: `src/poor_cli/provider_adapters.py`, `tests/test_provider_adapters.py::test_vllm_provider_posts_openai_chat_completion_request`, and `tests/test_provider_adapters.py::test_sglang_provider_posts_openai_chat_completion_request`. Batched prompt caching remains pending.
 - 2026-06-14: added a one-command Linux/CUDA local-first setup script for vLLM, SGLang, and Ollama plus docs. Evidence: `scripts/setup-linux-cuda.sh`, `docs/local-first.md`, and `tests/test_setup_scripts.py`.
 - 2026-06-14: added cache-aware provider batching: `CachedReplayProvider.call_many()` replays cached requests and sends only misses through a wrapped provider `call_many()` path when available. Evidence: `tests/test_providers.py::test_cached_replay_provider_batches_uncached_requests_then_replays`. Provider-native prefix/KV-cache controls remain pending.
+- 2026-06-14: added a no-cost Phase 3 local-first readiness probe and checked-in snapshot. Current snapshot: setup script and provider adapters ready; this host lacks Linux/CUDA and vLLM/SGLang packages. Evidence: `bench/phase3_readiness.py`, `bench/results/phase3-readiness.json`, and `tests/test_benchmarks.py::test_checked_in_phase3_readiness_snapshot`.
 
 ## TL;DR
 

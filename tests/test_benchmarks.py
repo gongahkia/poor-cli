@@ -10,6 +10,7 @@ from bench.graph_vs_grep import graph_vs_grep_payload
 from bench.local_fixture_bugs import compact_payload, run_fixture_suite
 from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
+from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.swe_bench_lite import run as swe_run
 
 
@@ -208,6 +209,36 @@ def test_checked_in_phase1_acceptance_snapshot() -> None:
     assert payload["checks"]["swe_lite_10"]["total_instances"] == 10
     assert payload["checks"]["swe_lite_10"]["resolved_instances"] == 9
     assert payload["checks"]["swe_lite_10"]["unresolved_ids"] == ["astropy__astropy-14182"]
+
+
+def test_phase3_readiness_payload_schema() -> None:
+    payload = phase3_readiness_payload()
+
+    assert payload["schema_version"] == "poor-cli-phase3-readiness-v1"
+    assert isinstance(payload["ready"], bool)
+    assert set(payload["checks"]) == {
+        "setup_script",
+        "provider_adapters",
+        "linux_cuda_host",
+        "engine_python_deps",
+        "ollama_binary",
+    }
+    assert payload["checks"]["setup_script"]["ready"] is True
+    assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
+    assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
+
+
+def test_checked_in_phase3_readiness_snapshot() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "phase3-readiness.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "poor-cli-phase3-readiness-v1"
+    assert isinstance(payload["ready"], bool)
+    assert payload["checks"]["setup_script"]["ready"] is True
+    assert payload["checks"]["setup_script"]["bash_syntax"] is True
+    assert payload["checks"]["provider_adapters"]["ready"] is True
+    assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
+    assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 
 def test_graph_vs_grep_payload_schema() -> None:

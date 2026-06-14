@@ -1,0 +1,43 @@
+{
+  "checks": {
+    "engine_python_deps": {
+      "install": "scripts/setup-linux-cuda.sh --yes --engine vllm",
+      "modules": {
+        "sglang": false,
+        "vllm": false
+      },
+      "ready": false
+    },
+    "linux_cuda_host": {
+      "gpu_names": [],
+      "nvidia_smi": false,
+      "ready": false,
+      "system": "Darwin"
+    },
+    "ollama_binary": {
+      "available": true,
+      "path": "/opt/homebrew/bin/ollama",
+      "ready": true
+    },
+    "provider_adapters": {
+      "providers": [
+        "ollama",
+        "sglang",
+        "vllm"
+      ],
+      "ready": true
+    },
+    "setup_script": {
+      "bash_syntax": true,
+      "executable": true,
+      "path": "scripts/setup-linux-cuda.sh",
+      "ready": true
+    }
+  },
+  "ready": false,
+  "remaining": [
+    "linux_cuda_host",
+    "engine_python_deps"
+  ],
+  "schema_version": "poor-cli-phase3-readiness-v1"
+}

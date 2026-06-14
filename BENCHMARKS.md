@@ -82,6 +82,18 @@ Checked-in snapshot: `bench/results/phase1-acceptance.json`.
 
 Current acceptance status: all Phase 1 acceptance checks pass from checked-in evidence.
 
+## Phase 3 readiness
+
+No-cost local-first readiness probe:
+
+```sh
+uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json
+```
+
+Checked-in snapshot: `bench/results/phase3-readiness.json`.
+
+Current snapshot status: setup script and provider adapters are ready; this macOS host is not a Linux/CUDA host and does not have vLLM/SGLang installed in the project environment.
+
 ## Graph vs grep
 
 Synthetic graph-mode benchmark:

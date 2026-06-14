@@ -38,6 +38,14 @@ Checked-in SWE-bench Lite rows:
 
 The 10-task unresolved instance is `astropy__astropy-14182`.
 
+## Phase 3 Readiness
+
+```sh
+uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json
+```
+
+Checked-in snapshot: setup script and provider adapters are ready; Linux/CUDA host and vLLM/SGLang package readiness are environment-dependent.
+
 ## Graph vs Grep
 
 ```sh
