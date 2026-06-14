@@ -1,6 +1,6 @@
 # Graph Tools
 
-Phase 2 starts with a tree-sitter-backed Python repo graph. The graph currently indexes `.py` files and exposes symbol, import, caller, and neighborhood queries through replayable tools.
+Phase 2 starts with a tree-sitter-backed repo graph. The graph currently indexes Python and JavaScript files and exposes symbol, import, caller, and neighborhood queries through replayable tools.
 
 ## Built-in Tools
 
@@ -25,6 +25,6 @@ Graph tools refresh the tree-sitter index before uncached queries when Python fi
 
 This is the first graph slice. Remaining Phase 2 work:
 
-- Multi-language tree-sitter grammars.
+- More tree-sitter grammars beyond Python and JavaScript.
 - Kernel-native FSEvents/inotify integration.
 - Token and correctness comparison against grep-mode on the fixed benchmark set.

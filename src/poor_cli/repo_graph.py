@@ -8,6 +8,7 @@ from typing import Any
 
 GraphSignature = tuple[int, int]
 GraphFingerprint = dict[str, GraphSignature]
+GRAPH_EXTENSIONS = {".py", ".js", ".mjs", ".cjs"}
 
 
 @dataclass(frozen=True)
@@ -70,9 +71,9 @@ class RepoGraph:
     def build_index(self) -> RepoGraph:
         with self._lock:
             modules = {}
-            files = self._python_files()
+            files = self._source_files()
             for path in files:
-                module = _parse_python(self.root, path)
+                module = _parse_module(self.root, path)
                 modules[module.path] = module
             self.modules = modules
             self._rebuild_symbol_index()
@@ -91,7 +92,7 @@ class RepoGraph:
             for rel_path in removed:
                 self.modules.pop(rel_path, None)
             for file_path in changed:
-                module = _parse_python(self.root, file_path)
+                module = _parse_module(self.root, file_path)
                 self.modules[module.path] = module
             self._rebuild_symbol_index()
             self._fingerprint = current
@@ -178,14 +179,27 @@ class RepoGraph:
         candidate = imported.replace(".", "/") + ".py"
         if candidate in self.modules:
             return candidate
+        if imported.startswith("."):
+            rel = Path(from_path).parent / imported
+            candidates = [rel]
+            if not rel.suffix:
+                candidates.extend([rel.with_suffix(".js"), rel / "index.js"])
+            for js_candidate in candidates:
+                normalized = str(js_candidate)
+                if normalized in self.modules:
+                    return normalized
         base = str(Path(from_path).parent / (imported.rsplit(".", 1)[-1] + ".py"))
         return base if base in self.modules else None
 
     def _scan_fingerprint(self) -> GraphFingerprint:
-        return self._fingerprint_for(self._python_files())
+        return self._fingerprint_for(self._source_files())
 
-    def _python_files(self) -> list[Path]:
-        return sorted(path for path in self.root.rglob("*.py") if "__pycache__" not in path.parts and path.is_file())
+    def _source_files(self) -> list[Path]:
+        return sorted(
+            path
+            for path in self.root.rglob("*")
+            if path.suffix in GRAPH_EXTENSIONS and "__pycache__" not in path.parts and "node_modules" not in path.parts and path.is_file()
+        )
 
     def _fingerprint_for(self, paths: Iterable[Path]) -> GraphFingerprint:
         rows = {}
@@ -218,6 +232,10 @@ def graph_tools(root: Path) -> dict[str, Any]:
     }
 
 
+def _parse_module(root: Path, path: Path) -> ParsedModule:
+    return _parse_python(root, path) if path.suffix == ".py" else _parse_javascript(root, path)
+
+
 def _parse_python(root: Path, path: Path) -> ParsedModule:
     try:
         import tree_sitter_python
@@ -234,6 +252,30 @@ def _parse_python(root: Path, path: Path) -> ParsedModule:
         raise RepoGraphError(f"tree-sitter failed to parse {path}")
     rel = str(path.resolve().relative_to(root))
     payload = _walk_python(source, tree.root_node)
+    return ParsedModule(
+        path=rel,
+        symbols=[GraphSymbol(path=rel, **symbol) for symbol in payload["symbols"]],
+        imports=payload["imports"],
+        calls=payload["calls"],
+    )
+
+
+def _parse_javascript(root: Path, path: Path) -> ParsedModule:
+    try:
+        import tree_sitter_javascript
+        from tree_sitter import Language, Parser
+    except ImportError as exc:
+        raise RepoGraphError("tree-sitter and tree-sitter-javascript are required for JavaScript graph indexing") from exc
+
+    source = path.read_bytes()
+    parser = Parser()
+    language = Language(tree_sitter_javascript.language())
+    parser.language = language
+    tree = parser.parse(source)
+    if tree is None:
+        raise RepoGraphError(f"tree-sitter failed to parse {path}")
+    rel = str(path.resolve().relative_to(root))
+    payload = _walk_javascript(source, tree.root_node)
     return ParsedModule(
         path=rel,
         symbols=[GraphSymbol(path=rel, **symbol) for symbol in payload["symbols"]],
@@ -310,6 +352,89 @@ def _walk_python(source: bytes, root: Any) -> dict[str, Any]:
             callee = last_identifier(getattr(node, "children", [None])[0])
             if callee is not None:
                 payload["calls"].append(text(callee))
+        for child in getattr(node, "children", []):
+            visit(child, scope)
+
+    visit(root)
+    return payload
+
+
+def _walk_javascript(source: bytes, root: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {"symbols": [], "imports": [], "calls": []}
+
+    def text(node: Any) -> str:
+        return source[node.start_byte : node.end_byte].decode("utf-8", "ignore")
+
+    def string_value(node: Any) -> str:
+        return text(node).strip("\"'")
+
+    def first_identifier(node: Any) -> Any:
+        if node.type in {"identifier", "property_identifier"}:
+            return node
+        for child in getattr(node, "children", []):
+            found = first_identifier(child)
+            if found is not None:
+                return found
+        return None
+
+    def last_identifier(node: Any) -> Any:
+        if node.type in {"identifier", "property_identifier"}:
+            return node
+        for child in reversed(getattr(node, "children", [])):
+            found = last_identifier(child)
+            if found is not None:
+                return found
+        return None
+
+    def add_symbol(node: Any, name: str, kind: str, scope: str = "") -> None:
+        payload["symbols"].append(
+            {
+                "name": name,
+                "kind": kind,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "scope": scope,
+            }
+        )
+
+    def visit(node: Any, scope: str = "") -> None:
+        if node.type == "import_statement":
+            source_node = node.child_by_field_name("source")
+            if source_node is not None:
+                payload["imports"].append(string_value(source_node))
+        if node.type == "class_declaration":
+            name_node = node.child_by_field_name("name") or first_identifier(node)
+            name = text(name_node) if name_node is not None else ""
+            if name:
+                add_symbol(node, name, "class")
+            for child in getattr(node, "children", []):
+                visit(child, name)
+            return
+        if node.type == "function_declaration":
+            name_node = node.child_by_field_name("name") or first_identifier(node)
+            name = text(name_node) if name_node is not None else ""
+            if name:
+                add_symbol(node, name, "function")
+        if node.type == "method_definition":
+            name_node = node.child_by_field_name("name") or first_identifier(node)
+            name = text(name_node) if name_node is not None else ""
+            if name:
+                add_symbol(node, name, "method", scope)
+        if node.type == "variable_declarator":
+            name_node = node.child_by_field_name("name") or first_identifier(node)
+            value_node = node.child_by_field_name("value")
+            if name_node is not None and value_node is not None and value_node.type in {"arrow_function", "function_expression"}:
+                add_symbol(node, text(name_node), "function")
+        if node.type == "call_expression":
+            callee = node.child_by_field_name("function") or getattr(node, "children", [None])[0]
+            identifier = last_identifier(callee)
+            if identifier is not None:
+                name = text(identifier)
+                payload["calls"].append(name)
+                if name == "require":
+                    for child in getattr(node.child_by_field_name("arguments"), "children", []):
+                        if child.type == "string":
+                            payload["imports"].append(string_value(child))
         for child in getattr(node, "children", []):
             visit(child, scope)
 

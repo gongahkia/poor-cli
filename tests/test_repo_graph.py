@@ -27,6 +27,24 @@ def _sample_repo(root: Path) -> None:
     (root / "utils.py").write_text("def helper() -> str:\n    return 'ok'\n", encoding="utf-8")
 
 
+def _sample_js_repo(root: Path) -> None:
+    (root / "util.js").write_text("export function helper() {\n  return 'ok';\n}\n", encoding="utf-8")
+    (root / "core.js").write_text(
+        "import { helper } from './util.js';\n\n"
+        "export function run() {\n"
+        "  return helper();\n"
+        "}\n\n"
+        "export const arrow = () => run();\n\n"
+        "class App {\n"
+        "  method() {\n"
+        "    return run();\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    (root / "cli.js").write_text("import { run } from './core.js';\n\nfunction execute() {\n  return run();\n}\n", encoding="utf-8")
+
+
 def test_repo_graph_indexes_python_symbols_imports_and_callers(tmp_path: Path) -> None:
     _sample_repo(tmp_path)
     graph = RepoGraph(tmp_path).build_index()
@@ -43,6 +61,18 @@ def test_repo_graph_indexes_python_symbols_imports_and_callers(tmp_path: Path) -
     assert graph.callers_of("helper") == [{"path": "core.py", "calls": "helper", "call_count": 1}]
     assert [item["name"] for item in graph.find_symbol("run")] == ["run", "run"]
     assert {item["path"] for item in graph.subgraph("execute", max_depth=2)["files"]} == {"cli.py", "core.py", "utils.py"}
+
+
+def test_repo_graph_indexes_javascript_symbols_imports_and_callers(tmp_path: Path) -> None:
+    _sample_js_repo(tmp_path)
+    graph = RepoGraph(tmp_path).build_index()
+
+    assert graph.definition_of("App")["path"] == "core.js"
+    assert graph.definition_of("method")["scope"] == "App"
+    assert graph.definition_of("arrow")["kind"] == "function"
+    assert graph.imports_of("core.js") == {"path": "core.js", "imports": ["./util.js"]}
+    assert graph.callers_of("helper") == [{"path": "core.js", "calls": "helper", "call_count": 1}]
+    assert {item["path"] for item in graph.subgraph("execute", max_depth=2)["files"]} == {"cli.js", "core.js", "util.js"}
 
 
 def test_repo_graph_refreshes_after_python_file_mutation(tmp_path: Path) -> None:

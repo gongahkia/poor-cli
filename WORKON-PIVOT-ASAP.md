@@ -69,6 +69,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: upgraded repo graph refresh from full rebuild to incremental changed-file reparse plus deleted-file removal before uncached graph queries. Evidence: `tests/test_repo_graph.py::test_repo_graph_incremental_refresh_reparses_changed_files_only`.
 - 2026-06-14: added `--graph` support to the pinned SWE-bench Lite runner so the fixed 10-task Phase 2 graph-mode row can be generated with graph-biased planner payloads. Evidence: `bench/swe_bench_lite/run.py --graph` and `tests/test_benchmarks.py::test_swe_lite_runner_supports_graph_mode`. Live graph-mode SWE-bench result remains pending.
 - 2026-06-14: added a dependency-free polling watch handle for long-lived repo graph users, backed by the incremental refresh path. Evidence: `RepoGraph.watch()` and `tests/test_repo_graph.py::test_repo_graph_watch_refreshes_changed_files`.
+- 2026-06-14: extended repo graph indexing from Python to JavaScript via `tree-sitter-javascript`, covering JS imports, `require`, functions, classes, methods, calls, and subgraph traversal. Evidence: `tests/test_repo_graph.py::test_repo_graph_indexes_javascript_symbols_imports_and_callers`.
 
 ## TL;DR
 
