@@ -1,0 +1,19 @@
+Building base image (sweb.base.py.x86_64:latest)
+Base images built successfully.
+Total environment images to build: 1
+All environment images built successfully.
+Running 1 instances...
+All instances run.
+Cleaning cached images...
+Removed 0 images.
+Total instances: 1
+Instances submitted: 1
+Instances completed: 1
+Instances incomplete: 0
+Instances resolved: 1
+Instances unresolved: 0
+Instances with empty patches: 0
+Instances with errors: 0
+Unstopped containers: 0
+Unremoved images: 0
+Report written to claude-sonnet-4-20250514.smoke-claude-20260614T035359Z.json

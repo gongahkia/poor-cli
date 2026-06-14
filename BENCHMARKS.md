@@ -101,11 +101,15 @@ uv run --locked --extra bench python bench/swe_bench_lite/run.py --limit 1 --no-
 Evaluate an existing run without regenerating model patches:
 
 ```sh
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --evaluate-existing-run smoke-claude-20260614T035359Z --confirm-cost
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --evaluate-existing-run smoke-claude-20260614T035359Z --confirm-cost --eval-max-workers 1 --eval-namespace none
 ```
+
+Use `--eval-namespace none` when the default remote SWE-bench image namespace has no prebuilt image for the selected task; this builds locally instead of pulling `swebench/...`.
+
+The runner uses an isolated empty Docker config under `.poor-cli/bench/swe_bench_lite/docker-config/` by default so missing local credential helpers do not break public image builds. Pass `--no-eval-isolated-docker-config` only when evaluation needs private registry credentials.
 
 Checked-in smoke:
 
-| run dir | task | completed | replay verified | patch bytes | official eval |
+| run dir | task | run completed | replay verified | patch bytes | official eval |
 | --- | --- | ---: | ---: | ---: | --- |
-| `bench/swe_bench_lite/results/smoke-claude-20260614T035359Z` | `astropy__astropy-12907` | 1/1 | 1/1 | 506 | skipped |
+| `bench/swe_bench_lite/results/smoke-claude-20260614T035359Z` | `astropy__astropy-12907` | 1/1 | 1/1 | 506 | 1/1 resolved |

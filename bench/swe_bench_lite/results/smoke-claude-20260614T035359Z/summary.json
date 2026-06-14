@@ -9,7 +9,34 @@
   "mean_tokens": 0.0,
   "mean_wall_time_seconds": 125.091,
   "model": "claude-sonnet-4-20250514",
-  "official_evaluation": {},
+  "official_evaluation": {
+    "exit_code": 0,
+    "results": {
+      "completed_ids": [
+        "astropy__astropy-12907"
+      ],
+      "completed_instances": 1,
+      "empty_patch_ids": [],
+      "empty_patch_instances": 0,
+      "error_ids": [],
+      "error_instances": 0,
+      "incomplete_ids": [],
+      "resolved_ids": [
+        "astropy__astropy-12907"
+      ],
+      "resolved_instances": 1,
+      "schema_version": 2,
+      "submitted_ids": [
+        "astropy__astropy-12907"
+      ],
+      "submitted_instances": 1,
+      "total_instances": 1,
+      "unresolved_ids": [],
+      "unresolved_instances": 0
+    },
+    "results_json": "bench/swe_bench_lite/results/smoke-claude-20260614T035359Z/claude-sonnet-4-20250514.smoke-claude-20260614T035359Z.json",
+    "wall_time_seconds": 2527.404
+  },
   "p50_wall_time_seconds": 125.091,
   "p95_wall_time_seconds": 125.091,
   "provider": "anthropic",

@@ -58,6 +58,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--evaluate-existing-run", help="Run official evaluation for an existing run id or run directory.")
     parser.add_argument("--skip-replay-verify", action="store_true", help="Skip poor-cli offline replay verification")
     parser.add_argument("--eval-max-workers", type=int, default=8)
+    parser.add_argument("--eval-timeout", type=int)
+    parser.add_argument("--eval-namespace", default="swebench", help="SWE-bench image namespace; use 'none' to build locally.")
+    parser.add_argument("--eval-force-rebuild", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--eval-cache-level", choices=["none", "base", "env", "instance"], default="env")
+    parser.add_argument("--eval-clean", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--eval-isolated-docker-config", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--keep-worktrees", action="store_true")
     return parser.parse_args(argv)
 
@@ -442,6 +448,8 @@ def confirm_cost(args: argparse.Namespace, task_count: int, *, model_calls: bool
 
 
 def run_official_evaluation(args: argparse.Namespace, run_dir: Path, run_id: str) -> dict[str, Any]:
+    predictions_path = (run_dir / "predictions.jsonl").resolve()
+    instance_ids = prediction_instance_ids(predictions_path)
     command = [
         args.python,
         "-m",
@@ -451,19 +459,31 @@ def run_official_evaluation(args: argparse.Namespace, run_dir: Path, run_id: str
         "--split",
         args.split,
         "--predictions_path",
-        str((run_dir / "predictions.jsonl").resolve()),
+        str(predictions_path),
         "--max_workers",
         str(args.eval_max_workers),
         "--run_id",
         run_id,
         "--report_dir",
         str((run_dir / "evaluation").resolve()),
+        "--namespace",
+        args.eval_namespace,
+        "--force_rebuild",
+        str(args.eval_force_rebuild),
+        "--cache_level",
+        args.eval_cache_level,
+        "--clean",
+        str(args.eval_clean),
     ]
+    if args.eval_timeout is not None:
+        command.extend(["--timeout", str(args.eval_timeout)])
+    if instance_ids:
+        command.extend(["--instance_ids", *instance_ids])
     started = time.monotonic()
-    result = run_command(command, cwd=run_dir)
+    result = run_command(command, cwd=run_dir, env=evaluation_env(args, run_dir))
     (run_dir / "evaluation_stdout.txt").write_text(result.stdout, encoding="utf-8")
     (run_dir / "evaluation_stderr.txt").write_text(result.stderr, encoding="utf-8")
-    discovered = sorted(run_dir.rglob("results.json"))
+    discovered = discovered_evaluation_reports(run_dir, run_id)
     payload: dict[str, Any] = {}
     if discovered:
         try:
@@ -487,6 +507,32 @@ def resolve_existing_run_dir(args: argparse.Namespace) -> Path:
 
 def count_prediction_rows(path: Path) -> int:
     return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.strip())
+
+
+def prediction_instance_ids(path: Path) -> list[str]:
+    instance_ids = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        payload = json.loads(line)
+        instance_id = payload.get("instance_id") if isinstance(payload, dict) else None
+        if instance_id:
+            instance_ids.append(str(instance_id))
+    return instance_ids
+
+
+def discovered_evaluation_reports(run_dir: Path, run_id: str) -> list[Path]:
+    return sorted({*run_dir.rglob("results.json"), *run_dir.glob(f"*.{run_id}.json")})
+
+
+def evaluation_env(args: argparse.Namespace, run_dir: Path) -> dict[str, str] | None:
+    if not args.eval_isolated_docker_config:
+        return None
+    docker_config = Path(args.store_root).resolve().parent / "docker-config" / run_dir.name
+    write_json(docker_config / "config.json", {"auths": {}})
+    env = os.environ.copy()
+    env["DOCKER_CONFIG"] = str(docker_config.resolve())
+    return env
 
 
 def evaluate_existing_run(args: argparse.Namespace) -> int:

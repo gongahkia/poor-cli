@@ -55,6 +55,8 @@ Thumbs.db
 .poor-cli/preferences.json
 .poor-cli/.legacy-v0/
 poor-cli.log
+bench/swe_bench_lite/results/**/.docker-config/
+bench/swe_bench_lite/results/**/logs/
 
 # Checkpoints (stored in .poor-cli/checkpoints/)
 # Note: checkpoint_index.json can be committed for sharing checkpoint metadata

@@ -231,6 +231,59 @@ def test_swe_lite_runner_evaluates_existing_run(monkeypatch: pytest.MonkeyPatch,
     assert summary["official_evaluation"]["results"] == {"resolved": []}
 
 
+def test_swe_lite_official_eval_uses_prediction_ids_and_report(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    args = swe_run.parse_args(
+        [
+            "--confirm-cost",
+            "--eval-max-workers",
+            "1",
+            "--eval-timeout",
+            "7",
+            "--eval-namespace",
+            "none",
+            "--eval-force-rebuild",
+            "--eval-cache-level",
+            "none",
+            "--eval-clean",
+            "--store-root",
+            str(tmp_path / "stores"),
+        ]
+    )
+    run_dir = tmp_path / "run-1"
+    run_dir.mkdir()
+    (run_dir / "predictions.jsonl").write_text(
+        '{"instance_id":"repo__proj-1","model_patch":""}\n{"instance_id":"repo__proj-2","model_patch":""}\n',
+        encoding="utf-8",
+    )
+    captured: dict[str, object] = {}
+
+    def fake_run(command: list[str], **_kwargs: object) -> swe_run.subprocess.CompletedProcess[str]:
+        captured["command"] = command
+        captured["env"] = _kwargs["env"]
+        (run_dir / "model.run-1.json").write_text('{"resolved_ids":["repo__proj-1"]}\n', encoding="utf-8")
+        return swe_run.subprocess.CompletedProcess(command, 0, "ok", "")
+
+    monkeypatch.setattr(swe_run, "run_command", fake_run)
+
+    result = swe_run.run_official_evaluation(args, run_dir, "run-1")
+    command = captured["command"]
+    env = captured["env"]
+
+    assert isinstance(command, list)
+    assert isinstance(env, dict)
+    assert command[command.index("--instance_ids") + 1 :] == ["repo__proj-1", "repo__proj-2"]
+    assert command[command.index("--namespace") + 1] == "none"
+    assert command[command.index("--force_rebuild") + 1] == "True"
+    assert command[command.index("--cache_level") + 1] == "none"
+    assert command[command.index("--clean") + 1] == "True"
+    assert command[command.index("--timeout") + 1] == "7"
+    docker_config = (Path(args.store_root).resolve().parent / "docker-config" / run_dir.name).resolve()
+    assert env["DOCKER_CONFIG"] == str(docker_config)
+    assert json.loads((docker_config / "config.json").read_text(encoding="utf-8")) == {"auths": {}}
+    assert result["results_json"].endswith("model.run-1.json")
+    assert result["results"] == {"resolved_ids": ["repo__proj-1"]}
+
+
 def test_checked_in_swe_lite_smoke_result() -> None:
     run_dir = Path(__file__).resolve().parents[1] / "bench" / "swe_bench_lite" / "results" / "smoke-claude-20260614T035359Z"
     summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
@@ -240,7 +293,14 @@ def test_checked_in_swe_lite_smoke_result() -> None:
     assert summary["completed_exec_count"] == 1
     assert summary["replay_verified_count"] == 1
     assert summary["budget_usd"] == 1.0
-    assert summary["official_evaluation"] == {}
+    official = summary["official_evaluation"]
+    assert official["exit_code"] == 0
+    assert official["results_json"].endswith("claude-sonnet-4-20250514.smoke-claude-20260614T035359Z.json")
+    assert official["results"]["total_instances"] == 1
+    assert official["results"]["submitted_ids"] == ["astropy__astropy-12907"]
+    assert official["results"]["completed_ids"] == ["astropy__astropy-12907"]
+    assert official["results"]["resolved_ids"] == ["astropy__astropy-12907"]
+    assert official["results"]["error_ids"] == []
     assert result["instance_id"] == "astropy__astropy-12907"
     assert result["exit_code"] == 0
     assert result["replay_verified"] is True
