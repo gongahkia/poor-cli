@@ -10,6 +10,7 @@ nav:
   - Providers: providers.md
   - Replay: replay.md
   - Graph Tools: graph.md
+  - Local First: local-first.md
   - Benchmarks: benchmarks.md
 markdown_extensions:
   - admonition
