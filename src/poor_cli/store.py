@@ -45,6 +45,8 @@ class RunStore:
     def __init__(self, root: Path | None = None):
         self.root = root or (Path.cwd() / ".poor-cli" / "v6")
         self.root.mkdir(parents=True, exist_ok=True)
+        self.runs_root = self.root / "runs"
+        self.runs_root.mkdir(parents=True, exist_ok=True)
         self.cas = CAS(self.root / "cas")
         self.db_path = self.root / "runs.sqlite3"
         self.conn = sqlite3.connect(self.db_path)
@@ -137,14 +139,17 @@ class RunStore:
         budget: dict[str, Any],
     ) -> str:
         run_id = make_id("run")
+        created_at = utc_now()
         self.conn.execute(
             """
             INSERT INTO runs(run_id, created_at, repo_path, git_commit_start, user_goal, mode, budget_json, status)
             VALUES(?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (run_id, utc_now(), str(repo_path), git_commit_start, user_goal, mode, self._json(budget), "created"),
+            (run_id, created_at, str(repo_path), git_commit_start, user_goal, mode, self._json(budget), "created"),
         )
         self.conn.commit()
+        self._run_dir(run_id).mkdir(parents=True, exist_ok=True)
+        self._write_run_meta(run_id)
         return run_id
 
     def append_event(self, run_id: str, event_type: str, payload: dict[str, Any], task_id: str | None = None) -> Event:
@@ -154,6 +159,7 @@ class RunStore:
             (event.event_id, run_id, task_id, event.type, event.created_at, self._json(event.payload)),
         )
         self.conn.commit()
+        self._append_event_file(event)
         return event
 
     def put_artifact(
@@ -258,10 +264,12 @@ class RunStore:
             (status, final_summary, run_id),
         )
         self.conn.commit()
+        self._write_run_meta(run_id)
 
     def set_run_plan(self, run_id: str, plan_id: str) -> None:
         self.conn.execute("UPDATE runs SET plan_id = ? WHERE run_id = ?", (plan_id, run_id))
         self.conn.commit()
+        self._write_run_meta(run_id)
 
     def set_task_status(
         self,
@@ -330,6 +338,22 @@ class RunStore:
                 item[key[:-5]] = json.loads(value)
                 del item[key]
         return item
+
+    def _run_dir(self, run_id: str) -> Path:
+        return self.runs_root / run_id
+
+    def _write_run_meta(self, run_id: str) -> None:
+        path = self._run_dir(run_id) / "meta.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(self._json(self.get_run(run_id)) + "\n", encoding="utf-8")
+        tmp.replace(path)
+
+    def _append_event_file(self, event: Event) -> None:
+        path = self._run_dir(event.run_id) / "events.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(self._json(event) + "\n")
 
     def _artifact_bytes(self, data: bytes | str | dict[str, Any] | list[Any]) -> bytes:
         if isinstance(data, bytes):
