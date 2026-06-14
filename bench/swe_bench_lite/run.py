@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run poor-cli against SWE-bench Lite and record reproducible cost telemetry."""
+"""Run poor-cli v6 against a pinned SWE-bench Lite subset."""
 
 from __future__ import annotations
 
@@ -17,22 +17,26 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-DATASET_NAME = "princeton-nlp/SWE-bench_Lite"
-DATASET_REVISION = "6ec7bb89b9342f664a54a6e0a6ea6501d3437cc2"
+DATASET_NAME = "SWE-bench/SWE-bench_Lite"
+DATASET_REVISION = ""
 DEFAULT_PROVIDER = "anthropic"
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_AGENT = "claude"
 DEFAULT_SEED = 0
 COST_CONFIRMATION = "RUN SWE BENCH"
 REPO_ROOT = Path(__file__).resolve().parents[2]
+PINNED_MANIFEST = REPO_ROOT / "tests" / "fixtures" / "swe-lite-10" / "manifest.json"
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="bench/swe_bench_lite/run.py")
     parser.add_argument("--provider", default=os.getenv("POOR_CLI_BENCH_PROVIDER", DEFAULT_PROVIDER))
     parser.add_argument("--model", default=os.getenv("POOR_CLI_BENCH_MODEL", DEFAULT_MODEL))
+    parser.add_argument("--agent", choices=["claude", "codex", "generic"], default=os.getenv("POOR_CLI_BENCH_AGENT", DEFAULT_AGENT))
     parser.add_argument("--dataset-name", default=DATASET_NAME)
     parser.add_argument("--dataset-revision", default=DATASET_REVISION)
     parser.add_argument("--split", default="test")
+    parser.add_argument("--manifest", type=Path, default=PINNED_MANIFEST, help="Pinned SWE task manifest; use '' to disable.")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--run-id")
     parser.add_argument("--task-subset-filter", help="Regex matched against instance_id")
@@ -41,6 +45,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--shuffle", action="store_true", help="Shuffle selected tasks using --seed")
     parser.add_argument("--results-dir", default="bench/swe_bench_lite/results")
     parser.add_argument("--work-dir", default=".poor-cli/bench/swe_bench_lite/worktrees")
+    parser.add_argument("--store-root", default=".poor-cli/bench/swe_bench_lite/stores")
     parser.add_argument("--python", default=sys.executable)
     parser.add_argument("--timeout-seconds", type=int, default=3600)
     parser.add_argument("--permission-mode", default="acceptEdits")
@@ -48,6 +53,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--auto-approve", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--confirm-cost", action="store_true", help="Acknowledge API/Docker cost before generation")
     parser.add_argument("--no-evaluate", action="store_true", help="Skip official SWE-bench Docker evaluation")
+    parser.add_argument("--skip-replay-verify", action="store_true", help="Skip poor-cli offline replay verification")
     parser.add_argument("--eval-max-workers", type=int, default=8)
     parser.add_argument("--keep-worktrees", action="store_true")
     return parser.parse_args(argv)
@@ -64,7 +70,44 @@ def load_tasks(dataset_name: str, split: str, revision: str) -> list[dict[str, A
         raise SystemExit(
             "Missing bench deps. Run: python -m pip install -r bench/swe_bench_lite/requirements.txt"
         ) from exc
-    return [dict(row) for row in load_dataset(dataset_name, split=split, revision=revision)]
+    kwargs: dict[str, Any] = {"split": split}
+    if revision:
+        kwargs["revision"] = revision
+    return [dict(row) for row in load_dataset(dataset_name, **kwargs)]
+
+
+def load_manifest(path: Path | None) -> dict[str, Any] | None:
+    if path is None or str(path) == "":
+        return None
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise SystemExit(f"manifest root must be object: {path}")
+    return payload
+
+
+def apply_manifest(tasks: Iterable[dict[str, Any]], manifest: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if manifest is None:
+        return list(tasks)
+    indexed = {str(task.get("instance_id")): task for task in tasks}
+    selected = []
+    missing = []
+    for expected in manifest.get("instances", []):
+        if not isinstance(expected, dict):
+            continue
+        instance_id = str(expected.get("instance_id") or "")
+        task = indexed.get(instance_id)
+        if task is None:
+            missing.append(instance_id)
+            continue
+        for key in ("repo", "base_commit"):
+            wanted = str(expected.get(key) or "")
+            actual = str(task.get(key) or "")
+            if wanted and actual and wanted != actual:
+                raise SystemExit(f"manifest mismatch for {instance_id} {key}: {actual} != {wanted}")
+        selected.append(task)
+    if missing:
+        raise SystemExit(f"manifest instances missing from dataset: {', '.join(missing)}")
+    return selected
 
 
 def select_tasks(
@@ -127,14 +170,6 @@ def checkout_task_repo(task: dict[str, Any], task_dir: Path) -> None:
         raise RuntimeError(checkout.stderr.strip() or checkout.stdout.strip() or f"git checkout failed for {base_commit}")
 
 
-def parse_exec_json(stdout: str) -> dict[str, Any]:
-    try:
-        parsed = json.loads(stdout)
-        return parsed if isinstance(parsed, dict) else {}
-    except json.JSONDecodeError:
-        return {}
-
-
 def cost_from_payload(payload: dict[str, Any]) -> dict[str, Any]:
     cost = payload.get("cost") if isinstance(payload.get("cost"), dict) else {}
     return {
@@ -175,58 +210,127 @@ def git_commit() -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+def planner_payload(task: dict[str, Any], agent: str) -> dict[str, Any]:
+    prompt = benchmark_prompt(task)
+    return {
+        "problem_summary": f"SWE-bench Lite task {task.get('instance_id')}",
+        "architecture_assessment": "external benchmark repository",
+        "assumptions": ["use grep-mode file navigation; do not use graph tools"],
+        "risks": ["benchmark patch may need repository-specific test context"],
+        "tasks": [
+            {
+                "title": f"Resolve {task.get('instance_id')}",
+                "objective": prompt,
+                "task_type": "implementation",
+                "complexity": "high",
+                "risk": "medium",
+                "required_context": "repository files and issue statement",
+                "dependencies": [],
+                "suggested_agent": agent,
+                "validation": ["run relevant tests from the issue statement when feasible"],
+            }
+        ],
+        "validation_strategy": ["official SWE-bench Docker evaluation via predictions.jsonl"],
+        "routing_strategy": agent,
+        "estimated_cost": {"tokens": None, "usd": None},
+        "requires_user_confirmation": True,
+    }
+
+
+def write_planner(path: Path, task: dict[str, Any], agent: str) -> Path:
+    payload = planner_payload(task, agent)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"import json, sys\nsys.stdin.read()\nprint({json.dumps(payload)!r})\n", encoding="utf-8")
+    return path
+
+
+def extract_run_id(stdout: str) -> str:
+    for line in stdout.splitlines():
+        if line.startswith("run_id:"):
+            return line.split(":", 1)[1].strip()
+    return ""
+
+
+def poor_cli_env(args: argparse.Namespace, planner: Path | None = None) -> dict[str, str]:
+    env = os.environ.copy()
+    src = str(REPO_ROOT / "src")
+    env["PYTHONHASHSEED"] = str(args.seed)
+    old_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = src if not old_pythonpath else f"{src}{os.pathsep}{old_pythonpath}"
+    if planner is not None:
+        env["POOR_CLI_PLANNER_COMMAND"] = f"{args.python} {shlex.quote(str(planner))}"
+    return env
+
+
+def run_replay_verify(args: argparse.Namespace, task_dir: Path, store_dir: Path, run_id: str) -> dict[str, Any]:
+    if args.skip_replay_verify or not run_id:
+        return {"verified": False, "returncode": 0, "stdout": "", "stderr": "", "trace_sha256": "", "command": []}
+    command = [args.python, "-m", "poor_cli", "--offline", "--store-dir", str(store_dir), "replay", run_id, "--verify", "--json"]
+    env = poor_cli_env(args)
+    env["POOR_CLI_OFFLINE"] = "1"
+    result = run_command(command, cwd=task_dir, env=env)
+    trace = ""
+    verified = False
+    if result.returncode == 0:
+        try:
+            verification = json.loads(result.stdout)["verification"]
+            verified = bool(verification["verified"])
+            trace = str(verification.get("trace_sha256") or "")
+        except (KeyError, json.JSONDecodeError, TypeError):
+            verified = False
+    return {
+        "verified": verified,
+        "returncode": result.returncode,
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "trace_sha256": trace,
+        "command": command,
+    }
+
+
 def run_task(task: dict[str, Any], args: argparse.Namespace, run_dir: Path, work_dir: Path) -> dict[str, Any]:
     instance_id = str(task["instance_id"])
     task_dir = work_dir / instance_id
     task_out = run_dir / instance_id
     task_out.mkdir(parents=True, exist_ok=True)
+    store_dir = Path(args.store_root).resolve() / run_dir.name / instance_id
     started_at = dt.datetime.now(dt.timezone.utc).isoformat()
     wall_start = time.monotonic()
     checkout_error = ""
     timed_out = False
     timeout_stdout = ""
     timeout_stderr = ""
-    exec_result: subprocess.CompletedProcess[str] | None = None
-    payload: dict[str, Any] = {}
+    run_result: subprocess.CompletedProcess[str] | None = None
     patch = ""
     status = ""
+    run_id = ""
+    replay = {"verified": False, "returncode": 1, "stdout": "", "stderr": "", "trace_sha256": "", "command": []}
     try:
         checkout_task_repo(task, task_dir)
         prompt = benchmark_prompt(task)
         if not prompt:
             raise RuntimeError("empty SWE-bench problem_statement")
+        planner = write_planner(task_out / "planner.py", task, args.agent)
         command = [
             args.python,
             "-m",
             "poor_cli",
-            "exec",
-            "--prompt",
+            "--store-dir",
+            str(store_dir),
+            "run",
             prompt,
-            "--output-format",
-            "json",
-            "--provider",
-            args.provider,
-            "--model",
-            args.model,
-            "--permission-mode",
-            args.permission_mode,
-            "--sandbox-preset",
-            args.sandbox_preset,
+            "--yes",
         ]
-        if args.auto_approve:
-            command.append("--auto-approve")
-        env = os.environ.copy()
-        env["PYTHONHASHSEED"] = str(args.seed)
-        env["PYTHONPATH"] = f"{REPO_ROOT}{os.pathsep}{env.get('PYTHONPATH', '')}".rstrip(os.pathsep)
-        exec_result = run_command(command, cwd=task_dir, timeout=args.timeout_seconds, env=env)
-        payload = parse_exec_json(exec_result.stdout)
+        run_result = run_command(command, cwd=task_dir, timeout=args.timeout_seconds, env=poor_cli_env(args, planner))
+        run_id = extract_run_id(run_result.stdout)
         patch = git_diff(task_dir)
         status = git_status(task_dir)
+        replay = run_replay_verify(args, task_dir, store_dir, run_id)
     except subprocess.TimeoutExpired as exc:
         timed_out = True
         timeout_stdout = exc.stdout or ""
         timeout_stderr = exc.stderr or ""
-        checkout_error = f"poor-cli exec timed out after {args.timeout_seconds}s"
+        checkout_error = f"poor-cli run timed out after {args.timeout_seconds}s"
         if task_dir.exists():
             patch = git_diff(task_dir)
             status = git_status(task_dir)
@@ -235,15 +339,19 @@ def run_task(task: dict[str, Any], args: argparse.Namespace, run_dir: Path, work
     finally:
         if task_dir.exists() and not args.keep_worktrees:
             shutil.rmtree(task_dir)
-    stdout = exec_result.stdout if exec_result is not None else timeout_stdout
-    stderr = exec_result.stderr if exec_result is not None else timeout_stderr or checkout_error
+    stdout = run_result.stdout if run_result is not None else timeout_stdout
+    stderr = run_result.stderr if run_result is not None else timeout_stderr or checkout_error
     (task_out / "stdout.txt").write_text(stdout, encoding="utf-8")
     (task_out / "stderr.txt").write_text(stderr, encoding="utf-8")
-    cost = cost_from_payload(payload)
     record = {
         "instance_id": instance_id,
         "repo": task.get("repo"),
         "base_commit": task.get("base_commit"),
+        "poor_cli_run_id": run_id,
+        "poor_cli_store_dir": str(store_dir),
+        "replay_verified": bool(replay["verified"]),
+        "replay_trace_sha256": replay["trace_sha256"],
+        "agent": args.agent,
         "model": args.model,
         "provider": args.provider,
         "dataset_name": args.dataset_name,
@@ -252,12 +360,13 @@ def run_task(task: dict[str, Any], args: argparse.Namespace, run_dir: Path, work
         "started_at": started_at,
         "finished_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "wall_time_seconds": round(time.monotonic() - wall_start, 3),
-        "exit_code": exec_result.returncode if exec_result is not None else 124 if timed_out else 1,
-        "cost": cost,
+        "exit_code": run_result.returncode if run_result is not None else 124 if timed_out else 1,
+        "cost": cost_from_payload({}),
         "git_status": status,
         "patch_bytes": len(patch.encode("utf-8")),
         "stdout_path": str(task_out / "stdout.txt"),
         "stderr_path": str(task_out / "stderr.txt"),
+        "replay_returncode": replay["returncode"],
         "error": checkout_error,
     }
     write_json(task_out / "result.json", record)
