@@ -31,6 +31,8 @@ class MyProvider:
 
 `CachedReplayProvider` records provider requests and responses in the run store. On a matching future request, it returns the cached response and emits `provider.cache_hit`. On a miss in replay-only mode, it raises `ProviderReplayMiss`.
 
+`CachedReplayProvider.call_many()` accepts a batch of requests, replays cached items immediately, and sends only cache misses to a wrapped provider. If the wrapped provider implements `call_many()`, misses are sent through that batch path; otherwise they fall back to individual `call()` calls.
+
 ## Built-in Adapters
 
 The alpha includes adapters for:

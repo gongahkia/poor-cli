@@ -18,6 +18,16 @@ class EchoProvider:
         return ProviderResponse(provider=request.provider, model=request.model, content=f"echo:{request.prompt}", raw={"calls": self.calls})
 
 
+class BatchEchoProvider(EchoProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.batch_calls = 0
+
+    def call_many(self, requests: list[ProviderRequest]) -> list[ProviderResponse]:
+        self.batch_calls += 1
+        return [ProviderResponse(provider=request.provider, model=request.model, content=f"batch:{request.prompt}") for request in requests]
+
+
 def test_cached_replay_provider_records_then_replays(tmp_path: Path) -> None:
     store = RunStore(tmp_path / "store")
     run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
@@ -35,6 +45,37 @@ def test_cached_replay_provider_records_then_replays(tmp_path: Path) -> None:
         "provider.cache_miss",
         "provider.call.started",
         "provider.call.completed",
+        "provider.cache_hit",
+    ]
+    store.close()
+
+
+def test_cached_replay_provider_batches_uncached_requests_then_replays(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    requests = [
+        ProviderRequest(provider="test", model="echo", prompt="a"),
+        ProviderRequest(provider="test", model="echo", prompt="b"),
+    ]
+    wrapped = BatchEchoProvider()
+
+    first = CachedReplayProvider(store, run_id, wrapped).call_many(requests)
+    replayed = CachedReplayProvider(store, run_id, replay_only=True).call_many(requests)
+
+    assert wrapped.batch_calls == 1
+    assert [response.content for response in first] == ["batch:a", "batch:b"]
+    assert [response.content for response in replayed] == ["batch:a", "batch:b"]
+    assert all(response.cached for response in replayed)
+    assert [event["type"] for event in store.list_events(run_id)] == [
+        "provider.cache_miss",
+        "provider.cache_miss",
+        "provider.call.started",
+        "provider.call.started",
+        "provider.batch.started",
+        "provider.call.completed",
+        "provider.call.completed",
+        "provider.batch.completed",
+        "provider.cache_hit",
         "provider.cache_hit",
     ]
     store.close()

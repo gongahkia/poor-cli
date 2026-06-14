@@ -16,6 +16,7 @@
 - Tool entry points use the `poor_cli.tools` group and merge with built-ins at dispatcher startup.
 - Provider entry points use the `poor_cli.providers` group and return provider instances behind the shared `Provider` contract.
 - Provider adapters wrap Anthropic, OpenAI Responses, Gemini, Ollama, vLLM, and SGLang clients behind the shared replayable provider contract.
+- `CachedReplayProvider.call_many()` batches uncached provider misses when the wrapped provider exposes `call_many()`, while replaying cached requests individually.
 - MCP is client-only in v6.0.0: `poor-cli mcp list` and `poor-cli mcp call server:tool` consume configured stdio MCP servers.
 - Graph tools use tree-sitter-backed Python and JavaScript indexing, incrementally refresh changed graph files before uncached queries, expose a polling watch handle for long-lived graph users, and are exposed through the replayable `ToolDispatcher`.
 
@@ -32,4 +33,4 @@
 
 ## Boundaries
 
-The alpha intentionally excludes worktree isolation, parallel scheduling, MCP server hosting, broad multi-language graph indexing beyond Python/JavaScript, kernel-native file watchers, batched prompt caching for local providers, and live graph-mode SWE-bench benchmarking. The TUI, MCP client, benchmark harness, local provider adapters, and graph tools are present but intentionally small.
+The alpha intentionally excludes worktree isolation, parallel scheduling, MCP server hosting, broad multi-language graph indexing beyond Python/JavaScript, kernel-native file watchers, provider-native prefix/KV-cache control, and live graph-mode SWE-bench benchmarking. The TUI, MCP client, benchmark harness, local provider adapters, cache-aware provider batching, and graph tools are present but intentionally small.
