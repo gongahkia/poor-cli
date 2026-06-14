@@ -9,6 +9,7 @@ nav:
   - Hooks: hooks.md
   - Providers: providers.md
   - Replay: replay.md
+  - Graph Tools: graph.md
   - Benchmarks: benchmarks.md
 markdown_extensions:
   - admonition

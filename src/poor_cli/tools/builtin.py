@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from poor_cli.repo_graph import graph_tools
 from poor_cli.sandbox import validate_shell_command
 
 if TYPE_CHECKING:
@@ -21,6 +22,7 @@ def builtin_tools(root: Path) -> dict[str, Any]:
         "grep": lambda args: _grep(root, args),
         "shell": lambda args: _shell(root, args),
         "replay_emit": _replay_emit,
+        **graph_tools(root),
     }
 
 
