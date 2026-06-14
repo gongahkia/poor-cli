@@ -18,7 +18,10 @@ FIXTURE_ROOT = ROOT / "tests" / "fixtures"
 FIXTURES: dict[str, dict[str, str]] = {
     "bug-1": {
         "prompt": "Fix the calculator fixture so its pytest suite passes.",
-        "command": "from pathlib import Path; p=Path('calculator.py'); p.write_text(p.read_text().replace('return left - right', 'return left + right'))",
+        "command": (
+            "from pathlib import Path; p=Path('calculator.py'); "
+            "p.write_text(p.read_text().replace('return left - right', 'return left + right'))"
+        ),
     },
     "bug-2": {
         "prompt": "Fix the slugify fixture so its pytest suite passes.",
@@ -106,7 +109,11 @@ def _run_fixture(name: str, agent: str, work_root: Path) -> dict[str, Any]:
 
     test_cmd = [sys.executable, "-m", "pytest", "-q"]
     tests = subprocess.run(test_cmd, cwd=workdir, env=env, text=True, capture_output=True, check=False)
-    replay = _verify_replay(store_dir, run_id, workdir, env) if run_id else {"verified": False, "returncode": 1, "stdout": "", "stderr": "missing run_id"}
+    replay = (
+        _verify_replay(store_dir, run_id, workdir, env)
+        if run_id
+        else {"verified": False, "returncode": 1, "stdout": "", "stderr": "missing run_id", "command": []}
+    )
 
     return {
         "fixture": name,
