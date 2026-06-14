@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from poor_cli.providers import CachedReplayProvider, ProviderReplayMiss, ProviderRequest, ProviderResponse
+from poor_cli.providers import CachedReplayProvider, ProviderReplayMiss, ProviderRequest, ProviderResponse, load_provider_entry_points
 from poor_cli.store import RunStore
 
 
@@ -49,3 +49,22 @@ def test_cached_replay_provider_fails_closed_on_miss(tmp_path: Path) -> None:
 
     assert store.list_events(run_id)[0]["type"] == "provider.cache_miss"
     store.close()
+
+
+def test_provider_entry_points_load_provider_instances(monkeypatch) -> None:
+    class EntryPoint:
+        name = "echo"
+
+        def load(self):
+            return EchoProvider
+
+    class EntryPoints:
+        def select(self, group: str):
+            assert group == "poor_cli.providers"
+            return [EntryPoint()]
+
+    monkeypatch.setattr("poor_cli.extensions.entry_points", lambda: EntryPoints())
+
+    providers = load_provider_entry_points()
+
+    assert isinstance(providers["echo"], EchoProvider)

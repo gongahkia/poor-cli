@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from poor_cli.store import RunStore
-from poor_cli.tools import ToolDispatcher, ToolReplayMiss
+from poor_cli.tools import ToolDispatcher, ToolReplayMiss, ToolResult, load_tool_entry_points
 
 
 def _run_id(store: RunStore, root: Path) -> str:
@@ -60,4 +60,30 @@ def test_tool_dispatcher_fails_closed_on_replay_miss(tmp_path: Path) -> None:
         ToolDispatcher(store, run_id, workdir=tmp_path, replay_only=True).call("replay_emit", {"value": "missing"})
 
     assert store.list_events(run_id)[0]["type"] == "tool.cache_miss"
+    store.close()
+
+
+def test_tool_entry_points_extend_dispatcher_defaults(tmp_path: Path, monkeypatch) -> None:
+    def external_tool(args):
+        return ToolResult(name="audit", ok=True, output={"value": args["value"]})
+
+    class EntryPoint:
+        name = "audit"
+
+        def load(self):
+            return external_tool
+
+    class EntryPoints:
+        def select(self, group: str):
+            assert group == "poor_cli.tools"
+            return [EntryPoint()]
+
+    monkeypatch.setattr("poor_cli.extensions.entry_points", lambda: EntryPoints())
+    store = RunStore(tmp_path / "store")
+    run_id = _run_id(store, tmp_path)
+
+    assert load_tool_entry_points() == {"audit": external_tool}
+    result = ToolDispatcher(store, run_id, workdir=tmp_path).call("audit", {"value": 7})
+
+    assert result.output == {"value": 7}
     store.close()

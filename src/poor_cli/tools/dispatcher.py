@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from poor_cli.extensions import ExtensionLoadError, load_entry_point_values
 from poor_cli.hooks import Hook, HookManager
 from poor_cli.store import RunStore
 
@@ -22,6 +23,10 @@ class ToolNotFound(ToolError):
 
 
 class ToolReplayMiss(ToolError):
+    pass
+
+
+class ToolLoadError(ToolError):
     pass
 
 
@@ -61,7 +66,7 @@ class ToolDispatcher:
         self.store = store
         self.run_id = run_id
         self.workdir = (workdir or Path.cwd()).resolve()
-        self.tools = tools if tools is not None else builtin_tools(self.workdir)
+        self.tools = tools if tools is not None else load_tools(self.workdir)
         self.replay_only = replay_only
         self.hooks = hooks if isinstance(hooks, HookManager) else HookManager.from_hooks(hooks)
 
@@ -135,6 +140,34 @@ class ToolDispatcher:
 
 def _stable_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def load_tools(workdir: Path | None = None, group: str = "poor_cli.tools") -> dict[str, ToolFn]:
+    tools = builtin_tools((workdir or Path.cwd()).resolve())
+    try:
+        external = load_tool_entry_points(group)
+    except ExtensionLoadError as exc:
+        raise ToolLoadError(str(exc)) from exc
+    duplicates = sorted(set(tools) & set(external))
+    if duplicates:
+        raise ToolLoadError(f"tool entry point duplicates built-in: {', '.join(duplicates)}")
+    tools.update(external)
+    return tools
+
+
+def load_tool_entry_points(group: str = "poor_cli.tools") -> dict[str, ToolFn]:
+    tools: dict[str, ToolFn] = {}
+    for name, value in load_entry_point_values(group):
+        if isinstance(value, dict):
+            for tool_name, tool in value.items():
+                if not callable(tool):
+                    raise ToolLoadError(f"tool entry point {name}.{tool_name} is not callable")
+                tools[str(tool_name)] = tool
+            continue
+        if not callable(value):
+            raise ToolLoadError(f"tool entry point {name} is not callable")
+        tools[name] = value
+    return tools
 
 
 def _hook_context(run_id: str, tool: str, request_hash: str, task_id: str | None, cached: bool) -> dict[str, Any]:

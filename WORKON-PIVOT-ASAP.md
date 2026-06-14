@@ -27,6 +27,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: closed GitHub issue #53 after the benchmark schema and baseline plan landed.
 - 2026-06-14: added the v6 hook protocol and entry-point loader for `poor_cli.hooks`, wired into run turns, provider model calls, tool calls, and run completion. Evidence: `tests/test_hooks.py`.
 - 2026-06-14: added Anthropic, OpenAI Responses, Gemini, and Ollama provider adapters behind the shared replayable provider contract. Evidence: `tests/test_provider_adapters.py`; OpenAI call shape checked against official Responses API docs.
+- 2026-06-14: added entry-point loading for `poor_cli.tools` and `poor_cli.providers`, completing the phase-1 hooks/tools/providers extension lane. Evidence: `tests/test_tools.py::test_tool_entry_points_extend_dispatcher_defaults` and `tests/test_providers.py::test_provider_entry_points_load_provider_instances`.
 
 ## TL;DR
 

@@ -6,11 +6,16 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Protocol
 
+from .extensions import ExtensionLoadError, load_entry_point_values
 from .hooks import Hook, HookManager
 from .store import RunStore
 
 
 class ProviderReplayMiss(RuntimeError):
+    pass
+
+
+class ProviderLoadError(RuntimeError):
     pass
 
 
@@ -126,3 +131,17 @@ class CachedReplayProvider:
 
 def _stable_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def load_provider_entry_points(group: str = "poor_cli.providers") -> dict[str, Provider]:
+    providers: dict[str, Provider] = {}
+    try:
+        values = load_entry_point_values(group)
+    except ExtensionLoadError as exc:
+        raise ProviderLoadError(str(exc)) from exc
+    for name, value in values:
+        provider = value() if isinstance(value, type) else value
+        if not hasattr(provider, "call"):
+            raise ProviderLoadError(f"provider entry point {name} has no call method")
+        providers[name] = provider
+    return providers
