@@ -43,6 +43,8 @@ def test_linux_cuda_setup_script_covers_local_engines() -> None:
     assert "export POOR_CLI_LOCAL_VENV" in text
     assert "export POOR_CLI_LOCAL_BASE_URL" in text
     assert "nvidia-smi" in text
+    assert "nvidia-smi --query-gpu=name --format=csv,noheader" in text
+    assert "nvidia-smi did not return a GPU name" in text
     assert "--enable-prefix-caching" in text
     assert "--prefix-caching-hash-algo" in text
     assert "--no-enable-prefix-caching" in text

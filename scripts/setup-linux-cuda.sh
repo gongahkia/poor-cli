@@ -64,9 +64,20 @@ if [[ "$(uname -s)" != "Linux" && "${POOR_CLI_ALLOW_NON_LINUX:-0}" != "1" ]]; th
   echo "Linux required; set POOR_CLI_ALLOW_NON_LINUX=1 only for dry validation" >&2
   exit 2
 fi
-if [[ "$SKIP_CUDA_CHECK" != "1" ]] && ! command -v nvidia-smi >/dev/null 2>&1; then
-  echo "nvidia-smi not found; install NVIDIA driver/CUDA first or pass --skip-cuda-check" >&2
-  exit 2
+if [[ "$SKIP_CUDA_CHECK" != "1" ]]; then
+  if ! command -v nvidia-smi >/dev/null 2>&1; then
+    echo "nvidia-smi not found; install NVIDIA driver/CUDA first or pass --skip-cuda-check" >&2
+    exit 2
+  fi
+  set +e
+  GPU_QUERY="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>&1)"
+  GPU_QUERY_EXIT="$?"
+  set -e
+  if [[ "$GPU_QUERY_EXIT" != "0" || "$GPU_QUERY" == "" ]]; then
+    echo "nvidia-smi did not return a GPU name; check NVIDIA driver/CUDA before setup or pass --skip-cuda-check for dry validation" >&2
+    echo "$GPU_QUERY" >&2
+    exit 2
+  fi
 fi
 
 case "$ENGINE" in
