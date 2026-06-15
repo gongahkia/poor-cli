@@ -261,7 +261,9 @@ def test_checked_in_pivot_remaining_snapshot() -> None:
 
     assert payload["schema_version"] == "poor-cli-pivot-remaining-v1"
     assert payload["complete"] is False
-    assert payload["checks"]["phase2_fixed_swe_graph_mode"]["done"] is False
+    assert payload["checks"]["phase2_fixed_swe_graph_mode"]["done"] is True
+    assert payload["checks"]["phase2_fixed_swe_graph_mode"]["resolved_instances"] == 8
+    assert payload["checks"]["phase2_fixed_swe_graph_mode"]["total_instances"] == 10
     assert payload["checks"]["phase3_linux_cuda_readiness"]["done"] is False
     assert payload["checks"]["phase3_local_mode_benchmark"]["done"] is False
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["done"]}
@@ -464,6 +466,36 @@ def test_checked_in_swe_lite_10_result() -> None:
     assert official_report["unresolved_ids"] == ["astropy__astropy-14182"]
     assert len(rows) == 10
     assert sum(1 for row in rows if row["exit_code"] == 0) == 7
+    assert all(row["replay_verified"] is True for row in rows)
+    assert all(row["patch_bytes"] > 0 for row in rows)
+    assert all(len(row["replay_trace_sha256"]) == 64 for row in rows)
+
+
+def test_checked_in_swe_lite_10_graph_result() -> None:
+    run_dir = Path(__file__).resolve().parents[1] / "bench" / "swe_bench_lite" / "results" / "swe10-graph-20260615T020703Z"
+    summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+    rows = [json.loads(line) for line in (run_dir / "task_results.jsonl").read_text(encoding="utf-8").splitlines()]
+    official_report = json.loads((run_dir / "claude-sonnet-4-20250514.swe10-graph-20260615T020703Z.json").read_text(encoding="utf-8"))
+
+    assert summary["graph_mode"] is True
+    assert summary["task_count"] == 10
+    assert summary["completed_exec_count"] == 9
+    assert summary["replay_verified_count"] == 10
+    assert summary["budget_usd"] == 1.0
+    official = summary["official_evaluation"]
+    assert official["exit_code"] == 0
+    assert official["results_json"].endswith("claude-sonnet-4-20250514.swe10-graph-20260615T020703Z.json")
+    assert official["results"]["submitted_instances"] == 10
+    assert official["results"]["completed_instances"] == 10
+    assert official["results"]["resolved_instances"] == 8
+    assert official["results"]["unresolved_instances"] == 2
+    assert official["results"]["error_instances"] == 0
+    assert official["results"]["unresolved_ids"] == ["astropy__astropy-14182", "django__django-11019"]
+    assert official_report["resolved_instances"] == 8
+    assert official_report["unresolved_ids"] == ["astropy__astropy-14182", "django__django-11019"]
+    assert len(rows) == 10
+    assert sum(1 for row in rows if row["exit_code"] == 0) == 9
+    assert all(row["graph_mode"] is True for row in rows)
     assert all(row["replay_verified"] is True for row in rows)
     assert all(row["patch_bytes"] > 0 for row in rows)
     assert all(len(row["replay_trace_sha256"]) == 64 for row in rows)

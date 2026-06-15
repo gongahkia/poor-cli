@@ -25,5 +25,4 @@ Graph tools refresh the tree-sitter index before uncached queries when graph fil
 
 Remaining Phase 2 work:
 
-- Token and correctness comparison against grep-mode on the fixed benchmark set.
 - Additional grammars beyond Python, JavaScript, TypeScript, and TSX if the benchmark set needs them.

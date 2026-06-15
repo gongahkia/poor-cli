@@ -1,9 +1,10 @@
 {
   "checks": {
     "phase2_fixed_swe_graph_mode": {
-      "done": false,
-      "evidence": "",
-      "reason": "no checked-in fixed 10-task SWE-bench Lite graph-mode summary with official evaluation"
+      "done": true,
+      "evidence": "bench/swe_bench_lite/results/swe10-graph-20260615T020703Z/summary.json",
+      "resolved_instances": 8,
+      "total_instances": 10
     },
     "phase3_linux_cuda_readiness": {
       "done": false,
@@ -24,7 +25,6 @@
   },
   "complete": false,
   "remaining": [
-    "phase2_fixed_swe_graph_mode",
     "phase3_linux_cuda_readiness",
     "phase3_local_mode_benchmark"
   ],

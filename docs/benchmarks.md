@@ -35,8 +35,10 @@ Checked-in SWE-bench Lite rows:
 | --- | ---: | ---: | ---: | ---: |
 | smoke | 1 | 1/1 | 1/1 | 1/1 |
 | fixed 10-task | 10 | 7/10 | 10/10 | 9/10 |
+| fixed 10-task graph | 10 | 9/10 | 10/10 | 8/10 |
 
-The 10-task unresolved instance is `astropy__astropy-14182`.
+The grep-mode 10-task unresolved instance is `astropy__astropy-14182`.
+The graph-mode unresolved instances are `astropy__astropy-14182` and `django__django-11019`.
 
 ## Phase 3 Readiness
 
@@ -58,4 +60,4 @@ Checked-in synthetic row:
 | ---: | ---: | ---: | ---: | --- |
 | 50,000 | 19,246 | 49 | 99.7% | equal/pass |
 
-This is a deterministic Phase 2 scaffold, not the final SWE-bench graph-mode result.
+This is a deterministic Phase 2 scaffold; the fixed 10-task graph-mode result is checked in above.

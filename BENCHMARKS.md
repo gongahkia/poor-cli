@@ -90,7 +90,7 @@ uv run --locked python bench/pivot_remaining.py --output bench/results/pivot-rem
 
 Checked-in snapshot: `bench/results/pivot-remaining.json`.
 
-Current remaining evidence gaps: fixed 10-task graph-mode SWE-bench row, target Linux/CUDA Phase 3 readiness, and local-mode SWE-bench row.
+Current remaining evidence gaps: target Linux/CUDA Phase 3 readiness and local-mode SWE-bench row.
 
 ## Phase 3 readiness
 
@@ -122,7 +122,7 @@ Checked-in synthetic result:
 | --- | ---: | ---: | ---: | ---: | --- |
 | `bench/results/graph-vs-grep-synthetic.json` | 50,000 | 19,246 | 49 | 99.7% | equal/pass |
 
-This is a deterministic scaffold for Phase 2 measurement. It is not a substitute for the fixed 10-task SWE-bench graph-mode target.
+This is a deterministic scaffold for Phase 2 measurement. The fixed 10-task SWE-bench graph-mode row is checked in below.
 
 ## SWE-bench Lite 10
 
@@ -178,5 +178,7 @@ Checked-in 10-task run:
 | run dir | tasks | run completed | replay verified | official eval |
 | --- | ---: | ---: | ---: | --- |
 | `bench/swe_bench_lite/results/swe10-claude-20260614T105615Z` | 10 | 7/10 | 10/10 | 9/10 resolved |
+| `bench/swe_bench_lite/results/swe10-graph-20260615T020703Z` | 10 | 9/10 | 10/10 | 8/10 resolved |
 
-Official Docker eval completed 10/10 submitted instances with 0 errors. Unresolved: `astropy__astropy-14182`.
+Grep-mode official Docker eval completed 10/10 submitted instances with 0 errors. Unresolved: `astropy__astropy-14182`.
+Graph-mode official Docker eval completed 10/10 submitted instances with 0 errors. Unresolved: `astropy__astropy-14182`, `django__django-11019`.
