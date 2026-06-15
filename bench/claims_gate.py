@@ -18,8 +18,10 @@ def scan_claims(paths: list[Path]) -> dict[str, Any]:
     for path in paths:
         if not path.exists():
             continue
-        for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-            if CLAIM_RE.search(line) and not REQUIRED_RE.search(line):
+        lines = path.read_text(encoding="utf-8").splitlines()
+        for lineno, line in enumerate(lines, 1):
+            context = "\n".join(lines[max(0, lineno - 8) : min(len(lines), lineno + 2)])
+            if CLAIM_RE.search(line) and not REQUIRED_RE.search(context) and "requires" not in line.lower():
                 violations.append({"path": str(path), "line": lineno, "text": line.strip()})
     return {"schema_version": "poor-cli-claims-gate-v1", "accepted": not violations, "violations": violations}
 

@@ -8,7 +8,7 @@ Canonical benchmark details live in the repository root at `BENCHMARKS.md`.
 python3 bench/local_fixture_bugs.py --agent generic --compact --output bench/results/local-fixture-bugs-generic.json
 ```
 
-Checked-in result rows:
+Checked-in result rows. Evidence: `bench/results/local-fixture-bugs-generic.json` and `bench/results/local-fixture-bugs-claude.json`, recorded 2026-06-14.
 
 | agent | completed | tests passed | replay verified |
 | --- | ---: | ---: | ---: |
@@ -53,7 +53,7 @@ Graph-mode row generation:
 uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --no-evaluate --confirm-cost --budget-usd 1.0
 ```
 
-Checked-in SWE-bench Lite rows:
+Checked-in SWE-bench Lite rows. Evidence: `bench/swe_bench_lite/results/*/summary.json`, recorded 2026-06-14 and 2026-06-15.
 
 | run | tasks | run completed | replay verified | official eval |
 | --- | ---: | ---: | ---: | ---: |
@@ -111,7 +111,7 @@ The checked-in plan defines the target-host setup, graph-mode local SWE-bench ru
 uv run --locked python bench/graph_vs_grep.py --output bench/results/graph-vs-grep-synthetic.json
 ```
 
-Checked-in synthetic row:
+Checked-in synthetic row. Evidence: `bench/results/graph-vs-grep-synthetic.json`, recorded 2026-06-14.
 
 | LOC | grep tokens | graph tokens | reduction | correctness |
 | ---: | ---: | ---: | ---: | --- |
