@@ -9,6 +9,7 @@ from typing import Any
 
 from . import __version__
 from .agents import detect_agents
+from .artifacts import artifact_manifest, cleanup_run
 from .config import (
     ConfigError,
     add_provider,
@@ -73,6 +74,8 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
         return _route(args)
     if args.command == "inspect":
         return _inspect(args, store)
+    if args.command == "cleanup":
+        return _cleanup(args, store)
     if args.command == "replay":
         return _replay(args, store)
     if args.command == "mcp":
@@ -245,6 +248,8 @@ def _inspect(args: argparse.Namespace, store: RunStore) -> int:
             payload["handoff_artifacts"] = store.list_artifacts(args.run_id, "handoff.packet")
         if args.cost:
             payload["budget"] = run.get("budget")
+        if args.artifacts:
+            payload["artifacts"] = artifact_manifest(store, args.run_id)
         print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
     print(f"run: {run['run_id']} [{run['status']}]")
@@ -264,6 +269,16 @@ def _inspect(args: argparse.Namespace, store: RunStore) -> int:
             print(f"handoff {artifact['artifact_id']} {artifact['sha256']} {artifact['size']}b")
     if args.cost:
         print(json.dumps(run.get("budget"), sort_keys=True))
+    if args.artifacts:
+        for artifact in artifact_manifest(store, args.run_id):
+            print(f"artifact {artifact['path']} {artifact['size']}b")
+    return 0
+
+
+def _cleanup(args: argparse.Namespace, store: RunStore) -> int:
+    store.get_run(args.run_id)
+    removed = cleanup_run(store, args.run_id)
+    print("removed: " + (", ".join(removed) if removed else "none"))
     return 0
 
 
@@ -390,7 +405,11 @@ def _parser() -> argparse.ArgumentParser:
     inspect.add_argument("--events", action="store_true")
     inspect.add_argument("--context", action="store_true")
     inspect.add_argument("--cost", action="store_true")
+    inspect.add_argument("--artifacts", action="store_true")
     inspect.add_argument("--json", action="store_true")
+
+    cleanup = sub.add_parser("cleanup")
+    cleanup.add_argument("run_id")
 
     replay = sub.add_parser("replay")
     replay.add_argument("run_id")

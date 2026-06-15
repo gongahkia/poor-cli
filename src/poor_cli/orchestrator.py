@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import Any
 
 from .agents import AgentResult, AgentRunner, build_agent_prompt, detect_agents
+from .artifacts import write_plan_artifacts, write_review_verify_artifacts, write_worker_artifacts
 from .config import explain_route, load_config
 from .hooks import Hook, HookManager
 from .models import Budget, ContextPacket, Plan, TaskSpec, make_id, to_jsonable
 from .planner import Planner
+from .route_policy import classify_task
 from .store import RunStore
 
 
@@ -41,9 +43,16 @@ class Orchestrator:
         if graph_mode:
             for task in plan.tasks:
                 task.metadata["graph_mode"] = True
+        route_config = _route_config(load_config(self.repo_path), "executor")
+        for task in plan.tasks:
+            decision = classify_task(goal, plan, task, budget, graph_mode=graph_mode)
+            task.metadata["route_policy"] = asdict(decision)
+            task.metadata["route_config"] = route_config
+            self.store.append_event(run_id, "route.policy.selected", {"task_id": task.task_id, "policy": asdict(decision)}, task.task_id)
         prompt_art = self.store.put_artifact(run_id=run_id, kind="planner.prompt", data=prompt, media_type="text/plain")
         response_art = self.store.put_artifact(run_id=run_id, kind="planner.response", data=response, media_type="text/plain")
         plan_art = self.store.put_artifact(run_id=run_id, kind="plan.json", data=to_jsonable(plan))
+        write_plan_artifacts(self.store, run_id, plan)
         self.store.set_run_plan(run_id, plan.plan_id)
         self.store.insert_tasks(run_id, plan.tasks)
         self.store.append_event(
@@ -75,6 +84,7 @@ class Orchestrator:
         self.store.set_run_status(run_id, "running")
         exit_code = 0
         for task in tasks:
+            ordinal = tasks.index(task) + 1
             agent = runner.choose(task.suggested_agent)
             self.hooks.before_turn({"run_id": run_id, "task_id": task.task_id, "title": task.title, "agent": agent.name})
             packet = self._context_packet(run, task)
@@ -91,6 +101,8 @@ class Orchestrator:
                 self.store.set_task_status(task.task_id, "skipped")
                 self.store.append_event(run_id, "task.skipped", {"reason": "dry-run"}, task.task_id)
                 continue
+            preexisting_dirty = _git(["status", "--short"], self.repo_path)
+            dirty_lines = preexisting_dirty.splitlines() if preexisting_dirty else []
             agent_prompt = build_agent_prompt(str(run["user_goal"]), task, packet.task_prompt)
             input_art = self.store.put_artifact(
                 run_id=run_id,
@@ -108,12 +120,16 @@ class Orchestrator:
                     context=packet.task_prompt,
                     workdir=self.repo_path,
                     budget_usd=budget.max_usd,
+                    store=self.store,
+                    run_id=run_id,
+                    hooks=self.hooks,
                 )
                 agent_event = "agent.completed"
             except Exception as exc:
                 result = AgentResult(agent.agent_id, [], 1, "", f"{type(exc).__name__}: {exc}")
                 agent_event = "agent.failed"
             result_art = self.store.put_artifact(run_id=run_id, task_id=task.task_id, kind="agent.result", data=to_jsonable(result))
+            write_worker_artifacts(self.store, run_id, task, ordinal, to_jsonable(result), self.repo_path, preexisting_dirty=dirty_lines)
             self.store.append_event(
                 run_id,
                 agent_event,
@@ -140,6 +156,7 @@ class Orchestrator:
         final_status = "failed" if exit_code else "completed"
         summary = self._summary(run_id)
         self.store.set_run_status(run_id, final_status, summary)
+        write_review_verify_artifacts(self.store, run_id, status=final_status, summary=summary)
         self.store.append_event(run_id, f"run.{final_status}", {"summary": summary})
         self.hooks.after_run({"run_id": run_id, "status": final_status, "summary": summary})
         return exit_code
@@ -238,3 +255,9 @@ def _git(args: list[str], cwd: Path) -> str | None:
     except Exception:
         return None
     return result.stdout.strip() if result.returncode == 0 else None
+
+
+def _route_config(config: dict[str, Any], role: str) -> dict[str, Any]:
+    routes = config.get("routes")
+    route = routes.get(role) if isinstance(routes, dict) else None
+    return dict(route) if isinstance(route, dict) else {}

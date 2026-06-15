@@ -103,3 +103,14 @@ def test_shell_tool_blocks_network_and_outside_writes(tmp_path: Path) -> None:
     assert "outside workdir" in str(outside.error)
     assert not (tmp_path.parent / "outside.txt").exists()
     store.close()
+
+
+def test_tool_dispatcher_validates_builtin_args(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    run_id = _run_id(store, tmp_path)
+    result = ToolDispatcher(store, run_id, workdir=tmp_path).call("read_file", {})
+
+    assert result.ok is False
+    assert "missing required path" in str(result.error)
+    assert store.list_artifacts(run_id, "tool.result")
+    store.close()

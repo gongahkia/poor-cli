@@ -9,9 +9,10 @@ from typing import Any
 
 from poor_cli.extensions import ExtensionLoadError, load_entry_point_values
 from poor_cli.hooks import Hook, HookManager
+from poor_cli.provider_events import ToolSchema
 from poor_cli.store import RunStore
 
-from .builtin import builtin_tools
+from .builtin import builtin_tool_schemas, builtin_tools
 
 
 class ToolError(RuntimeError):
@@ -60,6 +61,7 @@ class ToolDispatcher:
         *,
         workdir: Path | None = None,
         tools: dict[str, ToolFn] | None = None,
+        schemas: dict[str, ToolSchema] | None = None,
         replay_only: bool = False,
         hooks: Iterable[Hook] | HookManager | None = None,
     ):
@@ -67,6 +69,7 @@ class ToolDispatcher:
         self.run_id = run_id
         self.workdir = (workdir or Path.cwd()).resolve()
         self.tools = tools if tools is not None else load_tools(self.workdir)
+        self.schemas = schemas if schemas is not None else load_tool_schemas(self.workdir)
         self.replay_only = replay_only
         self.hooks = hooks if isinstance(hooks, HookManager) else HookManager.from_hooks(hooks)
 
@@ -99,10 +102,19 @@ class ToolDispatcher:
             {"tool": name, "request_hash": request_hash, "artifact_id": request_artifact.artifact_id},
             task_id,
         )
+        schema_error = _validate_args(self.schemas.get(name), request.args)
+        if schema_error is not None:
+            result = ToolResult(name, False, error=schema_error)
+            return self._record_result(request, request_hash, request_artifact.artifact_id, result, task_id)
         try:
             result = replace(self.tools[name](request.args), cached=False)
         except Exception as exc:
             result = ToolResult(name=name, ok=False, error=str(exc))
+        return self._record_result(request, request_hash, request_artifact.artifact_id, result, task_id)
+
+    def _record_result(
+        self, request: ToolRequest, request_hash: str, request_artifact_id: str, result: ToolResult, task_id: str | None
+    ) -> ToolResult:
         result_artifact = self.store.put_artifact(
             run_id=self.run_id,
             task_id=task_id,
@@ -113,10 +125,10 @@ class ToolDispatcher:
         self.store.append_event(
             self.run_id,
             event_type,
-            {"tool": name, "request_hash": request_hash, "artifact_id": result_artifact.artifact_id, "ok": result.ok},
+            {"tool": request.name, "request_hash": request_hash, "artifact_id": result_artifact.artifact_id, "ok": result.ok},
             task_id,
         )
-        self.hooks.after_tool_call(_hook_context(self.run_id, name, request_hash, task_id, cached=False), result)
+        self.hooks.after_tool_call(_hook_context(self.run_id, request.name, request_hash, task_id, cached=False), result)
         return result
 
     def _cached_result(self, request_hash: str) -> ToolResult | None:
@@ -156,6 +168,10 @@ def load_tools(workdir: Path | None = None, group: str = "poor_cli.tools") -> di
     return tools
 
 
+def load_tool_schemas(workdir: Path | None = None) -> dict[str, ToolSchema]:
+    return builtin_tool_schemas((workdir or Path.cwd()).resolve())
+
+
 def load_tool_entry_points(group: str = "poor_cli.tools") -> dict[str, ToolFn]:
     tools: dict[str, ToolFn] = {}
     for name, value in load_entry_point_values(group):
@@ -173,3 +189,45 @@ def load_tool_entry_points(group: str = "poor_cli.tools") -> dict[str, ToolFn]:
 
 def _hook_context(run_id: str, tool: str, request_hash: str, task_id: str | None, cached: bool) -> dict[str, Any]:
     return {"run_id": run_id, "tool": tool, "request_hash": request_hash, "task_id": task_id, "cached": cached}
+
+
+def _validate_args(schema: ToolSchema | None, args: dict[str, Any]) -> str | None:
+    if schema is None:
+        return None
+    spec = schema.parameters
+    props = spec.get("properties")
+    required = spec.get("required")
+    if isinstance(required, list):
+        missing = [str(key) for key in required if key not in args]
+        if missing:
+            return f"invalid args: missing required {', '.join(missing)}"
+    if spec.get("additionalProperties") is False and isinstance(props, dict):
+        extra = sorted(set(args) - set(props))
+        if extra:
+            return f"invalid args: unexpected {', '.join(extra)}"
+    if isinstance(props, dict):
+        for key, subschema in props.items():
+            if key in args and isinstance(subschema, dict):
+                error = _type_error(str(key), args[key], subschema.get("type"))
+                if error:
+                    return f"invalid args: {error}"
+    return None
+
+
+def _type_error(key: str, value: Any, expected: Any) -> str | None:
+    checks = {
+        "string": str,
+        "integer": int,
+        "number": (int, float),
+        "boolean": bool,
+        "object": dict,
+        "array": list,
+    }
+    if expected not in checks or value is None:
+        return None
+    typ = checks[expected]
+    if expected == "integer" and isinstance(value, bool):
+        return f"{key} must be integer"
+    if not isinstance(value, typ):  # type: ignore[arg-type]
+        return f"{key} must be {expected}"
+    return None

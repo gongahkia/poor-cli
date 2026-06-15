@@ -58,6 +58,39 @@ def test_openai_provider_uses_responses_api() -> None:
     assert client.responses.kwargs["instructions"] == "sys"
 
 
+def test_openai_provider_maps_native_tool_params() -> None:
+    class Responses:
+        def __init__(self) -> None:
+            self.kwargs = {}
+
+        def create(self, **kwargs):
+            self.kwargs = kwargs
+            return SimpleNamespace(output_text="ok")
+
+    client = SimpleNamespace(responses=Responses())
+    schema = {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"], "additionalProperties": False}
+    OpenAIProvider(client).call(
+        ProviderRequest(
+            provider="openai",
+            model="gpt-test",
+            prompt="hello",
+            messages=[{"role": "user", "content": "hello"}],
+            params={
+                "function_tools": [{"name": "read_file", "description": "read", "parameters": schema}],
+                "reasoning_effort": "high",
+                "text_verbosity": "low",
+                "prompt_cache_key": "cache-key",
+            },
+        )
+    )
+
+    assert client.responses.kwargs["input"] == [{"role": "user", "content": "hello"}]
+    assert client.responses.kwargs["tools"][0]["name"] == "read_file"
+    assert client.responses.kwargs["reasoning"] == {"effort": "high"}
+    assert client.responses.kwargs["text"] == {"verbosity": "low"}
+    assert client.responses.kwargs["prompt_cache_key"] == "cache-key"
+
+
 def test_gemini_provider_uses_generate_content() -> None:
     class Models:
         def __init__(self) -> None:

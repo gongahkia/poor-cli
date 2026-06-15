@@ -383,11 +383,11 @@ P1 config foundation spec, 2026-06-15:
 - [x] P1-015: Add profile export/import -> Expected output: redacted portable config for moving provider setup across machines.
 - [x] P1-016: Add profile tests with fake endpoints -> Expected output: unit tests for validation, redaction, precedence, and model-picker contents.
 - [x] P2-001: Define role route schema -> Expected output: config fields for `planner`, `executor`, `reviewer`, `verifier`, `fallback`, `researcher`, and `graph_navigator`.
-- [ ] P2-002: Define complexity classifier inputs -> Expected output: deterministic metadata from task count, file count, graph hits, risk labels, expected test scope, and user flags.
-- [ ] P2-003: Define routing policy for small tasks -> Expected output: direct executor route without Fusion or swarm unless user opts in.
-- [ ] P2-004: Define routing policy for hard or ambiguous tasks -> Expected output: planner plus reviewer route with optional Fusion when budget allows.
-- [ ] P2-005: Define routing policy for design/UI tasks -> Expected output: design-review route using project design rules before implementation.
-- [ ] P2-006: Define routing policy for parallelizable tasks -> Expected output: plan-task route that emits independent worker jobs and merge constraints.
+- [x] P2-002: Define complexity classifier inputs -> Expected output: deterministic metadata from task count, file count, graph hits, risk labels, expected test scope, and user flags.
+- [x] P2-003: Define routing policy for small tasks -> Expected output: direct executor route without Fusion or swarm unless user opts in.
+- [x] P2-004: Define routing policy for hard or ambiguous tasks -> Expected output: planner plus reviewer route with optional Fusion when budget allows.
+- [x] P2-005: Define routing policy for design/UI tasks -> Expected output: design-review route using project design rules before implementation.
+- [x] P2-006: Define routing policy for parallelizable tasks -> Expected output: plan-task route that emits independent worker jobs and merge constraints.
 - [x] P2-007: Add route aliases -> Expected output: human-readable aliases map to profile/model ids and fail fast if missing.
 - [x] P2-008: Add route fallback semantics -> Expected output: deterministic failover order with budget, rate-limit, and capability checks.
 - [x] P2-009: Add route explain mode -> Expected output: `poor-cli route explain "task"` prints chosen role, profile, model, reason, and estimated budget.
@@ -397,29 +397,29 @@ P1 config foundation spec, 2026-06-15:
 P1/P2 provider-route implementation evidence, 2026-06-15:
 - P1-005 through P1-016: `src/poor_cli/config.py` implements TOML config load/save, OpenAI/OpenAI-compatible/OpenRouter/Kimi/Ollama/vLLM/SGLang presets, redacted diagnostics, provider list/models/doctor/switch/export/import CLI surfaces, model registry generation, plaintext-secret rejection, add-time verification for provider presets that expose model discovery, and fake-endpoint tests in `tests/test_config.py`.
 - P2-001 and P2-007 through P2-011: route schema supports the named roles, model aliases, deterministic fallback for missing profiles, budget caps, zero rate-limit profiles, and missing capabilities; `poor-cli route explain` exposes decisions; `route.selected` events are recorded during plan/run creation; coverage lives in `tests/test_config.py` and `tests/test_cli.py::test_cli_plan_graph_stores_graph_prompt_bias`.
-- [ ] P3-001: Design native `ProviderBackedAgentRunner` -> Expected output: ADR comparing current shell runner with provider-native tool loops and replay integration.
-- [ ] P3-002: Implement native runner interface without replacing shell runners -> Expected output: `AgentRunner` supports `shell` and `provider` backends behind existing orchestration API.
-- [ ] P3-003: Generate tool schemas from built-in tool registry -> Expected output: JSON schemas for read, write, edit, glob, grep, shell, graph, replay, web, and review tools.
-- [ ] P3-004: Validate tool input before execution -> Expected output: malformed model tool args fail with structured error artifacts, not Python tracebacks.
-- [ ] P3-005: Add provider-neutral tool-call loop -> Expected output: loop accepts model output, executes tools, appends tool results, and continues until final result or budget stop.
-- [ ] P3-006: Add replay integration to native runner -> Expected output: provider calls and tool calls are recorded and can be replayed fail-closed.
-- [ ] P3-007: Add streaming event normalizer -> Expected output: OpenAI, Anthropic, Gemini, and compatible providers emit one internal event format.
-- [ ] P3-008: Add OpenAI Responses final-args guard -> Expected output: regression test where function-call args arrive only in `done` events still executes the tool correctly.
-- [ ] P3-009: Add Responses `reasoning.effort` mapping -> Expected output: route config can set low, medium, high, or xhigh effort where supported.
-- [ ] P3-010: Add Responses `text.verbosity` mapping -> Expected output: route config can set terse, normal, or verbose output where supported.
-- [ ] P3-011: Add prompt-cache-key support -> Expected output: stable cache keys for system, project, route, and tool-prefix prompts where provider supports it.
-- [ ] P3-012: Add provider capability probes -> Expected output: adapter reports tool calling, streaming, structured outputs, web tools, cache hints, multimodal inputs, and max context.
-- [ ] P3-013: Add structured result contracts -> Expected output: planner, executor, reviewer, verifier, and swarm workers emit typed artifacts.
-- [ ] P3-014: Add context compaction hook -> Expected output: long sessions compact deterministically and preserve phase, route, tool state, and open tasks.
-- [ ] P3-015: Add native runner tests -> Expected output: fake-provider tests cover tool loops, streaming args, replay, compaction, budget stops, and structured outputs.
-- [ ] P4-001: Define planner artifact contract -> Expected output: `PLAN.json` and `PLAN.md` include tasks, deps, risk, route, expected files, and verification.
-- [ ] P4-002: Define worker artifact contract -> Expected output: each worker emits `PATCH.diff`, `RESULT.md`, changed-file list, tests run, and unresolved risks.
-- [ ] P4-003: Define review artifact contract -> Expected output: reviewer emits findings with severity, file, line, evidence, and accept/reject recommendation.
-- [ ] P4-004: Define verifier artifact contract -> Expected output: verifier emits command results, benchmark deltas, and final pass/fail.
-- [ ] P4-005: Add artifact directory layout -> Expected output: every run stores artifacts under deterministic run id paths.
-- [ ] P4-006: Add artifact retention policy -> Expected output: cleanup command removes temp worktrees while preserving plan, result, review, verifier, and replay files.
-- [ ] P4-007: Add artifact CLI inspection -> Expected output: `poor-cli inspect <run-id>` shows plan, workers, diffs, reviews, costs, and failures.
-- [ ] P4-008: Add artifact tests -> Expected output: golden tests validate schema compatibility and replay stability.
+- [x] P3-001: Design native `ProviderBackedAgentRunner` -> Expected output: ADR comparing current shell runner with provider-native tool loops and replay integration.
+- [x] P3-002: Implement native runner interface without replacing shell runners -> Expected output: `AgentRunner` supports `shell` and `provider` backends behind existing orchestration API.
+- [x] P3-003: Generate tool schemas from built-in tool registry -> Expected output: JSON schemas for read, write, edit, glob, grep, shell, graph, replay, web, and review tools.
+- [x] P3-004: Validate tool input before execution -> Expected output: malformed model tool args fail with structured error artifacts, not Python tracebacks.
+- [x] P3-005: Add provider-neutral tool-call loop -> Expected output: loop accepts model output, executes tools, appends tool results, and continues until final result or budget stop.
+- [x] P3-006: Add replay integration to native runner -> Expected output: provider calls and tool calls are recorded and can be replayed fail-closed.
+- [x] P3-007: Add streaming event normalizer -> Expected output: OpenAI, Anthropic, Gemini, and compatible providers emit one internal event format.
+- [x] P3-008: Add OpenAI Responses final-args guard -> Expected output: regression test where function-call args arrive only in `done` events still executes the tool correctly.
+- [x] P3-009: Add Responses `reasoning.effort` mapping -> Expected output: route config can set low, medium, high, or xhigh effort where supported.
+- [x] P3-010: Add Responses `text.verbosity` mapping -> Expected output: route config can set terse, normal, or verbose output where supported.
+- [x] P3-011: Add prompt-cache-key support -> Expected output: stable cache keys for system, project, route, and tool-prefix prompts where provider supports it.
+- [x] P3-012: Add provider capability probes -> Expected output: adapter reports tool calling, streaming, structured outputs, web tools, cache hints, multimodal inputs, and max context.
+- [x] P3-013: Add structured result contracts -> Expected output: planner, executor, reviewer, verifier, and swarm workers emit typed artifacts.
+- [x] P3-014: Add context compaction hook -> Expected output: long sessions compact deterministically and preserve phase, route, tool state, and open tasks.
+- [x] P3-015: Add native runner tests -> Expected output: fake-provider tests cover tool loops, streaming args, replay, compaction, budget stops, and structured outputs.
+- [x] P4-001: Define planner artifact contract -> Expected output: `PLAN.json` and `PLAN.md` include tasks, deps, risk, route, expected files, and verification.
+- [x] P4-002: Define worker artifact contract -> Expected output: each worker emits `PATCH.diff`, `RESULT.md`, changed-file list, tests run, and unresolved risks.
+- [x] P4-003: Define review artifact contract -> Expected output: reviewer emits findings with severity, file, line, evidence, and accept/reject recommendation.
+- [x] P4-004: Define verifier artifact contract -> Expected output: verifier emits command results, benchmark deltas, and final pass/fail.
+- [x] P4-005: Add artifact directory layout -> Expected output: every run stores artifacts under deterministic run id paths.
+- [x] P4-006: Add artifact retention policy -> Expected output: cleanup command removes temp worktrees while preserving plan, result, review, verifier, and replay files.
+- [x] P4-007: Add artifact CLI inspection -> Expected output: `poor-cli inspect <run-id>` shows plan, workers, diffs, reviews, costs, and failures.
+- [x] P4-008: Add artifact tests -> Expected output: golden tests validate schema compatibility and replay stability.
 - [ ] P5-001: Design worktree swarm architecture -> Expected output: ADR for `git worktree` creation, isolation, patch collection, merge, conflict handling, and cleanup.
 - [ ] P5-002: Add `poor-cli plan --emit-tasks` -> Expected output: command writes DAG tasks without modifying repo code.
 - [ ] P5-003: Add `poor-cli run-swarm` command -> Expected output: command creates worker worktrees, dispatches tasks, collects artifacts, and stops on policy violations.

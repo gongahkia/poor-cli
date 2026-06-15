@@ -6,10 +6,20 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
+from .config import ConfigError, load_config
 from .models import AgentInfo, TaskSpec
 from .offline import require_online
-from .provider_adapters import OllamaProvider, SGLangProvider, VLLMProvider
+from .provider_adapters import (
+    AnthropicProvider,
+    GeminiProvider,
+    OllamaProvider,
+    OpenAICompatibleChatProvider,
+    OpenAIProvider,
+    SGLangProvider,
+    VLLMProvider,
+)
 from .providers import Provider, ProviderRequest
 
 LOCAL_PROVIDERS = {"ollama", "sglang", "vllm"}
@@ -29,6 +39,7 @@ def detect_agents() -> list[AgentInfo]:
     local_agent = _local_provider_agent()
     if local_agent is not None:
         agents.append(local_agent)
+    agents.extend(_configured_provider_agents())
     for name, adapter, provider, capabilities in (
         ("claude", "claude", "anthropic", ["noninteractive", "file_edits", "planning", "review", "tests"]),
         ("codex", "codex", "openai", ["noninteractive", "file_edits", "implementation", "tests", "review"]),
@@ -60,9 +71,14 @@ class AgentRunner:
     def choose(self, suggested: str | None) -> AgentInfo:
         if suggested and suggested in self.agents:
             return self.agents[suggested]
-        for name in ("codex", "claude", "generic"):
+        for name in ("codex", "claude", "local"):
             if name in self.agents:
                 return self.agents[name]
+        for agent in self.agents_by_id.values():
+            if agent.invocation_adapter == "provider":
+                return agent
+        if "generic" in self.agents:
+            return self.agents["generic"]
         return next(iter(self.agents_by_id.values()))
 
     def run(
@@ -74,6 +90,10 @@ class AgentRunner:
         context: str,
         workdir: Path,
         budget_usd: float | None = None,
+        store: Any | None = None,
+        run_id: str | None = None,
+        hooks: Any | None = None,
+        replay_only: bool = False,
     ) -> AgentResult:
         prompt = build_agent_prompt(goal, task, context)
         if agent.provider != "local":
@@ -97,7 +117,29 @@ class AgentRunner:
                 prompt,
             ]
             return _run(agent.agent_id, command, workdir, self.timeout_seconds)
-        if agent.invocation_adapter == "local_provider":
+        if agent.invocation_adapter in {"local_provider", "provider"}:
+            if store is not None and run_id is not None and "tools" in agent.capabilities:
+                from .native_runner import ProviderBackedAgentRunner, native_params
+
+                system = "You are a poor-cli native coding agent. Use tools for repo I/O and return concise final validation."
+                route = task.metadata.get("route_config") if isinstance(task.metadata.get("route_config"), dict) else {}
+                native = ProviderBackedAgentRunner(_provider_for_agent(agent), store, run_id, workdir, hooks=hooks, replay_only=replay_only)
+                result = native.run(
+                    provider_name=agent.provider,
+                    model=agent.default_model or "",
+                    prompt=prompt,
+                    system_prompt=system,
+                    task_id=task.task_id,
+                    params=native_params(agent.provider, system, prompt, route),
+                )
+                label = "local-provider" if agent.invocation_adapter == "local_provider" else "provider-native"
+                return AgentResult(
+                    agent.agent_id,
+                    [label, agent.provider, agent.default_model or "", agent.command],
+                    result.returncode,
+                    result.stdout,
+                    result.stderr,
+                )
             response = _provider_for_agent(agent).call(
                 ProviderRequest(
                     provider=agent.provider,
@@ -148,10 +190,44 @@ def _local_provider_agent() -> AgentInfo | None:
         command=base_url,
         version=f"{provider}:{model}",
         provider=provider,
-        capabilities=["noninteractive", "local_model", "implementation"],
+        capabilities=["noninteractive", "local_model", "implementation", "tools"],
         default_model=model,
         invocation_adapter="local_provider",
     )
+
+
+def _configured_provider_agents() -> list[AgentInfo]:
+    try:
+        config = load_config(Path.cwd())
+    except ConfigError:
+        return []
+    agents = []
+    for profile_id, profile in sorted(config.get("providers", {}).items()):
+        if not isinstance(profile, dict):
+            continue
+        models = profile.get("models")
+        model = str(models[0]) if isinstance(models, list) and models else ""
+        if not model:
+            continue
+        raw_caps = profile.get("capabilities")
+        caps = raw_caps if isinstance(raw_caps, dict) else {}
+        capabilities = ["noninteractive", "implementation", *(key for key, enabled in caps.items() if enabled)]
+        raw_auth = profile.get("auth")
+        auth = raw_auth if isinstance(raw_auth, dict) else {}
+        agents.append(
+            AgentInfo(
+                agent_id=f"agent_provider_{profile_id}",
+                name=profile_id,
+                command=str(profile.get("base_url") or profile.get("kind") or ""),
+                version=f"{profile.get('kind')}:{model}",
+                provider=str(profile.get("kind") or ""),
+                capabilities=capabilities,
+                default_model=model,
+                cost_profile={"auth_env": str(auth.get("env") or "")},
+                invocation_adapter="provider",
+            )
+        )
+    return agents
 
 
 def _local_base_url(provider: str) -> str:
@@ -166,6 +242,14 @@ def _local_base_url(provider: str) -> str:
 
 
 def _provider_for_agent(agent: AgentInfo) -> Provider:
+    if agent.provider == "openai":
+        return OpenAIProvider()
+    if agent.provider == "anthropic":
+        return AnthropicProvider()
+    if agent.provider == "gemini":
+        return GeminiProvider()
+    if agent.provider in {"openai-compatible", "openrouter", "kimi"}:
+        return OpenAICompatibleChatProvider(agent.command, headers=_auth_headers(agent))
     if agent.provider == "ollama":
         return OllamaProvider(agent.command)
     if agent.provider == "sglang":
@@ -173,6 +257,12 @@ def _provider_for_agent(agent: AgentInfo) -> Provider:
     if agent.provider == "vllm":
         return VLLMProvider(agent.command)
     raise RuntimeError(f"unsupported local provider: {agent.provider}")
+
+
+def _auth_headers(agent: AgentInfo) -> dict[str, str]:
+    env_name = str(agent.cost_profile.get("auth_env") or "")
+    token = os.environ.get(env_name) if env_name else ""
+    return {"Authorization": f"Bearer {token}"} if token else {}
 
 
 def _version(command: list[str]) -> str:

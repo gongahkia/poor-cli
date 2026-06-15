@@ -26,6 +26,7 @@ class ProviderRequest:
     model: str
     prompt: str
     system_prompt: str = ""
+    messages: list[dict[str, Any]] | None = None
     params: dict[str, Any] = field(default_factory=dict)
 
     def request_hash(self) -> str:

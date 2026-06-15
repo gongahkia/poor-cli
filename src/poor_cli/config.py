@@ -9,6 +9,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .route_policy import classify_goal_text
+
 VERSION = 1
 ROLE_NAMES = ("planner", "executor", "reviewer", "verifier", "fallback", "researcher", "graph_navigator")
 LOCAL_KINDS = {"ollama", "vllm", "sglang"}
@@ -280,6 +282,7 @@ def explain_route(config: dict[str, Any], task: str, *, role: str = "executor") 
         "provider_kind": str(providers.get(profile_id, {}).get("kind") or ""),
         "reason": reason,
         "fallbacks": fallbacks,
+        "policy": classify_goal_text(task, role=role),
         "estimated_budget": {"max_usd": route.get("max_cost_usd") or config.get("budgets", {}).get("max_usd")},
     }
 

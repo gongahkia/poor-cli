@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from poor_cli.provider_events import ToolSchema
 from poor_cli.repo_graph import graph_tools
 from poor_cli.sandbox import validate_shell_command
 
@@ -22,8 +23,49 @@ def builtin_tools(root: Path) -> dict[str, Any]:
         "grep": lambda args: _grep(root, args),
         "shell": lambda args: _shell(root, args),
         "replay_emit": _replay_emit,
+        "review": _review,
+        "web_search": _web_search,
         **graph_tools(root),
     }
+
+
+def builtin_tool_schemas(root: Path) -> dict[str, ToolSchema]:
+    text = {"type": "string"}
+    integer = {"type": "integer"}
+    schemas = {
+        "read_file": ("Read a UTF-8 file under the workdir.", {"path": text, "max_bytes": integer}, ["path"]),
+        "write_file": ("Write UTF-8 content to a file under the workdir.", {"path": text, "content": text}, ["path", "content"]),
+        "edit": (
+            "Replace text in a file under the workdir.",
+            {"path": text, "old": text, "new": text, "count": integer},
+            ["path", "old", "new"],
+        ),
+        "glob": ("List files matching a glob under the workdir.", {"pattern": text, "max_results": integer}, ["pattern"]),
+        "grep": ("Search files under the workdir with a regex.", {"pattern": text, "glob": text, "max_results": integer}, ["pattern"]),
+        "shell": ("Run a sandbox-checked shell command in the workdir.", {"command": text, "timeout": integer}, ["command"]),
+        "replay_emit": ("Record an arbitrary replayable value.", {"value": {}}, ["value"]),
+        "review": ("Emit review findings.", {"findings": {"type": "array"}, "recommendation": text}, ["findings"]),
+        "web_search": ("Record a web-search need for the parent runner.", {"query": text}, ["query"]),
+    }
+    out = {
+        name: ToolSchema(
+            name,
+            desc,
+            {"type": "object", "properties": props, "required": req, "additionalProperties": False},
+        )
+        for name, (desc, props, req) in schemas.items()
+    }
+    out.update(
+        {
+            name: ToolSchema(
+                name,
+                f"Repo graph helper: {name}.",
+                {"type": "object", "properties": {}, "required": [], "additionalProperties": True},
+            )
+            for name in graph_tools(root)
+        }
+    )
+    return out
 
 
 def _read_file(root: Path, args: dict[str, Any]) -> ToolResult:
@@ -112,6 +154,14 @@ def _shell(root: Path, args: dict[str, Any]) -> ToolResult:
 
 def _replay_emit(args: dict[str, Any]) -> ToolResult:
     return _result("replay_emit", True, {"value": args.get("value"), "args": args})
+
+
+def _review(args: dict[str, Any]) -> ToolResult:
+    return _result("review", True, {"findings": args.get("findings") or [], "recommendation": args.get("recommendation") or ""})
+
+
+def _web_search(args: dict[str, Any]) -> ToolResult:
+    return _result("web_search", False, error=f"web_search requires host web integration: {args.get('query') or ''}")
 
 
 def _resolve_path(root: Path, value: Any) -> Path:

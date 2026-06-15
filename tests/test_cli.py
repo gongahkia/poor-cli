@@ -92,6 +92,19 @@ def test_cli_main_in_process_run_inspect_replay(tmp_path: Path, monkeypatch, cap
     assert "agent.completed" in inspect_output
     assert "handoff " in inspect_output
 
+    assert main(["--store-dir", str(store), "inspect", run_id, "--artifacts", "--json"]) == 0
+    artifacts = json.loads(capsys.readouterr().out)["artifacts"]
+    paths = {artifact["path"] for artifact in artifacts}
+    assert {"PLAN.json", "PLAN.md", "review/REVIEW.json", "verify/VERIFY.json"} <= paths
+    assert any(path.endswith("/RESULT.md") for path in paths)
+    review = json.loads((store / "runs" / run_id / "artifacts" / "review" / "REVIEW.json").read_text(encoding="utf-8"))
+    verify = json.loads((store / "runs" / run_id / "artifacts" / "verify" / "VERIFY.json").read_text(encoding="utf-8"))
+    assert review["finding_fields"] == ["severity", "file", "line", "evidence", "recommendation"]
+    assert "benchmark_deltas" in verify
+
+    assert main(["--store-dir", str(store), "cleanup", run_id]) == 0
+    assert "removed:" in capsys.readouterr().out
+
     assert main(["--store-dir", str(store), "replay", run_id]) == 0
     replay_output = capsys.readouterr().out
     assert "completed" in replay_output
