@@ -104,8 +104,18 @@ set +a
 
 uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json
 
+openai_compatible_health_url() {
+  local base
+  base="${1%/}"
+  if [[ "$base" == */v1 ]]; then
+    printf '%s/models\n' "$base"
+  else
+    printf '%s/v1/models\n' "$base"
+  fi
+}
+
 case "${POOR_CLI_PROVIDER:-}" in
-  vllm|sglang) HEALTH_URL="${POOR_CLI_LOCAL_BASE_URL}/v1/models" ;;
+  vllm|sglang) HEALTH_URL="$(openai_compatible_health_url "$POOR_CLI_LOCAL_BASE_URL")" ;;
   ollama) HEALTH_URL="${POOR_CLI_LOCAL_BASE_URL}/api/tags" ;;
   *) echo "unsupported POOR_CLI_PROVIDER: ${POOR_CLI_PROVIDER:-}" >&2; exit 2 ;;
 esac

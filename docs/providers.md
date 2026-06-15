@@ -52,6 +52,8 @@ Default local endpoints:
 - SGLang: `http://localhost:30000/v1/chat/completions`
 - Ollama: `http://localhost:11434/api/generate`
 
+For vLLM and SGLang, `POOR_CLI_LOCAL_BASE_URL` may be either the server origin (`http://localhost:8000`) or the OpenAI-compatible API base (`http://localhost:8000/v1`).
+
 ## Local Structured Output
 
 For vLLM and SGLang, `ProviderRequest.params` accepts OpenAI-compatible pass-through params plus two shorthand shims:

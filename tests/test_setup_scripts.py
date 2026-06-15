@@ -66,6 +66,7 @@ def test_phase3_closeout_script_runs_required_audits() -> None:
     assert "nohup .poor-cli/local-cuda-run.sh" in text
     assert "phase3-closeout-server.pid" in text
     assert "wait_for_server" in text
+    assert "openai_compatible_health_url" in text
     assert "--write-demo-evidence" in text
     assert "--demo-video-path" in text
     assert "--demo-internet-disabled" in text

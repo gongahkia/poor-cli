@@ -37,7 +37,7 @@ poor-cli run "inspect this bug" --agents local --yes
 uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider "$POOR_CLI_PROVIDER" --model "$POOR_CLI_MODEL" --local-base-url "$POOR_CLI_LOCAL_BASE_URL" --confirm-cost --no-evaluate
 ```
 
-`POOR_CLI_PROVIDER` must be `vllm`, `sglang`, or `ollama`, and `POOR_CLI_MODEL` must be set. `POOR_CLI_LOCAL_BASE_URL` selects the local server endpoint. `POOR_CLI_LOCAL_VENV` points readiness checks at the venv where vLLM or SGLang was installed.
+`POOR_CLI_PROVIDER` must be `vllm`, `sglang`, or `ollama`, and `POOR_CLI_MODEL` must be set. `POOR_CLI_LOCAL_BASE_URL` selects the local server endpoint; vLLM/SGLang accept either the server origin or its `/v1` API base. `POOR_CLI_LOCAL_VENV` points readiness checks at the venv where vLLM or SGLang was installed.
 
 ## Cache Controls
 

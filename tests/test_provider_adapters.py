@@ -136,6 +136,28 @@ def test_vllm_provider_posts_openai_chat_completion_request() -> None:
     assert seen["payload"]["temperature"] == 0
 
 
+def test_openai_compatible_provider_accepts_v1_base_url() -> None:
+    seen = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"ok"}}]}'
+
+    def opener(request):
+        seen["url"] = request.full_url
+        return FakeResponse()
+
+    VLLMProvider("http://vllm.test/v1", opener).call(ProviderRequest(provider="vllm", model="qwen", prompt="hello"))
+
+    assert seen["url"] == "http://vllm.test/v1/chat/completions"
+
+
 def test_sglang_provider_posts_openai_chat_completion_request() -> None:
     seen = {}
 

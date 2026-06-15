@@ -101,7 +101,7 @@ class OpenAICompatibleChatProvider:
     name = "openai-compatible"
 
     def __init__(self, base_url: str, opener: Any | None = None):
-        self.base_url = base_url.rstrip("/")
+        self.base_url = _openai_compatible_base_url(base_url)
         self.opener = opener or urllib.request.urlopen
 
     def call(self, request: ProviderRequest) -> ProviderResponse:
@@ -112,7 +112,7 @@ class OpenAICompatibleChatProvider:
         messages.append({"role": "user", "content": request.prompt})
         payload = {"model": request.model, "messages": messages, **_chat_params(request.params)}
         http_request = urllib.request.Request(
-            f"{self.base_url}/v1/chat/completions",
+            f"{self.base_url}/chat/completions",
             data=json.dumps(payload).encode(),
             headers={"Content-Type": "application/json"},
             method="POST",
@@ -142,6 +142,11 @@ def json_schema_response_format(name: str, schema: dict[str, Any], *, strict: bo
 
 def function_tool(name: str, description: str, parameters: dict[str, Any], *, strict: bool = True) -> dict[str, Any]:
     return {"type": "function", "function": {"name": name, "description": description, "parameters": parameters, "strict": strict}}
+
+
+def _openai_compatible_base_url(base_url: str) -> str:
+    stripped = base_url.rstrip("/")
+    return stripped if stripped.endswith("/v1") else f"{stripped}/v1"
 
 
 def _chat_params(params: dict[str, Any]) -> dict[str, Any]:
