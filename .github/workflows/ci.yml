@@ -25,9 +25,9 @@ jobs:
           poor-cli --help
           poor-cli agents
       - name: Lint
-        run: ruff check src/poor_cli tests bench/loc_gate.py bench/phase1_acceptance.py bench/graph_vs_grep.py bench/phase3_readiness.py bench/phase3_acceptance.py bench/phase3_local_benchmark.py bench/pivot_remaining.py
+        run: ruff check src/poor_cli tests bench/loc_gate.py bench/phase1_acceptance.py bench/graph_vs_grep.py bench/phase3_readiness.py bench/phase3_acceptance.py bench/phase3_demo.py bench/phase3_local_benchmark.py bench/pivot_remaining.py
       - name: Format
-        run: ruff format --check src/poor_cli tests bench/loc_gate.py bench/phase1_acceptance.py bench/graph_vs_grep.py bench/phase3_readiness.py bench/phase3_acceptance.py bench/phase3_local_benchmark.py bench/pivot_remaining.py
+        run: ruff format --check src/poor_cli tests bench/loc_gate.py bench/phase1_acceptance.py bench/graph_vs_grep.py bench/phase3_readiness.py bench/phase3_acceptance.py bench/phase3_demo.py bench/phase3_local_benchmark.py bench/pivot_remaining.py
       - name: Type check
         run: mypy --strict src/poor_cli
       - name: Test

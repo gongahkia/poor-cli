@@ -92,6 +92,14 @@ Checked-in snapshot: `bench/results/phase3-acceptance.json`.
 
 Current accepted Phase 3 sub-checks: offline graph replay and offline network guards. Current remaining Phase 3 acceptance gaps: Linux/CUDA readiness, local SWE-bench target row, and local-GPU screencast evidence.
 
+Phase 3 demo evidence plan:
+
+```sh
+uv run --locked python bench/phase3_demo.py --output bench/results/phase3-demo-plan.json
+```
+
+Checked-in plan: `bench/results/phase3-demo-plan.json`.
+
 Pivot remaining-work audit:
 
 ```sh

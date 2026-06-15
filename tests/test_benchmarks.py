@@ -11,6 +11,7 @@ from bench.local_fixture_bugs import compact_payload, run_fixture_suite
 from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
 from bench.phase3_acceptance import acceptance_payload as phase3_acceptance_payload
+from bench.phase3_demo import demo_plan_payload, validate_demo_evidence
 from bench.phase3_local_benchmark import benchmark_plan_payload, validate_local_summary
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
@@ -263,6 +264,7 @@ def test_phase3_acceptance_payload_schema() -> None:
     }
     assert payload["checks"]["offline_graph_replay"]["accepted"] is True
     assert payload["checks"]["offline_network_guards"]["accepted"] is True
+    assert "errors" in payload["checks"]["local_gpu_screencast"]
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["accepted"]}
 
 
@@ -278,6 +280,65 @@ def test_checked_in_phase3_acceptance_snapshot() -> None:
     assert payload["checks"]["local_swe_lite_10"]["accepted"] is False
     assert payload["checks"]["local_gpu_screencast"]["accepted"] is False
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["accepted"]}
+
+
+def test_phase3_demo_plan_schema() -> None:
+    payload = demo_plan_payload()
+
+    assert payload["schema_version"] == "poor-cli-phase3-demo-plan-v1"
+    assert payload["target"]["requires_linux_cuda"] is True
+    assert payload["target"]["requires_internet_disabled"] is True
+    assert "--agents local" in payload["commands"]["run_demo"]
+    assert "--offline replay" in payload["commands"]["replay"]
+
+
+def test_checked_in_phase3_demo_plan() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "phase3-demo-plan.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["plan"] == demo_plan_payload()
+    assert payload["validation"]["accepted"] is False
+
+
+def test_phase3_demo_validator_accepts_real_evidence(tmp_path: Path) -> None:
+    video = tmp_path / "phase3-demo.mp4"
+    video.write_bytes(b"demo")
+    evidence = tmp_path / "phase3-demo.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "duration_seconds": 60,
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "internet_disabled": True,
+                "local_gpu": True,
+                "graph_tools_visible": True,
+                "offline_replay_verified": True,
+                "run_id": "run_demo",
+                "video_path": str(video),
+                "commands": [
+                    'poor-cli run "fix bug" --graph --agents local --yes',
+                    "poor-cli --offline replay run_demo --verify",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is True
+    assert payload["errors"] == []
+
+
+def test_phase3_demo_validator_rejects_missing_evidence(tmp_path: Path) -> None:
+    evidence = tmp_path / "phase3-demo.json"
+    evidence.write_text("{}", encoding="utf-8")
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is False
+    assert "duration_seconds must be between 45 and 75" in payload["errors"]
+    assert "video_path must exist" in payload["errors"]
 
 
 def test_pivot_remaining_payload_schema() -> None:

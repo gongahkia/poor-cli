@@ -56,6 +56,12 @@ uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-
 
 Current checked-in evidence proves offline graph replay and offline network-call guards. Linux/CUDA readiness, the local SWE-bench target row, and the local-GPU screencast remain pending.
 
+```sh
+uv run --locked python bench/phase3_demo.py --output bench/results/phase3-demo-plan.json
+```
+
+`bench/phase3_demo.py` validates the screencast evidence JSON and linked video path before the Phase 3 demo check can pass.
+
 ## Phase 3 Local Benchmark
 
 ```sh

@@ -6,13 +6,15 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from bench.phase3_demo import DEMO_EVIDENCE, validate_demo_evidence
     from bench.phase3_local_benchmark import target_payload, validate_local_summary
 except ModuleNotFoundError:
+    from phase3_demo import DEMO_EVIDENCE, validate_demo_evidence
     from phase3_local_benchmark import target_payload, validate_local_summary
 
 ROOT = Path(__file__).resolve().parents[1]
 PHASE3_READINESS = ROOT / "bench" / "results" / "phase3-readiness.json"
-PHASE3_DEMO = ROOT / "bench" / "results" / "phase3-demo.json"
+PHASE3_DEMO = DEMO_EVIDENCE
 CLI_TESTS = ROOT / "tests" / "test_cli.py"
 AGENT_TESTS = ROOT / "tests" / "test_agents.py"
 PROVIDER_TESTS = ROOT / "tests" / "test_provider_adapters.py"
@@ -102,27 +104,18 @@ def _offline_network_guards() -> dict[str, Any]:
 
 
 def _local_gpu_screencast() -> dict[str, Any]:
-    payload = _json_file(PHASE3_DEMO)
-    video_path = ROOT / str(payload.get("video_path") or "")
-    accepted = (
-        45 <= int(payload.get("duration_seconds") or 0) <= 75
-        and bool(payload.get("internet_disabled"))
-        and bool(payload.get("local_gpu"))
-        and str(payload.get("model") or "").lower().startswith(("qwen2.5-coder", "qwen/qwen2.5-coder"))
-        and bool(payload.get("graph_tools_visible"))
-        and bool(payload.get("offline_replay_verified"))
-        and video_path.is_file()
-    )
+    validation = validate_demo_evidence(PHASE3_DEMO)
     return {
-        "accepted": accepted,
-        "evidence": str(PHASE3_DEMO.relative_to(ROOT)),
-        "duration_seconds": payload.get("duration_seconds", 0),
-        "model": payload.get("model", ""),
-        "internet_disabled": bool(payload.get("internet_disabled")),
-        "local_gpu": bool(payload.get("local_gpu")),
-        "graph_tools_visible": bool(payload.get("graph_tools_visible")),
-        "offline_replay_verified": bool(payload.get("offline_replay_verified")),
-        "video_path": payload.get("video_path", ""),
+        "accepted": validation["accepted"],
+        "evidence": validation["evidence"],
+        "errors": validation["errors"],
+        "duration_seconds": validation["duration_seconds"],
+        "model": validation["model"],
+        "internet_disabled": validation["internet_disabled"],
+        "local_gpu": validation["local_gpu"],
+        "graph_tools_visible": validation["graph_tools_visible"],
+        "offline_replay_verified": validation["offline_replay_verified"],
+        "video_path": validation["video_path"],
     }
 
 

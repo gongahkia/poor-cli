@@ -33,6 +33,7 @@ Phase 3:
 - Show vLLM or SGLang serving `Qwen/Qwen2.5-Coder-32B-Instruct` on Linux/CUDA.
 - Show `poor-cli` using the local provider path.
 - End with offline replay verification.
+- Validate the evidence with `uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json`.
 
 ## Publication Checklist
 
@@ -42,3 +43,4 @@ Phase 3:
 - Phase 1 acceptance snapshot is green.
 - Phase 2 graph-mode result row is present before the graph-mode launch.
 - Phase 3 readiness snapshot is green on the target Linux/CUDA workstation before the local-first launch.
+- Phase 3 screencast evidence passes `bench/phase3_demo.py`.

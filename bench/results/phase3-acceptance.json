@@ -12,6 +12,17 @@
     "local_gpu_screencast": {
       "accepted": false,
       "duration_seconds": 0,
+      "errors": [
+        "duration_seconds must be between 45 and 75",
+        "model must be qwen2.5-coder or comparable qwen/qwen2.5-coder path",
+        "internet_disabled must be true",
+        "local_gpu must be true",
+        "graph_tools_visible must be true",
+        "offline_replay_verified must be true",
+        "run_id is required",
+        "commands must show local graph run and offline replay verification",
+        "video_path must exist"
+      ],
       "evidence": "bench/results/phase3-demo.json",
       "graph_tools_visible": false,
       "internet_disabled": false,
