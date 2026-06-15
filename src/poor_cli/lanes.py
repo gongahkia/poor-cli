@@ -11,6 +11,7 @@ from .agents import _provider_for_agent
 from .artifacts import write_review_artifact, write_verify_artifact
 from .config import explain_route, load_config
 from .cost import BudgetLedger
+from .fusion import FusionRouteError, normalize_fusion_payload, route_uses_fusion, validate_fusion_route, write_fusion_artifact
 from .models import AgentInfo
 from .providers import CachedReplayProvider, ProviderRequest
 from .sandbox import SandboxDenied, validate_shell_command
@@ -38,7 +39,7 @@ def review_run(
     repo = Path(str(run["repo_path"]))
     config = load_config(repo)
     route = explain_route(config, "review run artifacts", role="reviewer")
-    _check_router_budget(config, route, allow_expensive_router)
+    route = _resolve_review_route(store, run_id, config, route, allow_expensive_router)
     agent = _agent_for_route(config, route)
     store.append_event(run_id, "review.started", {"route": route})
     prompt = _review_prompt(store, run_id)
@@ -49,9 +50,13 @@ def review_run(
             model=agent.default_model or "",
             prompt=prompt,
             system_prompt=REVIEW_SYSTEM_PROMPT,
-            params={"json_schema": _review_schema()},
+            params=_review_params(route),
         )
     )
+    if route.get("fusion", {}).get("enabled"):
+        fusion = normalize_fusion_payload(response.content, response.raw)
+        fusion["fallback_used"] = False
+        write_fusion_artifact(store, run_id, "review", fusion)
     try:
         payload = _normalize_review(json.loads(response.content), suppressions or [])
     except (json.JSONDecodeError, TypeError, ValueError) as exc:
@@ -159,6 +164,38 @@ def _check_router_budget(config: dict[str, Any], route: dict[str, Any], allow_ex
     model = str(route.get("model") or "")
     if kind == "openrouter" and "fusion" in model.lower() and not allow_expensive_router and not route.get("max_cost_usd"):
         raise LaneError("Fusion review requires --allow-expensive-router or routes.reviewer.max_cost_usd")
+
+
+def _resolve_review_route(
+    store: RunStore, run_id: str, config: dict[str, Any], route: dict[str, Any], allow_expensive_router: bool
+) -> dict[str, Any]:
+    providers = config.get("providers") if isinstance(config.get("providers"), dict) else {}
+    profile = providers.get(str(route.get("profile") or "")) if isinstance(providers, dict) else {}
+    if not route_uses_fusion(profile if isinstance(profile, dict) else {}, route):
+        return route
+    check = validate_fusion_route(config, "reviewer", route, allow_expensive_router=allow_expensive_router)
+    if check.reason:
+        if not check.fallback or not check.fallback.get("profile"):
+            raise LaneError(check.reason)
+        fallback = dict(route)
+        fallback["profile"] = check.fallback["profile"]
+        if check.fallback.get("model"):
+            fallback["model"] = check.fallback["model"]
+        fallback["fusion"] = {"enabled": False, "fallback_used": True, "reason": check.reason}
+        store.append_event(run_id, "fusion.fallback", {"reason": check.reason, "fallback": check.fallback})
+        return fallback
+    resolved = dict(route)
+    resolved["fusion"] = {"enabled": True, "params": check.params or {}}
+    store.append_event(run_id, "fusion.selected", {"role": "reviewer", "params": check.params or {}})
+    return resolved
+
+
+def _review_params(route: dict[str, Any]) -> dict[str, Any]:
+    params: dict[str, Any] = {"json_schema": _review_schema()}
+    fusion = route.get("fusion")
+    if isinstance(fusion, dict) and fusion.get("enabled"):
+        params["fusion"] = fusion.get("params") or {}
+    return params
 
 
 def _review_prompt(store: RunStore, run_id: str) -> str:

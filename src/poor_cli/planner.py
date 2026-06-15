@@ -9,9 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from .agents import detect_agents
+from .config import load_config
 from .graph_context import build_graph_context, graph_context_text
 from .models import AgentInfo, Plan, TaskSpec, make_id
 from .offline import offline_enabled
+from .prompt_packs import prompt_prefix
 
 
 class PlannerError(RuntimeError):
@@ -45,8 +47,11 @@ class Planner:
 
     def _prompt(self, goal: str) -> str:
         agent_lines = [f"- {agent.name}: {', '.join(agent.capabilities)}" for agent in self.agents]
+        config = load_config(self.repo_path)
+        pack = prompt_prefix(config, "planner", self.repo_path)
         lines = [
             SYSTEM_PROMPT,
+            pack,
             "",
             f"Goal: {goal}",
             f"Repository: {self.repo_path}",

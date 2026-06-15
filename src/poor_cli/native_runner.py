@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .hooks import Hook, HookManager
+from .fusion import fusion_params
 from .provider_events import normalize_tool_calls, tool_schema_dicts
 from .providers import CachedReplayProvider, Provider, ProviderRequest
 from .store import RunStore
@@ -49,15 +50,17 @@ class ProviderBackedAgentRunner:
         messages: list[dict[str, Any]] = [{"role": "user", "content": prompt}]
         tool_count = 0
         final = ""
+        context_bytes = int(params.get("_max_context_bytes") or 80_000)
+        provider_params = {key: value for key, value in params.items() if not key.startswith("_")}
         for turn in range(1, self.max_turns + 1):
-            messages = self._compact(messages, task_id) if _message_bytes(messages) > 80_000 else messages
+            messages = self._compact(messages, task_id) if _message_bytes(messages) > context_bytes else messages
             request = ProviderRequest(
                 provider=provider_name,
                 model=model,
                 prompt=prompt,
                 system_prompt=system_prompt,
                 messages=messages,
-                params={**params, "function_tools": tool_schema_dicts(list(self.tools.schemas.values()))},
+                params={**provider_params, "function_tools": tool_schema_dicts(list(self.tools.schemas.values()))},
             )
             response = self.provider.call(request)
             calls = normalize_tool_calls(provider_name, response.raw)
@@ -107,7 +110,20 @@ def native_params(provider_name: str, system_prompt: str, prompt: str, route: di
         elif verbosity in {"verbose", "high"}:
             params["text_verbosity"] = "high"
         params["prompt_cache_key"] = "poor-cli:" + hashlib.sha256((system_prompt + "\n" + prompt).encode()).hexdigest()[:32]
+    if provider_name == "openrouter" and (route.get("fusion") or "fusion" in str(route.get("model") or "").lower()):
+        params["fusion"] = fusion_params(route)
+    if provider_name == "kimi":
+        max_context = _int(route.get("max_context_tokens"))
+        if max_context >= 200_000:
+            params["_max_context_bytes"] = max_context * 3
     return params
+
+
+def _int(value: Any) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _assistant_messages(provider: str, raw: dict[str, Any], content: str) -> list[dict[str, Any]]:

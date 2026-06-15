@@ -16,6 +16,7 @@ from .graph_context import graph_context_text
 from .hooks import Hook, HookManager
 from .models import Budget, ContextPacket, Plan, TaskSpec, make_id, to_jsonable
 from .planner import Planner
+from .prompt_packs import prompt_prefix
 from .route_policy import classify_task
 from .store import RunStore
 
@@ -61,7 +62,9 @@ class Orchestrator:
                 task.metadata["graph_mode"] = True
                 if graph_context is not None:
                     task.metadata["graph_context"] = graph_context
-        route_config = _route_config(load_config(self.repo_path), "executor")
+        config = load_config(self.repo_path)
+        route_config = _route_config(config, "executor")
+        route_config["prompt_pack_text"] = prompt_prefix(config, "executor", self.repo_path)
         for task in plan.tasks:
             decision = classify_task(goal, plan, task, budget, graph_mode=graph_mode)
             task.metadata["route_policy"] = asdict(decision)
@@ -416,7 +419,11 @@ def _git(args: list[str], cwd: Path) -> str | None:
 def _route_config(config: dict[str, Any], role: str) -> dict[str, Any]:
     routes = config.get("routes")
     route = routes.get(role) if isinstance(routes, dict) else None
-    return dict(route) if isinstance(route, dict) else {}
+    raw = dict(route) if isinstance(route, dict) else {}
+    explained = explain_route(config, "route config", role=role)
+    profile = (config.get("providers") or {}).get(str(explained.get("profile") or ""))
+    caps = profile.get("capabilities") if isinstance(profile, dict) else {}
+    return {**raw, **{key: explained[key] for key in ("role", "profile", "model", "provider_kind") if key in explained}, **(caps if isinstance(caps, dict) else {})}
 
 
 def _cap(budget: Budget) -> int:

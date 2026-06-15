@@ -9,6 +9,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .fusion import fusion_summary
 from .route_policy import classify_goal_text
 
 VERSION = 1
@@ -83,6 +84,8 @@ def provider_preset(
     auth_env: str | None = None,
 ) -> dict[str, Any]:
     kind = kind.strip().lower()
+    if kind == "kimi" and not model:
+        model = "kimi-k2.7-code"
     profile: dict[str, Any] = {"kind": kind, "models": [model] if model else [], "capabilities": _capabilities(kind)}
     if base_url:
         profile["base_url"] = base_url.rstrip("/")
@@ -292,7 +295,7 @@ def explain_route(config: dict[str, Any], task: str, *, role: str = "executor") 
         models = providers[profile_id].get("models")
         if isinstance(models, list) and models:
             model = str(models[0])
-    return {
+    result = {
         "role": role,
         "task": task,
         "profile": profile_id,
@@ -303,6 +306,8 @@ def explain_route(config: dict[str, Any], task: str, *, role: str = "executor") 
         "policy": classify_goal_text(task, role=role),
         "estimated_budget": {"max_usd": route.get("max_cost_usd") or config.get("budgets", {}).get("max_usd")},
     }
+    result["fusion"] = fusion_summary(providers.get(profile_id, {}), route, role) if isinstance(route, dict) else {}
+    return result
 
 
 def env_config() -> dict[str, Any]:
@@ -382,14 +387,18 @@ def _reject_plaintext_secrets(value: Any, path: str = "") -> None:
 
 
 def _capabilities(kind: str) -> dict[str, Any]:
-    return {
+    caps = {
         "tools": kind in {"openai", "openai-compatible", "openrouter", "kimi", "vllm", "sglang"},
         "streaming": kind != "ollama",
-        "structured_outputs": kind in {"openai", "openai-compatible", "openrouter", "vllm", "sglang"},
+        "structured_outputs": kind in {"openai", "openai-compatible", "openrouter", "kimi", "vllm", "sglang"},
         "web": kind in {"openai", "openrouter"},
         "cache": kind in {"openai", "vllm", "sglang"},
         "offline_safe": kind in LOCAL_KINDS,
     }
+    if kind == "kimi":
+        caps["max_context_tokens"] = 256000
+        caps["reasoning"] = "required"
+    return caps
 
 
 def _discover_models(profile: dict[str, Any], *, opener: Any | None = None) -> dict[str, Any]:

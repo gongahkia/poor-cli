@@ -32,6 +32,8 @@ CAPABILITIES: dict[str, dict[str, Any]] = {
     "openai": {"tools": True, "streaming": True, "structured_outputs": True, "web": True, "cache": True, "multimodal": True},
     "anthropic": {"tools": True, "streaming": True, "structured_outputs": False, "web": False, "cache": False, "multimodal": True},
     "gemini": {"tools": True, "streaming": True, "structured_outputs": True, "web": True, "cache": False, "multimodal": True},
+    "openrouter": {"tools": True, "streaming": True, "structured_outputs": True, "web": True, "cache": False, "multimodal": True},
+    "kimi": {"tools": True, "streaming": True, "structured_outputs": True, "web": False, "cache": False, "multimodal": True},
     "openai-compatible": {"tools": True, "streaming": True, "structured_outputs": True, "web": False, "cache": False, "multimodal": False},
     "vllm": {"tools": True, "streaming": True, "structured_outputs": True, "web": False, "cache": True, "multimodal": False},
     "sglang": {"tools": True, "streaming": True, "structured_outputs": True, "web": False, "cache": True, "multimodal": False},

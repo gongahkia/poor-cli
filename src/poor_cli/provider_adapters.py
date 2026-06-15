@@ -166,6 +166,11 @@ def _openai_compatible_base_url(base_url: str) -> str:
 
 def _chat_params(params: dict[str, Any]) -> dict[str, Any]:
     normalized = dict(params)
+    fusion = normalized.pop("fusion", None)
+    if isinstance(fusion, dict):
+        normalized.setdefault("tools", fusion.get("tools"))
+        if fusion.get("tool_choice"):
+            normalized["tool_choice"] = fusion["tool_choice"]
     schema = normalized.pop("json_schema", None)
     if schema is not None and "response_format" not in normalized:
         if not isinstance(schema, dict):

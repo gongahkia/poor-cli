@@ -121,20 +121,38 @@ class AgentRunner:
             ]
             return _run(agent.agent_id, command, workdir, self.timeout_seconds, cancel)
         if agent.invocation_adapter in {"local_provider", "provider"}:
+            route = task.metadata.get("route_config") if isinstance(task.metadata.get("route_config"), dict) else {}
             if store is not None and run_id is not None and "tools" in agent.capabilities:
                 from .native_runner import ProviderBackedAgentRunner, native_params
 
                 system = "You are a poor-cli native coding agent. Use tools for repo I/O and return concise final validation."
-                route = task.metadata.get("route_config") if isinstance(task.metadata.get("route_config"), dict) else {}
                 native = ProviderBackedAgentRunner(_provider_for_agent(agent), store, run_id, workdir, hooks=hooks, replay_only=replay_only)
-                result = native.run(
-                    provider_name=agent.provider,
-                    model=agent.default_model or "",
-                    prompt=prompt,
-                    system_prompt=system,
-                    task_id=task.task_id,
-                    params=native_params(agent.provider, system, prompt, route),
-                )
+                try:
+                    result = native.run(
+                        provider_name=agent.provider,
+                        model=agent.default_model or "",
+                        prompt=prompt,
+                        system_prompt=system,
+                        task_id=task.task_id,
+                        params=native_params(agent.provider, system, prompt, route),
+                    )
+                except Exception as exc:
+                    fallback = self._kimi_fallback(agent, route, store, run_id, task.task_id, exc)
+                    if fallback is None:
+                        raise
+                    return self.run(
+                        fallback,
+                        goal=goal,
+                        task=task,
+                        context=context,
+                        workdir=workdir,
+                        budget_usd=budget_usd,
+                        store=store,
+                        run_id=run_id,
+                        hooks=hooks,
+                        replay_only=replay_only,
+                        cancel=cancel,
+                    )
                 label = "local-provider" if agent.invocation_adapter == "local_provider" else "provider-native"
                 return AgentResult(
                     agent.agent_id,
@@ -143,14 +161,32 @@ class AgentRunner:
                     result.stdout,
                     result.stderr,
                 )
-            response = _provider_for_agent(agent).call(
-                ProviderRequest(
-                    provider=agent.provider,
-                    model=agent.default_model or "",
-                    prompt=prompt,
-                    system_prompt="You are a local coding model delegated by poor-cli. Return concise implementation guidance.",
+            try:
+                response = _provider_for_agent(agent).call(
+                    ProviderRequest(
+                        provider=agent.provider,
+                        model=agent.default_model or "",
+                        prompt=prompt,
+                        system_prompt="You are a local coding model delegated by poor-cli. Return concise implementation guidance.",
+                    )
                 )
-            )
+            except Exception as exc:
+                fallback = self._kimi_fallback(agent, route, store, run_id, task.task_id, exc)
+                if fallback is None:
+                    raise
+                return self.run(
+                    fallback,
+                    goal=goal,
+                    task=task,
+                    context=context,
+                    workdir=workdir,
+                    budget_usd=budget_usd,
+                    store=store,
+                    run_id=run_id,
+                    hooks=hooks,
+                    replay_only=replay_only,
+                    cancel=cancel,
+                )
             return AgentResult(
                 agent.agent_id,
                 ["local-provider", agent.provider, agent.default_model or "", agent.command],
@@ -164,6 +200,30 @@ class AgentRunner:
             return _run(agent.agent_id, command, workdir, self.timeout_seconds, cancel)
         stdout = f"generic shell adapter recorded task without executing commands: {task.title}\n"
         return AgentResult(agent.agent_id, [agent.command, "-lc", "<no command>"], 0, stdout, "")
+
+    def _kimi_fallback(
+        self,
+        agent: AgentInfo,
+        route: dict[str, Any],
+        store: Any | None,
+        run_id: str | None,
+        task_id: str,
+        exc: Exception,
+    ) -> AgentInfo | None:
+        if agent.provider != "kimi":
+            return None
+        fallback_id = str(route.get("fallback_profile") or route.get("fallback_agent") or "")
+        fallback = self.agents.get(fallback_id) or self.agents_by_id.get(fallback_id)
+        if fallback is None or fallback.agent_id == agent.agent_id:
+            return None
+        if store is not None and run_id is not None:
+            store.append_event(
+                run_id,
+                "kimi.fallback",
+                {"from": agent.name, "to": fallback.name, "reason": f"{type(exc).__name__}: {exc}"},
+                task_id,
+            )
+        return fallback
 
 
 def _generic_shell() -> AgentInfo:
@@ -226,6 +286,7 @@ def _configured_provider_agents() -> list[AgentInfo]:
                 provider=str(profile.get("kind") or ""),
                 capabilities=capabilities,
                 default_model=model,
+                context_window_hint=_context_window(caps),
                 cost_profile={"auth_env": str(auth.get("env") or "")},
                 invocation_adapter="provider",
             )
@@ -266,6 +327,14 @@ def _auth_headers(agent: AgentInfo) -> dict[str, str]:
     env_name = str(agent.cost_profile.get("auth_env") or "")
     token = os.environ.get(env_name) if env_name else ""
     return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def _context_window(caps: dict[str, Any]) -> int | None:
+    value = caps.get("max_context_tokens") or caps.get("max_context")
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _version(command: list[str]) -> str:
