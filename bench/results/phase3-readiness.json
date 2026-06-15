@@ -6,7 +6,8 @@
         "sglang": false,
         "vllm": false
       },
-      "ready": false
+      "ready": false,
+      "requirement": "one of vllm or sglang"
     },
     "linux_cuda_host": {
       "gpu_names": [],

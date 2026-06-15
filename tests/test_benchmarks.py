@@ -10,6 +10,7 @@ from bench.graph_vs_grep import graph_vs_grep_payload
 from bench.local_fixture_bugs import compact_payload, run_fixture_suite
 from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
+from bench.phase3_local_benchmark import benchmark_plan_payload, validate_local_summary
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
 from bench.swe_bench_lite import run as swe_run
@@ -228,6 +229,7 @@ def test_phase3_readiness_payload_schema() -> None:
     assert payload["checks"]["setup_script"]["ready"] is True
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["local_agent_path"]["ready"] is True
+    assert payload["checks"]["engine_python_deps"]["requirement"] == "one of vllm or sglang"
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 
@@ -243,6 +245,7 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["local_agent_path"]["ready"] is True
     assert payload["checks"]["local_agent_path"]["swe_runner_agent"] == "local"
+    assert payload["checks"]["engine_python_deps"]["requirement"] == "one of vllm or sglang"
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 
@@ -271,6 +274,87 @@ def test_checked_in_pivot_remaining_snapshot() -> None:
     assert payload["checks"]["phase3_linux_cuda_readiness"]["done"] is False
     assert payload["checks"]["phase3_local_mode_benchmark"]["done"] is False
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["done"]}
+
+
+def test_phase3_local_benchmark_plan_schema() -> None:
+    payload = benchmark_plan_payload()
+
+    assert payload["schema_version"] == "poor-cli-phase3-local-benchmark-plan-v1"
+    assert payload["target"]["agent"] == "local"
+    assert payload["target"]["providers"] == ["ollama", "sglang", "vllm"]
+    assert payload["target"]["minimum_of_anthropic_pass_rate"] == 0.5
+    assert payload["target"]["requires_graph_mode"] is True
+    assert "--graph --agent local" in payload["commands"]["generate"]
+    assert "phase3_local_benchmark.py --summary" in payload["commands"]["verify"]
+
+
+def test_checked_in_phase3_local_benchmark_plan() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "phase3-local-benchmark-plan.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["plan"] == benchmark_plan_payload()
+
+
+def test_phase3_local_benchmark_accepts_target_summary(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "provider": "vllm",
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "agent": "local",
+                "graph_mode": True,
+                "task_count": 10,
+                "replay_verified_count": 10,
+                "official_evaluation": {
+                    "exit_code": 0,
+                    "results": {
+                        "total_instances": 10,
+                        "resolved_instances": 5,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_local_summary(summary)
+
+    assert payload["accepted"] is True
+    assert payload["pass_rate"] == 0.5
+    assert payload["target_rate"] == 0.45
+    assert payload["errors"] == []
+
+
+def test_phase3_local_benchmark_rejects_missing_graph_or_low_pass(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "provider": "vllm",
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "agent": "local",
+                "graph_mode": False,
+                "task_count": 10,
+                "replay_verified_count": 9,
+                "official_evaluation": {
+                    "exit_code": 0,
+                    "results": {
+                        "total_instances": 10,
+                        "resolved_instances": 4,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_local_summary(summary)
+
+    assert payload["accepted"] is False
+    assert "summary was not run in graph mode" in payload["errors"]
+    assert "offline replay did not verify every task" in payload["errors"]
+    assert "local pass rate is below 50% of Anthropic pass rate" in payload["errors"]
 
 
 def test_graph_vs_grep_payload_schema() -> None:

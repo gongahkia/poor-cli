@@ -94,7 +94,12 @@ def _linux_cuda_host() -> dict[str, Any]:
 
 def _python_deps(*names: str) -> dict[str, Any]:
     modules = {name: importlib.util.find_spec(name) is not None for name in names}
-    return {"ready": all(modules.values()), "modules": modules, "install": "scripts/setup-linux-cuda.sh --yes --engine vllm"}
+    return {
+        "ready": any(modules.values()),
+        "modules": modules,
+        "requirement": "one of vllm or sglang",
+        "install": "scripts/setup-linux-cuda.sh --yes --engine vllm",
+    }
 
 
 def _binary(name: str) -> dict[str, Any]:

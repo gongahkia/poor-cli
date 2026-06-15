@@ -48,6 +48,14 @@ uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-r
 
 Checked-in snapshot: setup script, provider adapters, local-agent routing, and Ollama binary are ready; Linux/CUDA host and vLLM/SGLang package readiness are environment-dependent.
 
+## Phase 3 Local Benchmark
+
+```sh
+uv run --locked python bench/phase3_local_benchmark.py --output bench/results/phase3-local-benchmark-plan.json
+```
+
+The checked-in plan defines the target-host setup, graph-mode local SWE-bench run, official eval, and artifact verifier. The verifier requires `agent=local`, a vLLM/SGLang/Ollama provider, graph mode, 10 replay-verified tasks, clean official eval, and at least 50% of the Anthropic 10-task pass rate.
+
 ## Graph vs Grep
 
 ```sh

@@ -17,7 +17,10 @@
     "phase3_local_mode_benchmark": {
       "done": false,
       "evidence": "",
+      "graph_mode": false,
       "pass_rate": 0.0,
+      "reason": "no checked-in 10-task local graph-mode SWE-bench summary meeting the Phase 3 target",
+      "replay_verified_count": 0,
       "resolved_instances": 0,
       "target_rate": 0.45,
       "total_instances": 0

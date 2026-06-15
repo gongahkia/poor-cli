@@ -5,6 +5,11 @@ import json
 from pathlib import Path
 from typing import Any
 
+try:
+    from bench.phase3_local_benchmark import ALLOWED_PROVIDERS, target_payload, validate_local_summary
+except ModuleNotFoundError:
+    from phase3_local_benchmark import ALLOWED_PROVIDERS, target_payload, validate_local_summary
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -60,30 +65,27 @@ def _phase3_linux_cuda_readiness() -> dict[str, Any]:
 
 
 def _phase3_local_mode_benchmark() -> dict[str, Any]:
-    anthropic = _read_json(ROOT / "bench" / "swe_bench_lite" / "results" / "swe10-claude-20260614T105615Z" / "summary.json")
-    anthropic_results = anthropic.get("official_evaluation", {}).get("results", {})
-    anthropic_total = int(anthropic_results.get("total_instances") or 0)
-    anthropic_resolved = int(anthropic_results.get("resolved_instances") or 0)
-    target_rate = (anthropic_resolved / anthropic_total) * 0.5 if anthropic_total else 0.0
-    best = {"pass_rate": 0.0, "evidence": "", "resolved_instances": 0, "total_instances": 0}
+    target = target_payload()
+    best = {
+        "pass_rate": 0.0,
+        "evidence": "",
+        "resolved_instances": 0,
+        "total_instances": 0,
+        "replay_verified_count": 0,
+        "graph_mode": False,
+        "target_rate": target["target_rate"],
+    }
     for summary_path in sorted((ROOT / "bench" / "swe_bench_lite" / "results").glob("*/summary.json")):
-        payload = _read_json(summary_path)
-        if payload.get("provider") not in {"ollama", "sglang", "vllm"}:
+        validation = validate_local_summary(summary_path.resolve())
+        if validation["provider"] not in ALLOWED_PROVIDERS and validation["agent"] != "local":
             continue
-        results = payload.get("official_evaluation", {}).get("results", {})
-        total = int(results.get("total_instances") or 0)
-        resolved = int(results.get("resolved_instances") or 0)
-        pass_rate = resolved / total if total else 0.0
-        if pass_rate > float(best["pass_rate"]):
-            best = {
-                "pass_rate": pass_rate,
-                "evidence": str(summary_path.relative_to(ROOT)),
-                "resolved_instances": resolved,
-                "total_instances": total,
-            }
+        if validation["accepted"]:
+            return {"done": True, **validation}
+        if float(validation["pass_rate"]) > float(best["pass_rate"]):
+            best = validation
     return {
-        "done": float(best["pass_rate"]) >= target_rate and target_rate > 0,
-        "target_rate": target_rate,
+        "done": False,
+        "reason": "no checked-in 10-task local graph-mode SWE-bench summary meeting the Phase 3 target",
         **best,
     }
 

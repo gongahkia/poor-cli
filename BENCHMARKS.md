@@ -92,6 +92,14 @@ Checked-in snapshot: `bench/results/pivot-remaining.json`.
 
 Current remaining evidence gaps: target Linux/CUDA Phase 3 readiness and local-mode SWE-bench row.
 
+Phase 3 local benchmark plan:
+
+```sh
+uv run --locked python bench/phase3_local_benchmark.py --output bench/results/phase3-local-benchmark-plan.json
+```
+
+Checked-in plan: `bench/results/phase3-local-benchmark-plan.json`.
+
 ## Phase 3 readiness
 
 No-cost local-first readiness probe:
@@ -161,7 +169,13 @@ Local-mode generation command:
 
 ```sh
 source .poor-cli/local-cuda.env
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --agent local --provider "$POOR_CLI_PROVIDER" --model "$POOR_CLI_MODEL" --no-evaluate --confirm-cost --timeout-seconds 1200 --run-id swe10-local-YYYYMMDDTHHMMSSZ
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider "$POOR_CLI_PROVIDER" --model "$POOR_CLI_MODEL" --no-evaluate --confirm-cost --timeout-seconds 1200 --run-id swe10-local-YYYYMMDDTHHMMSSZ
+```
+
+Local-mode result verifier:
+
+```sh
+uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench_lite/results/swe10-local-YYYYMMDDTHHMMSSZ/summary.json
 ```
 
 Evaluate an existing run without regenerating model patches:

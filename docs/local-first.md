@@ -33,7 +33,7 @@ The setup env exposes a provider-backed delegated agent named `local`:
 ```sh
 source .poor-cli/local-cuda.env
 poor-cli run "inspect this bug" --agents local --yes
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --agent local --provider vllm --model Qwen/Qwen2.5-Coder-32B-Instruct --confirm-cost --no-evaluate
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider vllm --model Qwen/Qwen2.5-Coder-32B-Instruct --confirm-cost --no-evaluate
 ```
 
 `POOR_CLI_PROVIDER` must be `vllm`, `sglang`, or `ollama`, and `POOR_CLI_MODEL` must be set. `POOR_CLI_LOCAL_BASE_URL` selects the local server endpoint.
@@ -56,3 +56,12 @@ For both engines, `--kv-cache-dtype` is passed through when set to anything othe
 ## Replay
 
 Record/replay remains the control plane. A local model run should still produce a normal run store, and `poor-cli --offline replay <run_id> --verify` should verify without credentials.
+
+## Phase 3 Benchmark Gate
+
+```sh
+uv run --locked python bench/phase3_local_benchmark.py --output bench/results/phase3-local-benchmark-plan.json
+uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench_lite/results/swe10-local-YYYYMMDDTHHMMSSZ/summary.json
+```
+
+The verifier is the local-mode closeout gate for the pivot audit. It rejects non-local providers, non-graph runs, partial replay verification, incomplete official eval, and pass rates below 50% of the checked-in Anthropic 10-task row.
