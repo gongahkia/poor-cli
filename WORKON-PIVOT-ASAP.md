@@ -393,6 +393,10 @@ P1 config foundation spec, 2026-06-15:
 - [x] P2-009: Add route explain mode -> Expected output: `poor-cli route explain "task"` prints chosen role, profile, model, reason, and estimated budget.
 - [x] P2-010: Add route audit events -> Expected output: run log records route decisions, profile ids, model ids, and redacted errors.
 - [x] P2-011: Add route tests -> Expected output: tests cover exact alias validation, missing profile errors, fallback behavior, and deterministic classifier outputs.
+
+P1/P2 provider-route implementation evidence, 2026-06-15:
+- P1-005 through P1-016: `src/poor_cli/config.py` implements TOML config load/save, OpenAI/OpenAI-compatible/OpenRouter/Kimi/Ollama/vLLM/SGLang presets, redacted diagnostics, provider list/models/doctor/switch/export/import CLI surfaces, model registry generation, plaintext-secret rejection, add-time verification for provider presets that expose model discovery, and fake-endpoint tests in `tests/test_config.py`.
+- P2-001 and P2-007 through P2-011: route schema supports the named roles, model aliases, deterministic fallback for missing profiles, budget caps, zero rate-limit profiles, and missing capabilities; `poor-cli route explain` exposes decisions; `route.selected` events are recorded during plan/run creation; coverage lives in `tests/test_config.py` and `tests/test_cli.py::test_cli_plan_graph_stores_graph_prompt_bias`.
 - [ ] P3-001: Design native `ProviderBackedAgentRunner` -> Expected output: ADR comparing current shell runner with provider-native tool loops and replay integration.
 - [ ] P3-002: Implement native runner interface without replacing shell runners -> Expected output: `AgentRunner` supports `shell` and `provider` backends behind existing orchestration API.
 - [ ] P3-003: Generate tool schemas from built-in tool registry -> Expected output: JSON schemas for read, write, edit, glob, grep, shell, graph, replay, web, and review tools.
