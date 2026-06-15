@@ -223,18 +223,23 @@ class Orchestrator:
                         self.store.set_task_status(task_id, "blocked")
                         self.store.append_event(str(run["run_id"]), "task.blocked", {"dependencies": deps[task_id]}, task_id)
                 made_progress = False
+                cap_waits: list[dict[str, Any]] = []
                 for task_id in sorted(list(pending), key=lambda key: ords[key]):
                     if len(active) >= cap or not all(dep in done for dep in deps[task_id]):
+                        if len(active) >= cap and all(dep in done for dep in deps[task_id]):
+                            cap_waits.append({"task_id": task_id, "reason": "global_cap", "cap": cap})
                         continue
                     paths = _predicted_files(by_id[task_id])
                     if not allow_overlap and paths and any(paths & active_paths for _, active_paths, _ in active.values()):
                         continue
                     keys = _cap_keys(by_id[task_id])
-                    if any(
-                        sum(1 for _, _, active_keys in active.values() if key in active_keys) >= limits[key]
+                    blocked_keys = [
+                        key
                         for key in keys
-                        if key in limits
-                    ):
+                        if key in limits and sum(1 for _, _, active_keys in active.values() if key in active_keys) >= limits[key]
+                    ]
+                    if blocked_keys:
+                        cap_waits.append({"task_id": task_id, "reason": "provider_or_route_cap", "keys": blocked_keys})
                         continue
                     pending.remove(task_id)
                     future = pool.submit(
@@ -254,6 +259,16 @@ class Orchestrator:
                         str(run["run_id"]), "scheduler.task_started", {"ordinal": ords[task_id], "cap_keys": keys}, task_id
                     )
                     made_progress = True
+                if cap_waits:
+                    self.store.append_event(
+                        str(run["run_id"]),
+                        "scheduler.queue_snapshot",
+                        {
+                            "pending": len(pending),
+                            "active": len(active),
+                            "waits": cap_waits,
+                        },
+                    )
                 if not active:
                     if not pending:
                         break
@@ -366,6 +381,7 @@ class Orchestrator:
             "wall_seconds": round(time.monotonic() - started, 3),
             "cache_hits": 0,
             "budget": budget if isinstance(budget, dict) else {},
+            "queue": _queue_summary(self.store.list_events(run_id)),
             **status_counts,
         }
         self.store.put_artifact(run_id=run_id, kind="scheduler.ledger", data=payload)
@@ -451,6 +467,23 @@ def _cap_limits(config: dict[str, Any]) -> dict[str, int]:
         if isinstance(value, int) and value > 0:
             out[f"route:{role}"] = value
     return out
+
+
+def _queue_summary(events: list[dict[str, Any]]) -> dict[str, int]:
+    summary = {"global_cap_waits": 0, "provider_or_route_cap_waits": 0}
+    for event in events:
+        if event["type"] != "scheduler.queue_snapshot":
+            continue
+        payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+        waits = payload.get("waits") if isinstance(payload, dict) else []
+        for row in waits if isinstance(waits, list) else []:
+            if not isinstance(row, dict):
+                continue
+            if row.get("reason") == "global_cap":
+                summary["global_cap_waits"] += 1
+            if row.get("reason") == "provider_or_route_cap":
+                summary["provider_or_route_cap_waits"] += 1
+    return summary
 
 
 def _thread_task(

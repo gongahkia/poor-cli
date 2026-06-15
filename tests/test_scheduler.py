@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import sys
+import urllib.error
 from pathlib import Path
 
 from poor_cli.cli import main
 from poor_cli.config import add_provider, empty_config, provider_preset, save_repo_config
+from poor_cli.providers import CachedReplayProvider, ProviderRequest, ProviderResponse
 from poor_cli.store import RunStore
 
 
@@ -98,8 +100,64 @@ def test_scheduler_honors_provider_concurrency_cap(tmp_path: Path, monkeypatch, 
         second_start = [i for i, event in enumerate(events) if event["type"] == "scheduler.task_started"][1]
         first_done = next(i for i, event in enumerate(events) if event["type"] == "task.completed")
         assert first_done < second_start
+        assert any(event["type"] == "scheduler.queue_snapshot" for event in events)
+        ledger = json.loads(store.artifact_payload(store.list_artifacts(run_id, "scheduler.ledger")[-1]["artifact_id"]))
+        assert ledger["queue"]["provider_or_route_cap_waits"] >= 1
     finally:
         store.close()
+
+
+def test_provider_retry_backoff_for_rate_limit(tmp_path: Path, monkeypatch) -> None:
+    config = empty_config()
+    profile = provider_preset("openai", profile_id="openai", model="gpt-5.5")
+    profile["openai"]["limits"] = {"max_retries": 1, "backoff_initial_seconds": 0, "backoff_max_seconds": 0}
+    config = add_provider(config, "openai", profile["openai"])
+    save_repo_config(config, tmp_path)
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    calls = {"count": 0}
+
+    class Flaky:
+        def call(self, request: ProviderRequest) -> ProviderResponse:
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise urllib.error.HTTPError("https://api.test", 429, "rate limited", {}, None)
+            return ProviderResponse(provider=request.provider, model=request.model, content="ok")
+
+    response = CachedReplayProvider(store, run_id, Flaky()).call(ProviderRequest(provider="openai", model="gpt-5.5", prompt="p"))
+
+    assert response.content == "ok"
+    assert calls["count"] == 2
+    events = [event["type"] for event in store.list_events(run_id)]
+    assert "provider.rate_limited" in events
+    assert "provider.backoff" in events
+    assert "provider.retry" in events
+    store.close()
+
+
+def test_provider_does_not_retry_auth_failure(tmp_path: Path) -> None:
+    config = empty_config()
+    profile = provider_preset("openai", profile_id="openai", model="gpt-5.5")
+    profile["openai"]["limits"] = {"max_retries": 2, "backoff_initial_seconds": 0}
+    config = add_provider(config, "openai", profile["openai"])
+    save_repo_config(config, tmp_path)
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    calls = {"count": 0}
+
+    class AuthFail:
+        def call(self, request: ProviderRequest) -> ProviderResponse:
+            calls["count"] += 1
+            raise urllib.error.HTTPError("https://api.test", 401, "unauthorized", {}, None)
+
+    try:
+        CachedReplayProvider(store, run_id, AuthFail()).call(ProviderRequest(provider="openai", model="gpt-5.5", prompt="p"))
+    except urllib.error.HTTPError:
+        pass
+
+    assert calls["count"] == 1
+    assert "provider.retry" not in [event["type"] for event in store.list_events(run_id)]
+    store.close()
 
 
 def test_plan_emit_tasks_outputs_dag_json(tmp_path: Path, monkeypatch, capsys) -> None:

@@ -68,7 +68,7 @@ class ToolDispatcher:
         self.store = store
         self.run_id = run_id
         self.workdir = (workdir or Path.cwd()).resolve()
-        self.tools = tools if tools is not None else load_tools(self.workdir)
+        self.tools = tools if tools is not None else load_tools(self.workdir, self.store, self.run_id)
         self.schemas = schemas if schemas is not None else load_tool_schemas(self.workdir)
         self.replay_only = replay_only
         self.hooks = hooks if isinstance(hooks, HookManager) else HookManager.from_hooks(hooks)
@@ -155,8 +155,13 @@ def _stable_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
 
 
-def load_tools(workdir: Path | None = None, group: str = "poor_cli.tools") -> dict[str, ToolFn]:
-    tools = builtin_tools((workdir or Path.cwd()).resolve())
+def load_tools(
+    workdir: Path | None = None,
+    store: RunStore | None = None,
+    run_id: str | None = None,
+    group: str = "poor_cli.tools",
+) -> dict[str, ToolFn]:
+    tools = builtin_tools((workdir or Path.cwd()).resolve(), store=store, run_id=run_id)
     try:
         external = load_tool_entry_points(group)
     except ExtensionLoadError as exc:

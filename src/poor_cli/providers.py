@@ -2,10 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
+import urllib.error
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
+from pathlib import Path
 from typing import Any, Protocol, cast
 
+from .config import ConfigError, load_config
 from .cost import BudgetLedger
 from .extensions import ExtensionLoadError, load_entry_point_values
 from .hooks import Hook, HookManager
@@ -19,6 +23,13 @@ class ProviderReplayMiss(RuntimeError):
 
 class ProviderLoadError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class RetryPolicy:
+    max_retries: int = 0
+    initial_seconds: float = 1.0
+    max_seconds: float = 8.0
 
 
 @dataclass(frozen=True)
@@ -85,7 +96,7 @@ class CachedReplayProvider:
         self.hooks.before_model_call(
             {"run_id": self.run_id, "provider": request.provider, "model": request.model, "request_hash": request_hash}
         )
-        response = replace(self.wrapped.call(request), cached=False)
+        response = replace(self._call_with_retries(request), cached=False)
         return self._complete_live_request(request, request_hash, request_artifact.artifact_id, response)
 
     def call_many(self, requests: Iterable[ProviderRequest]) -> list[ProviderResponse]:
@@ -125,7 +136,7 @@ class CachedReplayProvider:
         if hasattr(self.wrapped, "call_many"):
             live_responses = cast(BatchProvider, self.wrapped).call_many(live_requests)
         else:
-            live_responses = [self.wrapped.call(request) for request in live_requests]
+            live_responses = [self._call_with_retries(request) for request in live_requests]
         if len(live_responses) != len(misses):
             raise RuntimeError("batch provider returned wrong response count")
         for (index, request, request_hash), response in zip(misses, live_responses, strict=True):
@@ -183,6 +194,46 @@ class CachedReplayProvider:
         BudgetLedger.load(self.store, self.run_id).record_provider_response(request, request_hash, response, cached_response=False)
         return response
 
+    def _call_with_retries(self, request: ProviderRequest) -> ProviderResponse:
+        if self.wrapped is None:
+            raise ProviderReplayMiss("missing wrapped provider")
+        policy = _retry_policy(self.store, self.run_id, request)
+        delay = max(0.0, policy.initial_seconds)
+        attempt = 0
+        while True:
+            try:
+                return self.wrapped.call(request)
+            except Exception as exc:
+                retryable = _retryable_provider_error(exc)
+                if not retryable or attempt >= policy.max_retries:
+                    raise
+                attempt += 1
+                status = _error_status(exc)
+                self.store.append_event(
+                    self.run_id,
+                    "provider.rate_limited" if status == 429 else "provider.retryable_error",
+                    {
+                        "provider": request.provider,
+                        "model": request.model,
+                        "attempt": attempt,
+                        "status": status,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    },
+                )
+                self.store.append_event(
+                    self.run_id,
+                    "provider.backoff",
+                    {"provider": request.provider, "model": request.model, "attempt": attempt, "seconds": round(delay, 3)},
+                )
+                if delay:
+                    time.sleep(delay)
+                self.store.append_event(
+                    self.run_id,
+                    "provider.retry",
+                    {"provider": request.provider, "model": request.model, "attempt": attempt},
+                )
+                delay = min(policy.max_seconds, delay * 2 if delay else 0.0)
+
     def _cached_response(self, request_hash: str) -> ProviderResponse | None:
         for artifact in reversed(self.store.list_artifacts(self.run_id, "provider.response")):
             payload = json.loads(self.store.artifact_payload(str(artifact["artifact_id"])))
@@ -204,6 +255,44 @@ class CachedReplayProvider:
 
 def _stable_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def _retry_policy(store: RunStore, run_id: str, request: ProviderRequest) -> RetryPolicy:
+    run = store.get_run(run_id)
+    try:
+        config = load_config(Path(str(run.get("repo_path") or ".")))
+    except ConfigError:
+        config = {}
+    limits: dict[str, Any] = {}
+    for profile in (config.get("providers") or {}).values():
+        if not isinstance(profile, dict) or str(profile.get("kind") or "") != request.provider:
+            continue
+        models = profile.get("models")
+        if isinstance(models, list) and request.model not in {str(item) for item in models}:
+            continue
+        raw_limits = profile.get("limits")
+        limits = raw_limits if isinstance(raw_limits, dict) else {}
+        break
+    return RetryPolicy(
+        max_retries=max(0, int(limits.get("max_retries") or 0)),
+        initial_seconds=max(0.0, float(limits.get("backoff_initial_seconds") or 1.0)),
+        max_seconds=max(0.0, float(limits.get("backoff_max_seconds") or 8.0)),
+    )
+
+
+def _retryable_provider_error(exc: Exception) -> bool:
+    status = _error_status(exc)
+    if status is not None:
+        return status in {408, 409, 429} or 500 <= status <= 599
+    return isinstance(exc, TimeoutError | urllib.error.URLError | OSError)
+
+
+def _error_status(exc: Exception) -> int | None:
+    code = getattr(exc, "code", None) or getattr(exc, "status", None) or getattr(exc, "status_code", None)
+    try:
+        return int(code) if code is not None else None
+    except (TypeError, ValueError):
+        return None
 
 
 def load_provider_entry_points(group: str = "poor_cli.providers") -> dict[str, Provider]:
