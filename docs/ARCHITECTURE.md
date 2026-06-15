@@ -30,6 +30,8 @@
 - `poor-cli run`: create a plan, require confirmation unless `--yes` or `--dry-run`, then execute tasks.
 - `poor-cli inspect`: inspect run internals.
 - `poor-cli replay`: reconstruct orchestration state from events.
+- `poor-cli provider`: add, list, inspect, diagnose, and switch config-backed provider profiles.
+- `poor-cli route explain`: show the selected role/profile/model route and fallback reason for a task.
 - `poor-cli mcp`: list or call external stdio MCP server tools.
 - Graph tools: `find_symbol`, `definition_of`, `imports_of`, `callers_of`, and `subgraph`.
 - `poor-cli plan --graph` and `poor-cli run --graph` bias planner prompts toward symbolic-first graph navigation.

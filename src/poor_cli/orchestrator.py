@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .agents import AgentResult, AgentRunner, build_agent_prompt, detect_agents
+from .config import explain_route, load_config
 from .hooks import Hook, HookManager
 from .models import Budget, ContextPacket, Plan, TaskSpec, make_id, to_jsonable
 from .planner import Planner
@@ -153,6 +154,8 @@ class Orchestrator:
             budget=to_jsonable(budget),
         )
         self.store.append_event(run_id, "run.created", {"goal": goal, "budget": to_jsonable(budget)})
+        route = explain_route(load_config(self.repo_path), goal)
+        self.store.append_event(run_id, "route.selected", route)
         self.store.append_event(run_id, "repo.scanned", {"repo_path": str(self.repo_path), "git_commit_start": commit})
         return run_id
 

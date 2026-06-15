@@ -46,6 +46,30 @@ The alpha includes adapters for:
 
 Network-backed adapters call `require_online()` before live requests, so `poor-cli --offline` fails before a network call.
 
+## Profiles
+
+Provider profiles live in TOML config:
+
+- repo: `.poor-cli/config.toml`
+- user: `~/.config/poor-cli/config.toml`
+
+CLI flags override env vars, which override repo config, user config, then built-in defaults. Config stores secret references only, for example `auth = { env = "OPENAI_API_KEY" }`; plaintext keys are rejected.
+
+```sh
+poor-cli provider add openai --model gpt-5.5
+poor-cli provider add compatible --id local --base-url http://localhost:8000 --model Qwen/Qwen2.5-Coder-32B-Instruct
+poor-cli provider add openrouter --model openrouter/fusion
+poor-cli provider add kimi --model kimi-k2-0711-preview
+poor-cli provider add ollama
+poor-cli provider add vllm --base-url http://localhost:8000 --model Qwen/Qwen2.5-Coder-32B-Instruct
+poor-cli provider list
+poor-cli provider doctor local
+poor-cli provider switch local
+poor-cli route explain "fix the parser"
+```
+
+`provider doctor` uses redacted auth refs and probes model discovery endpoints where available: OpenAI-compatible `/models` and Ollama `/api/tags`.
+
 Default local endpoints:
 
 - vLLM: `http://localhost:8000/v1/chat/completions`
