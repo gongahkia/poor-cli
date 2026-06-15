@@ -280,6 +280,41 @@ def test_openai_compatible_provider_normalizes_function_tools() -> None:
     assert seen["payload"]["tool_choice"] == "auto"
 
 
+def test_openai_compatible_provider_maps_fusion_server_tool() -> None:
+    seen = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return None
+
+        def read(self):
+            return b'{"choices":[{"message":{"content":"ok"}}]}'
+
+    def opener(request):
+        seen["payload"] = json.loads(request.data.decode())
+        return FakeResponse()
+
+    VLLMProvider("http://router.test", opener).call(
+        ProviderRequest(
+            provider="openrouter",
+            model="openrouter/fusion",
+            prompt="review",
+            params={
+                "fusion": {
+                    "tools": [{"type": "openrouter:fusion", "parameters": {"analysis_models": ["a"], "model": "judge"}}],
+                    "tool_choice": "required",
+                }
+            },
+        )
+    )
+
+    assert seen["payload"]["tools"] == [{"type": "openrouter:fusion", "parameters": {"analysis_models": ["a"], "model": "judge"}}]
+    assert seen["payload"]["tool_choice"] == "required"
+
+
 def test_provider_adapters_block_offline_calls(monkeypatch) -> None:
     class Messages:
         def create(self, **kwargs):

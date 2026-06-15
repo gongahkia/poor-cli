@@ -480,6 +480,45 @@ def test_review_run_fusion_requires_budget_gate(tmp_path: Path, monkeypatch) -> 
         store.close()
 
 
+def test_review_run_fusion_writes_structured_artifact(tmp_path: Path, monkeypatch) -> None:
+    class FakeProvider:
+        def call(self, request):
+            assert request.params["fusion"]["tools"][0]["type"] == "openrouter:fusion"
+            return ProviderResponse(
+                provider=request.provider,
+                model=request.model,
+                content=json.dumps(
+                    {
+                        "findings": [],
+                        "recommendation": "accept",
+                        "consensus": ["safe"],
+                        "contradictions": ["none"],
+                        "coverage_gaps": ["bench"],
+                        "unique_insights": ["check fallback"],
+                        "blind_spots": ["live latency"],
+                    }
+                ),
+            )
+
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    config = empty_config()
+    profile = provider_preset("openrouter", profile_id="router", model="openrouter/fusion")
+    config = add_provider(config, "router", profile["router"])
+    config["routes"] = {"reviewer": {"profile": "router", "model": "openrouter/fusion", "max_cost_usd": 1.0, "fusion": True}}
+    save_repo_config(config, tmp_path)
+    monkeypatch.setattr("poor_cli.lanes._provider_for_agent", lambda agent: FakeProvider())
+
+    try:
+        assert review_run(store, run_id) == 0
+        fusion = json.loads((tmp_path / "store" / "runs" / run_id / "artifacts" / "review" / "FUSION.json").read_text())
+        assert fusion["consensus"] == ["safe"]
+        assert any(event["type"] == "fusion.selected" for event in store.list_events(run_id))
+    finally:
+        store.close()
+
+
 def test_cli_verify_run_executes_validation_command(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
     command = f"{sys.executable} -c \"from pathlib import Path; Path('fixed.txt').write_text('ok')\""

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from poor_cli.native_runner import ProviderBackedAgentRunner
+from poor_cli.native_runner import ProviderBackedAgentRunner, native_params
 from poor_cli.provider_events import normalize_tool_calls, provider_capabilities
 from poor_cli.providers import ProviderRequest, ProviderResponse
 from poor_cli.store import RunStore
@@ -70,3 +70,9 @@ def test_provider_capability_probe_shape() -> None:
     assert caps["tools"] is True
     assert caps["streaming"] is True
     assert caps["max_context"] == 128000
+
+
+def test_kimi_native_params_allow_confirmed_long_context() -> None:
+    params = native_params("kimi", "sys", "prompt", {"max_context_tokens": 256000})
+
+    assert params["_max_context_bytes"] == 768000

@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from poor_cli.store import RunStore
+
 REQUIRED = {
     "direct": {"agent.result", "handoff.packet"},
     "planner_reviewer": {"artifact.review", "artifact.verify"},
@@ -18,14 +20,20 @@ REQUIRED = {
 
 
 def audit(store_root: Path) -> dict[str, Any]:
-    runs = sorted((store_root / "runs").glob("*")) if (store_root / "runs").exists() else []
+    if not store_root.exists():
+        return {"schema_version": "poor-cli-dogfood-report-v1", "accepted": False, "checks": {}}
+    store = RunStore(store_root)
     by_kind: dict[str, set[str]] = {key: set() for key in REQUIRED}
-    for run in runs:
-        kinds = _artifact_kinds(run)
-        events = _event_types(run)
-        for scenario, required in REQUIRED.items():
-            if required <= kinds or required <= events:
-                by_kind[scenario].add(run.name)
+    try:
+        for run in store.list_runs():
+            run_id = str(run["run_id"])
+            kinds = {str(artifact["kind"]) for artifact in store.list_artifacts(run_id)}
+            events = {str(event["type"]) for event in store.list_events(run_id)}
+            for scenario, required in REQUIRED.items():
+                if required <= kinds or required <= events:
+                    by_kind[scenario].add(run_id)
+    finally:
+        store.close()
     checks = {
         scenario: {"done": bool(run_ids), "runs": sorted(run_ids), "required": sorted(REQUIRED[scenario])}
         for scenario, run_ids in by_kind.items()
@@ -35,24 +43,6 @@ def audit(store_root: Path) -> dict[str, Any]:
         "accepted": all(row["done"] for row in checks.values()),
         "checks": checks,
     }
-
-
-def _artifact_kinds(run: Path) -> set[str]:
-    events = _events(run)
-    return {str(event.get("payload", {}).get("kind") or "") for event in events if event.get("type") == "artifact.created"}
-
-
-def _event_types(run: Path) -> set[str]:
-    return {str(event.get("type") or "") for event in _events(run)}
-
-
-def _events(run: Path) -> list[dict[str, Any]]:
-    path = run / "events.jsonl"
-    if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
-
-
 def main() -> int:
     parser = argparse.ArgumentParser(prog="bench/dogfood_report.py")
     parser.add_argument("--store-root", default=".poor-cli/v6")

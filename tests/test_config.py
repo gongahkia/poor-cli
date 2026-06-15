@@ -19,6 +19,7 @@ from poor_cli.config import (
     save_repo_config,
     switch_provider,
 )
+from poor_cli.fusion import validate_fusion_route
 
 
 def test_config_rejects_plaintext_secret(tmp_path: Path, monkeypatch) -> None:
@@ -227,3 +228,46 @@ def test_cli_route_set_updates_validated_route(tmp_path: Path, monkeypatch, caps
     assert route["role"] == "reviewer"
     assert route["profile"] == "openai"
     assert route["model"] == "gpt-5.5"
+
+
+def test_kimi_preset_defaults_to_current_code_model() -> None:
+    profile = provider_preset("kimi", profile_id="kimi")
+
+    assert profile["kimi"]["models"] == ["kimi-k2.7-code"]
+    assert profile["kimi"]["capabilities"]["max_context_tokens"] == 256000
+    assert profile["kimi"]["auth"] == {"env": "MOONSHOT_API_KEY"}
+
+
+def test_fusion_route_validation_and_summary() -> None:
+    config = empty_config()
+    profile = provider_preset("openrouter", profile_id="router", model="openrouter/fusion")
+    config = add_provider(config, "router", profile["router"])
+    route = {
+        "profile": "router",
+        "model": "openrouter/fusion",
+        "fusion": True,
+        "max_cost_usd": 1.0,
+        "analysis_models": ["a", "b"],
+        "judge_model": "judge",
+        "force_tool": True,
+    }
+
+    check = validate_fusion_route(config, "reviewer", route)
+    explained = explain_route({**config, "routes": {"reviewer": route}}, "review", role="reviewer")
+
+    assert check.enabled is True
+    assert check.params["tools"][0]["type"] == "openrouter:fusion"
+    assert check.params["tools"][0]["parameters"] == {"analysis_models": ["a", "b"], "model": "judge"}
+    assert check.params["tool_choice"] == "required"
+    assert explained["fusion"]["enabled"] is True
+
+
+def test_fusion_route_rejects_executor_and_recursive_fallback() -> None:
+    config = empty_config()
+    primary = provider_preset("openrouter", profile_id="router", model="openrouter/fusion")
+    config = add_provider(config, "router", primary["router"])
+    route = {"profile": "router", "model": "openrouter/fusion", "max_cost_usd": 1.0}
+
+    assert "planner" in validate_fusion_route(config, "executor", route).reason
+    route["fallback_profile"] = "router"
+    assert "fallback" in validate_fusion_route(config, "reviewer", route).reason

@@ -96,8 +96,9 @@ class CachedReplayProvider:
         self.hooks.before_model_call(
             {"run_id": self.run_id, "provider": request.provider, "model": request.model, "request_hash": request_hash}
         )
+        started = time.monotonic()
         response = replace(self._call_with_retries(request), cached=False)
-        return self._complete_live_request(request, request_hash, request_artifact.artifact_id, response)
+        return self._complete_live_request(request, request_hash, request_artifact.artifact_id, response, time.monotonic() - started)
 
     def call_many(self, requests: Iterable[ProviderRequest]) -> list[ProviderResponse]:
         request_list = list(requests)
@@ -140,7 +141,7 @@ class CachedReplayProvider:
         if len(live_responses) != len(misses):
             raise RuntimeError("batch provider returned wrong response count")
         for (index, request, request_hash), response in zip(misses, live_responses, strict=True):
-            responses[index] = self._complete_live_request(request, request_hash, request_artifacts[index], replace(response, cached=False))
+            responses[index] = self._complete_live_request(request, request_hash, request_artifacts[index], replace(response, cached=False), 0.0)
         self.store.append_event(
             self.run_id,
             "provider.batch.completed",
@@ -173,12 +174,17 @@ class CachedReplayProvider:
         return request_artifact
 
     def _complete_live_request(
-        self, request: ProviderRequest, request_hash: str, request_artifact_id: str, response: ProviderResponse
+        self, request: ProviderRequest, request_hash: str, request_artifact_id: str, response: ProviderResponse, latency_seconds: float
     ) -> ProviderResponse:
         response_artifact = self.store.put_artifact(
             run_id=self.run_id,
             kind="provider.response",
-            data={"request_hash": request_hash, "request": asdict(request), "response": asdict(response)},
+            data={
+                "request_hash": request_hash,
+                "request": asdict(request),
+                "response": asdict(response),
+                "latency_seconds": round(latency_seconds, 3),
+            },
         )
         self.store.append_event(
             self.run_id,
@@ -189,6 +195,7 @@ class CachedReplayProvider:
                 "request_hash": request_hash,
                 "artifact_id": response_artifact.artifact_id,
                 "request_artifact_id": request_artifact_id,
+                "latency_seconds": round(latency_seconds, 3),
             },
         )
         BudgetLedger.load(self.store, self.run_id).record_provider_response(request, request_hash, response, cached_response=False)
