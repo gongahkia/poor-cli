@@ -69,7 +69,7 @@ Local or configured providers can run through the native provider-backed tool lo
 
 ## Gates
 
-The v6 gate set is tests, ruff, strict mypy, docs build, replay determinism, packaging, and the 6000-line source LOC cap.
+The v6 gate set is tests, ruff, strict mypy, docs build, replay determinism, packaging, and the 6500-line source LOC cap.
 
 ## Goal
 

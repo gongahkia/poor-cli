@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-import signal
 import shlex
 import shutil
+import signal
 import subprocess
 import time
 from dataclasses import dataclass

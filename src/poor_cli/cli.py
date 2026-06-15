@@ -35,6 +35,7 @@ from .orchestrator import Orchestrator
 from .replay import replay_summary, replay_verify
 from .repo_graph import graph_dependency_report
 from .store import RunStore, StoreError
+from .swarm import cleanup_swarm, run_swarm
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -70,6 +71,8 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
         return _plan(args, store)
     if args.command == "run":
         return _run(args, store)
+    if args.command == "run-swarm":
+        return _run_swarm(args, store)
     if args.command == "review-run":
         return _review_run(args, store)
     if args.command == "verify-run":
@@ -84,10 +87,14 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
         return _inspect(args, store)
     if args.command == "cleanup":
         return _cleanup(args, store)
+    if args.command == "cleanup-swarm":
+        return _cleanup_swarm(args, store)
     if args.command == "replay":
         return _replay(args, store)
     if args.command == "mcp":
         return _mcp(args)
+    if args.command == "rpc":
+        return _rpc(args, store)
     if args.command == "tui":
         return _tui(args, store)
     raise RuntimeError("missing command")
@@ -124,6 +131,10 @@ def _plan(args: argparse.Namespace, store: RunStore) -> int:
     if args.json:
         print(json.dumps({"run_id": run_id, "plan": to_jsonable(plan)}, indent=2, sort_keys=True))
         return 0
+    if args.emit_tasks:
+        payload = {"run_id": run_id, "plan_id": plan.plan_id, "tasks": [to_jsonable(task) for task in plan.tasks]}
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
     print(f"run_id: {run_id}")
     print(f"summary: {plan.problem_summary}")
     for index, task in enumerate(plan.tasks, 1):
@@ -151,7 +162,23 @@ def _run(args: argparse.Namespace, store: RunStore) -> int:
             store.append_event(run_id, "run.cancelled", {"reason": "user declined execution"})
             print("cancelled")
             return 2
-    return orchestrator.run(run_id, budget, _selected(args), dry_run=False)
+    return orchestrator.run(run_id, budget, _selected(args), dry_run=False, allow_overlap=args.allow_overlap)
+
+
+def _run_swarm(args: argparse.Namespace, store: RunStore) -> int:
+    result = run_swarm(
+        store,
+        " ".join(args.goal),
+        _budget(args),
+        graph_mode=args.graph,
+        selected_agents=_selected(args),
+        allow_dirty=args.allow_dirty,
+        allow_overlap=args.allow_overlap,
+        failure_policy=args.failure_policy,
+    )
+    print(f"run_id: {result['run_id']}")
+    print(f"workers: {result['workers']} conflicts: {len(result['conflicts'])}")
+    return int(result["exit_code"])
 
 
 def _runs(args: argparse.Namespace, store: RunStore) -> int:
@@ -313,6 +340,12 @@ def _cleanup(args: argparse.Namespace, store: RunStore) -> int:
     return 0
 
 
+def _cleanup_swarm(args: argparse.Namespace, store: RunStore) -> int:
+    removed = cleanup_swarm(store, args.run_id)
+    print("removed: " + (", ".join(removed) if removed else "none"))
+    return 0
+
+
 def _replay(args: argparse.Namespace, store: RunStore) -> int:
     state = replay_summary(store, args.run_id, args.from_event)
     if args.verify:
@@ -348,6 +381,14 @@ def _mcp(args: argparse.Namespace) -> int:
         print(asyncio.run(call_mcp_tool(Path.cwd(), args.tool, arguments)))
         return 0
     raise RuntimeError("missing mcp command")
+
+
+def _rpc(args: argparse.Namespace, store: RunStore) -> int:
+    if args.rpc_command == "serve" and args.stdio:
+        from .rpc import serve_stdio
+
+        return serve_stdio(store.root)
+    raise RuntimeError("rpc supports only: serve --stdio")
 
 
 def _tui(args: argparse.Namespace, store: RunStore) -> int:
@@ -395,6 +436,7 @@ def _parser() -> argparse.ArgumentParser:
     _budget_args(plan)
     _graph_arg(plan)
     plan.add_argument("--json", action="store_true")
+    plan.add_argument("--emit-tasks", action="store_true")
 
     run = sub.add_parser("run")
     _goal_args(run)
@@ -403,6 +445,16 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--agents")
     run.add_argument("--yes", action="store_true")
     run.add_argument("--dry-run", action="store_true")
+    run.add_argument("--allow-overlap", action="store_true")
+
+    swarm = sub.add_parser("run-swarm")
+    _goal_args(swarm)
+    _budget_args(swarm)
+    _graph_arg(swarm)
+    swarm.add_argument("--agents")
+    swarm.add_argument("--allow-dirty", action="store_true")
+    swarm.add_argument("--allow-overlap", action="store_true")
+    swarm.add_argument("--failure-policy", choices=("fail-fast", "continue", "quarantine"), default="fail-fast")
 
     review = sub.add_parser("review-run")
     review.add_argument("run_id")
@@ -462,6 +514,8 @@ def _parser() -> argparse.ArgumentParser:
 
     cleanup = sub.add_parser("cleanup")
     cleanup.add_argument("run_id")
+    cleanup_swarm_parser = sub.add_parser("cleanup-swarm")
+    cleanup_swarm_parser.add_argument("run_id")
 
     replay = sub.add_parser("replay")
     replay.add_argument("run_id")
@@ -477,6 +531,11 @@ def _parser() -> argparse.ArgumentParser:
     mcp_call = mcp_sub.add_parser("call")
     mcp_call.add_argument("tool")
     mcp_call.add_argument("--args", default="{}")
+
+    rpc = sub.add_parser("rpc")
+    rpc_sub = rpc.add_subparsers(dest="rpc_command")
+    rpc_serve = rpc_sub.add_parser("serve")
+    rpc_serve.add_argument("--stdio", action="store_true")
 
     tui = sub.add_parser("tui")
     tui.add_argument("--run-id")
