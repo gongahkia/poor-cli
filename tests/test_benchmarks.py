@@ -15,7 +15,7 @@ from bench.phase3_closeout import closeout_payload
 from bench.phase3_demo import demo_evidence_template, demo_plan_payload, validate_demo_evidence
 from bench.phase3_demo import main as phase3_demo_main
 from bench.phase3_local_benchmark import benchmark_plan_payload, is_local_summary_candidate, validate_local_summary
-from bench.phase3_readiness import _ollama_binary, _python_deps
+from bench.phase3_readiness import _ollama_binary, _python_deps, _selected_engine_supported
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
 from bench.swe_bench_lite import run as swe_run
@@ -227,6 +227,7 @@ def test_phase3_readiness_payload_schema() -> None:
     assert set(payload["checks"]) == {
         "setup_script",
         "provider_adapters",
+        "selected_engine",
         "linux_cuda_host",
         "engine_python_deps",
         "ollama_binary",
@@ -234,10 +235,13 @@ def test_phase3_readiness_payload_schema() -> None:
     }
     assert payload["checks"]["setup_script"]["ready"] is True
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
+    assert payload["checks"]["selected_engine"]["ready"] is True
+    assert payload["checks"]["selected_engine"]["engine"] == "vllm"
     assert payload["checks"]["local_agent_path"]["ready"] is True
     assert payload["checks"]["engine_python_deps"]["requirement"] == "selected engine module: vllm"
     assert payload["checks"]["engine_python_deps"]["selected_engine"] == "vllm"
     assert payload["checks"]["engine_python_deps"]["required"] is True
+    assert payload["checks"]["engine_python_deps"]["install"] == "scripts/setup-linux-cuda.sh --yes --engine vllm"
     assert payload["checks"]["ollama_binary"]["required"] is False
     assert set(payload["checks"]["engine_python_deps"]["modules"]) == {"vllm", "sglang"}
     assert set(payload["checks"]["engine_python_deps"]["current_modules"]) == {"vllm", "sglang"}
@@ -283,6 +287,15 @@ def test_phase3_readiness_requires_selected_python_engine(tmp_path: Path, monkey
     assert payload["modules"]["vllm"] is True
     assert payload["modules"]["sglang"] is False
     assert payload["requirement"] == "selected engine module: sglang"
+    assert payload["install"] == "scripts/setup-linux-cuda.sh --yes --engine sglang"
+
+
+def test_phase3_readiness_rejects_unsupported_selected_engine() -> None:
+    payload = _selected_engine_supported("anthropic")
+
+    assert payload["ready"] is False
+    assert payload["engine"] == "anthropic"
+    assert payload["supported"] == ["ollama", "sglang", "vllm"]
 
 
 def test_phase3_readiness_requires_ollama_binary_only_for_ollama(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -305,10 +318,13 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert payload["checks"]["setup_script"]["bash_syntax"] is True
     assert payload["checks"]["provider_adapters"]["ready"] is True
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
+    assert payload["checks"]["selected_engine"]["ready"] is True
+    assert payload["checks"]["selected_engine"]["engine"] == "vllm"
     assert payload["checks"]["local_agent_path"]["ready"] is True
     assert payload["checks"]["local_agent_path"]["swe_runner_agent"] == "local"
     assert payload["checks"]["engine_python_deps"]["requirement"] == "selected engine module: vllm"
     assert payload["checks"]["engine_python_deps"]["required"] is True
+    assert payload["checks"]["engine_python_deps"]["install"] == "scripts/setup-linux-cuda.sh --yes --engine vllm"
     assert payload["checks"]["ollama_binary"]["required"] is False
     assert set(payload["checks"]["engine_python_deps"]["modules"]) == {"vllm", "sglang"}
     assert set(payload["checks"]["engine_python_deps"]["current_modules"]) == {"vllm", "sglang"}

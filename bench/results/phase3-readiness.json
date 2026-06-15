@@ -47,6 +47,15 @@
       ],
       "ready": true
     },
+    "selected_engine": {
+      "engine": "vllm",
+      "ready": true,
+      "supported": [
+        "ollama",
+        "sglang",
+        "vllm"
+      ]
+    },
     "setup_script": {
       "bash_syntax": true,
       "executable": true,

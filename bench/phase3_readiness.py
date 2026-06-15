@@ -35,6 +35,7 @@ def readiness_payload() -> dict[str, Any]:
     checks = {
         "setup_script": _setup_script(),
         "provider_adapters": _provider_adapters(),
+        "selected_engine": _selected_engine_supported(selected_engine),
         "linux_cuda_host": _linux_cuda_host(),
         "engine_python_deps": _python_deps("vllm", "sglang", selected_engine=selected_engine),
         "ollama_binary": _ollama_binary(selected_engine),
@@ -98,6 +99,15 @@ def _selected_engine() -> str:
     return (os.environ.get("POOR_CLI_LOCAL_ENGINE") or os.environ.get("POOR_CLI_PROVIDER") or "vllm").strip().lower()
 
 
+def _selected_engine_supported(selected_engine: str) -> dict[str, Any]:
+    supported = {"ollama", "sglang", "vllm"}
+    return {
+        "ready": selected_engine in supported,
+        "engine": selected_engine,
+        "supported": sorted(supported),
+    }
+
+
 def _python_deps(*names: str, selected_engine: str | None = None) -> dict[str, Any]:
     current_modules = {name: importlib.util.find_spec(name) is not None for name in names}
     venv_path = _local_cuda_venv()
@@ -106,6 +116,7 @@ def _python_deps(*names: str, selected_engine: str | None = None) -> dict[str, A
     modules = {name: current_modules[name] or venv_modules[name] for name in names}
     engine = selected_engine or _selected_engine()
     required = engine in names
+    install_engine = engine if engine in {"sglang", "vllm"} else "vllm"
     return {
         "ready": not required or modules[engine],
         "required": required,
@@ -116,7 +127,7 @@ def _python_deps(*names: str, selected_engine: str | None = None) -> dict[str, A
         "venv_python": _display_path(venv_python),
         "venv_python_exists": venv_python.is_file(),
         "requirement": f"selected engine module: {engine}" if required else "not required for selected engine",
-        "install": "scripts/setup-linux-cuda.sh --yes --engine vllm",
+        "install": f"scripts/setup-linux-cuda.sh --yes --engine {install_engine}",
     }
 
 
