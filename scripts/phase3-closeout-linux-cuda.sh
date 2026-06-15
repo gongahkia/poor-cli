@@ -15,6 +15,7 @@ SKIP_GENERATE=0
 SKIP_EVALUATE=0
 SKIP_DEMO_VERIFY=0
 START_SERVER=0
+STOP_SERVER_ON_EXIT=0
 WRITE_DEMO_EVIDENCE=0
 DEMO_INTERNET_DISABLED=0
 DEMO_LOCAL_GPU=0
@@ -24,6 +25,7 @@ EVAL_MAX_WORKERS=1
 TIMEOUT_SECONDS=1200
 HEALTH_TIMEOUT_SECONDS=300
 SERVER_LOG=".poor-cli/phase3-closeout-server.log"
+SERVER_PID=""
 NETWORK_PROBE_ARGS=(curl --fail --silent --show-error --max-time 5 https://example.com)
 NETWORK_PROBE_COMMAND="${NETWORK_PROBE_ARGS[*]}"
 NETWORK_PROBE_EXIT_CODE=""
@@ -58,6 +60,7 @@ Options:
   --health-timeout-seconds N default: 300
   --server-log PATH        default: .poor-cli/phase3-closeout-server.log
   --start-server           start .poor-cli/local-cuda-run.sh in the background and wait for health
+  --stop-server-on-exit    stop the server process started by --start-server when this script exits
   --write-demo-evidence    write bench/results/phase3-demo.json before verification
   --demo-internet-disabled assert the screencast proves internet was disabled
   --demo-local-gpu         assert the screencast proves local GPU execution
@@ -86,6 +89,7 @@ while [[ $# -gt 0 ]]; do
     --health-timeout-seconds) HEALTH_TIMEOUT_SECONDS="$2"; shift ;;
     --server-log) SERVER_LOG="$2"; shift ;;
     --start-server) START_SERVER=1 ;;
+    --stop-server-on-exit) STOP_SERVER_ON_EXIT=1 ;;
     --write-demo-evidence) WRITE_DEMO_EVIDENCE=1 ;;
     --demo-internet-disabled) DEMO_INTERNET_DISABLED=1 ;;
     --demo-local-gpu) DEMO_LOCAL_GPU=1 ;;
@@ -105,6 +109,17 @@ if [[ "$YES" != "1" ]]; then
   echo "refusing to run Phase 3 closeout without --yes" >&2
   exit 2
 fi
+
+stop_started_server() {
+  if [[ "$STOP_SERVER_ON_EXIT" == "1" && "$SERVER_PID" != "" ]]; then
+    if kill -0 "$SERVER_PID" >/dev/null 2>&1; then
+      kill "$SERVER_PID" >/dev/null 2>&1 || true
+      wait "$SERVER_PID" 2>/dev/null || true
+    fi
+    rm -f .poor-cli/phase3-closeout-server.pid
+  fi
+}
+trap stop_started_server EXIT
 
 if [[ "$SKIP_SETUP" != "1" ]]; then
   scripts/setup-linux-cuda.sh --yes --engine "$ENGINE" --model "$MODEL"
@@ -193,7 +208,8 @@ capture_gpu_probe() {
 if [[ "$START_SERVER" == "1" ]] && ! server_healthy; then
   mkdir -p "$(dirname "$SERVER_LOG")"
   nohup .poor-cli/local-cuda-run.sh > "$SERVER_LOG" 2>&1 &
-  echo "$!" > .poor-cli/phase3-closeout-server.pid
+  SERVER_PID="$!"
+  echo "$SERVER_PID" > .poor-cli/phase3-closeout-server.pid
 fi
 
 if ! wait_for_server; then

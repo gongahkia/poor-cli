@@ -66,7 +66,7 @@ uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo
 
 ```sh
 scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ \
-  --write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 \
+  --stop-server-on-exit --write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 \
   --demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified
 uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
 ```

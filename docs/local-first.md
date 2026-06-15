@@ -64,7 +64,7 @@ Record/replay remains the control plane. A local model run should still produce 
 
 ```sh
 scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ \
-  --write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 \
+  --stop-server-on-exit --write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 \
   --demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified
 uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json
 uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json
@@ -74,6 +74,6 @@ uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench
 ```
 
 The verifier is the local-mode closeout gate for the pivot audit. It rejects non-local providers, non-local endpoints, non-graph runs, missing or mismatched run artifacts, partial replay verification, incomplete official eval, and pass rates below 50% of the checked-in Anthropic 10-task row.
-With `--start-server`, the closeout runner starts `.poor-cli/local-cuda-run.sh` in the background, waits for the local provider health endpoint, and writes `.poor-cli/phase3-closeout-server.pid`.
+With `--start-server`, the closeout runner starts `.poor-cli/local-cuda-run.sh` in the background, waits for the local provider health endpoint, and writes `.poor-cli/phase3-closeout-server.pid`. Add `--stop-server-on-exit` when the closeout command should stop the server it started.
 When writing demo evidence from a SWE-bench run, the closeout runner derives the replay run id and store dir from the first replay-verified task in `task_results.jsonl`.
 It also records a failed internet probe and an `nvidia-smi` GPU probe before writing accepted screencast evidence.

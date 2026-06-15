@@ -41,6 +41,7 @@ def target_host_commands() -> dict[str, str]:
     return {
         "run_all": (
             "scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ "
+            "--stop-server-on-exit "
             "--write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 "
             "--demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified"
         ),

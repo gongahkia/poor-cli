@@ -131,7 +131,7 @@ case "$ENGINE" in
     if [[ "$KV_CACHE_DTYPE" != "auto" ]]; then
       CACHE_ARGS="${CACHE_ARGS} --kv-cache-dtype '$KV_CACHE_DTYPE'"
     fi
-    LAUNCH_CMD="source '$VENV/bin/activate' && vllm serve '$MODEL' --host '$HOST' --port '$PORT'$CACHE_ARGS"
+    LAUNCH_CMD="source '$VENV/bin/activate' && exec vllm serve '$MODEL' --host '$HOST' --port '$PORT'$CACHE_ARGS"
     ;;
   sglang)
     CACHE_ARGS=""
@@ -141,10 +141,10 @@ case "$ENGINE" in
     if [[ "$KV_CACHE_DTYPE" != "auto" ]]; then
       CACHE_ARGS="${CACHE_ARGS} --kv-cache-dtype '$KV_CACHE_DTYPE'"
     fi
-    LAUNCH_CMD="source '$VENV/bin/activate' && python -m sglang.launch_server --model-path '$MODEL' --host '$HOST' --port '$PORT'$CACHE_ARGS"
+    LAUNCH_CMD="source '$VENV/bin/activate' && exec python -m sglang.launch_server --model-path '$MODEL' --host '$HOST' --port '$PORT'$CACHE_ARGS"
     ;;
   ollama)
-    LAUNCH_CMD="ollama serve"
+    LAUNCH_CMD="exec ollama serve"
     ;;
 esac
 

@@ -51,6 +51,9 @@ def test_linux_cuda_setup_script_covers_local_engines() -> None:
     assert "--disable-radix-cache" in text
     assert "--kv-cache-dtype" in text
     assert "POOR_CLI_LOCAL_PREFIX_CACHE" in text
+    assert "exec vllm serve" in text
+    assert "exec python -m sglang.launch_server" in text
+    assert "exec ollama serve" in text
 
 
 def test_phase3_closeout_script_runs_required_audits() -> None:
@@ -68,6 +71,8 @@ def test_phase3_closeout_script_runs_required_audits() -> None:
     assert "bench/phase3_closeout.py" in text
     assert "curl --fail" in text
     assert "--start-server" in text
+    assert "--stop-server-on-exit" in text
+    assert "stop_started_server" in text
     assert "nohup .poor-cli/local-cuda-run.sh" in text
     assert "phase3-closeout-server.pid" in text
     assert "wait_for_server" in text
