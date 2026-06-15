@@ -215,13 +215,13 @@ def _safe_url(value: str, config: WebConfig) -> str:
         raise WebToolError("URL host is required")
     if host == "localhost" or host.endswith(".localhost"):
         raise WebToolError("blocked localhost host")
+    for ip in _resolved_ips(host):
+        if not ip.is_global:
+            raise WebToolError(f"blocked private or reserved address: {ip}")
     if config.allow_domains and not _domain_match(host, config.allow_domains):
         raise WebToolError(f"domain not in allowlist: {host}")
     if config.deny_domains and _domain_match(host, config.deny_domains):
         raise WebToolError(f"domain denied: {host}")
-    for ip in _resolved_ips(host):
-        if not ip.is_global:
-            raise WebToolError(f"blocked private or reserved address: {ip}")
     return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, ""))
 
 

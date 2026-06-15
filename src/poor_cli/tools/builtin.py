@@ -8,12 +8,13 @@ from typing import TYPE_CHECKING, Any
 from poor_cli.provider_events import ToolSchema
 from poor_cli.repo_graph import graph_tools
 from poor_cli.sandbox import SandboxDenied, validate_shell_command
+from poor_cli.web_tools import web_fetch, web_search
 
 if TYPE_CHECKING:
     from .dispatcher import ToolResult
 
 
-def builtin_tools(root: Path) -> dict[str, Any]:
+def builtin_tools(root: Path, *, store: Any | None = None, run_id: str | None = None) -> dict[str, Any]:
     root = root.resolve()
     return {
         "read_file": lambda args: _read_file(root, args),
@@ -24,7 +25,8 @@ def builtin_tools(root: Path) -> dict[str, Any]:
         "shell": lambda args: _shell(root, args),
         "replay_emit": _replay_emit,
         "review": _review,
-        "web_search": _web_search,
+        "web_search": lambda args: web_search(root, store, run_id, args),
+        "web_fetch": lambda args: web_fetch(root, store, run_id, args),
         **graph_tools(root),
     }
 
@@ -45,7 +47,16 @@ def builtin_tool_schemas(root: Path) -> dict[str, ToolSchema]:
         "shell": ("Run a sandbox-checked shell command in the workdir.", {"command": text, "timeout": integer}, ["command"]),
         "replay_emit": ("Record an arbitrary replayable value.", {"value": {}}, ["value"]),
         "review": ("Emit review findings.", {"findings": {"type": "array"}, "recommendation": text}, ["findings"]),
-        "web_search": ("Record a web-search need for the parent runner.", {"query": text}, ["query"]),
+        "web_search": (
+            "Search the web through a configured replayable web mode.",
+            {"query": text, "mode": text},
+            ["query"],
+        ),
+        "web_fetch": (
+            "Fetch sanitized HTTP(S) page content through the replayable web guard.",
+            {"url": text},
+            ["url"],
+        ),
     }
     out = {
         name: ToolSchema(
@@ -168,10 +179,6 @@ def _replay_emit(args: dict[str, Any]) -> ToolResult:
 
 def _review(args: dict[str, Any]) -> ToolResult:
     return _result("review", True, {"findings": args.get("findings") or [], "recommendation": args.get("recommendation") or ""})
-
-
-def _web_search(args: dict[str, Any]) -> ToolResult:
-    return _result("web_search", False, error=f"web_search requires host web integration: {args.get('query') or ''}")
 
 
 def _resolve_path(root: Path, value: Any) -> Path:
