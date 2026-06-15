@@ -395,6 +395,7 @@ def test_phase3_demo_plan_schema() -> None:
     assert payload["schema_version"] == "poor-cli-phase3-demo-plan-v1"
     assert payload["target"]["requires_linux_cuda"] is True
     assert payload["target"]["requires_internet_disabled"] is True
+    assert payload["target"]["model_markers"] == ["qwen2.5-coder", "32b"]
     assert "--agents local" in payload["commands"]["run_demo"]
     assert "--offline --store-dir <poor_cli_store_dir> replay <poor_cli_run_id> --verify" in payload["commands"]["replay"]
     assert "--write-template" in payload["commands"]["write_evidence"]
@@ -531,6 +532,36 @@ def test_phase3_demo_validator_requires_replay_of_same_run_id(tmp_path: Path) ->
 
     assert payload["accepted"] is False
     assert "commands must replay the recorded run_id offline" in payload["errors"]
+
+
+def test_phase3_demo_validator_requires_target_model_size(tmp_path: Path) -> None:
+    video = tmp_path / "phase3-demo.mp4"
+    video.write_bytes(b"demo")
+    evidence = tmp_path / "phase3-demo.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "duration_seconds": 60,
+                "model": "Qwen/Qwen2.5-Coder-7B-Instruct",
+                "internet_disabled": True,
+                "local_gpu": True,
+                "graph_tools_visible": True,
+                "offline_replay_verified": True,
+                "run_id": "run_demo",
+                "video_path": str(video),
+                "commands": [
+                    'poor-cli run "fix bug" --graph --agents local --yes',
+                    "poor-cli --offline replay run_demo --verify",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is False
+    assert "model must be qwen2.5-coder-32b" in payload["errors"]
 
 
 def test_phase3_demo_validator_requires_recorded_store_dir(tmp_path: Path) -> None:

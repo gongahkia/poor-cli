@@ -8,6 +8,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 DEMO_EVIDENCE = ROOT / "bench" / "results" / "phase3-demo.json"
+TARGET_MODEL_MARKERS = ("qwen2.5-coder", "32b")
 REQUIRED_COMMAND_FRAGMENTS = (
     "poor-cli run",
     "--agents local",
@@ -56,7 +57,8 @@ def demo_plan_payload() -> dict[str, Any]:
         "target": {
             "duration_seconds_min": 45,
             "duration_seconds_max": 75,
-            "model_prefixes": ["qwen2.5-coder", "qwen/qwen2.5-coder"],
+            "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "model_markers": list(TARGET_MODEL_MARKERS),
             "requires_linux_cuda": True,
             "requires_internet_disabled": True,
             "requires_graph_tools_visible": True,
@@ -95,8 +97,8 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
     errors = []
     if not 45 <= duration <= 75:
         errors.append("duration_seconds must be between 45 and 75")
-    if not model.lower().startswith(("qwen2.5-coder", "qwen/qwen2.5-coder")):
-        errors.append("model must be qwen2.5-coder or comparable qwen/qwen2.5-coder path")
+    if not all(marker in model.lower() for marker in TARGET_MODEL_MARKERS):
+        errors.append("model must be qwen2.5-coder-32b")
     for field in ("internet_disabled", "local_gpu", "graph_tools_visible", "offline_replay_verified"):
         if not bool(payload.get(field)):
             errors.append(f"{field} must be true")

@@ -13,9 +13,10 @@
     "target": {
       "duration_seconds_max": 75,
       "duration_seconds_min": 45,
-      "model_prefixes": [
+      "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+      "model_markers": [
         "qwen2.5-coder",
-        "qwen/qwen2.5-coder"
+        "32b"
       ],
       "requires_graph_tools_visible": true,
       "requires_internet_disabled": true,
@@ -28,7 +29,7 @@
     "duration_seconds": 0,
     "errors": [
       "duration_seconds must be between 45 and 75",
-      "model must be qwen2.5-coder or comparable qwen/qwen2.5-coder path",
+      "model must be qwen2.5-coder-32b",
       "internet_disabled must be true",
       "local_gpu must be true",
       "graph_tools_visible must be true",
