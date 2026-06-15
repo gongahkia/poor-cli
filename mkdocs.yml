@@ -15,6 +15,8 @@ nav:
   - JSONL RPC: rpc.md
   - Security: security.md
   - Shell Sandbox ADR: adr-shell-sandbox.md
+  - Web Tools ADR: adr-web-tools.md
+  - MCP Hosting ADR: adr-mcp-hosting.md
   - Migration: migration.md
   - Release Checklist: release-checklist.md
   - Local First: local-first.md

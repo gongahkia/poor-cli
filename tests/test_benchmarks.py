@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
+from bench.claims_gate import scan_claims
 from bench.graph_vs_grep import graph_vs_grep_payload
+from bench.harness_report import evaluation_fixture_payload, reduce_report, swe_smoke_audit
 from bench.local_fixture_bugs import compact_payload, run_fixture_suite
 from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
@@ -101,6 +103,58 @@ def test_v6_baseline_task_fixture_schema() -> None:
         assert task["phase"].startswith("phase-")
         assert task["prompt"].strip()
         assert task["success_criteria"]
+
+
+def test_evaluation_fixture_covers_required_categories() -> None:
+    payload = evaluation_fixture_payload()
+
+    assert payload["schema_version"] == "poor-cli-evaluation-tasks-v1"
+    assert {task["category"] for task in payload["tasks"]} >= {
+        "simple_edit",
+        "multi_file_refactor",
+        "bug_fix",
+        "ambiguous_design",
+        "graph_lookup",
+        "web_research",
+    }
+    assert "swarm" in payload["modes"]
+    assert "second_model_review" in payload["modes"]
+
+
+def test_harness_report_reduces_cost_per_passed_task() -> None:
+    payload = reduce_report(
+        [
+            {"mode": "direct", "passed": True, "cost_usd": 0.2, "duration_seconds": 10},
+            {"mode": "direct", "passed": False, "cost_usd": 0.1, "duration_seconds": 30, "failure_category": "tests"},
+            {"mode": "swarm", "passed": True, "cost_usd": 0.6, "duration_seconds": 20},
+        ]
+    )
+
+    assert payload["modes"]["direct"]["pass_rate"] == 0.5
+    assert payload["modes"]["direct"]["cost_per_passed_task_usd"] == 0.3
+    assert payload["modes"]["direct"]["failure_categories"] == {"tests": 1}
+    assert payload["modes"]["swarm"]["p95_time_seconds"] == 20
+
+
+def test_swe_smoke_audit_accepts_checked_in_runner_outputs() -> None:
+    payload = swe_smoke_audit(Path(__file__).resolve().parents[1])
+
+    assert payload["accepted"] is True
+    assert payload["accepted_summary_count"] >= 1
+
+
+def test_claims_gate_requires_reproducibility_context(tmp_path: Path) -> None:
+    good = tmp_path / "good.md"
+    bad = tmp_path / "bad.md"
+    good.write_text("pass rate 8/10 on 2026-06-15 config bench/results/x.json\n", encoding="utf-8")
+    bad.write_text("pass rate is 80%\n", encoding="utf-8")
+
+    accepted = scan_claims([good])
+    rejected = scan_claims([bad])
+
+    assert accepted["accepted"] is True
+    assert rejected["accepted"] is False
+    assert rejected["violations"][0]["line"] == 1
 
 
 def test_bench_extra_matches_swe_lite_requirements() -> None:

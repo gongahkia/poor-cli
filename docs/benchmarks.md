@@ -15,6 +15,30 @@ Checked-in result rows:
 | generic | 3/3 | 3/3 | 3/3 |
 | claude | 3/3 | 3/3 | 3/3 |
 
+## Evaluation Matrix
+
+Fixture:
+
+```sh
+python -m json.tool bench/fixtures/evaluation_tasks.json >/dev/null
+```
+
+Report reducer:
+
+```sh
+uv run --locked python bench/harness_report.py --rows bench/results/<rows>.json --output bench/results/<report>.json
+```
+
+The fixture covers simple edit, multi-file refactor, bug fix, ambiguous design, graph lookup, and web-research answer tasks. Rows compare direct executor, planner+executor, swarm, Fusion planner, and second-model review modes when those routes are configured.
+
+Claim gate:
+
+```sh
+uv run --locked python bench/claims_gate.py README.md docs/benchmarks.md
+```
+
+Measured-result claims must include date/config/task-set evidence such as a checked-in `bench/` result path or replay run id.
+
 ## SWE-bench Lite
 
 The fixed 10-task manifest is `tests/fixtures/swe-lite-10/manifest.json`.

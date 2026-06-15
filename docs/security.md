@@ -20,6 +20,12 @@ Low-risk commands such as `rg`, `sed`, `python -m pytest`, `git diff`, and `git 
 
 Provider config stores env-var references such as `auth = { env = "OPENAI_API_KEY" }`. Plaintext secrets in config are rejected.
 
-## Web/MCP Boundary
+## Web Tools
 
-Web fetch/search and MCP server hosting are not trusted by default. Future network tools must enforce scheme/domain/private-network policy and replayable caches before use in native runner workflows.
+`web_search` is disabled until `tools.web.mode` is configured. `web_fetch` accepts only HTTP(S), blocks URL credentials, localhost, private/link-local/reserved IPs, denied domains, and redirects into blocked targets. Fetches record `web.fetch`, `web.cache`, and `web.citation` artifacts for replay and source auditing.
+
+Use `allow_domains` for high-risk runs. `robots.txt` can be enforced with `respect_robots = true`, but it is not an authorization control.
+
+## MCP Boundary
+
+`poor-cli mcp serve --stdio` exposes only allowlisted built-ins by default. Mutating tools are not exposed unless configured. External MCP clients support per-server `allow_tools`, timeout, and secret redaction.
