@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from .agents import detect_agents
+from .graph_context import build_graph_context, graph_context_text
 from .models import AgentInfo, Plan, TaskSpec, make_id
 from .offline import offline_enabled
 
@@ -34,6 +35,7 @@ class Planner:
         self.repo_path = repo_path
         self.agents = agents or detect_agents()
         self.graph_mode = graph_mode
+        self.graph_context: dict[str, Any] | None = None
 
     def create(self, goal: str) -> tuple[Plan, str, str]:
         prompt = self._prompt(goal)
@@ -52,7 +54,8 @@ class Planner:
             *agent_lines,
         ]
         if self.graph_mode:
-            lines.extend(["", GRAPH_MODE_PROMPT])
+            self.graph_context = build_graph_context(self.repo_path, goal)
+            lines.extend(["", GRAPH_MODE_PROMPT, graph_context_text(self.graph_context)])
         return "\n".join(lines)
 
     def _call(self, prompt: str) -> str:

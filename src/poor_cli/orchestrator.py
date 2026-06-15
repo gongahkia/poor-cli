@@ -9,6 +9,7 @@ from typing import Any
 from .agents import AgentResult, AgentRunner, build_agent_prompt, detect_agents
 from .artifacts import write_plan_artifacts, write_review_verify_artifacts, write_worker_artifacts
 from .config import explain_route, load_config
+from .graph_context import graph_context_text
 from .hooks import Hook, HookManager
 from .models import Budget, ContextPacket, Plan, TaskSpec, make_id, to_jsonable
 from .planner import Planner
@@ -40,9 +41,23 @@ class Orchestrator:
             self.store.set_run_status(run_id, "failed", "planner failed")
             self.store.append_event(run_id, "run.failed", {"summary": "planner failed"})
             raise
+        graph_context = planner.graph_context if graph_mode else None
+        if graph_context is not None:
+            graph_art = self.store.put_artifact(run_id=run_id, kind="graph.context", data=graph_context)
+            self.store.append_event(
+                run_id,
+                "graph.context.created",
+                {
+                    "artifact_id": graph_art.artifact_id,
+                    "available": bool(graph_context.get("available")),
+                    "warning": str(graph_context.get("warning") or ""),
+                },
+            )
         if graph_mode:
             for task in plan.tasks:
                 task.metadata["graph_mode"] = True
+                if graph_context is not None:
+                    task.metadata["graph_context"] = graph_context
         route_config = _route_config(load_config(self.repo_path), "executor")
         for task in plan.tasks:
             decision = classify_task(goal, plan, task, budget, graph_mode=graph_mode)
@@ -188,6 +203,9 @@ class Orchestrator:
                 "Graph mode: prefer symbolic repo navigation before grep; "
                 "use find_symbol, definition_of, callers_of, imports_of, and subgraph when available."
             )
+            graph_context = task.metadata.get("graph_context")
+            if isinstance(graph_context, dict):
+                lines.append(graph_context_text(graph_context))
         lines.extend(
             [
                 "Constraints: preserve repo intent; keep changes scoped; record validation.",
@@ -201,7 +219,9 @@ class Orchestrator:
             task_id=task.task_id,
             token_estimate=max(1, len(prompt) // 4),
             included_files=[],
-            included_summaries=[],
+            included_summaries=[graph_context_text(task.metadata["graph_context"])]
+            if isinstance(task.metadata.get("graph_context"), dict)
+            else [],
             constraints=["keep changes scoped", "report validation", "do not auto-merge"],
             task_prompt=prompt,
             validation_instructions=task.validation,

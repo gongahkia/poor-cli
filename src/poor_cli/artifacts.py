@@ -65,19 +65,34 @@ def write_worker_artifacts(
 
 def write_review_verify_artifacts(store: RunStore, run_id: str, *, status: str, summary: str) -> None:
     review: dict[str, Any] = {
+        "schema_version": "poor-cli-review-v1",
+        "status": "accepted" if status == "completed" else "rejected",
         "findings": [],
         "finding_fields": ["severity", "file", "line", "evidence", "recommendation"],
+        "suppressions": [],
         "recommendation": "accept" if status == "completed" else "reject",
+        "source_artifacts": [],
+        "cost": {},
     }
     verify: dict[str, Any] = {
+        "schema_version": "poor-cli-verify-v1",
         "status": status,
         "summary": summary,
         "commands": [],
         "benchmark_deltas": {},
         "pass": status == "completed",
+        "cost": {},
     }
-    _write(store, run_id, "review/REVIEW.json", "artifact.review", review)
-    _write(store, run_id, "verify/VERIFY.json", "artifact.verify", verify)
+    write_review_artifact(store, run_id, review)
+    write_verify_artifact(store, run_id, verify)
+
+
+def write_review_artifact(store: RunStore, run_id: str, data: dict[str, Any]) -> None:
+    _write(store, run_id, "review/REVIEW.json", "artifact.review", data)
+
+
+def write_verify_artifact(store: RunStore, run_id: str, data: dict[str, Any]) -> None:
+    _write(store, run_id, "verify/VERIFY.json", "artifact.verify", data)
 
 
 def artifact_manifest(store: RunStore, run_id: str) -> list[dict[str, Any]]:

@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
 from typing import Any, Protocol, cast
 
+from .cost import BudgetLedger
 from .extensions import ExtensionLoadError, load_entry_point_values
 from .hooks import Hook, HookManager
 from .offline import require_online
@@ -142,9 +143,11 @@ class CachedReplayProvider:
             "provider.cache_hit",
             {"provider": request.provider, "model": request.model, "request_hash": request_hash},
         )
+        BudgetLedger.load(self.store, self.run_id).record_provider_response(request, request_hash, cached, cached_response=True)
         return replace(cached, cached=True)
 
     def _start_live_request(self, request: ProviderRequest, request_hash: str) -> Any:
+        BudgetLedger.load(self.store, self.run_id).check_provider_request(request, request_hash)
         request_artifact = self.store.put_artifact(run_id=self.run_id, kind="provider.request", data=asdict(request))
         self.store.append_event(
             self.run_id,
@@ -177,6 +180,7 @@ class CachedReplayProvider:
                 "request_artifact_id": request_artifact_id,
             },
         )
+        BudgetLedger.load(self.store, self.run_id).record_provider_response(request, request_hash, response, cached_response=False)
         return response
 
     def _cached_response(self, request_hash: str) -> ProviderResponse | None:

@@ -19,6 +19,10 @@ class Budget:
     mode: str = "balanced"
     max_usd: float | None = None
     max_parallel_agents: int = 1
+    max_calls: int | None = None
+    max_tokens: int | None = None
+    max_wall_seconds: int | None = None
+    strict_pricing: bool = False
 
 
 @dataclass(frozen=True)

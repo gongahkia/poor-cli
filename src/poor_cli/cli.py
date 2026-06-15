@@ -27,6 +27,7 @@ from .config import (
     to_toml,
 )
 from .hooks import load_hooks
+from .lanes import review_run, suppression_rows, verify_run
 from .mcp_client import call_mcp_tool, list_mcp_tools
 from .models import Budget, to_jsonable
 from .offline import enable_offline
@@ -69,6 +70,10 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
         return _plan(args, store)
     if args.command == "run":
         return _run(args, store)
+    if args.command == "review-run":
+        return _review_run(args, store)
+    if args.command == "verify-run":
+        return _verify_run(args, store)
     if args.command == "runs":
         return _runs(args, store)
     if args.command == "provider":
@@ -153,6 +158,15 @@ def _runs(args: argparse.Namespace, store: RunStore) -> int:
     for run in store.list_runs(failed_only=args.failed, prompt_prefix=args.prefix):
         print(f"{run['run_id']}\t{run['status']}\t{run['created_at']}\t{run['user_goal'][:80]}")
     return 0
+
+
+def _review_run(args: argparse.Namespace, store: RunStore) -> int:
+    suppressions = suppression_rows(args.suppress_finding, args.reason, args.expires)
+    return review_run(store, args.run_id, allow_expensive_router=args.allow_expensive_router, suppressions=suppressions)
+
+
+def _verify_run(args: argparse.Namespace, store: RunStore) -> int:
+    return verify_run(store, args.run_id, commands=args.command_text)
 
 
 def _provider(args: argparse.Namespace) -> int:
@@ -259,6 +273,8 @@ def _inspect(args: argparse.Namespace, store: RunStore) -> int:
             payload["handoff_artifacts"] = store.list_artifacts(args.run_id, "handoff.packet")
         if args.cost:
             payload["budget"] = run.get("budget")
+            ledger = store.list_artifacts(args.run_id, "budget.ledger")
+            payload["budget_ledger"] = json.loads(store.artifact_payload(ledger[-1]["artifact_id"])) if ledger else None
         if args.artifacts:
             payload["artifacts"] = artifact_manifest(store, args.run_id)
         print(json.dumps(payload, indent=2, sort_keys=True))
@@ -280,6 +296,10 @@ def _inspect(args: argparse.Namespace, store: RunStore) -> int:
             print(f"handoff {artifact['artifact_id']} {artifact['sha256']} {artifact['size']}b")
     if args.cost:
         print(json.dumps(run.get("budget"), sort_keys=True))
+        ledger = store.list_artifacts(args.run_id, "budget.ledger")
+        if ledger:
+            payload = json.loads(store.artifact_payload(ledger[-1]["artifact_id"]))
+            print(json.dumps(payload["totals"], sort_keys=True))
     if args.artifacts:
         for artifact in artifact_manifest(store, args.run_id):
             print(f"artifact {artifact['path']} {artifact['size']}b")
@@ -338,7 +358,15 @@ def _tui(args: argparse.Namespace, store: RunStore) -> int:
 
 
 def _budget(args: argparse.Namespace) -> Budget:
-    return Budget(mode=args.mode, max_usd=args.budget, max_parallel_agents=max(1, args.parallel))
+    return Budget(
+        mode=args.mode,
+        max_usd=args.budget,
+        max_parallel_agents=max(1, args.parallel),
+        max_calls=args.max_calls,
+        max_tokens=args.max_tokens,
+        max_wall_seconds=args.max_wall_seconds,
+        strict_pricing=args.strict_budget,
+    )
 
 
 def _selected(args: argparse.Namespace) -> set[str] | None:
@@ -375,6 +403,17 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--agents")
     run.add_argument("--yes", action="store_true")
     run.add_argument("--dry-run", action="store_true")
+
+    review = sub.add_parser("review-run")
+    review.add_argument("run_id")
+    review.add_argument("--allow-expensive-router", action="store_true")
+    review.add_argument("--suppress-finding", action="append", default=[])
+    review.add_argument("--reason")
+    review.add_argument("--expires")
+
+    verify = sub.add_parser("verify-run")
+    verify.add_argument("run_id")
+    verify.add_argument("--command", dest="command_text", action="append")
 
     runs = sub.add_parser("runs")
     runs.add_argument("--failed", action="store_true")
@@ -452,6 +491,10 @@ def _budget_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--budget", type=float)
     parser.add_argument("--mode", choices=("cheap", "balanced", "best", "local-only", "manual"), default="balanced")
     parser.add_argument("--parallel", type=int, default=1)
+    parser.add_argument("--max-calls", type=int)
+    parser.add_argument("--max-tokens", type=int)
+    parser.add_argument("--max-wall-seconds", type=int)
+    parser.add_argument("--strict-budget", action="store_true")
 
 
 def _graph_arg(parser: argparse.ArgumentParser) -> None:
