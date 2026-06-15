@@ -52,6 +52,7 @@
     "model": "",
     "offline_replay_verified": false,
     "run_id": "",
+    "store_dir": "",
     "video_path": ""
   }
 }

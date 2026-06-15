@@ -28,7 +28,11 @@ def demo_evidence_template(
     local_gpu: bool,
     graph_tools_visible: bool,
     offline_replay_verified: bool,
+    store_dir: str = "",
 ) -> dict[str, Any]:
+    replay_command = f"poor-cli --offline replay {run_id or '<run_id>'} --verify"
+    if store_dir:
+        replay_command = f"poor-cli --offline --store-dir {shlex.quote(store_dir)} replay {run_id or '<run_id>'} --verify"
     return {
         "duration_seconds": duration_seconds,
         "model": model,
@@ -37,10 +41,11 @@ def demo_evidence_template(
         "graph_tools_visible": graph_tools_visible,
         "offline_replay_verified": offline_replay_verified,
         "run_id": run_id,
+        "store_dir": store_dir,
         "video_path": video_path,
         "commands": [
             'poor-cli run "fix a real bug using graph tools" --graph --agents local --yes',
-            f"poor-cli --offline replay {run_id or '<run_id>'} --verify",
+            replay_command,
         ],
     }
 
@@ -85,6 +90,7 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
     duration = int(payload.get("duration_seconds") or 0)
     model = str(payload.get("model") or "")
     run_id = str(payload.get("run_id") or "")
+    store_dir = str(payload.get("store_dir") or "")
     errors = []
     if not 45 <= duration <= 75:
         errors.append("duration_seconds must be between 45 and 75")
@@ -97,6 +103,8 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
         errors.append("run_id is required")
     elif not _commands_replay_run_id(commands, run_id):
         errors.append("commands must replay the recorded run_id offline")
+    if store_dir and not _commands_replay_store_dir(commands, run_id, store_dir):
+        errors.append("commands must replay from the recorded store_dir")
     if missing_fragments:
         errors.append("commands must show local graph run and offline replay verification")
     if not video_path.is_file():
@@ -114,6 +122,7 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
         "graph_tools_visible": bool(payload.get("graph_tools_visible")),
         "offline_replay_verified": bool(payload.get("offline_replay_verified")),
         "run_id": run_id,
+        "store_dir": store_dir,
         "video_path": payload.get("video_path", ""),
         "missing_command_fragments": missing_fragments,
     }
@@ -154,12 +163,33 @@ def _commands_replay_run_id(commands: list[Any], run_id: str) -> bool:
     return False
 
 
+def _commands_replay_store_dir(commands: list[Any], run_id: str, store_dir: str) -> bool:
+    for command in commands:
+        text = str(command)
+        try:
+            parts = shlex.split(text)
+        except ValueError:
+            parts = text.split()
+        store_indexes = [idx for idx, part in enumerate(parts[:-1]) if part == "--store-dir"]
+        for index, part in enumerate(parts[:-1]):
+            if (
+                part == "replay"
+                and parts[index + 1] == run_id
+                and "--offline" in parts
+                and "--verify" in parts
+                and any(parts[store_index + 1] == store_dir for store_index in store_indexes)
+            ):
+                return True
+    return False
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bench/phase3_demo.py")
     parser.add_argument("--evidence", type=Path, default=DEMO_EVIDENCE)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--write-template", type=Path)
     parser.add_argument("--run-id", default="")
+    parser.add_argument("--store-dir", default="")
     parser.add_argument("--video-path", default="")
     parser.add_argument("--duration-seconds", type=int, default=60)
     parser.add_argument("--model", default="Qwen/Qwen2.5-Coder-32B-Instruct")
@@ -178,6 +208,7 @@ def main(argv: list[str] | None = None) -> int:
             local_gpu=bool(args.local_gpu),
             graph_tools_visible=bool(args.graph_tools_visible),
             offline_replay_verified=bool(args.offline_replay_verified),
+            store_dir=str(args.store_dir),
         )
         text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
         args.write_template.parent.mkdir(parents=True, exist_ok=True)

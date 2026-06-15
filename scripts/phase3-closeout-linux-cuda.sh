@@ -8,6 +8,8 @@ MODEL="${POOR_CLI_LOCAL_MODEL:-Qwen/Qwen2.5-Coder-32B-Instruct}"
 DEMO_EVIDENCE="bench/results/phase3-demo.json"
 DEMO_VIDEO_PATH="bench/results/phase3-demo.mp4"
 DEMO_DURATION_SECONDS=60
+DEMO_RUN_ID=""
+DEMO_STORE_DIR=""
 SKIP_SETUP=0
 SKIP_GENERATE=0
 SKIP_EVALUATE=0
@@ -42,6 +44,8 @@ Options:
   --demo-evidence PATH     default: bench/results/phase3-demo.json
   --demo-video-path PATH   default: bench/results/phase3-demo.mp4
   --demo-duration-seconds N default: 60
+  --demo-run-id ID         override demo replay run id; default: first verified SWE task run
+  --demo-store-dir PATH    override demo replay store dir; default: first verified SWE task store
   --eval-max-workers N     default: 1
   --timeout-seconds N      default: 1200
   --health-timeout-seconds N default: 300
@@ -68,6 +72,8 @@ while [[ $# -gt 0 ]]; do
     --demo-evidence) DEMO_EVIDENCE="$2"; shift ;;
     --demo-video-path) DEMO_VIDEO_PATH="$2"; shift ;;
     --demo-duration-seconds) DEMO_DURATION_SECONDS="$2"; shift ;;
+    --demo-run-id) DEMO_RUN_ID="$2"; shift ;;
+    --demo-store-dir) DEMO_STORE_DIR="$2"; shift ;;
     --eval-max-workers) EVAL_MAX_WORKERS="$2"; shift ;;
     --timeout-seconds) TIMEOUT_SECONDS="$2"; shift ;;
     --health-timeout-seconds) HEALTH_TIMEOUT_SECONDS="$2"; shift ;;
@@ -135,6 +141,26 @@ wait_for_server() {
   done
 }
 
+derive_demo_replay_evidence() {
+  uv run --locked python - "bench/swe_bench_lite/results/${RUN_ID}/task_results.jsonl" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+for line in path.read_text(encoding="utf-8").splitlines():
+    if not line.strip():
+        continue
+    record = json.loads(line)
+    run_id = str(record.get("poor_cli_run_id") or "")
+    store_dir = str(record.get("poor_cli_store_dir") or "")
+    if record.get("replay_verified") and run_id and store_dir:
+        print(f"{run_id}\t{store_dir}")
+        raise SystemExit(0)
+raise SystemExit("no replay-verified SWE task with poor_cli_run_id and poor_cli_store_dir")
+PY
+}
+
 if [[ "$START_SERVER" == "1" ]] && ! server_healthy; then
   mkdir -p "$(dirname "$SERVER_LOG")"
   nohup .poor-cli/local-cuda-run.sh > "$SERVER_LOG" 2>&1 &
@@ -173,6 +199,13 @@ fi
 uv run --locked python bench/phase3_local_benchmark.py --summary "bench/swe_bench_lite/results/${RUN_ID}/summary.json"
 
 if [[ "$WRITE_DEMO_EVIDENCE" == "1" ]]; then
+  if [[ "$DEMO_RUN_ID" == "" || "$DEMO_STORE_DIR" == "" ]]; then
+    DEMO_REPLAY_EVIDENCE="$(derive_demo_replay_evidence)"
+    DEMO_DERIVED_RUN_ID="${DEMO_REPLAY_EVIDENCE%%$'\t'*}"
+    DEMO_DERIVED_STORE_DIR="${DEMO_REPLAY_EVIDENCE#*$'\t'}"
+    if [[ "$DEMO_RUN_ID" == "" ]]; then DEMO_RUN_ID="$DEMO_DERIVED_RUN_ID"; fi
+    if [[ "$DEMO_STORE_DIR" == "" ]]; then DEMO_STORE_DIR="$DEMO_DERIVED_STORE_DIR"; fi
+  fi
   DEMO_FLAGS=()
   if [[ "$DEMO_INTERNET_DISABLED" == "1" ]]; then DEMO_FLAGS+=(--internet-disabled); fi
   if [[ "$DEMO_LOCAL_GPU" == "1" ]]; then DEMO_FLAGS+=(--local-gpu); fi
@@ -180,7 +213,8 @@ if [[ "$WRITE_DEMO_EVIDENCE" == "1" ]]; then
   if [[ "$DEMO_OFFLINE_REPLAY_VERIFIED" == "1" ]]; then DEMO_FLAGS+=(--offline-replay-verified); fi
   uv run --locked python bench/phase3_demo.py \
     --write-template "$DEMO_EVIDENCE" \
-    --run-id "$RUN_ID" \
+    --run-id "$DEMO_RUN_ID" \
+    --store-dir "$DEMO_STORE_DIR" \
     --video-path "$DEMO_VIDEO_PATH" \
     --duration-seconds "$DEMO_DURATION_SECONDS" \
     --model "$POOR_CLI_MODEL" \

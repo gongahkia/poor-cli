@@ -69,7 +69,13 @@ def test_phase3_closeout_script_runs_required_audits() -> None:
     assert "openai_compatible_health_url" in text
     assert "--write-demo-evidence" in text
     assert "--demo-video-path" in text
+    assert "--demo-run-id" in text
+    assert "--demo-store-dir" in text
     assert "--demo-internet-disabled" in text
     assert "--demo-local-gpu" in text
     assert "--demo-graph-tools-visible" in text
     assert "--demo-offline-replay-verified" in text
+    assert "derive_demo_replay_evidence" in text
+    assert "poor_cli_run_id" in text
+    assert "poor_cli_store_dir" in text
+    assert '--store-dir "$DEMO_STORE_DIR"' in text

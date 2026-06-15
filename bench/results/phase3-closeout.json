@@ -41,6 +41,6 @@
     "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
     "verify_demo": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
     "verify_local_swe": "uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench_lite/results/swe10-local-YYYYMMDDTHHMMSSZ/summary.json",
-    "write_demo_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id swe10-local-YYYYMMDDTHHMMSSZ --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
+    "write_demo_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
   }
 }
