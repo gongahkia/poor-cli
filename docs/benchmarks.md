@@ -48,6 +48,14 @@ uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-r
 
 Checked-in snapshot: setup script, provider adapters, local-agent routing, and Ollama binary are ready; Linux/CUDA host and vLLM/SGLang package readiness are environment-dependent.
 
+## Phase 3 Acceptance
+
+```sh
+uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json
+```
+
+Current checked-in evidence proves offline graph replay and offline network-call guards. Linux/CUDA readiness, the local SWE-bench target row, and the local-GPU screencast remain pending.
+
 ## Phase 3 Local Benchmark
 
 ```sh

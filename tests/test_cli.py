@@ -220,6 +220,41 @@ def test_cli_run_graph_stores_graph_agent_prompt(tmp_path: Path, monkeypatch, ca
         run_store.close()
 
 
+def test_cli_run_graph_replays_offline(tmp_path: Path, monkeypatch, capsys) -> None:
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Trace','objective':'trace symbols','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n",
+        encoding="utf-8",
+    )
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    assert main(["--store-dir", str(store), "run", "trace parser flow", "--graph", "--yes"]) == 0
+    run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
+    run_store = RunStore(store)
+    try:
+        assert run_store.list_tasks(run_id)[0]["metadata"]["graph_mode"] is True
+    finally:
+        run_store.close()
+
+    monkeypatch.delenv("POOR_CLI_PLANNER_COMMAND", raising=False)
+    old_offline = os.environ.get("POOR_CLI_OFFLINE")
+    try:
+        assert main(["--offline", "--store-dir", str(store), "replay", run_id, "--verify", "--json"]) == 0
+        offline_replay = json.loads(capsys.readouterr().out)
+        assert offline_replay["verification"]["verified"] is True
+    finally:
+        if old_offline is None:
+            os.environ.pop("POOR_CLI_OFFLINE", None)
+        else:
+            os.environ["POOR_CLI_OFFLINE"] = old_offline
+
+
 def test_cli_run_executes_generic_command_metadata(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
     command = f"{sys.executable} -c \"from pathlib import Path; Path('fixed.txt').write_text('ok')\""

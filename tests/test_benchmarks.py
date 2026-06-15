@@ -10,6 +10,7 @@ from bench.graph_vs_grep import graph_vs_grep_payload
 from bench.local_fixture_bugs import compact_payload, run_fixture_suite
 from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
+from bench.phase3_acceptance import acceptance_payload as phase3_acceptance_payload
 from bench.phase3_local_benchmark import benchmark_plan_payload, validate_local_summary
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
@@ -249,6 +250,36 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 
+def test_phase3_acceptance_payload_schema() -> None:
+    payload = phase3_acceptance_payload()
+
+    assert payload["schema_version"] == "poor-cli-phase3-acceptance-v1"
+    assert set(payload["checks"]) == {
+        "linux_cuda_readiness",
+        "local_swe_lite_10",
+        "offline_graph_replay",
+        "offline_network_guards",
+        "local_gpu_screencast",
+    }
+    assert payload["checks"]["offline_graph_replay"]["accepted"] is True
+    assert payload["checks"]["offline_network_guards"]["accepted"] is True
+    assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["accepted"]}
+
+
+def test_checked_in_phase3_acceptance_snapshot() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "phase3-acceptance.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "poor-cli-phase3-acceptance-v1"
+    assert payload["accepted"] is False
+    assert payload["checks"]["offline_graph_replay"]["accepted"] is True
+    assert payload["checks"]["offline_network_guards"]["accepted"] is True
+    assert payload["checks"]["linux_cuda_readiness"]["accepted"] is False
+    assert payload["checks"]["local_swe_lite_10"]["accepted"] is False
+    assert payload["checks"]["local_gpu_screencast"]["accepted"] is False
+    assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["accepted"]}
+
+
 def test_pivot_remaining_payload_schema() -> None:
     payload = remaining_payload()
 
@@ -257,6 +288,8 @@ def test_pivot_remaining_payload_schema() -> None:
         "phase2_fixed_swe_graph_mode",
         "phase3_linux_cuda_readiness",
         "phase3_local_mode_benchmark",
+        "phase3_offline_graph_replay",
+        "phase3_local_gpu_screencast",
     }
     assert payload["complete"] is False
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["done"]}
@@ -273,6 +306,8 @@ def test_checked_in_pivot_remaining_snapshot() -> None:
     assert payload["checks"]["phase2_fixed_swe_graph_mode"]["total_instances"] == 10
     assert payload["checks"]["phase3_linux_cuda_readiness"]["done"] is False
     assert payload["checks"]["phase3_local_mode_benchmark"]["done"] is False
+    assert payload["checks"]["phase3_offline_graph_replay"]["done"] is True
+    assert payload["checks"]["phase3_local_gpu_screencast"]["done"] is False
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["done"]}
 
 

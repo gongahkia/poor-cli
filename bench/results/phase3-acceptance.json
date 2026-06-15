@@ -1,0 +1,54 @@
+{
+  "accepted": false,
+  "checks": {
+    "linux_cuda_readiness": {
+      "accepted": false,
+      "evidence": "bench/results/phase3-readiness.json",
+      "remaining": [
+        "linux_cuda_host",
+        "engine_python_deps"
+      ]
+    },
+    "local_gpu_screencast": {
+      "accepted": false,
+      "duration_seconds": 0,
+      "evidence": "bench/results/phase3-demo.json",
+      "graph_tools_visible": false,
+      "internet_disabled": false,
+      "local_gpu": false,
+      "model": "",
+      "offline_replay_verified": false,
+      "video_path": ""
+    },
+    "local_swe_lite_10": {
+      "accepted": false,
+      "evidence": "",
+      "pass_rate": 0.0,
+      "replay_verified_count": 0,
+      "resolved_instances": 0,
+      "target_rate": 0.45,
+      "total_instances": 0
+    },
+    "offline_graph_replay": {
+      "accepted": true,
+      "evidence": "tests/test_cli.py::test_cli_run_graph_replays_offline",
+      "missing_fragments": []
+    },
+    "offline_network_guards": {
+      "accepted": true,
+      "evidence": [
+        "tests/test_agents.py::test_offline_mode_blocks_network_backed_agents",
+        "tests/test_planner.py::test_offline_planner_requires_custom_command",
+        "tests/test_provider_adapters.py::test_provider_adapters_block_offline_calls",
+        "tests/test_providers.py::test_cached_replay_provider_blocks_live_call_when_offline"
+      ],
+      "missing": []
+    }
+  },
+  "remaining": [
+    "linux_cuda_readiness",
+    "local_swe_lite_10",
+    "local_gpu_screencast"
+  ],
+  "schema_version": "poor-cli-phase3-acceptance-v1"
+}

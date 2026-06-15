@@ -60,6 +60,7 @@ Record/replay remains the control plane. A local model run should still produce 
 ## Phase 3 Benchmark Gate
 
 ```sh
+uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json
 uv run --locked python bench/phase3_local_benchmark.py --output bench/results/phase3-local-benchmark-plan.json
 uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench_lite/results/swe10-local-YYYYMMDDTHHMMSSZ/summary.json
 ```

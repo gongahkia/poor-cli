@@ -82,6 +82,16 @@ Checked-in snapshot: `bench/results/phase1-acceptance.json`.
 
 Current acceptance status: all Phase 1 acceptance checks pass from checked-in evidence.
 
+Phase 3 acceptance audit:
+
+```sh
+uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json
+```
+
+Checked-in snapshot: `bench/results/phase3-acceptance.json`.
+
+Current accepted Phase 3 sub-checks: offline graph replay and offline network guards. Current remaining Phase 3 acceptance gaps: Linux/CUDA readiness, local SWE-bench target row, and local-GPU screencast evidence.
+
 Pivot remaining-work audit:
 
 ```sh

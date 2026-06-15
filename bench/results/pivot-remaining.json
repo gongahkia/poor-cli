@@ -14,6 +14,13 @@
         "engine_python_deps"
       ]
     },
+    "phase3_local_gpu_screencast": {
+      "done": false,
+      "duration_seconds": 0,
+      "evidence": "bench/results/phase3-demo.json",
+      "model": "",
+      "video_path": ""
+    },
     "phase3_local_mode_benchmark": {
       "done": false,
       "evidence": "",
@@ -24,12 +31,18 @@
       "resolved_instances": 0,
       "target_rate": 0.45,
       "total_instances": 0
+    },
+    "phase3_offline_graph_replay": {
+      "done": true,
+      "evidence": "tests/test_cli.py::test_cli_run_graph_replays_offline",
+      "missing_fragments": []
     }
   },
   "complete": false,
   "remaining": [
     "phase3_linux_cuda_readiness",
-    "phase3_local_mode_benchmark"
+    "phase3_local_mode_benchmark",
+    "phase3_local_gpu_screencast"
   ],
   "schema_version": "poor-cli-pivot-remaining-v1"
 }

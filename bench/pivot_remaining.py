@@ -6,8 +6,10 @@ from pathlib import Path
 from typing import Any
 
 try:
+    from bench.phase3_acceptance import acceptance_payload as phase3_acceptance_payload
     from bench.phase3_local_benchmark import ALLOWED_PROVIDERS, target_payload, validate_local_summary
 except ModuleNotFoundError:
+    from phase3_acceptance import acceptance_payload as phase3_acceptance_payload
     from phase3_local_benchmark import ALLOWED_PROVIDERS, target_payload, validate_local_summary
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,6 +20,8 @@ def remaining_payload() -> dict[str, Any]:
         "phase2_fixed_swe_graph_mode": _phase2_fixed_swe_graph_mode(),
         "phase3_linux_cuda_readiness": _phase3_linux_cuda_readiness(),
         "phase3_local_mode_benchmark": _phase3_local_mode_benchmark(),
+        "phase3_offline_graph_replay": _phase3_offline_graph_replay(),
+        "phase3_local_gpu_screencast": _phase3_local_gpu_screencast(),
     }
     return {
         "schema_version": "poor-cli-pivot-remaining-v1",
@@ -87,6 +91,26 @@ def _phase3_local_mode_benchmark() -> dict[str, Any]:
         "done": False,
         "reason": "no checked-in 10-task local graph-mode SWE-bench summary meeting the Phase 3 target",
         **best,
+    }
+
+
+def _phase3_offline_graph_replay() -> dict[str, Any]:
+    check = phase3_acceptance_payload()["checks"]["offline_graph_replay"]
+    return {
+        "done": bool(check["accepted"]),
+        "evidence": check["evidence"],
+        "missing_fragments": check["missing_fragments"],
+    }
+
+
+def _phase3_local_gpu_screencast() -> dict[str, Any]:
+    check = phase3_acceptance_payload()["checks"]["local_gpu_screencast"]
+    return {
+        "done": bool(check["accepted"]),
+        "evidence": check["evidence"],
+        "duration_seconds": check["duration_seconds"],
+        "model": check["model"],
+        "video_path": check["video_path"],
     }
 
 
