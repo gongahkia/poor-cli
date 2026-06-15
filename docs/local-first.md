@@ -61,6 +61,7 @@ Record/replay remains the control plane. A local model run should still produce 
 ## Phase 3 Benchmark Gate
 
 ```sh
+scripts/phase3-closeout-linux-cuda.sh --yes --run-id swe10-local-YYYYMMDDTHHMMSSZ
 uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json
 uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
 uv run --locked python bench/phase3_local_benchmark.py --output bench/results/phase3-local-benchmark-plan.json

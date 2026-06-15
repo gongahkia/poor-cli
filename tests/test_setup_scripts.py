@@ -15,6 +15,16 @@ def test_linux_cuda_setup_script_is_executable_and_valid_shell() -> None:
     assert os.access(script, os.X_OK)
 
 
+def test_phase3_closeout_script_is_executable_and_valid_shell() -> None:
+    root = Path(__file__).resolve().parents[1]
+    script = root / "scripts" / "phase3-closeout-linux-cuda.sh"
+
+    result = subprocess.run(["bash", "-n", str(script)], cwd=root, text=True, capture_output=True, check=False)
+
+    assert result.returncode == 0, result.stderr
+    assert os.access(script, os.X_OK)
+
+
 def test_linux_cuda_setup_script_covers_local_engines() -> None:
     script = Path(__file__).resolve().parents[1] / "scripts" / "setup-linux-cuda.sh"
     text = script.read_text(encoding="utf-8")
@@ -35,3 +45,19 @@ def test_linux_cuda_setup_script_covers_local_engines() -> None:
     assert "--disable-radix-cache" in text
     assert "--kv-cache-dtype" in text
     assert "POOR_CLI_LOCAL_PREFIX_CACHE" in text
+
+
+def test_phase3_closeout_script_runs_required_audits() -> None:
+    script = Path(__file__).resolve().parents[1] / "scripts" / "phase3-closeout-linux-cuda.sh"
+    text = script.read_text(encoding="utf-8")
+
+    assert "scripts/setup-linux-cuda.sh --yes" in text
+    assert "bench/phase3_readiness.py" in text
+    assert "bench/swe_bench_lite/run.py" in text
+    assert "--agent local" in text
+    assert "bench/phase3_local_benchmark.py" in text
+    assert "bench/phase3_demo.py" in text
+    assert "bench/phase3_acceptance.py" in text
+    assert "bench/pivot_remaining.py" in text
+    assert "bench/phase3_closeout.py" in text
+    assert "curl --fail" in text

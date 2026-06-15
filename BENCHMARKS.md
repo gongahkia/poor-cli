@@ -103,6 +103,7 @@ Checked-in plan: `bench/results/phase3-demo-plan.json`.
 Phase 3 target-host closeout:
 
 ```sh
+scripts/phase3-closeout-linux-cuda.sh --yes --run-id swe10-local-YYYYMMDDTHHMMSSZ
 uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
 ```
 

@@ -63,6 +63,7 @@ uv run --locked python bench/phase3_demo.py --output bench/results/phase3-demo-p
 `bench/phase3_demo.py` validates the screencast evidence JSON and linked video path before the Phase 3 demo check can pass.
 
 ```sh
+scripts/phase3-closeout-linux-cuda.sh --yes --run-id swe10-local-YYYYMMDDTHHMMSSZ
 uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
 ```
 
