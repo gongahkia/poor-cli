@@ -46,6 +46,12 @@ def target_host_commands() -> dict[str, str]:
             "--demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified"
         ),
         "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
+        "setup_quantized": (
+            "scripts/setup-linux-cuda.sh --yes --engine vllm "
+            "--model Qwen/Qwen2.5-Coder-32B-Instruct-AWQ "
+            "--served-model Qwen/Qwen2.5-Coder-32B-Instruct "
+            "--quantization awq --max-model-len 8192 --gpu-memory-utilization 0.90"
+        ),
         "launch_server": ".poor-cli/local-cuda-run.sh",
         "readiness": "uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json",
         "generate_local_swe": (
@@ -65,6 +71,8 @@ def target_host_commands() -> dict[str, str]:
             "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json "
             "--run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> "
             "--video-path bench/results/phase3-demo.mp4 --duration-seconds 60 "
+            "--source-model <loaded-model-id> --served-model Qwen/Qwen2.5-Coder-32B-Instruct "
+            "--quantization <none|awq|gptq> "
             "--internet-disabled --network-probe-exit-code <nonzero> --local-gpu "
             "--gpu-probe-exit-code 0 --gpu-probe-output <nvidia-smi-gpu-name> "
             "--graph-tools-visible --offline-replay-verified"

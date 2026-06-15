@@ -31,6 +31,11 @@ def demo_evidence_template(
     local_gpu: bool,
     graph_tools_visible: bool,
     offline_replay_verified: bool,
+    source_model: str = "",
+    served_model: str = "",
+    quantization: str = "",
+    dtype: str = "",
+    max_model_len: str = "",
     store_dir: str = "",
     network_probe_command: str = "",
     network_probe_exit_code: int | None = None,
@@ -44,6 +49,11 @@ def demo_evidence_template(
     return {
         "duration_seconds": duration_seconds,
         "model": model,
+        "source_model": source_model,
+        "served_model": served_model,
+        "quantization": quantization,
+        "dtype": dtype,
+        "max_model_len": max_model_len,
         "internet_disabled": internet_disabled,
         "local_gpu": local_gpu,
         "graph_tools_visible": graph_tools_visible,
@@ -74,6 +84,10 @@ def demo_plan_payload() -> dict[str, Any]:
             "duration_seconds_min": 45,
             "duration_seconds_max": 75,
             "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "quantized_model_examples": [
+                "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
+                "Qwen/Qwen2.5-Coder-32B-Instruct-GPTQ-Int4",
+            ],
             "model_markers": list(TARGET_MODEL_MARKERS),
             "requires_linux_cuda": True,
             "requires_internet_disabled": True,
@@ -84,6 +98,12 @@ def demo_plan_payload() -> dict[str, Any]:
         },
         "commands": {
             "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
+            "setup_quantized": (
+                "scripts/setup-linux-cuda.sh --yes --engine vllm "
+                "--model Qwen/Qwen2.5-Coder-32B-Instruct-AWQ "
+                "--served-model Qwen/Qwen2.5-Coder-32B-Instruct "
+                "--quantization awq --max-model-len 8192 --gpu-memory-utilization 0.90"
+            ),
             "launch_server": ".poor-cli/local-cuda-run.sh",
             "readiness": "uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json",
             "run_demo": (
@@ -95,6 +115,8 @@ def demo_plan_payload() -> dict[str, Any]:
                 "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json "
                 "--run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> "
                 "--video-path bench/results/phase3-demo.mp4 --duration-seconds 60 "
+                "--source-model <loaded-model-id> --served-model Qwen/Qwen2.5-Coder-32B-Instruct "
+                "--quantization <none|awq|gptq> "
                 "--internet-disabled --network-probe-exit-code <nonzero> --local-gpu "
                 "--gpu-probe-exit-code 0 --gpu-probe-output <nvidia-smi-gpu-name> "
                 "--graph-tools-visible --offline-replay-verified"
@@ -112,6 +134,9 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
     missing_fragments = [fragment for fragment in REQUIRED_COMMAND_FRAGMENTS if fragment not in command_transcript]
     duration = int(payload.get("duration_seconds") or 0)
     model = str(payload.get("model") or "")
+    source_model = str(payload.get("source_model") or "")
+    served_model = str(payload.get("served_model") or "")
+    quantization = str(payload.get("quantization") or "")
     run_id = str(payload.get("run_id") or "")
     store_dir = str(payload.get("store_dir") or "")
     network_probe = _dict_payload(payload.get("network_probe"))
@@ -119,8 +144,10 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
     errors = []
     if not 45 <= duration <= 75:
         errors.append("duration_seconds must be between 45 and 75")
-    if not all(marker in model.lower() for marker in TARGET_MODEL_MARKERS):
+    if not _target_model_markers_present(model=model, source_model=source_model):
         errors.append("model must be qwen2.5-coder-32b")
+    if quantization and not source_model:
+        errors.append("source_model is required for quantized demo evidence")
     for field in ("internet_disabled", "local_gpu", "graph_tools_visible", "offline_replay_verified"):
         if not bool(payload.get(field)):
             errors.append(f"{field} must be true")
@@ -146,6 +173,11 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
         "errors": errors,
         "duration_seconds": duration,
         "model": model,
+        "source_model": source_model,
+        "served_model": served_model,
+        "quantization": quantization,
+        "dtype": str(payload.get("dtype") or ""),
+        "max_model_len": str(payload.get("max_model_len") or ""),
         "internet_disabled": bool(payload.get("internet_disabled")),
         "local_gpu": bool(payload.get("local_gpu")),
         "graph_tools_visible": bool(payload.get("graph_tools_visible")),
@@ -188,6 +220,11 @@ def _network_probe_proves_disabled(probe: dict[str, Any]) -> bool:
     command = str(probe.get("command") or "")
     exit_code = _int_value(probe.get("exit_code"))
     return exit_code is not None and exit_code != 0 and "curl" in command and "http" in command
+
+
+def _target_model_markers_present(*, model: str, source_model: str) -> bool:
+    candidate = source_model or model
+    return all(marker in candidate.lower() for marker in TARGET_MODEL_MARKERS)
 
 
 def _gpu_probe_proves_local_gpu(probe: dict[str, Any]) -> bool:
@@ -250,6 +287,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--video-path", default="")
     parser.add_argument("--duration-seconds", type=int, default=60)
     parser.add_argument("--model", default="Qwen/Qwen2.5-Coder-32B-Instruct")
+    parser.add_argument("--source-model", default="")
+    parser.add_argument("--served-model", default="")
+    parser.add_argument("--quantization", default="")
+    parser.add_argument("--dtype", default="")
+    parser.add_argument("--max-model-len", default="")
     parser.add_argument("--internet-disabled", action="store_true")
     parser.add_argument("--network-probe-command", default=DEFAULT_NETWORK_PROBE_COMMAND)
     parser.add_argument("--network-probe-exit-code", type=int)
@@ -265,6 +307,11 @@ def main(argv: list[str] | None = None) -> int:
             run_id=str(args.run_id),
             video_path=str(args.video_path),
             model=str(args.model),
+            source_model=str(args.source_model),
+            served_model=str(args.served_model),
+            quantization=str(args.quantization),
+            dtype=str(args.dtype),
+            max_model_len=str(args.max_model_len),
             duration_seconds=int(args.duration_seconds),
             internet_disabled=bool(args.internet_disabled),
             local_gpu=bool(args.local_gpu),

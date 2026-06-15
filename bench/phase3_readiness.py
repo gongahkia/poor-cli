@@ -122,7 +122,7 @@ def _linux_cuda_host() -> dict[str, Any]:
     query_exit_code: int | None = None
     if nvidia_smi:
         result = subprocess.run(
-            [nvidia_smi, "--query-gpu=name", "--format=csv,noheader"],
+            [nvidia_smi, "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
             text=True,
             capture_output=True,
             timeout=10,
@@ -131,16 +131,38 @@ def _linux_cuda_host() -> dict[str, Any]:
         query_exit_code = result.returncode
         gpu_query = result.stdout.strip()
         gpu_error = result.stderr.strip()
-    gpu_names = [line for line in gpu_query.splitlines() if line.strip()]
+    gpus = _parse_gpu_query(gpu_query)
+    gpu_names = [gpu["name"] for gpu in gpus]
     return {
         "ready": system == "Linux" and bool(nvidia_smi) and query_exit_code == 0 and bool(gpu_names),
         "system": system,
         "nvidia_smi": bool(nvidia_smi),
         "query_exit_code": query_exit_code,
         "gpu_names": gpu_names,
+        "gpu_memory_total_mb": [gpu["memory_total_mb"] for gpu in gpus],
         "stderr": gpu_error,
         "requirement": "Linux with nvidia-smi returning at least one GPU",
     }
+
+
+def _parse_gpu_query(raw: str) -> list[dict[str, Any]]:
+    gpus = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        parts = [part.strip() for part in line.split(",", 1)]
+        name = parts[0]
+        memory = _int_prefix(parts[1]) if len(parts) > 1 else 0
+        gpus.append({"name": name, "memory_total_mb": memory})
+    return gpus
+
+
+def _int_prefix(value: str) -> int:
+    token = value.split(None, 1)[0] if value.split(None, 1) else ""
+    try:
+        return int(token)
+    except ValueError:
+        return 0
 
 
 def _docker() -> dict[str, Any]:

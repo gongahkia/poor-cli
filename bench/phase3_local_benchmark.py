@@ -19,6 +19,10 @@ def benchmark_plan_payload() -> dict[str, Any]:
             "agent": "local",
             "providers": sorted(ALLOWED_PROVIDERS),
             "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "quantized_model_examples": [
+                "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
+                "Qwen/Qwen2.5-Coder-32B-Instruct-GPTQ-Int4",
+            ],
             "model_markers": list(TARGET_MODEL_MARKERS),
             "task_count": 10,
             "minimum_of_anthropic_pass_rate": 0.5,
@@ -30,6 +34,12 @@ def benchmark_plan_payload() -> dict[str, Any]:
         },
         "commands": {
             "setup": ("scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct"),
+            "setup_quantized": (
+                "scripts/setup-linux-cuda.sh --yes --engine vllm "
+                "--model Qwen/Qwen2.5-Coder-32B-Instruct-AWQ "
+                "--served-model Qwen/Qwen2.5-Coder-32B-Instruct "
+                "--quantization awq --max-model-len 8192 --gpu-memory-utilization 0.90"
+            ),
             "launch_server": ".poor-cli/local-cuda-run.sh",
             "readiness": "uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json",
             "generate": (
@@ -72,6 +82,9 @@ def validate_local_summary(summary_path: Path, *, anthropic_summary: Path = ANTH
         "errors": errors,
         "provider": summary.get("provider", ""),
         "model": summary.get("model", ""),
+        "local_model_source": summary.get("local_model_source", ""),
+        "local_served_model": summary.get("local_served_model", ""),
+        "local_quantization": summary.get("local_quantization", ""),
         "agent": summary.get("agent", ""),
         "graph_mode": bool(summary.get("graph_mode")),
         "task_count": task_count,
@@ -124,9 +137,10 @@ def _summary_errors(
         errors.append("summary provider is not local")
     if summary.get("agent") != "local":
         errors.append("summary agent is not local")
-    model = str(summary.get("model") or "").lower()
-    if not all(marker in model for marker in TARGET_MODEL_MARKERS):
+    if not _target_model_markers_present(summary):
         errors.append("summary model is not qwen2.5-coder-32b")
+    if summary.get("local_quantization") and not summary.get("local_model_source"):
+        errors.append("summary local_model_source is required for quantized runs")
     if not _is_local_endpoint(str(summary.get("local_base_url") or "")):
         errors.append("summary local_base_url is not local")
     if summary.get("graph_mode") is not True:
@@ -193,6 +207,23 @@ def _extend_mismatch_errors(errors: list[str], label: str, record: dict[str, Any
     for key in ("provider", "model", "agent", "graph_mode"):
         if record.get(key) != summary.get(key):
             errors.append(f"{label} {key} does not match summary")
+    for key in (
+        "local_model_source",
+        "local_served_model",
+        "local_quantization",
+        "local_dtype",
+        "local_max_model_len",
+        "local_tensor_parallel_size",
+        "local_gpu_memory_utilization",
+    ):
+        if (record.get(key) or summary.get(key)) and record.get(key) != summary.get(key):
+            errors.append(f"{label} {key} does not match summary")
+
+
+def _target_model_markers_present(summary: dict[str, Any]) -> bool:
+    source = str(summary.get("local_model_source") or "")
+    model = source or str(summary.get("model") or "")
+    return all(marker in model.lower() for marker in TARGET_MODEL_MARKERS)
 
 
 def _is_local_endpoint(value: str) -> bool:

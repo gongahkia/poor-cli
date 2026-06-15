@@ -2,10 +2,10 @@
   "checks": {
     "docker": {
       "available": true,
-      "daemon": true,
-      "ready": true,
+      "daemon": false,
+      "ready": false,
       "requirement": "Docker daemon for SWE-bench eval",
-      "version": "29.5.3"
+      "version": ""
     },
     "engine_python_deps": {
       "current_modules": {
@@ -29,6 +29,7 @@
       "venv_python_exists": false
     },
     "linux_cuda_host": {
+      "gpu_memory_total_mb": [],
       "gpu_names": [],
       "nvidia_smi": false,
       "query_exit_code": null,
@@ -83,6 +84,7 @@
   "ready": false,
   "remaining": [
     "linux_cuda_host",
+    "docker",
     "engine_python_deps"
   ],
   "schema_version": "poor-cli-phase3-readiness-v1",

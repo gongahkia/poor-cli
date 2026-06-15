@@ -6,8 +6,9 @@
       "replay": "poor-cli --offline --store-dir <poor_cli_store_dir> replay <poor_cli_run_id> --verify",
       "run_demo": "set -a; source .poor-cli/local-cuda.env; set +a; poor-cli run \"fix a real bug using graph tools\" --graph --agents local --yes",
       "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
+      "setup_quantized": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct-AWQ --served-model Qwen/Qwen2.5-Coder-32B-Instruct --quantization awq --max-model-len 8192 --gpu-memory-utilization 0.90",
       "verify": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
-      "write_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --network-probe-exit-code <nonzero> --local-gpu --gpu-probe-exit-code 0 --gpu-probe-output <nvidia-smi-gpu-name> --graph-tools-visible --offline-replay-verified"
+      "write_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --source-model <loaded-model-id> --served-model Qwen/Qwen2.5-Coder-32B-Instruct --quantization <none|awq|gptq> --internet-disabled --network-probe-exit-code <nonzero> --local-gpu --gpu-probe-exit-code 0 --gpu-probe-output <nvidia-smi-gpu-name> --graph-tools-visible --offline-replay-verified"
     },
     "schema_version": "poor-cli-phase3-demo-plan-v1",
     "target": {
@@ -17,6 +18,10 @@
       "model_markers": [
         "qwen2.5-coder",
         "32b"
+      ],
+      "quantized_model_examples": [
+        "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
+        "Qwen/Qwen2.5-Coder-32B-Instruct-GPTQ-Int4"
       ],
       "requires_gpu_probe": true,
       "requires_graph_tools_visible": true,
@@ -28,6 +33,7 @@
   },
   "validation": {
     "accepted": false,
+    "dtype": "",
     "duration_seconds": 0,
     "errors": [
       "duration_seconds must be between 45 and 75",
@@ -45,6 +51,7 @@
     "graph_tools_visible": false,
     "internet_disabled": false,
     "local_gpu": false,
+    "max_model_len": "",
     "missing_command_fragments": [
       "poor-cli run",
       "--agents local",
@@ -56,7 +63,10 @@
     "model": "",
     "network_probe": {},
     "offline_replay_verified": false,
+    "quantization": "",
     "run_id": "",
+    "served_model": "",
+    "source_model": "",
     "store_dir": "",
     "video_path": ""
   }

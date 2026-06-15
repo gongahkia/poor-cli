@@ -294,6 +294,20 @@ def local_provider_env(provider: str, model: str, base_url: str = "") -> dict[st
     }
 
 
+def local_runtime_metadata(args: argparse.Namespace) -> dict[str, str]:
+    if args.agent != "local":
+        return {}
+    return {
+        "local_model_source": os.getenv("POOR_CLI_LOCAL_MODEL_SOURCE", ""),
+        "local_served_model": os.getenv("POOR_CLI_LOCAL_SERVED_MODEL", args.model),
+        "local_quantization": os.getenv("POOR_CLI_LOCAL_QUANTIZATION", ""),
+        "local_dtype": os.getenv("POOR_CLI_LOCAL_DTYPE", ""),
+        "local_max_model_len": os.getenv("POOR_CLI_LOCAL_MAX_MODEL_LEN", ""),
+        "local_tensor_parallel_size": os.getenv("POOR_CLI_LOCAL_TENSOR_PARALLEL_SIZE", ""),
+        "local_gpu_memory_utilization": os.getenv("POOR_CLI_LOCAL_GPU_MEMORY_UTILIZATION", ""),
+    }
+
+
 def effective_local_base_url(provider: str, base_url: str = "") -> str:
     normalized = provider.strip().lower()
     return base_url or default_local_base_url(normalized)
@@ -424,6 +438,7 @@ def run_task(task: dict[str, Any], args: argparse.Namespace, run_dir: Path, work
         "replay_returncode": replay["returncode"],
         "error": checkout_error,
     }
+    record.update(local_runtime_metadata(args))
     write_json(task_out / "result.json", record)
     append_jsonl(run_dir / "task_results.jsonl", record)
     append_jsonl(
@@ -437,7 +452,7 @@ def summarize(records: list[dict[str, Any]], args: argparse.Namespace, run_id: s
     costs = [float(record.get("cost", {}).get("cost_usd", 0.0) or 0.0) for record in records]
     times = [float(record.get("wall_time_seconds", 0.0) or 0.0) for record in records]
     total_tokens = [int(record.get("cost", {}).get("total_tokens", 0) or 0) for record in records]
-    return {
+    summary = {
         "run_id": run_id,
         "benchmark": "SWE-bench Lite",
         "dataset_name": args.dataset_name,
@@ -462,6 +477,8 @@ def summarize(records: list[dict[str, Any]], args: argparse.Namespace, run_id: s
         "p95_wall_time_seconds": percentile(times, 95),
         "official_evaluation": {},
     }
+    summary.update(local_runtime_metadata(args))
+    return summary
 
 
 def percentile(values: list[float], pct: int) -> float:
@@ -619,29 +636,28 @@ def main(argv: list[str] | None = None) -> int:
     if run_dir.exists():
         raise SystemExit(f"run dir already exists: {run_dir}")
     run_dir.mkdir(parents=True)
-    write_json(
-        run_dir / "environment.json",
-        {
-            "python": sys.version,
-            "python_executable": sys.executable,
-            "cwd": str(Path.cwd()),
-            "repo_root": str(REPO_ROOT),
-            "commit": git_commit(),
-            "dataset_name": args.dataset_name,
-            "dataset_revision": args.dataset_revision,
-            "manifest": args.manifest,
-            "seed": args.seed,
-            "provider": args.provider,
-            "model": args.model,
-            "local_base_url": effective_local_base_url(args.provider, args.local_base_url) if args.agent == "local" else "",
-            "agent": args.agent,
-            "graph_mode": args.graph,
-            "budget_usd": args.budget_usd,
-            "permission_mode": args.permission_mode,
-            "sandbox_preset": args.sandbox_preset,
-            "auto_approve": args.auto_approve,
-        },
-    )
+    environment = {
+        "python": sys.version,
+        "python_executable": sys.executable,
+        "cwd": str(Path.cwd()),
+        "repo_root": str(REPO_ROOT),
+        "commit": git_commit(),
+        "dataset_name": args.dataset_name,
+        "dataset_revision": args.dataset_revision,
+        "manifest": args.manifest,
+        "seed": args.seed,
+        "provider": args.provider,
+        "model": args.model,
+        "local_base_url": effective_local_base_url(args.provider, args.local_base_url) if args.agent == "local" else "",
+        "agent": args.agent,
+        "graph_mode": args.graph,
+        "budget_usd": args.budget_usd,
+        "permission_mode": args.permission_mode,
+        "sandbox_preset": args.sandbox_preset,
+        "auto_approve": args.auto_approve,
+    }
+    environment.update(local_runtime_metadata(args))
+    write_json(run_dir / "environment.json", environment)
     records = []
     for index, task in enumerate(tasks, start=1):
         print(f"[{index}/{len(tasks)}] {task.get('instance_id')}", flush=True)

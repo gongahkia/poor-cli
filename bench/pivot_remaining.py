@@ -110,6 +110,9 @@ def _phase3_local_gpu_screencast() -> dict[str, Any]:
         "evidence": check["evidence"],
         "duration_seconds": check["duration_seconds"],
         "model": check["model"],
+        "source_model": check.get("source_model", ""),
+        "served_model": check.get("served_model", ""),
+        "quantization": check.get("quantization", ""),
         "video_path": check["video_path"],
     }
 

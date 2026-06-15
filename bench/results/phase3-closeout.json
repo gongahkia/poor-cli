@@ -39,8 +39,9 @@
     "refresh_pivot": "uv run --locked python bench/pivot_remaining.py --output bench/results/pivot-remaining.json",
     "run_all": "scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ --stop-server-on-exit --write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 --demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified",
     "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
+    "setup_quantized": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct-AWQ --served-model Qwen/Qwen2.5-Coder-32B-Instruct --quantization awq --max-model-len 8192 --gpu-memory-utilization 0.90",
     "verify_demo": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
     "verify_local_swe": "uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench_lite/results/swe10-local-YYYYMMDDTHHMMSSZ/summary.json",
-    "write_demo_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --network-probe-exit-code <nonzero> --local-gpu --gpu-probe-exit-code 0 --gpu-probe-output <nvidia-smi-gpu-name> --graph-tools-visible --offline-replay-verified"
+    "write_demo_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --source-model <loaded-model-id> --served-model Qwen/Qwen2.5-Coder-32B-Instruct --quantization <none|awq|gptq> --internet-disabled --network-probe-exit-code <nonzero> --local-gpu --gpu-probe-exit-code 0 --gpu-probe-output <nvidia-smi-gpu-name> --graph-tools-visible --offline-replay-verified"
   }
 }

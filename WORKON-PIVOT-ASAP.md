@@ -119,6 +119,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-15: tightened Phase 3 Linux/CUDA readiness so target hosts must prove `nvidia-smi` runs successfully and returns at least one GPU name, not merely that the binary exists. Evidence: `bench/phase3_readiness.py`, `bench/results/phase3-readiness.json`, and `tests/test_benchmarks.py::test_phase3_readiness_requires_successful_nvidia_smi`. Target Linux/CUDA execution remains pending.
 - 2026-06-15: aligned Phase 3 setup with readiness by making `scripts/setup-linux-cuda.sh` fail fast unless `nvidia-smi --query-gpu=name --format=csv,noheader` succeeds and returns a GPU name. Evidence: `scripts/setup-linux-cuda.sh` and `tests/test_setup_scripts.py::test_linux_cuda_setup_script_covers_local_engines`. Target Linux/CUDA execution remains pending.
 - 2026-06-15: added Phase 3 closeout server cleanup controls so target-host runs can stop the local model process they started, and setup-generated launch scripts now `exec` the server command for reliable PID handling. Evidence: `scripts/phase3-closeout-linux-cuda.sh`, `scripts/setup-linux-cuda.sh`, and `tests/test_setup_scripts.py::test_phase3_closeout_script_runs_required_audits`. Target Linux/CUDA execution remains pending.
+- 2026-06-15: added explicit quantized Qwen2.5-Coder-32B target-host support for low-VRAM Linux/CUDA machines: setup now records loaded source model vs served model, quantization, dtype, context length, tensor parallel size, and GPU memory fraction; benchmark/demo gates require recorded Qwen2.5-Coder-32B-class evidence and reject smaller-model substitutes. Evidence: `scripts/setup-linux-cuda.sh`, `scripts/phase3-closeout-linux-cuda.sh`, `bench/phase3_local_benchmark.py`, `bench/phase3_demo.py`, `bench/swe_bench_lite/run.py`, and `docs/local-first.md`. Live Linux/CUDA execution remains pending.
 - 2026-06-15: added config-backed provider profiles, provider diagnostics, model registry, profile export/import, route explain, and route audit events. Evidence: `src/poor_cli/config.py`, `tests/test_config.py`, `tests/test_cli.py::test_cli_plan_graph_stores_graph_prompt_bias`, and `docs/providers.md`.
 - 2026-06-15: closed graph-first planner context, model-backed review/verifier lanes, and budget/cost model batch: graph runs now persist compact graph-context evidence, `review-run`/`verify-run` write real lane artifacts, and provider calls maintain a warning-first budget ledger with strict-budget fail-closed mode. Evidence: `src/poor_cli/graph_context.py`, `src/poor_cli/lanes.py`, `src/poor_cli/cost.py`, `tests/test_cli.py`, `tests/test_cost.py`, `docs/graph.md`, and `docs/providers.md`.
 
@@ -601,10 +602,9 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 
 ## Open questions
 
-- Whether to keep `poor-cli-server` (JSON-RPC) in v6.0.0 or defer to v6.1.0. [Inference] Defer — phase 1 is replay, not editor integration.
-- Whether `--replay` mismatches should fail loudly or warn. Probably fail loudly for the first release, then add `--replay --allow-drift` later.
-- Whether to keep the `cli/` subcommand structure (`task`, `agent`, `automation`, `spec`, etc.) or collapse to just `run | replay | tui | server`. Lean: collapse.
-- Where to host the demo (asciinema vs MP4). asciinema is more authentic; MP4 spreads better on Twitter/X.
+- Phase 3 evidence now depends on the Linux/CUDA target host only: readiness, fixed 10-task local graph-mode SWE-bench, and 60s offline local-GPU screencast.
+- For <24GB VRAM hosts, use the quantized 32B path and record the loaded source model plus served model in artifacts. Smaller Qwen models remain invalid for the Phase 3 target gate.
+- Demo hosting remains open: asciinema is better for terminal authenticity; MP4 is better for social distribution.
 
 ## Market context (for orientation, not action)
 

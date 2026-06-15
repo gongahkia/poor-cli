@@ -88,7 +88,7 @@ uv run --locked python bench/phase3_demo.py --write-template bench/results/phase
 uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json
 ```
 
-`bench/phase3_demo.py` writes a schema-correct screencast evidence template and validates the linked video path, offline replay command, failed internet probe, and `nvidia-smi` GPU probe before the Phase 3 demo check can pass.
+`bench/phase3_demo.py` writes a schema-correct screencast evidence template and validates the linked video path, offline replay command, failed internet probe, `nvidia-smi` GPU probe, and Qwen2.5-Coder-32B model proof before the Phase 3 demo check can pass. For quantized runs, pass `--source-model Qwen/Qwen2.5-Coder-32B-Instruct-AWQ --served-model Qwen/Qwen2.5-Coder-32B-Instruct --quantization awq`.
 
 ```sh
 scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ \
@@ -98,6 +98,7 @@ uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-cl
 ```
 
 `bench/phase3_closeout.py` aggregates Phase 3 acceptance and pivot remaining-work evidence, and lists the exact target-host commands needed to close the phase.
+For a <24GB VRAM target, run the quantized setup command from `docs/local-first.md` first, then rerun closeout with `--skip-setup`; the closeout script records the loaded source model, served model, quantization, context length, failed internet probe, and GPU probe in the evidence artifacts.
 
 ## Phase 3 Local Benchmark
 
@@ -106,6 +107,7 @@ uv run --locked python bench/phase3_local_benchmark.py --output bench/results/ph
 ```
 
 The checked-in plan defines the target-host setup, graph-mode local SWE-bench run, official eval, and artifact verifier. The verifier requires `agent=local`, a vLLM/SGLang/Ollama provider, a local endpoint, graph mode, 10 replay-verified tasks, matching `environment.json`/`task_results.jsonl`/`predictions.jsonl` artifacts, clean official eval, and at least 50% of the Anthropic 10-task pass rate.
+The plan includes both strict `Qwen/Qwen2.5-Coder-32B-Instruct` and quantized 32B setup commands. Quantized rows are accepted only when the recorded source model still contains the `qwen2.5-coder` and `32b` markers.
 
 ## Graph vs Grep
 

@@ -35,10 +35,19 @@ def test_linux_cuda_setup_script_covers_local_engines() -> None:
     assert "Qwen/Qwen2.5-Coder-32B-Instruct" in text
     assert "POOR_CLI_LOCAL_PYTHON" in text
     assert "--python" in text
+    assert "--served-model" in text
+    assert "--quantization" in text
+    assert "--dtype" in text
+    assert "--max-model-len" in text
+    assert "--tensor-parallel-size" in text
+    assert "--gpu-memory-utilization" in text
     assert ".poor-cli/local-cuda.env" in text
     assert ".poor-cli/local-cuda-run.sh" in text
     assert "export POOR_CLI_PROVIDER" in text
     assert "export POOR_CLI_MODEL" in text
+    assert "export POOR_CLI_LOCAL_MODEL_SOURCE" in text
+    assert "export POOR_CLI_LOCAL_SERVED_MODEL" in text
+    assert "export POOR_CLI_LOCAL_QUANTIZATION" in text
     assert "export POOR_CLI_LOCAL_PYTHON" in text
     assert "export POOR_CLI_LOCAL_VENV" in text
     assert "export POOR_CLI_LOCAL_BASE_URL" in text
@@ -50,6 +59,9 @@ def test_linux_cuda_setup_script_covers_local_engines() -> None:
     assert "--no-enable-prefix-caching" in text
     assert "--disable-radix-cache" in text
     assert "--kv-cache-dtype" in text
+    assert "--served-model-name" in text
+    assert "--context-length" in text
+    assert "--mem-fraction-static" in text
     assert "POOR_CLI_LOCAL_PREFIX_CACHE" in text
     assert "exec vllm serve" in text
     assert "exec python -m sglang.launch_server" in text
@@ -60,7 +72,8 @@ def test_phase3_closeout_script_runs_required_audits() -> None:
     script = Path(__file__).resolve().parents[1] / "scripts" / "phase3-closeout-linux-cuda.sh"
     text = script.read_text(encoding="utf-8")
 
-    assert "scripts/setup-linux-cuda.sh --yes" in text
+    assert "scripts/setup-linux-cuda.sh" in text
+    assert "SETUP_ARGS=(--yes" in text
     assert "bench/phase3_readiness.py" in text
     assert "bench/swe_bench_lite/run.py" in text
     assert "--agent local" in text
@@ -81,6 +94,9 @@ def test_phase3_closeout_script_runs_required_audits() -> None:
     assert "--demo-video-path" in text
     assert "--demo-run-id" in text
     assert "--demo-store-dir" in text
+    assert "--served-model" in text
+    assert "--quantization" in text
+    assert "--max-model-len" in text
     assert "--demo-internet-disabled" in text
     assert "--demo-local-gpu" in text
     assert "--demo-graph-tools-visible" in text

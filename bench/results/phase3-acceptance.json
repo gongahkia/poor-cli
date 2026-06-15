@@ -6,6 +6,7 @@
       "evidence": "bench/results/phase3-readiness.json",
       "remaining": [
         "linux_cuda_host",
+        "docker",
         "engine_python_deps"
       ]
     },
@@ -29,6 +30,9 @@
       "local_gpu": false,
       "model": "",
       "offline_replay_verified": false,
+      "quantization": "",
+      "served_model": "",
+      "source_model": "",
       "video_path": ""
     },
     "local_swe_lite_10": {

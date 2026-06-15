@@ -8,6 +8,18 @@ Phase 3 targets Linux/CUDA local model runs through vLLM, SGLang, or Ollama.
 scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct
 ```
 
+For a smaller NVIDIA GPU, use a quantized 32B checkpoint but keep the served model name stable:
+
+```sh
+scripts/setup-linux-cuda.sh --yes \
+  --engine vllm \
+  --model Qwen/Qwen2.5-Coder-32B-Instruct-AWQ \
+  --served-model Qwen/Qwen2.5-Coder-32B-Instruct \
+  --quantization awq \
+  --max-model-len 8192 \
+  --gpu-memory-utilization 0.90
+```
+
 The setup script creates:
 
 - `.poor-cli/local-cuda-venv/`
@@ -16,6 +28,7 @@ The setup script creates:
 
 It requires Linux and a working `nvidia-smi --query-gpu=name --format=csv,noheader` GPU query by default. For CI or syntax validation only, pass `--skip-cuda-check` and set `POOR_CLI_ALLOW_NON_LINUX=1`.
 The generated `.poor-cli/local-cuda.env` exports the provider, model, local Python, local venv, and base URL variables used by the `local` agent path and readiness checks.
+For quantized runs, `POOR_CLI_LOCAL_MODEL_SOURCE` records the loaded checkpoint and `POOR_CLI_MODEL` records the served OpenAI-compatible model name.
 The closeout path also requires a running Docker daemon for official SWE-bench evaluation.
 
 ## Engines
@@ -50,11 +63,13 @@ scripts/setup-linux-cuda.sh --yes --engine vllm --prefix-cache-hash-algo sha256 
 scripts/setup-linux-cuda.sh --yes --engine sglang --kv-cache-dtype fp8_e5m2
 scripts/setup-linux-cuda.sh --yes --engine vllm --no-prefix-cache
 scripts/setup-linux-cuda.sh --yes --engine sglang --no-prefix-cache
+scripts/setup-linux-cuda.sh --yes --engine sglang --model Qwen/Qwen2.5-Coder-32B-Instruct-AWQ --served-model Qwen/Qwen2.5-Coder-32B-Instruct --quantization awq --max-model-len 8192 --gpu-memory-utilization 0.90
 ```
 
 For vLLM, `--prefix-cache` writes `--enable-prefix-caching` and `--prefix-caching-hash-algo` into `.poor-cli/local-cuda-run.sh`; `--no-prefix-cache` writes `--no-enable-prefix-caching`.
 For SGLang, prefix cache is the radix cache path; `--no-prefix-cache` writes `--disable-radix-cache`.
 For both engines, `--kv-cache-dtype` is passed through when set to anything other than `auto`.
+For vLLM, `--max-model-len`, `--tensor-parallel-size`, and `--gpu-memory-utilization` pass through directly. For SGLang, the same setup flags map to `--context-length`, `--tensor-parallel-size`, and `--mem-fraction-static`.
 
 ## Replay
 
@@ -62,10 +77,25 @@ Record/replay remains the control plane. A local model run should still produce 
 
 ## Phase 3 Benchmark Gate
 
+High-VRAM strict path:
+
 ```sh
 scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ \
   --stop-server-on-exit --write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 \
   --demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified
+```
+
+Quantized 32B path after running the quantized setup command above:
+
+```sh
+scripts/phase3-closeout-linux-cuda.sh --yes --skip-setup --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ \
+  --stop-server-on-exit --write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 \
+  --demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified
+```
+
+Final checks:
+
+```sh
 uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json
 uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json
 uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
@@ -74,6 +104,7 @@ uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench
 ```
 
 The verifier is the local-mode closeout gate for the pivot audit. It rejects non-local providers, non-local endpoints, non-graph runs, missing or mismatched run artifacts, partial replay verification, incomplete official eval, and pass rates below 50% of the checked-in Anthropic 10-task row.
+Quantized runs must still identify a Qwen2.5-Coder-32B-class source model; smaller models do not satisfy the Phase 3 target gate.
 With `--start-server`, the closeout runner starts `.poor-cli/local-cuda-run.sh` in the background, waits for the local provider health endpoint, and writes `.poor-cli/phase3-closeout-server.pid`. Add `--stop-server-on-exit` when the closeout command should stop the server it started.
 When writing demo evidence from a SWE-bench run, the closeout runner derives the replay run id and store dir from the first replay-verified task in `task_results.jsonl`.
 It also records a failed internet probe and an `nvidia-smi` GPU probe before writing accepted screencast evidence.

@@ -11,6 +11,7 @@
       "evidence": "bench/results/phase3-readiness.json",
       "remaining": [
         "linux_cuda_host",
+        "docker",
         "engine_python_deps"
       ]
     },
@@ -19,6 +20,9 @@
       "duration_seconds": 0,
       "evidence": "bench/results/phase3-demo.json",
       "model": "",
+      "quantization": "",
+      "served_model": "",
+      "source_model": "",
       "video_path": ""
     },
     "phase3_local_mode_benchmark": {

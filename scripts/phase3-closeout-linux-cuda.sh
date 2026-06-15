@@ -4,7 +4,13 @@ set -euo pipefail
 YES=0
 RUN_ID="swe10-local-$(date -u +%Y%m%dT%H%M%SZ)"
 ENGINE="${POOR_CLI_LOCAL_ENGINE:-vllm}"
-MODEL="${POOR_CLI_LOCAL_MODEL:-Qwen/Qwen2.5-Coder-32B-Instruct}"
+MODEL="${POOR_CLI_LOCAL_MODEL_SOURCE:-${POOR_CLI_LOCAL_MODEL:-Qwen/Qwen2.5-Coder-32B-Instruct}}"
+SERVED_MODEL="${POOR_CLI_LOCAL_SERVED_MODEL:-}"
+QUANTIZATION="${POOR_CLI_LOCAL_QUANTIZATION:-}"
+DTYPE="${POOR_CLI_LOCAL_DTYPE:-auto}"
+MAX_MODEL_LEN="${POOR_CLI_LOCAL_MAX_MODEL_LEN:-}"
+TENSOR_PARALLEL_SIZE="${POOR_CLI_LOCAL_TENSOR_PARALLEL_SIZE:-}"
+GPU_MEMORY_UTILIZATION="${POOR_CLI_LOCAL_GPU_MEMORY_UTILIZATION:-}"
 DEMO_EVIDENCE="bench/results/phase3-demo.json"
 DEMO_VIDEO_PATH="bench/results/phase3-demo.mp4"
 DEMO_DURATION_SECONDS=60
@@ -50,6 +56,12 @@ Options:
   --run-id ID              default: swe10-local-YYYYMMDDTHHMMSSZ
   --engine ENGINE          vllm|sglang|ollama; default: $POOR_CLI_LOCAL_ENGINE or vllm
   --model MODEL            default: Qwen/Qwen2.5-Coder-32B-Instruct
+  --served-model MODEL     OpenAI-compatible model name exposed by vLLM/SGLang
+  --quantization NAME      vLLM/SGLang quantization mode, e.g. awq or gptq
+  --dtype DTYPE            vLLM/SGLang dtype override; default: auto
+  --max-model-len N        vLLM max-model-len; SGLang context-length
+  --tensor-parallel-size N vLLM/SGLang tensor parallel size
+  --gpu-memory-utilization F vLLM GPU utilization; SGLang mem-fraction-static
   --demo-evidence PATH     default: bench/results/phase3-demo.json
   --demo-video-path PATH   default: bench/results/phase3-demo.mp4
   --demo-duration-seconds N default: 60
@@ -79,6 +91,12 @@ while [[ $# -gt 0 ]]; do
     --run-id) RUN_ID="$2"; shift ;;
     --engine) ENGINE="$2"; shift ;;
     --model) MODEL="$2"; shift ;;
+    --served-model) SERVED_MODEL="$2"; shift ;;
+    --quantization) QUANTIZATION="$2"; shift ;;
+    --dtype) DTYPE="$2"; shift ;;
+    --max-model-len) MAX_MODEL_LEN="$2"; shift ;;
+    --tensor-parallel-size) TENSOR_PARALLEL_SIZE="$2"; shift ;;
+    --gpu-memory-utilization) GPU_MEMORY_UTILIZATION="$2"; shift ;;
     --demo-evidence) DEMO_EVIDENCE="$2"; shift ;;
     --demo-video-path) DEMO_VIDEO_PATH="$2"; shift ;;
     --demo-duration-seconds) DEMO_DURATION_SECONDS="$2"; shift ;;
@@ -122,7 +140,14 @@ stop_started_server() {
 trap stop_started_server EXIT
 
 if [[ "$SKIP_SETUP" != "1" ]]; then
-  scripts/setup-linux-cuda.sh --yes --engine "$ENGINE" --model "$MODEL"
+  SETUP_ARGS=(--yes --engine "$ENGINE" --model "$MODEL")
+  if [[ "$SERVED_MODEL" != "" ]]; then SETUP_ARGS+=(--served-model "$SERVED_MODEL"); fi
+  if [[ "$QUANTIZATION" != "" ]]; then SETUP_ARGS+=(--quantization "$QUANTIZATION"); fi
+  if [[ "$DTYPE" != "auto" ]]; then SETUP_ARGS+=(--dtype "$DTYPE"); fi
+  if [[ "$MAX_MODEL_LEN" != "" ]]; then SETUP_ARGS+=(--max-model-len "$MAX_MODEL_LEN"); fi
+  if [[ "$TENSOR_PARALLEL_SIZE" != "" ]]; then SETUP_ARGS+=(--tensor-parallel-size "$TENSOR_PARALLEL_SIZE"); fi
+  if [[ "$GPU_MEMORY_UTILIZATION" != "" ]]; then SETUP_ARGS+=(--gpu-memory-utilization "$GPU_MEMORY_UTILIZATION"); fi
+  scripts/setup-linux-cuda.sh "${SETUP_ARGS[@]}"
 fi
 
 set -a
@@ -271,6 +296,11 @@ if [[ "$WRITE_DEMO_EVIDENCE" == "1" ]]; then
     --video-path "$DEMO_VIDEO_PATH" \
     --duration-seconds "$DEMO_DURATION_SECONDS" \
     --model "$POOR_CLI_MODEL" \
+    --source-model "${POOR_CLI_LOCAL_MODEL_SOURCE:-}" \
+    --served-model "${POOR_CLI_LOCAL_SERVED_MODEL:-$POOR_CLI_MODEL}" \
+    --quantization "${POOR_CLI_LOCAL_QUANTIZATION:-}" \
+    --dtype "${POOR_CLI_LOCAL_DTYPE:-auto}" \
+    --max-model-len "${POOR_CLI_LOCAL_MAX_MODEL_LEN:-}" \
     "${DEMO_FLAGS[@]}"
 fi
 

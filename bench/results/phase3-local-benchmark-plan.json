@@ -7,6 +7,7 @@
       "launch_server": ".poor-cli/local-cuda-run.sh",
       "readiness": "uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json",
       "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
+      "setup_quantized": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct-AWQ --served-model Qwen/Qwen2.5-Coder-32B-Instruct --quantization awq --max-model-len 8192 --gpu-memory-utilization 0.90",
       "verify": "uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench_lite/results/swe10-local-YYYYMMDDTHHMMSSZ/summary.json"
     },
     "schema_version": "poor-cli-phase3-local-benchmark-plan-v1",
@@ -22,6 +23,10 @@
         "ollama",
         "sglang",
         "vllm"
+      ],
+      "quantized_model_examples": [
+        "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
+        "Qwen/Qwen2.5-Coder-32B-Instruct-GPTQ-Int4"
       ],
       "requires_environment_artifact": true,
       "requires_full_replay_verification": true,

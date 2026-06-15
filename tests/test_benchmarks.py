@@ -50,13 +50,30 @@ def _write_phase3_local_artifacts(
     graph_mode: bool = True,
     task_count: int = 10,
     local_base_url: str = "http://localhost:8000",
+    local_model_source: str = "",
+    local_served_model: str = "",
+    local_quantization: str = "",
+    local_dtype: str = "",
+    local_max_model_len: str = "",
+    local_tensor_parallel_size: str = "",
+    local_gpu_memory_utilization: str = "",
 ) -> None:
+    local_metadata = {
+        "local_model_source": local_model_source,
+        "local_served_model": local_served_model,
+        "local_quantization": local_quantization,
+        "local_dtype": local_dtype,
+        "local_max_model_len": local_max_model_len,
+        "local_tensor_parallel_size": local_tensor_parallel_size,
+        "local_gpu_memory_utilization": local_gpu_memory_utilization,
+    }
     environment = {
         "provider": provider,
         "model": model,
         "agent": agent,
         "graph_mode": graph_mode,
         "local_base_url": local_base_url,
+        **local_metadata,
     }
     (run_dir / "environment.json").write_text(json.dumps(environment), encoding="utf-8")
     task_lines = []
@@ -74,6 +91,7 @@ def _write_phase3_local_artifacts(
                     "replay_verified": True,
                     "poor_cli_run_id": f"run-{index}",
                     "poor_cli_store_dir": f"store/{index}",
+                    **local_metadata,
                 },
                 sort_keys=True,
             )
@@ -420,6 +438,7 @@ def test_phase3_readiness_payload_schema() -> None:
     assert payload["checks"]["setup_python"]["requirement"] == ">=3.11,<3.15"
     assert payload["checks"]["linux_cuda_host"]["requirement"] == "Linux with nvidia-smi returning at least one GPU"
     assert "query_exit_code" in payload["checks"]["linux_cuda_host"]
+    assert "gpu_memory_total_mb" in payload["checks"]["linux_cuda_host"]
     assert "stderr" in payload["checks"]["linux_cuda_host"]
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["selected_engine"]["ready"] is True
@@ -453,6 +472,7 @@ def test_phase3_readiness_requires_successful_nvidia_smi(monkeypatch: pytest.Mon
     assert payload["nvidia_smi"] is True
     assert payload["query_exit_code"] == 9
     assert payload["gpu_names"] == []
+    assert payload["gpu_memory_total_mb"] == []
     assert payload["stderr"] == "driver not loaded"
 
 
@@ -461,7 +481,7 @@ def test_phase3_readiness_accepts_successful_gpu_query(monkeypatch: pytest.Monke
     monkeypatch.setattr("bench.phase3_readiness.shutil.which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None)
 
     def successful_query(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(["nvidia-smi"], 0, "NVIDIA GeForce RTX 4090\n", "")
+        return subprocess.CompletedProcess(["nvidia-smi"], 0, "NVIDIA GeForce RTX 4090, 24576\n", "")
 
     monkeypatch.setattr("bench.phase3_readiness.subprocess.run", successful_query)
 
@@ -470,6 +490,7 @@ def test_phase3_readiness_accepts_successful_gpu_query(monkeypatch: pytest.Monke
     assert payload["ready"] is True
     assert payload["query_exit_code"] == 0
     assert payload["gpu_names"] == ["NVIDIA GeForce RTX 4090"]
+    assert payload["gpu_memory_total_mb"] == [24576]
 
 
 def test_phase3_readiness_detects_engine_deps_from_local_cuda_venv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -559,9 +580,9 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["selected_engine"]["ready"] is True
     assert payload["checks"]["selected_engine"]["engine"] == "vllm"
-    assert payload["checks"]["docker"]["ready"] is True
-    assert payload["checks"]["docker"]["daemon"] is True
-    assert payload["checks"]["docker"]["version"]
+    assert isinstance(payload["checks"]["docker"]["ready"], bool)
+    assert isinstance(payload["checks"]["docker"]["daemon"], bool)
+    assert payload["checks"]["docker"]["requirement"] == "Docker daemon for SWE-bench eval"
     assert payload["checks"]["local_agent_path"]["ready"] is True
     assert payload["checks"]["local_agent_path"]["swe_runner_agent"] == "local"
     assert payload["checks"]["engine_python_deps"]["requirement"] == "selected engine module: vllm"
@@ -615,10 +636,13 @@ def test_phase3_demo_plan_schema() -> None:
     assert payload["target"]["requires_network_disabled_probe"] is True
     assert payload["target"]["requires_gpu_probe"] is True
     assert payload["target"]["model_markers"] == ["qwen2.5-coder", "32b"]
+    assert "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ" in payload["target"]["quantized_model_examples"]
+    assert "setup_quantized" in payload["commands"]
     assert "--agents local" in payload["commands"]["run_demo"]
     assert "--offline --store-dir <poor_cli_store_dir> replay <poor_cli_run_id> --verify" in payload["commands"]["replay"]
     assert "--write-template" in payload["commands"]["write_evidence"]
     assert "--store-dir <poor_cli_store_dir>" in payload["commands"]["write_evidence"]
+    assert "--source-model <loaded-model-id>" in payload["commands"]["write_evidence"]
 
 
 def test_checked_in_phase3_demo_plan() -> None:
@@ -638,7 +662,9 @@ def test_phase3_closeout_payload_schema() -> None:
     assert "--start-server" in payload["target_host_commands"]["run_all"]
     assert "--write-demo-evidence" in payload["target_host_commands"]["run_all"]
     assert "--demo-offline-replay-verified" in payload["target_host_commands"]["run_all"]
+    assert "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ" in payload["target_host_commands"]["setup_quantized"]
     assert "--agent local" in payload["target_host_commands"]["generate_local_swe"]
+    assert "--source-model <loaded-model-id>" in payload["target_host_commands"]["write_demo_evidence"]
     assert "phase3_demo.py --write-template" in payload["target_host_commands"]["write_demo_evidence"]
     assert "phase3_demo.py --evidence" in payload["target_host_commands"]["verify_demo"]
     assert set(payload["remaining"]) == set(payload["checks"]["phase3_acceptance"]["remaining"]) | set(
@@ -690,6 +716,43 @@ def test_phase3_demo_validator_accepts_real_evidence(tmp_path: Path) -> None:
     assert payload["accepted"] is True
     assert payload["errors"] == []
     assert payload["store_dir"] == str(tmp_path / "store")
+
+
+def test_phase3_demo_validator_accepts_quantized_32b_evidence(tmp_path: Path) -> None:
+    video = tmp_path / "phase3-demo.mp4"
+    video.write_bytes(b"demo")
+    evidence = tmp_path / "phase3-demo.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "duration_seconds": 60,
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "source_model": "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
+                "served_model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "quantization": "awq",
+                "dtype": "auto",
+                "max_model_len": "8192",
+                "internet_disabled": True,
+                "local_gpu": True,
+                "graph_tools_visible": True,
+                "offline_replay_verified": True,
+                "run_id": "run_demo",
+                "video_path": str(video),
+                **_demo_probe_evidence(),
+                "commands": [
+                    'poor-cli run "fix bug" --graph --agents local --yes',
+                    "poor-cli --offline replay run_demo --verify",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is True
+    assert payload["source_model"] == "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"
+    assert payload["quantization"] == "awq"
 
 
 def test_phase3_demo_validator_resolves_video_relative_to_evidence(tmp_path: Path) -> None:
@@ -783,6 +846,38 @@ def test_phase3_demo_validator_requires_target_model_size(tmp_path: Path) -> Non
 
     assert payload["accepted"] is False
     assert "model must be qwen2.5-coder-32b" in payload["errors"]
+
+
+def test_phase3_demo_validator_requires_source_model_for_quantized_evidence(tmp_path: Path) -> None:
+    video = tmp_path / "phase3-demo.mp4"
+    video.write_bytes(b"demo")
+    evidence = tmp_path / "phase3-demo.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "duration_seconds": 60,
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "quantization": "awq",
+                "internet_disabled": True,
+                "local_gpu": True,
+                "graph_tools_visible": True,
+                "offline_replay_verified": True,
+                "run_id": "run_demo",
+                "video_path": str(video),
+                **_demo_probe_evidence(),
+                "commands": [
+                    'poor-cli run "fix bug" --graph --agents local --yes',
+                    "poor-cli --offline replay run_demo --verify",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is False
+    assert "source_model is required for quantized demo evidence" in payload["errors"]
 
 
 def test_phase3_demo_validator_requires_probe_evidence(tmp_path: Path) -> None:
@@ -896,6 +991,16 @@ def test_phase3_demo_template_writer_outputs_valid_schema(tmp_path: Path) -> Non
             "60",
             "--model",
             "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "--source-model",
+            "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
+            "--served-model",
+            "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "--quantization",
+            "awq",
+            "--dtype",
+            "auto",
+            "--max-model-len",
+            "8192",
             "--internet-disabled",
             "--network-probe-exit-code",
             "6",
@@ -914,6 +1019,9 @@ def test_phase3_demo_template_writer_outputs_valid_schema(tmp_path: Path) -> Non
     assert payload["accepted"] is True
     assert payload["missing_command_fragments"] == []
     assert payload["store_dir"] == str(tmp_path / "store")
+    assert payload["source_model"] == "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"
+    assert payload["served_model"] == "Qwen/Qwen2.5-Coder-32B-Instruct"
+    assert payload["quantization"] == "awq"
 
 
 def test_phase3_demo_template_requires_explicit_evidence_flags(tmp_path: Path) -> None:
@@ -992,6 +1100,7 @@ def test_phase3_local_benchmark_plan_schema() -> None:
     assert payload["target"]["agent"] == "local"
     assert payload["target"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["target"]["model_markers"] == ["qwen2.5-coder", "32b"]
+    assert "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ" in payload["target"]["quantized_model_examples"]
     assert payload["target"]["minimum_of_anthropic_pass_rate"] == 0.5
     assert payload["target"]["requires_graph_mode"] is True
     assert payload["target"]["requires_environment_artifact"] is True
@@ -999,6 +1108,7 @@ def test_phase3_local_benchmark_plan_schema() -> None:
     assert payload["target"]["requires_predictions_artifact"] is True
     assert "--graph --agent local" in payload["commands"]["generate"]
     assert "phase3_local_benchmark.py --summary" in payload["commands"]["verify"]
+    assert "setup_quantized" in payload["commands"]
 
 
 def test_checked_in_phase3_local_benchmark_plan() -> None:
@@ -1043,6 +1153,50 @@ def test_phase3_local_benchmark_accepts_target_summary(tmp_path: Path) -> None:
     assert payload["artifacts"]["task_results_count"] == 10
     assert payload["artifacts"]["predictions_count"] == 10
     assert payload["errors"] == []
+
+
+def test_phase3_local_benchmark_accepts_quantized_32b_summary(tmp_path: Path) -> None:
+    local_metadata = {
+        "local_model_source": "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ",
+        "local_served_model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+        "local_quantization": "awq",
+        "local_dtype": "auto",
+        "local_max_model_len": "8192",
+        "local_tensor_parallel_size": "1",
+        "local_gpu_memory_utilization": "0.90",
+    }
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "provider": "vllm",
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "agent": "local",
+                "local_base_url": "http://localhost:8000",
+                "graph_mode": True,
+                "task_count": 10,
+                "replay_verified_count": 10,
+                **local_metadata,
+                "official_evaluation": {
+                    "exit_code": 0,
+                    "results": {
+                        "completed_instances": 10,
+                        "error_instances": 0,
+                        "total_instances": 10,
+                        "resolved_instances": 5,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_phase3_local_artifacts(tmp_path, **local_metadata)
+
+    payload = validate_local_summary(summary)
+
+    assert payload["accepted"] is True
+    assert payload["local_model_source"] == "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"
+    assert payload["local_quantization"] == "awq"
 
 
 def test_phase3_local_benchmark_rejects_summary_without_run_artifacts(tmp_path: Path) -> None:
@@ -1294,6 +1448,34 @@ def test_swe_lite_runner_supports_local_agent(tmp_path: Path) -> None:
     assert summary["provider"] == "vllm"
     assert summary["model"] == "qwen"
     assert summary["local_base_url"] == "http://vllm.test"
+
+
+def test_swe_lite_runner_records_local_runtime_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    args = swe_run.parse_args(
+        [
+            "--confirm-cost",
+            "--no-evaluate",
+            "--limit",
+            "1",
+            "--agent",
+            "local",
+            "--provider",
+            "vllm",
+            "--model",
+            "Qwen/Qwen2.5-Coder-32B-Instruct",
+        ]
+    )
+    monkeypatch.setenv("POOR_CLI_LOCAL_MODEL_SOURCE", "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ")
+    monkeypatch.setenv("POOR_CLI_LOCAL_SERVED_MODEL", "Qwen/Qwen2.5-Coder-32B-Instruct")
+    monkeypatch.setenv("POOR_CLI_LOCAL_QUANTIZATION", "awq")
+    monkeypatch.setenv("POOR_CLI_LOCAL_MAX_MODEL_LEN", "8192")
+
+    summary = swe_run.summarize([], args, "run-local")
+
+    assert summary["local_model_source"] == "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ"
+    assert summary["local_served_model"] == "Qwen/Qwen2.5-Coder-32B-Instruct"
+    assert summary["local_quantization"] == "awq"
+    assert summary["local_max_model_len"] == "8192"
 
 
 def test_swe_lite_runner_records_default_local_base_url() -> None:
