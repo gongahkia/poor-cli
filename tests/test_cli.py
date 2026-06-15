@@ -147,6 +147,16 @@ def test_cli_exposes_tui_help(tmp_path: Path) -> None:
     assert "--run-id" in result.stdout
 
 
+def test_doctor_reports_graph_dependencies(tmp_path: Path, capsys) -> None:
+    assert main(["--store-dir", str(tmp_path / "store"), "doctor"]) == 0
+    output = capsys.readouterr().out
+
+    assert "graph:python:" in output
+    assert "tree_sitter_python" in output
+    assert main(["--store-dir", str(tmp_path / "store"), "agents", "doctor"]) == 0
+    assert "graph:python:" in capsys.readouterr().out
+
+
 def test_cli_sets_offline_env(capsys) -> None:
     old = os.environ.get("POOR_CLI_OFFLINE")
     os.environ.pop("POOR_CLI_OFFLINE", None)

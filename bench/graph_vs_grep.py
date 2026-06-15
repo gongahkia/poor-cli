@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -95,6 +96,7 @@ def _write_fixture(root: Path, modules: int, filler_lines: int) -> int:
 
 
 def _grep_mode(root: Path, target_symbol: str, expected: dict[str, Any]) -> dict[str, Any]:
+    started = time.perf_counter()
     context = []
     definition_path = None
     caller_paths = set()
@@ -109,16 +111,21 @@ def _grep_mode(root: Path, target_symbol: str, expected: dict[str, Any]) -> dict
             if f"{target_symbol}(" in stripped and not stripped.startswith("def "):
                 caller_paths.add(rel)
     output = {"definition_path": definition_path, "caller_paths": sorted(caller_paths)}
+    tokens = _token_estimate(context)
     return {
         "strategy": "grep import/function/call lines",
         "correct": output == expected,
+        "recall_proxy": 1.0 if output == expected else 0.0,
         "output": output,
-        "input_tokens": _token_estimate(context),
+        "input_tokens": tokens,
+        "token_count_proxy": tokens,
         "context_lines": len(context),
+        "latency_seconds": time.perf_counter() - started,
     }
 
 
 def _graph_mode(root: Path, target_symbol: str, expected: dict[str, Any]) -> dict[str, Any]:
+    started = time.perf_counter()
     graph = RepoGraph(root).build_index()
     definition = graph.definition_of(target_symbol)
     callers = graph.callers_of(target_symbol)
@@ -127,12 +134,16 @@ def _graph_mode(root: Path, target_symbol: str, expected: dict[str, Any]) -> dic
         "caller_paths": sorted(str(item["path"]) for item in callers),
     }
     context = {"definition": definition, "callers": callers}
+    tokens = _token_estimate(context)
     return {
         "strategy": "definition_of plus callers_of",
         "correct": output == expected,
+        "recall_proxy": 1.0 if output == expected else 0.0,
         "output": output,
-        "input_tokens": _token_estimate(context),
+        "input_tokens": tokens,
+        "token_count_proxy": tokens,
         "context_lines": len(callers) + (1 if definition else 0),
+        "latency_seconds": time.perf_counter() - started,
     }
 
 

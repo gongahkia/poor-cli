@@ -1071,6 +1071,9 @@ def test_graph_vs_grep_payload_schema() -> None:
     assert payload["modes"]["grep"]["correct"] is True
     assert payload["modes"]["graph"]["correct"] is True
     assert payload["modes"]["graph"]["input_tokens"] < payload["modes"]["grep"]["input_tokens"]
+    assert payload["modes"]["graph"]["latency_seconds"] >= 0
+    assert payload["modes"]["graph"]["recall_proxy"] == 1.0
+    assert payload["modes"]["graph"]["token_count_proxy"] == payload["modes"]["graph"]["input_tokens"]
     assert payload["token_reduction"] >= 0.30
 
 
@@ -1083,6 +1086,9 @@ def test_checked_in_graph_vs_grep_snapshot() -> None:
     assert payload["fixture"]["line_count"] >= 50_000
     assert payload["modes"]["grep"]["correct"] is True
     assert payload["modes"]["graph"]["correct"] is True
+    assert "latency_seconds" in payload["modes"]["graph"]
+    assert payload["modes"]["graph"]["recall_proxy"] == 1.0
+    assert payload["modes"]["graph"]["token_count_proxy"] == payload["modes"]["graph"]["input_tokens"]
     assert payload["token_reduction"] >= 0.30
 
 

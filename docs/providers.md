@@ -17,6 +17,7 @@ class MyProvider:
 - `model`
 - `prompt`
 - `system_prompt`
+- `messages`
 - `params`
 
 `ProviderResponse` contains:
@@ -87,6 +88,18 @@ For vLLM and SGLang, `ProviderRequest.params` accepts OpenAI-compatible pass-thr
 
 - `json_schema`: converted to `response_format={"type":"json_schema", ...}`.
 - `function_tools`: converted to `tools=[{"type":"function", ...}]` with default `tool_choice="auto"`.
+
+OpenAI Responses requests also accept native-runner mappings for `function_tools`, `reasoning_effort`, `text_verbosity`, and `prompt_cache_key`.
+
+## Native Runner
+
+`ProviderBackedAgentRunner` is used for configured or local provider agents that advertise tool support. It does not replace shell runners. The loop:
+
+- sends built-in tool schemas to the provider
+- normalizes provider tool calls into one internal shape
+- validates tool arguments before execution
+- records provider and tool replay artifacts
+- appends tool results and continues until final output or budget stop
 
 Example:
 

@@ -8,8 +8,13 @@ nav:
   - Architecture: ARCHITECTURE.md
   - Hooks: hooks.md
   - Providers: providers.md
+  - Native Runner ADR: adr-native-provider-runner.md
   - Replay: replay.md
   - Graph Tools: graph.md
+  - Security: security.md
+  - Shell Sandbox ADR: adr-shell-sandbox.md
+  - Migration: migration.md
+  - Release Checklist: release-checklist.md
   - Local First: local-first.md
   - Benchmarks: benchmarks.md
   - Launch: launch.md

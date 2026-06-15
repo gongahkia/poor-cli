@@ -467,14 +467,14 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [ ] P9-008: Add web citation enforcement -> Expected output: answers that use web evidence include source URLs in artifacts.
 - [ ] P9-009: Add web allow/deny lists -> Expected output: config can restrict domains and block private networks by default.
 - [ ] P9-010: Add web tests -> Expected output: tests cover redirects, blocked schemes, private IPs, truncation, cache replay, and provider fallback.
-- [ ] P10-001: Replace shell guard with parsed command model or documented parser choice -> Expected output: ADR chooses parser/dependency and states unsupported shell features.
-- [ ] P10-002: Add shell deny tests for command substitution -> Expected output: `$(curl ...)`, backticks, and nested substitution are blocked.
-- [ ] P10-003: Add shell deny tests for alias/function wrappers -> Expected output: common wrapper attempts around network tools are blocked or require approval.
-- [ ] P10-004: Add shell deny tests for redirects outside workdir -> Expected output: `> /tmp/x`, `>> ~/.zshrc`, heredoc writes, and process substitution are handled by policy.
-- [ ] P10-005: Add shell deny tests for URL-like args -> Expected output: network-capable commands with URL args are blocked unless web tool path is used.
-- [ ] P10-006: Add shell allowlist mode -> Expected output: low-risk commands such as `rg`, `sed`, `python -m pytest`, `git diff`, and `git status` pass without broad shell escape.
-- [ ] P10-007: Add per-command approval artifact -> Expected output: blocked command records exact reason, parsed tokens, and remediation.
-- [ ] P10-008: Add sandbox docs -> Expected output: docs explain command policy, bypass boundaries, and how to extend safely.
+- [x] P10-001: Replace shell guard with parsed command model or documented parser choice -> Expected output: ADR chooses parser/dependency and states unsupported shell features.
+- [x] P10-002: Add shell deny tests for command substitution -> Expected output: `$(curl ...)`, backticks, and nested substitution are blocked.
+- [x] P10-003: Add shell deny tests for alias/function wrappers -> Expected output: common wrapper attempts around network tools are blocked or require approval.
+- [x] P10-004: Add shell deny tests for redirects outside workdir -> Expected output: `> /tmp/x`, `>> ~/.zshrc`, heredoc writes, and process substitution are handled by policy.
+- [x] P10-005: Add shell deny tests for URL-like args -> Expected output: network-capable commands with URL args are blocked unless web tool path is used.
+- [x] P10-006: Add shell allowlist mode -> Expected output: low-risk commands such as `rg`, `sed`, `python -m pytest`, `git diff`, and `git status` pass without broad shell escape.
+- [x] P10-007: Add per-command approval artifact -> Expected output: blocked command records exact reason, parsed tokens, and remediation.
+- [x] P10-008: Add sandbox docs -> Expected output: docs explain command policy, bypass boundaries, and how to extend safely.
 - [ ] P11-001: Add prompt-pack registry -> Expected output: prompts are versioned, licensed, testable, and selected by route or task type.
 - [ ] P11-002: Add public prompt analysis workflow -> Expected output: workflow summarizes patterns from allowed public prompts without copying proprietary text.
 - [ ] P11-003: Add engineering-skill import policy -> Expected output: skills can be referenced by URL/license and converted into local route guidance after review.
@@ -482,10 +482,10 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [ ] P11-005: Add anti-sycophancy reviewer rubric -> Expected output: reviewer prompts require assumption checks, contrary evidence, and benchmark-gated claims.
 - [ ] P11-006: Add prompt efficiency pass -> Expected output: prompt packs remove redundant boilerplate and record token deltas before/after.
 - [ ] P12-001: Add graph-first context planner -> Expected output: planner uses graph index before broad grep when supported language files are present.
-- [ ] P12-002: Add language support matrix -> Expected output: docs list Py, JS, TS, TSX support and unsupported languages.
-- [ ] P12-003: Add missing tree-sitter dependency check -> Expected output: `poor-cli doctor` detects missing `tree_sitter_python`, `tree_sitter_javascript`, and `tree_sitter_typescript`.
-- [ ] P12-004: Add graph fallback -> Expected output: missing parser wheels degrade to rg-based context with explicit artifact warning.
-- [ ] P12-005: Add graph vs grep benchmark -> Expected output: benchmark reports latency, recall proxy, and token-count impact.
+- [x] P12-002: Add language support matrix -> Expected output: docs list Py, JS, TS, TSX support and unsupported languages.
+- [x] P12-003: Add missing tree-sitter dependency check -> Expected output: `poor-cli doctor` detects missing `tree_sitter_python`, `tree_sitter_javascript`, and `tree_sitter_typescript`.
+- [x] P12-004: Add graph fallback -> Expected output: missing parser wheels degrade to rg-based context with explicit artifact warning.
+- [x] P12-005: Add graph vs grep benchmark -> Expected output: benchmark reports latency, recall proxy, and token-count impact.
 - [ ] P13-001: Add review lane command -> Expected output: `poor-cli review-run <run-id>` runs reviewer route over patches and artifacts.
 - [ ] P13-002: Add verifier lane command -> Expected output: `poor-cli verify-run <run-id>` runs configured tests and verifies expected outputs.
 - [ ] P13-003: Add second-model review option -> Expected output: reviewer can use a different provider/model than executor.
@@ -522,20 +522,20 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [ ] P18-003: Add TUI artifact viewer -> Expected output: TUI can open `PLAN.md`, `RESULT.md`, `PATCH.diff`, review findings, and verifier logs.
 - [ ] P18-004: Add TUI route switcher -> Expected output: user can switch role/model route within validated profiles.
 - [ ] P18-005: Add CLI noninteractive parity -> Expected output: every TUI action has a CLI command for scripting.
-- [ ] P19-001: Update README after provider profiles land -> Expected output: README documents provider setup, route setup, replay, and doctor commands.
-- [ ] P19-002: Update architecture docs after native runner lands -> Expected output: docs explain provider-backed agents, tool loop, replay, and shell runner compatibility.
+- [x] P19-001: Update README after provider profiles land -> Expected output: README documents provider setup, route setup, replay, and doctor commands.
+- [x] P19-002: Update architecture docs after native runner lands -> Expected output: docs explain provider-backed agents, tool loop, replay, and shell runner compatibility.
 - [ ] P19-003: Update swarm docs after worktrees land -> Expected output: docs explain plan, worker worktrees, patch merge, review, verify, and cleanup.
 - [ ] P19-004: Update security docs after sandbox/web/MCP land -> Expected output: docs state boundaries, blocked defaults, and known residual risks.
 - [ ] P19-005: Update examples -> Expected output: examples cover small direct task, hard Fusion-reviewed task, Kimi executor swarm, local-model run, and web-research task.
-- [ ] P19-006: Add migration notes -> Expected output: old configs and existing CLI flows remain supported or have explicit migration commands.
+- [x] P19-006: Add migration notes -> Expected output: old configs and existing CLI flows remain supported or have explicit migration commands.
 - [ ] P20-001: Add CI dependency gate -> Expected output: CI installs graph parser wheels and fails with clear error if unavailable.
-- [ ] P20-002: Add full test gate -> Expected output: `python3 -m pytest tests/ -q` passes in clean env.
-- [ ] P20-003: Add focused provider tests -> Expected output: fake-provider tests pass without network or secrets.
-- [ ] P20-004: Add live-provider test markers -> Expected output: live tests require explicit env vars and are skipped by default.
-- [ ] P20-005: Add replay determinism gate -> Expected output: recorded runs replay byte-stable artifacts.
-- [ ] P20-006: Add LOC gate decision -> Expected output: either maintain current LOC cap with scoped phases or update cap with rationale.
-- [ ] P20-007: Add packaging gate -> Expected output: build/install command verifies console entrypoints and optional extras.
-- [ ] P20-008: Add release checklist -> Expected output: checklist includes tests, docs, security review, benchmark report, and backwards compatibility.
+- [x] P20-002: Add full test gate -> Expected output: `python3 -m pytest tests/ -q` passes in clean env.
+- [x] P20-003: Add focused provider tests -> Expected output: fake-provider tests pass without network or secrets.
+- [x] P20-004: Add live-provider test markers -> Expected output: live tests require explicit env vars and are skipped by default.
+- [x] P20-005: Add replay determinism gate -> Expected output: recorded runs replay byte-stable artifacts.
+- [x] P20-006: Add LOC gate decision -> Expected output: either maintain current LOC cap with scoped phases or update cap with rationale.
+- [x] P20-007: Add packaging gate -> Expected output: build/install command verifies console entrypoints and optional extras.
+- [x] P20-008: Add release checklist -> Expected output: checklist includes tests, docs, security review, benchmark report, and backwards compatibility.
 - [ ] P21-001: Dogfood direct mode on poor-cli -> Expected output: run artifact showing a small real task completed with direct executor route.
 - [ ] P21-002: Dogfood planner+reviewer mode on poor-cli -> Expected output: run artifact showing planner, executor, reviewer, verifier, and accepted patch.
 - [ ] P21-003: Dogfood swarm mode on poor-cli -> Expected output: run artifact showing at least two isolated worker worktrees and clean merge or documented conflict.

@@ -84,11 +84,7 @@ def artifact_manifest(store: RunStore, run_id: str) -> list[dict[str, Any]]:
     base = run_artifact_dir(store, run_id)
     if not base.exists():
         return []
-    return [
-        {"path": str(path.relative_to(base)), "size": path.stat().st_size}
-        for path in sorted(base.rglob("*"))
-        if path.is_file()
-    ]
+    return [{"path": str(path.relative_to(base)), "size": path.stat().st_size} for path in sorted(base.rglob("*")) if path.is_file()]
 
 
 def cleanup_run(store: RunStore, run_id: str) -> list[str]:

@@ -17,11 +17,7 @@ class ToolCallingProvider:
         if len(self.calls) == 1:
             raw = {
                 "choices": [
-                    {
-                        "message": {
-                            "tool_calls": [{"id": "call_1", "function": {"name": "read_file", "arguments": "{\"path\":\"note.txt\"}"}}]
-                        }
-                    }
+                    {"message": {"tool_calls": [{"id": "call_1", "function": {"name": "read_file", "arguments": '{"path":"note.txt"}'}}]}}
                 ]
             }
             return ProviderResponse(provider=request.provider, model=request.model, content="", raw=raw)
@@ -57,7 +53,7 @@ def test_openai_final_args_done_event_normalizes_tool_call() -> None:
         "events": [
             {
                 "type": "response.function_call_arguments.done",
-                "item": {"call_id": "c", "name": "read_file", "arguments": "{\"path\":\"a\"}"},
+                "item": {"call_id": "c", "name": "read_file", "arguments": '{"path":"a"}'},
             }
         ]
     }

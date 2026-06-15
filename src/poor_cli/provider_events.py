@@ -101,7 +101,8 @@ def _openai_calls(raw: dict[str, Any]) -> list[ProviderToolCall]:
 def _anthropic_calls(raw: dict[str, Any]) -> list[ProviderToolCall]:
     return [
         _call(block)
-        for block in raw.get("content", []) if isinstance(raw.get("content"), list)
+        for block in raw.get("content", [])
+        if isinstance(raw.get("content"), list)
         if isinstance(block, dict) and block.get("type") == "tool_use"
     ]
 

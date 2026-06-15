@@ -12,25 +12,31 @@
       "context_lines": 2,
       "correct": true,
       "input_tokens": 49,
+      "latency_seconds": 0.1827597080009582,
       "output": {
         "caller_paths": [
           "module_0497.py"
         ],
         "definition_path": "module_0498.py"
       },
-      "strategy": "definition_of plus callers_of"
+      "recall_proxy": 1.0,
+      "strategy": "definition_of plus callers_of",
+      "token_count_proxy": 49
     },
     "grep": {
       "context_lines": 1000,
       "correct": true,
       "input_tokens": 19246,
+      "latency_seconds": 0.021716666997235734,
       "output": {
         "caller_paths": [
           "module_0497.py"
         ],
         "definition_path": "module_0498.py"
       },
-      "strategy": "grep import/function/call lines"
+      "recall_proxy": 1.0,
+      "strategy": "grep import/function/call lines",
+      "token_count_proxy": 19246
     }
   },
   "schema_version": "poor-cli-graph-vs-grep-v1",

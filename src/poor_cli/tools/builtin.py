@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from poor_cli.provider_events import ToolSchema
 from poor_cli.repo_graph import graph_tools
-from poor_cli.sandbox import validate_shell_command
+from poor_cli.sandbox import SandboxDenied, validate_shell_command
 
 if TYPE_CHECKING:
     from .dispatcher import ToolResult
@@ -142,7 +142,17 @@ def _shell(root: Path, args: dict[str, Any]) -> ToolResult:
     timeout = int(args.get("timeout") or 30)
     if not command:
         raise ValueError("shell requires command")
-    validate_shell_command(root, command)
+    try:
+        validate_shell_command(root, command)
+    except SandboxDenied as exc:
+        from .dispatcher import ToolResult
+
+        return ToolResult(
+            name="shell",
+            ok=False,
+            error=str(exc),
+            raw={"command": command, "reason": str(exc), "remediation": "use built-in tools or keep writes inside workdir"},
+        )
     result = subprocess.run(command, cwd=root, shell=True, text=True, capture_output=True, timeout=timeout, check=False)
     return _result(
         "shell",

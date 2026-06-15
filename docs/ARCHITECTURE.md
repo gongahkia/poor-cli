@@ -10,6 +10,9 @@
 - `meta.json` stores the latest run metadata; `events.jsonl` stores the append-only event stream.
 - Every important transition emits an append-only event.
 - Agent inputs, planner prompts/responses, context packets, and agent results are stored as artifacts.
+- Deterministic human-facing artifacts are mirrored under `.poor-cli/v6/runs/<run_id>/artifacts/`.
+- Planner artifacts include `PLAN.json` and `PLAN.md`; worker artifacts include `RESULT.md`, `PATCH.diff`, and changed-file metadata.
+- Review and verifier artifacts are always typed, even when a run has no active reviewer or verifier lane.
 - `poor-cli replay --verify` checks the per-run event mirror and CAS artifact hashes, then emits a stable trace digest.
 - `poor-cli --offline` sets `POOR_CLI_OFFLINE=1`; provider adapters, provider cache misses, and non-local delegated agents fail before live network calls.
 - Hook entry points use the `poor_cli.hooks` group and receive lifecycle callbacks for turns, model calls, tool calls, and run completion.
@@ -18,6 +21,8 @@
 - Provider adapters wrap Anthropic, OpenAI Responses, Gemini, Ollama, vLLM, and SGLang clients behind the shared replayable provider contract.
 - `CachedReplayProvider.call_many()` batches uncached provider misses when the wrapped provider exposes `call_many()`, while replaying cached requests individually.
 - vLLM and SGLang adapters normalize local structured-output and function-tool shims into OpenAI-compatible chat payloads.
+- Configured/local providers can use `ProviderBackedAgentRunner`, which sends JSON-schema tool definitions, validates tool arguments, records provider/tool replay artifacts, and appends tool results until final output or budget stop.
+- Shell runners remain the compatibility path for Codex, Claude, and generic shell tasks.
 - Linux/CUDA setup emits provider-native cache controls for vLLM prefix caching/hash/KV dtype and SGLang radix/KV dtype.
 - A provider-backed delegated agent named `local` can route task prompts to Ollama, vLLM, or SGLang through `POOR_CLI_PROVIDER`, `POOR_CLI_MODEL`, and `POOR_CLI_LOCAL_BASE_URL`.
 - MCP is client-only in v6.0.0: `poor-cli mcp list` and `poor-cli mcp call server:tool` consume configured stdio MCP servers.
@@ -26,6 +31,7 @@
 ## Commands
 
 - `poor-cli agents`: detect local agents.
+- `poor-cli doctor`: print agent and graph dependency diagnostics.
 - `poor-cli plan`: create and persist an LLM-backed structured plan.
 - `poor-cli run`: create a plan, require confirmation unless `--yes` or `--dry-run`, then execute tasks.
 - `poor-cli inspect`: inspect run internals.
@@ -38,4 +44,4 @@
 
 ## Boundaries
 
-The alpha intentionally excludes worktree isolation, parallel scheduling, MCP server hosting, broad graph indexing beyond Python/JavaScript/TypeScript/TSX, live Linux/CUDA benchmark rows, and live graph-mode SWE-bench benchmarking. The TUI, MCP client, benchmark harness, local provider adapters, OpenAI-compatible local structured-output/tool-call shims, cache-aware provider batching, provider-native cache launch controls, and graph tools are present but intentionally small.
+The alpha intentionally excludes worktree isolation, parallel scheduling, MCP server hosting, live Linux/CUDA benchmark rows, and live graph-mode SWE-bench benchmarking. The TUI, MCP client, benchmark harness, provider adapters, native provider tool loop, cache-aware provider batching, provider-native cache launch controls, artifact contracts, and graph tools are present but intentionally small.

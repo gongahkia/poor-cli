@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
+from importlib.util import find_spec
 from pathlib import Path
 from threading import Event, RLock, Thread
 from typing import Any
@@ -12,6 +13,15 @@ GRAPH_EXTENSIONS = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 JAVASCRIPT_EXTENSIONS = {".js", ".mjs", ".cjs"}
 TYPESCRIPT_EXTENSIONS = {".ts", ".mts", ".cts"}
 TSX_EXTENSIONS = {".tsx"}
+LANGUAGE_SUPPORT = {
+    "python": {"extensions": [".py"], "package": "tree_sitter_python", "status": "supported"},
+    "javascript": {"extensions": sorted(JAVASCRIPT_EXTENSIONS), "package": "tree_sitter_javascript", "status": "supported"},
+    "typescript": {
+        "extensions": sorted(TYPESCRIPT_EXTENSIONS | TSX_EXTENSIONS),
+        "package": "tree_sitter_typescript",
+        "status": "supported",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -239,7 +249,10 @@ class RepoGraph:
 
 
 def graph_tools(root: Path) -> dict[str, Any]:
-    graph = RepoGraph(root).build_index()
+    try:
+        graph = RepoGraph(root).build_index()
+    except RepoGraphError as exc:
+        return _fallback_graph_tools(root, str(exc))
     return {
         "find_symbol": lambda args: _tool_result(
             "find_symbol",
@@ -256,6 +269,19 @@ def graph_tools(root: Path) -> dict[str, Any]:
             graph.refresh_if_stale().subgraph(str(args.get("seed") or ""), max_depth=int(args.get("max_depth") or 1)),
         ),
     }
+
+
+def graph_dependency_report() -> dict[str, Any]:
+    rows = {}
+    for language, spec in LANGUAGE_SUPPORT.items():
+        package = str(spec["package"])
+        rows[language] = {
+            "extensions": spec["extensions"],
+            "package": package,
+            "available": find_spec(package) is not None,
+            "status": spec["status"],
+        }
+    return {"supported": rows, "missing": [row["package"] for row in rows.values() if not row["available"]]}
 
 
 def _parse_module(root: Path, path: Path) -> ParsedModule:
@@ -500,6 +526,27 @@ def _tool_result(name: str, output: Any) -> Any:
     from poor_cli.tools.dispatcher import ToolResult
 
     return ToolResult(name=name, ok=True, output=output)
+
+
+def _fallback_graph_tools(root: Path, warning: str) -> dict[str, Any]:
+    def fallback(args: dict[str, Any], name: str) -> Any:
+        query = str(args.get("query") or args.get("symbol") or args.get("seed") or "")
+        matches = []
+        if query:
+            for path in sorted(root.rglob("*")):
+                if path.suffix not in GRAPH_EXTENSIONS or not path.is_file():
+                    continue
+                try:
+                    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                        if query in line:
+                            matches.append({"path": str(path.relative_to(root)), "line": line_no, "text": line.strip()})
+                            break
+                except UnicodeDecodeError:
+                    continue
+        return _tool_result(name, {"fallback": "grep", "warning": warning, "matches": matches[:20]})
+
+    names = ("find_symbol", "definition_of", "imports_of", "callers_of", "subgraph")
+    return {name: (lambda args, tool=name: fallback(args, tool)) for name in names}
 
 
 def _import_candidates(base: str) -> list[str]:

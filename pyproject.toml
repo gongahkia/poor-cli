@@ -71,6 +71,9 @@ include = ["poor_cli*"]
 testpaths = ["tests"]
 addopts = "-q"
 norecursedirs = ["tests/fixtures"]
+markers = [
+    "live_provider: requires live provider credentials and POOR_CLI_LIVE_PROVIDER_TESTS=1",
+]
 
 [tool.ruff]
 line-length = 140

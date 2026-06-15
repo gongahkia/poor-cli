@@ -32,6 +32,7 @@ from .models import Budget, to_jsonable
 from .offline import enable_offline
 from .orchestrator import Orchestrator
 from .replay import replay_summary, replay_verify
+from .repo_graph import graph_dependency_report
 from .store import RunStore, StoreError
 
 
@@ -62,6 +63,8 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
     if args.command == "agents":
         return _agents(args)
+    if args.command == "doctor":
+        return _doctor()
     if args.command == "plan":
         return _plan(args, store)
     if args.command == "run":
@@ -85,6 +88,16 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
     raise RuntimeError("missing command")
 
 
+def _doctor() -> int:
+    for agent in detect_agents():
+        print(f"{agent.name}: {agent.command} ({agent.version})")
+    report = graph_dependency_report()
+    for language, row in report["supported"].items():
+        status = "ok" if row["available"] else "missing"
+        print(f"graph:{language}: {status} ({row['package']})")
+    return 0
+
+
 def _agents(args: argparse.Namespace) -> int:
     agents = detect_agents()
     if args.agent_command == "inspect":
@@ -94,9 +107,7 @@ def _agents(args: argparse.Namespace) -> int:
         print(json.dumps(to_jsonable(matches[0]), indent=2, sort_keys=True))
         return 0
     if args.agent_command == "doctor":
-        for agent in agents:
-            print(f"{agent.name}: {agent.command} ({agent.version})")
-        return 0
+        return _doctor()
     for agent in agents:
         print(f"{agent.name}\t{agent.command}\t{agent.version}")
     return 0
@@ -348,6 +359,8 @@ def _parser() -> argparse.ArgumentParser:
     agents_sub.add_parser("doctor")
     inspect_agent = agents_sub.add_parser("inspect")
     inspect_agent.add_argument("name")
+
+    sub.add_parser("doctor")
 
     plan = sub.add_parser("plan")
     _goal_args(plan)

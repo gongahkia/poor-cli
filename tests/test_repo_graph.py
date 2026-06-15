@@ -4,7 +4,7 @@ import time
 from pathlib import Path
 
 import poor_cli.repo_graph as repo_graph
-from poor_cli.repo_graph import RepoGraph
+from poor_cli.repo_graph import LANGUAGE_SUPPORT, RepoGraph, graph_dependency_report
 from poor_cli.store import RunStore
 from poor_cli.tools import ToolDispatcher
 
@@ -101,6 +101,17 @@ def test_repo_graph_indexes_typescript_and_tsx_symbols_imports_and_callers(tmp_p
     assert graph.imports_of("core.ts") == {"path": "core.ts", "imports": ["./util", "./view"]}
     assert graph.callers_of("helper") == [{"path": "core.ts", "calls": "helper", "call_count": 1}]
     assert {item["path"] for item in graph.subgraph("execute", max_depth=2)["files"]} == {"core.ts", "util.ts", "view.tsx"}
+
+
+def test_repo_graph_language_support_and_dependency_report() -> None:
+    report = graph_dependency_report()
+
+    assert LANGUAGE_SUPPORT["python"]["extensions"] == [".py"]
+    assert ".tsx" in LANGUAGE_SUPPORT["typescript"]["extensions"]
+    assert set(report["supported"]) == {"python", "javascript", "typescript"}
+    assert {"tree_sitter_python", "tree_sitter_javascript", "tree_sitter_typescript"} == {
+        row["package"] for row in report["supported"].values()
+    }
 
 
 def test_repo_graph_refreshes_after_python_file_mutation(tmp_path: Path) -> None:
@@ -211,4 +222,22 @@ def test_graph_tools_refresh_after_codebase_mutation(tmp_path: Path) -> None:
 
     found = dispatcher.call("find_symbol", {"query": "new_entry"})
     assert found.output[0]["path"] == "extra.py"
+    store.close()
+
+
+def test_graph_tools_fallback_when_parser_missing(tmp_path: Path, monkeypatch) -> None:
+    _sample_repo(tmp_path)
+
+    def fail_parse(_root: Path, _path: Path):
+        raise repo_graph.RepoGraphError("parser missing")
+
+    monkeypatch.setattr(repo_graph, "_parse_python", fail_parse)
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="graph", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    result = ToolDispatcher(store, run_id, workdir=tmp_path).call("find_symbol", {"query": "helper"})
+
+    assert result.ok is True
+    assert result.output["fallback"] == "grep"
+    assert result.output["warning"] == "parser missing"
+    assert result.output["matches"]
     store.close()

@@ -7,7 +7,7 @@ from pathlib import Path
 def main() -> int:
     parser = argparse.ArgumentParser(prog="bench/loc_gate.py")
     parser.add_argument("root", nargs="?", default="src/poor_cli")
-    parser.add_argument("--max-total", type=int, default=5000)
+    parser.add_argument("--max-total", type=int, default=6000)
     parser.add_argument("--max-file", type=int, default=600)
     args = parser.parse_args()
 

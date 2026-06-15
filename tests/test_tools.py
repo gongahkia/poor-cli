@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -102,6 +103,51 @@ def test_shell_tool_blocks_network_and_outside_writes(tmp_path: Path) -> None:
     assert outside.ok is False
     assert "outside workdir" in str(outside.error)
     assert not (tmp_path.parent / "outside.txt").exists()
+    store.close()
+
+
+def test_shell_tool_blocks_complex_shell_escape_forms(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    run_id = _run_id(store, tmp_path)
+    dispatcher = ToolDispatcher(store, run_id, workdir=tmp_path)
+    blocked = [
+        "printf $(curl https://example.com)",
+        "printf `curl https://example.com`",
+        "cat <(printf hi)",
+        "cat <<EOF\nhi\nEOF",
+        "bash -c 'curl https://example.com'",
+        "sh -c 'curl https://example.com'",
+        "zsh -c 'curl https://example.com'",
+        "alias c=curl; c https://example.com",
+        "function c { curl https://example.com; }; c",
+        "env curl https://example.com",
+        "command curl https://example.com",
+        "printf hi >/tmp/outside.txt",
+        "printf hi >> ~/.zshrc",
+        "printf hi 2>/tmp/err.txt",
+        "printf hi > ../outside.txt",
+    ]
+
+    for command in blocked:
+        result = dispatcher.call("shell", {"command": command})
+        assert result.ok is False, command
+        assert result.raw["reason"]
+        assert result.raw["remediation"]
+
+    assert not (tmp_path.parent / "outside.txt").exists()
+    store.close()
+
+
+def test_shell_tool_allows_low_risk_commands(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    run_id = _run_id(store, tmp_path)
+    dispatcher = ToolDispatcher(store, run_id, workdir=tmp_path)
+    subprocess.run(["git", "init"], cwd=tmp_path, text=True, capture_output=True, check=True)
+
+    assert dispatcher.call("shell", {"command": "printf ok > inside.txt"}).ok is True
+    assert dispatcher.call("shell", {"command": "git status --short"}).ok is True
+    assert dispatcher.call("shell", {"command": "python -m pytest --version"}).ok is True
+
     store.close()
 
 
