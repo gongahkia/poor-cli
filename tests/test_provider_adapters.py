@@ -252,7 +252,28 @@ def test_provider_adapters_block_offline_calls(monkeypatch) -> None:
         def create(self, **kwargs):
             raise AssertionError("network client should not be called")
 
+    class Responses:
+        def create(self, **kwargs):
+            raise AssertionError("network client should not be called")
+
+    class Models:
+        def generate_content(self, **kwargs):
+            raise AssertionError("network client should not be called")
+
+    def opener(request):
+        raise AssertionError("network client should not be called")
+
     monkeypatch.setenv("POOR_CLI_OFFLINE", "1")
 
     with pytest.raises(OfflineModeError):
         AnthropicProvider(SimpleNamespace(messages=Messages())).call(ProviderRequest(provider="anthropic", model="m", prompt="p"))
+    with pytest.raises(OfflineModeError):
+        OpenAIProvider(SimpleNamespace(responses=Responses())).call(ProviderRequest(provider="openai", model="m", prompt="p"))
+    with pytest.raises(OfflineModeError):
+        GeminiProvider(SimpleNamespace(models=Models())).call(ProviderRequest(provider="gemini", model="m", prompt="p"))
+    with pytest.raises(OfflineModeError):
+        OllamaProvider("http://ollama.test", opener).call(ProviderRequest(provider="ollama", model="m", prompt="p"))
+    with pytest.raises(OfflineModeError):
+        VLLMProvider("http://vllm.test", opener).call(ProviderRequest(provider="vllm", model="m", prompt="p"))
+    with pytest.raises(OfflineModeError):
+        SGLangProvider("http://sglang.test", opener).call(ProviderRequest(provider="sglang", model="m", prompt="p"))
