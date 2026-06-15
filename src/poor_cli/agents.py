@@ -9,6 +9,10 @@ from pathlib import Path
 
 from .models import AgentInfo, TaskSpec
 from .offline import require_online
+from .provider_adapters import OllamaProvider, SGLangProvider, VLLMProvider
+from .providers import Provider, ProviderRequest
+
+LOCAL_PROVIDERS = {"ollama", "sglang", "vllm"}
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,9 @@ class AgentResult:
 
 def detect_agents() -> list[AgentInfo]:
     agents = [_generic_shell()]
+    local_agent = _local_provider_agent()
+    if local_agent is not None:
+        agents.append(local_agent)
     for name, adapter, provider, capabilities in (
         ("claude", "claude", "anthropic", ["noninteractive", "file_edits", "planning", "review", "tests"]),
         ("codex", "codex", "openai", ["noninteractive", "file_edits", "implementation", "tests", "review"]),
@@ -90,6 +97,22 @@ class AgentRunner:
                 prompt,
             ]
             return _run(agent.agent_id, command, workdir, self.timeout_seconds)
+        if agent.invocation_adapter == "local_provider":
+            response = _provider_for_agent(agent).call(
+                ProviderRequest(
+                    provider=agent.provider,
+                    model=agent.default_model or "",
+                    prompt=prompt,
+                    system_prompt="You are a local coding model delegated by poor-cli. Return concise implementation guidance.",
+                )
+            )
+            return AgentResult(
+                agent.agent_id,
+                ["local-provider", agent.provider, agent.default_model or "", agent.command],
+                0,
+                response.content,
+                "",
+            )
         command_text = task.metadata.get("command") if isinstance(task.metadata, dict) else None
         if command_text:
             command = [agent.command, "-lc", str(command_text)]
@@ -110,6 +133,46 @@ def _generic_shell() -> AgentInfo:
         default_model=None,
         invocation_adapter="generic",
     )
+
+
+def _local_provider_agent() -> AgentInfo | None:
+    provider = os.environ.get("POOR_CLI_PROVIDER") or os.environ.get("POOR_CLI_LOCAL_ENGINE") or ""
+    provider = provider.strip().lower()
+    model = (os.environ.get("POOR_CLI_MODEL") or os.environ.get("POOR_CLI_LOCAL_MODEL") or "").strip()
+    if provider not in LOCAL_PROVIDERS or not model:
+        return None
+    base_url = _local_base_url(provider)
+    return AgentInfo(
+        agent_id="agent_local",
+        name="local",
+        command=base_url,
+        version=f"{provider}:{model}",
+        provider=provider,
+        capabilities=["noninteractive", "local_model", "implementation"],
+        default_model=model,
+        invocation_adapter="local_provider",
+    )
+
+
+def _local_base_url(provider: str) -> str:
+    explicit = os.environ.get("POOR_CLI_LOCAL_BASE_URL")
+    if explicit:
+        return explicit
+    if provider == "ollama":
+        return "http://localhost:11434"
+    if provider == "sglang":
+        return "http://localhost:30000"
+    return "http://localhost:8000"
+
+
+def _provider_for_agent(agent: AgentInfo) -> Provider:
+    if agent.provider == "ollama":
+        return OllamaProvider(agent.command)
+    if agent.provider == "sglang":
+        return SGLangProvider(agent.command)
+    if agent.provider == "vllm":
+        return VLLMProvider(agent.command)
+    raise RuntimeError(f"unsupported local provider: {agent.provider}")
 
 
 def _version(command: list[str]) -> str:

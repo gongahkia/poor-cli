@@ -33,7 +33,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="bench/swe_bench_lite/run.py")
     parser.add_argument("--provider", default=os.getenv("POOR_CLI_BENCH_PROVIDER", DEFAULT_PROVIDER))
     parser.add_argument("--model", default=os.getenv("POOR_CLI_BENCH_MODEL", DEFAULT_MODEL))
-    parser.add_argument("--agent", choices=["claude", "codex", "generic"], default=os.getenv("POOR_CLI_BENCH_AGENT", DEFAULT_AGENT))
+    parser.add_argument(
+        "--agent",
+        choices=["claude", "codex", "generic", "local"],
+        default=os.getenv("POOR_CLI_BENCH_AGENT", DEFAULT_AGENT),
+    )
     parser.add_argument("--dataset-name", default=DATASET_NAME)
     parser.add_argument("--dataset-revision", default=DATASET_REVISION)
     parser.add_argument("--split", default="test")

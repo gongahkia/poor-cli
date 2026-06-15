@@ -26,6 +26,18 @@ scripts/setup-linux-cuda.sh --yes --engine ollama --skip-engine-install
 
 The script installs `vllm` or `sglang[all]` into the local venv when selected. Ollama is expected to be installed as a system service or binary.
 
+## poor-cli Agent
+
+The setup env exposes a provider-backed delegated agent named `local`:
+
+```sh
+source .poor-cli/local-cuda.env
+poor-cli run "inspect this bug" --agents local --yes
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --agent local --provider vllm --model Qwen/Qwen2.5-Coder-32B-Instruct --confirm-cost --no-evaluate
+```
+
+`POOR_CLI_PROVIDER` must be `vllm`, `sglang`, or `ollama`, and `POOR_CLI_MODEL` must be set. `POOR_CLI_LOCAL_BASE_URL` selects the local server endpoint.
+
 ## Cache Controls
 
 The setup script enables provider-native prefix caching by default where the engine exposes it:

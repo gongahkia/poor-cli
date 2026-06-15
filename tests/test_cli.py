@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from poor_cli.cli import main
+from poor_cli.providers import ProviderResponse
 from poor_cli.store import RunStore
 
 
@@ -238,6 +239,41 @@ def test_cli_run_executes_generic_command_metadata(tmp_path: Path, monkeypatch, 
 
     assert (tmp_path / "fixed.txt").read_text(encoding="utf-8") == "ok"
     assert "run_id:" in capsys.readouterr().out
+
+
+def test_cli_run_local_provider_agent_records_result(tmp_path: Path, monkeypatch, capsys) -> None:
+    class FakeProvider:
+        def call(self, request):
+            return ProviderResponse(provider=request.provider, model=request.model, content="local guidance")
+
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Local','objective':'ask local model','suggested_agent':'local'}],"
+        "'validation_strategy':[],'routing_strategy':'local','estimated_cost':{'tokens':None,'usd':None}}))\n",
+        encoding="utf-8",
+    )
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+    monkeypatch.setenv("POOR_CLI_PROVIDER", "vllm")
+    monkeypatch.setenv("POOR_CLI_MODEL", "qwen")
+    monkeypatch.setenv("POOR_CLI_LOCAL_BASE_URL", "http://vllm.test")
+    monkeypatch.setattr("poor_cli.agents._provider_for_agent", lambda agent: FakeProvider())
+
+    assert main(["--store-dir", str(store), "run", "local goal", "--yes"]) == 0
+    run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
+    run_store = RunStore(store)
+    try:
+        result_artifact = run_store.list_artifacts(run_id, "agent.result")[0]
+        result = json.loads(run_store.artifact_payload(result_artifact["artifact_id"]))
+        assert result["stdout"] == "local guidance"
+        assert result["command"] == ["local-provider", "vllm", "qwen", "http://vllm.test"]
+        assert run_store.get_run(run_id)["status"] == "completed"
+    finally:
+        run_store.close()
 
 
 def test_cli_run_without_yes_records_confirmation_event(tmp_path: Path) -> None:

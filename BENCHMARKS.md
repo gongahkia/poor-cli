@@ -157,6 +157,13 @@ Graph-mode generation command:
 uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --no-evaluate --confirm-cost --budget-usd 1.0 --timeout-seconds 1200 --run-id swe10-graph-YYYYMMDDTHHMMSSZ
 ```
 
+Local-mode generation command:
+
+```sh
+source .poor-cli/local-cuda.env
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --agent local --provider "$POOR_CLI_PROVIDER" --model "$POOR_CLI_MODEL" --no-evaluate --confirm-cost --timeout-seconds 1200 --run-id swe10-local-YYYYMMDDTHHMMSSZ
+```
+
 Evaluate an existing run without regenerating model patches:
 
 ```sh

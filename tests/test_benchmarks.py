@@ -343,6 +343,23 @@ def test_swe_lite_runner_supports_graph_mode(tmp_path: Path) -> None:
     assert summary["graph_mode"] is True
 
 
+def test_swe_lite_runner_supports_local_agent(tmp_path: Path) -> None:
+    args = swe_run.parse_args(
+        ["--confirm-cost", "--no-evaluate", "--limit", "1", "--agent", "local", "--provider", "vllm", "--model", "qwen"]
+    )
+    task = {"instance_id": "repo__proj-1", "problem_statement": "Fix the bug", "repo": "repo/proj"}
+
+    command = swe_run.poor_cli_run_command(args, tmp_path / "store", "Fix the bug")
+    payload = swe_run.planner_payload(task, "local")
+    summary = swe_run.summarize([], args, "run-local")
+
+    assert command[-1] == "--yes"
+    assert payload["tasks"][0]["suggested_agent"] == "local"
+    assert summary["agent"] == "local"
+    assert summary["provider"] == "vllm"
+    assert summary["model"] == "qwen"
+
+
 def test_swe_lite_runner_evaluates_existing_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     run_dir = tmp_path / "results" / "run-1"
     run_dir.mkdir(parents=True)
