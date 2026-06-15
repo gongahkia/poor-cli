@@ -75,8 +75,13 @@ def test_run_swarm_records_conflicts(tmp_path: Path, monkeypatch, capsys) -> Non
     planner = tmp_path / "planner.py"
     first = f"{sys.executable} -c \"from pathlib import Path; Path('a.txt').write_text('one\\\\n')\""
     second = f"{sys.executable} -c \"from pathlib import Path; Path('a.txt').write_text('two\\\\n')\""
-    _planner(planner, [{"title": "One", "objective": "one", "suggested_agent": "generic", "command": first},
-                       {"title": "Two", "objective": "two", "suggested_agent": "generic", "command": second}])
+    _planner(
+        planner,
+        [
+            {"title": "One", "objective": "one", "suggested_agent": "generic", "command": first},
+            {"title": "Two", "objective": "two", "suggested_agent": "generic", "command": second},
+        ],
+    )
     monkeypatch.chdir(repo)
     monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
 

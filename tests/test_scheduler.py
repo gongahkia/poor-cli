@@ -20,9 +20,14 @@ def _planner(path: Path, tasks: list[dict[str, object]]) -> None:
 
 def test_parallel_scheduler_runs_independent_tasks_concurrently(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
-    cmd = f"{sys.executable} -c \"import time; time.sleep(0.4)\""
-    _planner(planner, [{"title": "A", "objective": "a", "suggested_agent": "generic", "command": cmd},
-                       {"title": "B", "objective": "b", "suggested_agent": "generic", "command": cmd}])
+    cmd = f'{sys.executable} -c "import time; time.sleep(0.4)"'
+    _planner(
+        planner,
+        [
+            {"title": "A", "objective": "a", "suggested_agent": "generic", "command": cmd},
+            {"title": "B", "objective": "b", "suggested_agent": "generic", "command": cmd},
+        ],
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
 
@@ -43,10 +48,15 @@ def test_parallel_scheduler_runs_independent_tasks_concurrently(tmp_path: Path, 
 
 def test_scheduler_blocks_failed_dependencies(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
-    bad = f"{sys.executable} -c \"raise SystemExit(2)\""
+    bad = f'{sys.executable} -c "raise SystemExit(2)"'
     good = f"{sys.executable} -c \"print('should not run')\""
-    _planner(planner, [{"title": "A", "objective": "a", "suggested_agent": "generic", "command": bad},
-                       {"title": "B", "objective": "b", "suggested_agent": "generic", "dependencies": ["A"], "command": good}])
+    _planner(
+        planner,
+        [
+            {"title": "A", "objective": "a", "suggested_agent": "generic", "command": bad},
+            {"title": "B", "objective": "b", "suggested_agent": "generic", "dependencies": ["A"], "command": good},
+        ],
+    )
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
 

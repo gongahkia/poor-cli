@@ -90,8 +90,16 @@ class Orchestrator:
         self.store.set_run_status(run_id, "planned")
         return run_id, plan
 
-    def run(self, run_id: str, budget: Budget, selected_agents: set[str] | None = None, dry_run: bool = False, *,
-            allow_overlap: bool = False, cancel: Any | None = None) -> int:
+    def run(
+        self,
+        run_id: str,
+        budget: Budget,
+        selected_agents: set[str] | None = None,
+        dry_run: bool = False,
+        *,
+        allow_overlap: bool = False,
+        cancel: Any | None = None,
+    ) -> int:
         run = self.store.get_run(run_id)
         agents = detect_agents()
         if selected_agents:
@@ -114,29 +122,41 @@ class Orchestrator:
         self.hooks.after_run({"run_id": run_id, "status": final_status, "summary": summary})
         return exit_code
 
-    def execute_one(self, run_id: str, task: TaskSpec, ordinal: int, runner: AgentRunner, budget: Budget, workdir: Path,
-                    cancel: Any | None = None) -> int:
+    def execute_one(
+        self, run_id: str, task: TaskSpec, ordinal: int, runner: AgentRunner, budget: Budget, workdir: Path, cancel: Any | None = None
+    ) -> int:
         run = self.store.get_run(run_id)
         agent = runner.choose(task.suggested_agent)
         self.hooks.before_turn({"run_id": run_id, "task_id": task.task_id, "title": task.title, "agent": agent.name})
         packet = self._context_packet(run, task)
         packet_art = self.store.put_artifact(run_id=run_id, task_id=task.task_id, kind="context.packet", data=to_jsonable(packet))
         self.store.set_task_status(task.task_id, "assigned", assigned_agent=agent.name, context_packet_id=packet_art.artifact_id)
-        self.store.append_event(run_id, "context.created", {"packet_id": packet.packet_id, "artifact_id": packet_art.artifact_id},
-                                task.task_id)
+        self.store.append_event(
+            run_id, "context.created", {"packet_id": packet.packet_id, "artifact_id": packet_art.artifact_id}, task.task_id
+        )
         self.store.append_event(run_id, "task.assigned", {"agent_id": agent.agent_id, "agent": agent.name}, task.task_id)
         preexisting_dirty = (_git(["status", "--short"], workdir) or "").splitlines()
         agent_prompt = build_agent_prompt(str(run["user_goal"]), task, packet.task_prompt)
         input_art = self.store.put_artifact(
-            run_id=run_id, task_id=task.task_id, kind="agent.input",
-            data={"agent_id": agent.agent_id, "agent": agent.name, "prompt": agent_prompt}
+            run_id=run_id,
+            task_id=task.task_id,
+            kind="agent.input",
+            data={"agent_id": agent.agent_id, "agent": agent.name, "prompt": agent_prompt},
         )
         self.store.append_event(run_id, "agent.input.created", {"artifact_id": input_art.artifact_id}, task.task_id)
         self.store.append_event(run_id, "agent.started", {"agent_id": agent.agent_id, "command": agent.command}, task.task_id)
         try:
             result = runner.run(
-                agent, goal=str(run["user_goal"]), task=task, context=packet.task_prompt, workdir=workdir, budget_usd=budget.max_usd,
-                store=self.store, run_id=run_id, hooks=self.hooks, cancel=cancel
+                agent,
+                goal=str(run["user_goal"]),
+                task=task,
+                context=packet.task_prompt,
+                workdir=workdir,
+                budget_usd=budget.max_usd,
+                store=self.store,
+                run_id=run_id,
+                hooks=self.hooks,
+                cancel=cancel,
             )
             agent_event = "agent.completed" if result.returncode == 0 else "agent.failed"
         except Exception as exc:
@@ -145,19 +165,31 @@ class Orchestrator:
         result_art = self.store.put_artifact(run_id=run_id, task_id=task.task_id, kind="agent.result", data=to_jsonable(result))
         write_worker_artifacts(self.store, run_id, task, ordinal, to_jsonable(result), workdir, preexisting_dirty=preexisting_dirty)
         self.store.append_event(
-            run_id, agent_event,
-            {"agent_id": result.agent_id, "returncode": result.returncode, "artifact_id": result_art.artifact_id}, task.task_id
+            run_id,
+            agent_event,
+            {"agent_id": result.agent_id, "returncode": result.returncode, "artifact_id": result_art.artifact_id},
+            task.task_id,
         )
         status = "completed" if result.returncode == 0 else "failed"
         handoff_art = self._handoff_packet(run_id, task, agent.name, status, result_art.artifact_id, result.returncode)
         self.store.set_task_status(task.task_id, status, result_artifact_id=result_art.artifact_id)
         self.store.append_event(run_id, "handoff.created", {"artifact_id": handoff_art.artifact_id}, task.task_id)
-        self.store.append_event(run_id, f"task.{status}", {"result_artifact_id": result_art.artifact_id, "returncode": result.returncode},
-                                task.task_id)
+        self.store.append_event(
+            run_id, f"task.{status}", {"result_artifact_id": result_art.artifact_id, "returncode": result.returncode}, task.task_id
+        )
         return int(result.returncode or 0)
 
-    def _run_dag(self, run: dict[str, Any], tasks: list[TaskSpec], runner: AgentRunner, budget: Budget, dry_run: bool, cap: int,
-                 allow_overlap: bool, cancel: Any | None) -> int:
+    def _run_dag(
+        self,
+        run: dict[str, Any],
+        tasks: list[TaskSpec],
+        runner: AgentRunner,
+        budget: Budget,
+        dry_run: bool,
+        cap: int,
+        allow_overlap: bool,
+        cancel: Any | None,
+    ) -> int:
         deps = _deps(tasks)
         unknown = sorted({dep for values in deps.values() for dep in values if dep not in deps})
         if unknown:
@@ -175,8 +207,9 @@ class Orchestrator:
                 self.store.set_task_status(task.task_id, "skipped")
                 self.store.append_event(str(run["run_id"]), "task.skipped", {"reason": "dry-run"}, task.task_id)
             return 0
+        limits = _cap_limits(load_config(self.repo_path))
         with ThreadPoolExecutor(max_workers=cap) as pool:
-            active: dict[Future[int], tuple[str, set[str]]] = {}
+            active: dict[Future[int], tuple[str, set[str], list[str]]] = {}
             while pending or active:
                 if cancel is not None and cancel.is_set():
                     for task_id in sorted(pending, key=lambda key: ords[key]):
@@ -196,12 +229,24 @@ class Orchestrator:
                     paths = _predicted_files(by_id[task_id])
                     if not allow_overlap and paths and any(paths & active_paths for _, active_paths in active.values()):
                         continue
+                    keys = _cap_keys(by_id[task_id])
+                    if any(sum(1 for _, _, active_keys in active.values() if key in active_keys) >= limits[key] for key in keys if key in limits):
+                        continue
                     pending.remove(task_id)
                     future = pool.submit(
-                        _thread_task, self.store.root, self.repo_path, run["run_id"], by_id[task_id], ords[task_id], runner, budget, cancel
+                        _thread_task,
+                        self.store.root,
+                        self.repo_path,
+                        run["run_id"],
+                        by_id[task_id],
+                        ords[task_id],
+                        runner,
+                        budget,
+                        cancel,
+                        self.hooks,
                     )
-                    active[future] = (task_id, paths)
-                    self.store.append_event(str(run["run_id"]), "scheduler.task_started", {"ordinal": ords[task_id]}, task_id)
+                    active[future] = (task_id, paths, keys)
+                    self.store.append_event(str(run["run_id"]), "scheduler.task_started", {"ordinal": ords[task_id], "cap_keys": keys}, task_id)
                     made_progress = True
                 if not active:
                     if not pending:
@@ -212,7 +257,7 @@ class Orchestrator:
                     return exit_code or 1
                 finished, _ = wait(active, timeout=0.1 if made_progress else None, return_when=FIRST_COMPLETED)
                 for future in sorted(finished, key=lambda item: ords[active[item][0]]):
-                    task_id, _ = active.pop(future)
+                    task_id, _, _ = active.pop(future)
                     try:
                         code = future.result()
                     except Exception as exc:
@@ -283,8 +328,14 @@ class Orchestrator:
             task_id=task.task_id,
             kind="handoff.packet",
             data={
-                "run_id": run_id, "task_id": task.task_id, "title": task.title, "status": status, "agent": agent,
-                "result_artifact_id": result_artifact_id, "returncode": returncode, "next_steps": task.validation,
+                "run_id": run_id,
+                "task_id": task.task_id,
+                "title": task.title,
+                "status": status,
+                "agent": agent,
+                "result_artifact_id": result_artifact_id,
+                "returncode": returncode,
+                "next_steps": task.validation,
             },
         )
 
@@ -370,10 +421,19 @@ def _predicted_files(task: TaskSpec) -> set[str]:
     return {str(item) for item in raw if str(item).strip()} if isinstance(raw, list) else set()
 
 
-def _thread_task(root: Path, repo: Path, run_id: str, task: TaskSpec, ordinal: int, runner: AgentRunner, budget: Budget,
-                 cancel: Any | None) -> int:
+def _thread_task(
+    root: Path,
+    repo: Path,
+    run_id: str,
+    task: TaskSpec,
+    ordinal: int,
+    runner: AgentRunner,
+    budget: Budget,
+    cancel: Any | None,
+    hooks: HookManager,
+) -> int:
     store = RunStore(root)
     try:
-        return Orchestrator(store, repo).execute_one(str(run_id), task, ordinal, runner, budget, repo, cancel)
+        return Orchestrator(store, repo, hooks=hooks).execute_one(str(run_id), task, ordinal, runner, budget, repo, cancel)
     finally:
         store.close()

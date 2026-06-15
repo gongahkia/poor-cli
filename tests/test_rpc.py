@@ -62,7 +62,7 @@ def test_rpc_run_status_inspect_replay(tmp_path: Path, monkeypatch, capsys) -> N
 
 def test_rpc_cancel_active_run(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
-    _planner(planner, f"{sys.executable} -c \"import time; time.sleep(5)\"")
+    _planner(planner, f'{sys.executable} -c "import time; time.sleep(5)"')
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
     server = RpcServer(tmp_path / "store")

@@ -14,20 +14,45 @@ from .orchestrator import Orchestrator
 from .store import RunStore
 
 
-def run_swarm(store: RunStore, goal: str, budget: Budget, *, graph_mode: bool = False, selected_agents: set[str] | None = None,
-              allow_dirty: bool = False, allow_overlap: bool = False, failure_policy: str = "fail-fast",
-              cancel: Any | None = None) -> dict[str, Any]:
+def run_swarm(
+    store: RunStore,
+    goal: str,
+    budget: Budget,
+    *,
+    graph_mode: bool = False,
+    selected_agents: set[str] | None = None,
+    allow_dirty: bool = False,
+    allow_overlap: bool = False,
+    failure_policy: str = "fail-fast",
+    cancel: Any | None = None,
+) -> dict[str, Any]:
     orch = Orchestrator(store)
     run_id, plan = orch.plan(goal, budget, graph_mode=graph_mode)
     return run_swarm_plan(
-        store, run_id, plan.tasks, budget, selected_agents=selected_agents, allow_dirty=allow_dirty, allow_overlap=allow_overlap,
-        failure_policy=failure_policy, cancel=cancel
+        store,
+        run_id,
+        plan.tasks,
+        budget,
+        selected_agents=selected_agents,
+        allow_dirty=allow_dirty,
+        allow_overlap=allow_overlap,
+        failure_policy=failure_policy,
+        cancel=cancel,
     )
 
 
-def run_swarm_plan(store: RunStore, run_id: str, tasks: list[TaskSpec], budget: Budget, *, selected_agents: set[str] | None = None,
-                   allow_dirty: bool = False, allow_overlap: bool = False, failure_policy: str = "fail-fast",
-                   cancel: Any | None = None) -> dict[str, Any]:
+def run_swarm_plan(
+    store: RunStore,
+    run_id: str,
+    tasks: list[TaskSpec],
+    budget: Budget,
+    *,
+    selected_agents: set[str] | None = None,
+    allow_dirty: bool = False,
+    allow_overlap: bool = False,
+    failure_policy: str = "fail-fast",
+    cancel: Any | None = None,
+) -> dict[str, Any]:
     repo = Path(store.get_run(run_id)["repo_path"])
     dirty = _git(repo, ["status", "--porcelain=v1", "--untracked-files=all"]).splitlines()
     if dirty and not allow_dirty:
@@ -52,8 +77,11 @@ def run_swarm_plan(store: RunStore, run_id: str, tasks: list[TaskSpec], budget: 
         path = root / _name(run_id, ordinal, task)
         _git(repo, ["worktree", "add", "--detach", str(path), "HEAD"], check=True)
         meta = {
-            "task_id": task.task_id, "ordinal": ordinal, "path": str(path), "route": task.metadata.get("route_config") or {},
-            "dirty_baseline": dirty
+            "task_id": task.task_id,
+            "ordinal": ordinal,
+            "path": str(path),
+            "route": task.metadata.get("route_config") or {},
+            "dirty_baseline": dirty,
         }
         store.put_artifact(run_id=run_id, task_id=task.task_id, kind="swarm.worker", data=meta)
         store.append_event(run_id, "swarm.worker.created", meta, task.task_id)
