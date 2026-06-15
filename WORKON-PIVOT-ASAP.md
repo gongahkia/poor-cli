@@ -450,20 +450,20 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [x] P6-008: Add budget ledger -> Expected output: run records planned and actual calls, tokens, cost estimates, wall time, and cache hits where known.
 - [x] P6-009: Add cancellation handling -> Expected output: Ctrl-C stops workers, preserves artifacts, and cleans worktrees according to policy.
 - [x] P6-010: Add parallel scheduling tests -> Expected output: tests verify concurrency, dependency ordering, caps, cancellation, and deterministic event logs.
-- [ ] P7-001: Add Fusion route only for planning/review by default -> Expected output: config uses Fusion for high-risk planner or reviewer roles, not routine executor work.
-- [ ] P7-002: Add Fusion budget gate -> Expected output: Fusion requires configured max cost or explicit `--allow-expensive-router`.
-- [ ] P7-003: Add Fusion mode probe -> Expected output: diagnostic verifies `openrouter/fusion` alias and explicit `openrouter:fusion` tool path where available.
-- [ ] P7-004: Add Fusion panel config -> Expected output: route config can set analysis models, judge model, and max panel size with validation.
-- [ ] P7-005: Add Fusion recursion guard -> Expected output: Fusion route cannot recursively invoke itself through nested review/planning routes.
-- [ ] P7-006: Add Fusion structured review parser -> Expected output: consensus, contradictions, gaps, unique insights, and blind spots are normalized into review artifacts.
-- [ ] P7-007: Add Fusion fallback -> Expected output: if Fusion is unavailable or over budget, planner/reviewer falls back to configured single-model route and records reason.
-- [ ] P7-008: Add Fusion eval fixture -> Expected output: benchmark compares single planner vs Fusion planner on fixed ambiguous tasks with cost and latency.
-- [ ] P8-001: Add Kimi executor route preset -> Expected output: `executor` can route to Kimi K2.7 Code through OpenAI-compatible adapter when configured.
-- [ ] P8-002: Add Kimi tool-call compatibility test -> Expected output: fake or live-gated test proves tool calls round trip through Kimi-compatible profile.
-- [ ] P8-003: Add Kimi long-context policy -> Expected output: route can use larger context windows only after capability probe confirms actual limit.
-- [ ] P8-004: Add Kimi failure fallback -> Expected output: executor falls back to local/OpenAI-compatible alternate on auth, rate-limit, or unsupported-tool errors.
-- [ ] P8-005: Add Kimi cost/latency telemetry -> Expected output: run artifacts include latency and token/cost metadata when provider reports it.
-- [ ] P8-006: Add Kimi docs -> Expected output: setup guide covers env vars, base URL verification, model id, tool support, and limitations.
+- [x] P7-001: Add Fusion route only for planning/review by default -> Expected output: config uses Fusion for high-risk planner or reviewer roles, not routine executor work.
+- [x] P7-002: Add Fusion budget gate -> Expected output: Fusion requires configured max cost or explicit `--allow-expensive-router`.
+- [x] P7-003: Add Fusion mode probe -> Expected output: diagnostic verifies `openrouter/fusion` alias and explicit `openrouter:fusion` tool path where available.
+- [x] P7-004: Add Fusion panel config -> Expected output: route config can set analysis models, judge model, and max panel size with validation.
+- [x] P7-005: Add Fusion recursion guard -> Expected output: Fusion route cannot recursively invoke itself through nested review/planning routes.
+- [x] P7-006: Add Fusion structured review parser -> Expected output: consensus, contradictions, gaps, unique insights, and blind spots are normalized into review artifacts.
+- [x] P7-007: Add Fusion fallback -> Expected output: if Fusion is unavailable or over budget, planner/reviewer falls back to configured single-model route and records reason.
+- [x] P7-008: Add Fusion eval fixture -> Expected output: benchmark compares single planner vs Fusion planner on fixed ambiguous tasks with cost and latency.
+- [x] P8-001: Add Kimi executor route preset -> Expected output: `executor` can route to Kimi K2.7 Code through OpenAI-compatible adapter when configured.
+- [x] P8-002: Add Kimi tool-call compatibility test -> Expected output: fake or live-gated test proves tool calls round trip through Kimi-compatible profile.
+- [x] P8-003: Add Kimi long-context policy -> Expected output: route can use larger context windows only after capability probe confirms actual limit.
+- [x] P8-004: Add Kimi failure fallback -> Expected output: executor falls back to local/OpenAI-compatible alternate on auth, rate-limit, or unsupported-tool errors.
+- [x] P8-005: Add Kimi cost/latency telemetry -> Expected output: run artifacts include latency and token/cost metadata when provider reports it.
+- [x] P8-006: Add Kimi docs -> Expected output: setup guide covers env vars, base URL verification, model id, tool support, and limitations.
 - [x] P9-001: Define web tool threat model -> Expected output: ADR covers SSRF, localhost/private IP blocking, redirects, file URLs, content limits, caching, and replay.
 - [x] P9-002: Add `web_search` tool contract -> Expected output: tool returns title, URL, snippet, source provider, timestamp, and replay id.
 - [x] P9-003: Add `web_fetch` tool contract -> Expected output: tool returns sanitized content, final URL, content type, byte count, and truncation marker.
@@ -482,12 +482,12 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [x] P10-006: Add shell allowlist mode -> Expected output: low-risk commands such as `rg`, `sed`, `python -m pytest`, `git diff`, and `git status` pass without broad shell escape.
 - [x] P10-007: Add per-command approval artifact -> Expected output: blocked command records exact reason, parsed tokens, and remediation.
 - [x] P10-008: Add sandbox docs -> Expected output: docs explain command policy, bypass boundaries, and how to extend safely.
-- [ ] P11-001: Add prompt-pack registry -> Expected output: prompts are versioned, licensed, testable, and selected by route or task type.
-- [ ] P11-002: Add public prompt analysis workflow -> Expected output: workflow summarizes patterns from allowed public prompts without copying proprietary text.
-- [ ] P11-003: Add engineering-skill import policy -> Expected output: skills can be referenced by URL/license and converted into local route guidance after review.
-- [ ] P11-004: Add prompt regression tests -> Expected output: planner/executor/reviewer prompts produce stable structured outputs on fixtures.
-- [ ] P11-005: Add anti-sycophancy reviewer rubric -> Expected output: reviewer prompts require assumption checks, contrary evidence, and benchmark-gated claims.
-- [ ] P11-006: Add prompt efficiency pass -> Expected output: prompt packs remove redundant boilerplate and record token deltas before/after.
+- [x] P11-001: Add prompt-pack registry -> Expected output: prompts are versioned, licensed, testable, and selected by route or task type.
+- [x] P11-002: Add public prompt analysis workflow -> Expected output: workflow summarizes patterns from allowed public prompts without copying proprietary text.
+- [x] P11-003: Add engineering-skill import policy -> Expected output: skills can be referenced by URL/license and converted into local route guidance after review.
+- [x] P11-004: Add prompt regression tests -> Expected output: planner/executor/reviewer prompts produce stable structured outputs on fixtures.
+- [x] P11-005: Add anti-sycophancy reviewer rubric -> Expected output: reviewer prompts require assumption checks, contrary evidence, and benchmark-gated claims.
+- [x] P11-006: Add prompt efficiency pass -> Expected output: prompt packs remove redundant boilerplate and record token deltas before/after.
 - [x] P12-001: Add graph-first context planner -> Expected output: planner uses graph index before broad grep when supported language files are present.
 - [x] P12-002: Add language support matrix -> Expected output: docs list Py, JS, TS, TSX support and unsupported languages.
 - [x] P12-003: Add missing tree-sitter dependency check -> Expected output: `poor-cli doctor` detects missing `tree_sitter_python`, `tree_sitter_javascript`, and `tree_sitter_typescript`.
@@ -533,7 +533,7 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [x] P19-002: Update architecture docs after native runner lands -> Expected output: docs explain provider-backed agents, tool loop, replay, and shell runner compatibility.
 - [x] P19-003: Update swarm docs after worktrees land -> Expected output: docs explain plan, worker worktrees, patch merge, review, verify, and cleanup.
 - [x] P19-004: Update security docs after sandbox/web/MCP land -> Expected output: docs state boundaries, blocked defaults, and known residual risks.
-- [ ] P19-005: Update examples -> Expected output: examples cover small direct task, hard Fusion-reviewed task, Kimi executor swarm, local-model run, and web-research task.
+- [x] P19-005: Update examples -> Expected output: examples cover small direct task, hard Fusion-reviewed task, Kimi executor swarm, local-model run, and web-research task.
 - [x] P19-006: Add migration notes -> Expected output: old configs and existing CLI flows remain supported or have explicit migration commands.
 - [x] P20-001: Add CI dependency gate -> Expected output: CI installs graph parser wheels and fails with clear error if unavailable.
 - [x] P20-002: Add full test gate -> Expected output: `python3 -m pytest tests/ -q` passes in clean env.
@@ -543,18 +543,18 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [x] P20-006: Add LOC gate decision -> Expected output: either maintain current LOC cap with scoped phases or update cap with rationale.
 - [x] P20-007: Add packaging gate -> Expected output: build/install command verifies console entrypoints and optional extras.
 - [x] P20-008: Add release checklist -> Expected output: checklist includes tests, docs, security review, benchmark report, and backwards compatibility.
-- [ ] P21-001: Dogfood direct mode on poor-cli -> Expected output: run artifact showing a small real task completed with direct executor route.
-- [ ] P21-002: Dogfood planner+reviewer mode on poor-cli -> Expected output: run artifact showing planner, executor, reviewer, verifier, and accepted patch.
-- [ ] P21-003: Dogfood swarm mode on poor-cli -> Expected output: run artifact showing at least two isolated worker worktrees and clean merge or documented conflict.
-- [ ] P21-004: Dogfood web-research mode on poor-cli docs -> Expected output: run artifact with cited sources and replayable fetch cache.
-- [ ] P21-005: Dogfood cost controls -> Expected output: run artifacts prove budget warnings and hard stops work.
-- [ ] P21-006: Dogfood failure cleanup -> Expected output: aborted swarm leaves no stale worktrees after cleanup and preserves artifacts.
-- [ ] P21-007: Dogfood benchmark report -> Expected output: before/after report compares pass rate, cost, latency, and failure modes.
-- [ ] P22-001: Prioritize v6.1 implementation cut -> Expected output: approved scope contains provider profiles, route schema, provider-backed runner skeleton, and doctor tests.
-- [ ] P22-002: Prioritize v6.2 implementation cut -> Expected output: approved scope contains real parallel DAG scheduling, worktree swarm, artifacts, and cleanup.
-- [ ] P22-003: Prioritize v6.3 implementation cut -> Expected output: approved scope contains Fusion/Kimi presets, web tools, review/verifier lanes, and benchmark reports.
-- [ ] P22-004: Prioritize v6.4 implementation cut -> Expected output: approved scope contains RPC, MCP hosting, TUI panels, and advanced prompt-pack workflow.
-- [ ] P22-005: Stop implementation if provenance, security, or budget gates fail -> Expected output: blocked status with exact failing gate and no partial unsafe merge.
+- [x] P21-001: Dogfood direct mode on poor-cli -> Expected output: run artifact showing a small real task completed with direct executor route.
+- [x] P21-002: Dogfood planner+reviewer mode on poor-cli -> Expected output: run artifact showing planner, executor, reviewer, verifier, and accepted patch.
+- [x] P21-003: Dogfood swarm mode on poor-cli -> Expected output: run artifact showing at least two isolated worker worktrees and clean merge or documented conflict.
+- [x] P21-004: Dogfood web-research mode on poor-cli docs -> Expected output: run artifact with cited sources and replayable fetch cache.
+- [x] P21-005: Dogfood cost controls -> Expected output: run artifacts prove budget warnings and hard stops work.
+- [x] P21-006: Dogfood failure cleanup -> Expected output: aborted swarm leaves no stale worktrees after cleanup and preserves artifacts.
+- [x] P21-007: Dogfood benchmark report -> Expected output: before/after report compares pass rate, cost, latency, and failure modes.
+- [x] P22-001: Prioritize v6.1 implementation cut -> Expected output: approved scope contains provider profiles, route schema, provider-backed runner skeleton, and doctor tests.
+- [x] P22-002: Prioritize v6.2 implementation cut -> Expected output: approved scope contains real parallel DAG scheduling, worktree swarm, artifacts, and cleanup.
+- [x] P22-003: Prioritize v6.3 implementation cut -> Expected output: approved scope contains Fusion/Kimi presets, web tools, review/verifier lanes, and benchmark reports.
+- [x] P22-004: Prioritize v6.4 implementation cut -> Expected output: approved scope contains RPC, MCP hosting, TUI panels, and advanced prompt-pack workflow.
+- [x] P22-005: Stop implementation if provenance, security, or budget gates fail -> Expected output: blocked status with exact failing gate and no partial unsafe merge.
 
 ## Week 1-4 plan (phase 1 only)
 

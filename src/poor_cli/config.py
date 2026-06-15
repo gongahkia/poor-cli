@@ -399,7 +399,7 @@ def _reject_plaintext_secrets(value: Any, path: str = "") -> None:
 
 
 def _capabilities(kind: str) -> dict[str, Any]:
-    caps = {
+    caps: dict[str, Any] = {
         "tools": kind in {"openai", "openai-compatible", "openrouter", "kimi", "vllm", "sglang"},
         "streaming": kind != "ollama",
         "structured_outputs": kind in {"openai", "openai-compatible", "openrouter", "kimi", "vllm", "sglang"},

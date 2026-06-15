@@ -27,9 +27,9 @@ class FusionCheck:
 def route_uses_fusion(profile: dict[str, Any] | None, route: dict[str, Any] | None) -> bool:
     route = route or {}
     profile = profile or {}
-    return bool(route.get("fusion")) or (
-        str(profile.get("kind") or "") == "openrouter" and "fusion" in str(route.get("model") or "").lower()
-    )
+    marker = route.get("fusion")
+    explicit = bool(marker.get("enabled")) if isinstance(marker, dict) else bool(marker)
+    return explicit or (str(profile.get("kind") or "") == "openrouter" and "fusion" in str(route.get("model") or "").lower())
 
 
 def fusion_summary(profile: dict[str, Any] | None, route: dict[str, Any] | None, role: str) -> dict[str, Any]:

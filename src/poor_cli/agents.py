@@ -121,7 +121,8 @@ class AgentRunner:
             ]
             return _run(agent.agent_id, command, workdir, self.timeout_seconds, cancel)
         if agent.invocation_adapter in {"local_provider", "provider"}:
-            route = task.metadata.get("route_config") if isinstance(task.metadata.get("route_config"), dict) else {}
+            raw_route = task.metadata.get("route_config")
+            route: dict[str, Any] = raw_route if isinstance(raw_route, dict) else {}
             if store is not None and run_id is not None and "tools" in agent.capabilities:
                 from .native_runner import ProviderBackedAgentRunner, native_params
 
@@ -331,8 +332,10 @@ def _auth_headers(agent: AgentInfo) -> dict[str, str]:
 
 def _context_window(caps: dict[str, Any]) -> int | None:
     value = caps.get("max_context_tokens") or caps.get("max_context")
+    if value is None:
+        return None
     try:
-        return int(value)
+        return int(str(value))
     except (TypeError, ValueError):
         return None
 
