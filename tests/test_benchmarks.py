@@ -355,8 +355,9 @@ def test_phase3_demo_plan_schema() -> None:
     assert payload["target"]["requires_linux_cuda"] is True
     assert payload["target"]["requires_internet_disabled"] is True
     assert "--agents local" in payload["commands"]["run_demo"]
-    assert "--offline replay" in payload["commands"]["replay"]
+    assert "--offline --store-dir <poor_cli_store_dir> replay <poor_cli_run_id> --verify" in payload["commands"]["replay"]
     assert "--write-template" in payload["commands"]["write_evidence"]
+    assert "--store-dir <poor_cli_store_dir>" in payload["commands"]["write_evidence"]
 
 
 def test_checked_in_phase3_demo_plan() -> None:

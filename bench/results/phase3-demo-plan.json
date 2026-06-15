@@ -3,11 +3,11 @@
     "commands": {
       "launch_server": ".poor-cli/local-cuda-run.sh",
       "readiness": "uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json",
-      "replay": "poor-cli --offline replay <run_id> --verify",
+      "replay": "poor-cli --offline --store-dir <poor_cli_store_dir> replay <poor_cli_run_id> --verify",
       "run_demo": "set -a; source .poor-cli/local-cuda.env; set +a; poor-cli run \"fix a real bug using graph tools\" --graph --agents local --yes",
       "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
       "verify": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
-      "write_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <run_id> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
+      "write_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
     },
     "schema_version": "poor-cli-phase3-demo-plan-v1",
     "target": {

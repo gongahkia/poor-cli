@@ -70,10 +70,11 @@ def demo_plan_payload() -> dict[str, Any]:
                 "set -a; source .poor-cli/local-cuda.env; set +a; "
                 'poor-cli run "fix a real bug using graph tools" --graph --agents local --yes'
             ),
-            "replay": "poor-cli --offline replay <run_id> --verify",
+            "replay": "poor-cli --offline --store-dir <poor_cli_store_dir> replay <poor_cli_run_id> --verify",
             "write_evidence": (
                 "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json "
-                "--run-id <run_id> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 "
+                "--run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> "
+                "--video-path bench/results/phase3-demo.mp4 --duration-seconds 60 "
                 "--internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
             ),
             "verify": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
