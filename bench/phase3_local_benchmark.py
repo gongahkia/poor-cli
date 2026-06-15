@@ -8,6 +8,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 ANTHROPIC_SUMMARY = ROOT / "bench" / "swe_bench_lite" / "results" / "swe10-claude-20260614T105615Z" / "summary.json"
 ALLOWED_PROVIDERS = {"ollama", "sglang", "vllm"}
+TARGET_MODEL_MARKERS = ("qwen2.5-coder", "32b")
 
 
 def benchmark_plan_payload() -> dict[str, Any]:
@@ -18,6 +19,7 @@ def benchmark_plan_payload() -> dict[str, Any]:
             "agent": "local",
             "providers": sorted(ALLOWED_PROVIDERS),
             "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "model_markers": list(TARGET_MODEL_MARKERS),
             "task_count": 10,
             "minimum_of_anthropic_pass_rate": 0.5,
             "requires_graph_mode": True,
@@ -115,6 +117,9 @@ def _summary_errors(
         errors.append("summary provider is not local")
     if summary.get("agent") != "local":
         errors.append("summary agent is not local")
+    model = str(summary.get("model") or "").lower()
+    if not all(marker in model for marker in TARGET_MODEL_MARKERS):
+        errors.append("summary model is not qwen2.5-coder-32b")
     if summary.get("graph_mode") is not True:
         errors.append("summary was not run in graph mode")
     if task_count < 10:

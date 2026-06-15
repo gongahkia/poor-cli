@@ -702,6 +702,7 @@ def test_phase3_local_benchmark_plan_schema() -> None:
     assert payload["schema_version"] == "poor-cli-phase3-local-benchmark-plan-v1"
     assert payload["target"]["agent"] == "local"
     assert payload["target"]["providers"] == ["ollama", "sglang", "vllm"]
+    assert payload["target"]["model_markers"] == ["qwen2.5-coder", "32b"]
     assert payload["target"]["minimum_of_anthropic_pass_rate"] == 0.5
     assert payload["target"]["requires_graph_mode"] is True
     assert "--graph --agent local" in payload["commands"]["generate"]
@@ -811,6 +812,37 @@ def test_phase3_local_benchmark_rejects_eval_errors(tmp_path: Path) -> None:
     assert payload["accepted"] is False
     assert "official SWE-bench evaluation did not complete every submitted instance" in payload["errors"]
     assert "official SWE-bench evaluation reported errors" in payload["errors"]
+
+
+def test_phase3_local_benchmark_rejects_wrong_model(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "provider": "vllm",
+                "model": "Qwen/Qwen2.5-Coder-7B-Instruct",
+                "agent": "local",
+                "graph_mode": True,
+                "task_count": 10,
+                "replay_verified_count": 10,
+                "official_evaluation": {
+                    "exit_code": 0,
+                    "results": {
+                        "completed_instances": 10,
+                        "error_instances": 0,
+                        "total_instances": 10,
+                        "resolved_instances": 5,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_local_summary(summary)
+
+    assert payload["accepted"] is False
+    assert "summary model is not qwen2.5-coder-32b" in payload["errors"]
 
 
 def test_phase3_local_benchmark_candidate_requires_local_agent_and_provider() -> None:
