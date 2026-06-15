@@ -61,8 +61,8 @@ Checked-in SWE-bench Lite rows. Evidence: `bench/swe_bench_lite/results/*/summar
 | fixed 10-task | 10 | 7/10 | 10/10 | 9/10 |
 | fixed 10-task graph | 10 | 9/10 | 10/10 | 8/10 |
 
-The grep-mode 10-task unresolved instance is `astropy__astropy-14182`.
-The graph-mode unresolved instances are `astropy__astropy-14182` and `django__django-11019`.
+The grep-mode 10-task unresolved instance is `astropy__astropy-14182`; evidence: `bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/summary.json`.
+The graph-mode unresolved instances are `astropy__astropy-14182` and `django__django-11019`; evidence: `bench/swe_bench_lite/results/swe10-graph-20260615T020703Z/summary.json`.
 
 ## Phase 3 Readiness
 
