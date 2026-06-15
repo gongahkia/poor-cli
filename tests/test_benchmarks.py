@@ -121,6 +121,15 @@ def test_evaluation_fixture_covers_required_categories() -> None:
     assert "second_model_review" in payload["modes"]
 
 
+def test_review_rubric_covers_quality_dimensions() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "fixtures" / "review_rubric.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    ids = {row["id"] for row in payload["checklist"]}
+
+    assert payload["schema_version"] == "poor-cli-review-rubric-v1"
+    assert ids == {"correctness", "minimal_diff", "tests", "security", "maintainability"}
+
+
 def test_harness_report_reduces_cost_per_passed_task() -> None:
     payload = reduce_report(
         [

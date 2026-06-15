@@ -31,6 +31,8 @@ uv run --locked python bench/harness_report.py --rows bench/results/<rows>.json 
 
 The fixture covers simple edit, multi-file refactor, bug fix, ambiguous design, graph lookup, and web-research answer tasks. Rows compare direct executor, planner+executor, swarm, Fusion planner, and second-model review modes when those routes are configured.
 
+Human review rubric: `bench/fixtures/review_rubric.json` covers correctness, minimal diff, tests, security, and maintainability.
+
 Claim gate:
 
 ```sh
