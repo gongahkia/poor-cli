@@ -339,6 +339,8 @@ def test_phase3_closeout_payload_schema() -> None:
     assert payload["accepted"] is False
     assert set(payload["checks"]) == {"phase3_acceptance", "pivot_remaining"}
     assert "--start-server" in payload["target_host_commands"]["run_all"]
+    assert "--write-demo-evidence" in payload["target_host_commands"]["run_all"]
+    assert "--demo-offline-replay-verified" in payload["target_host_commands"]["run_all"]
     assert "--agent local" in payload["target_host_commands"]["generate_local_swe"]
     assert "phase3_demo.py --write-template" in payload["target_host_commands"]["write_demo_evidence"]
     assert "phase3_demo.py --evidence" in payload["target_host_commands"]["verify_demo"]

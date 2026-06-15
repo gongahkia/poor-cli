@@ -39,7 +39,11 @@ def closeout_payload() -> dict[str, Any]:
 def target_host_commands() -> dict[str, str]:
     run_id = "swe10-local-YYYYMMDDTHHMMSSZ"
     return {
-        "run_all": "scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ",
+        "run_all": (
+            "scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ "
+            "--write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 "
+            "--demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified"
+        ),
         "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
         "launch_server": ".poor-cli/local-cuda-run.sh",
         "readiness": "uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json",

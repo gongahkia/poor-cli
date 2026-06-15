@@ -37,7 +37,7 @@
     "readiness": "uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json",
     "refresh_acceptance": "uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json",
     "refresh_pivot": "uv run --locked python bench/pivot_remaining.py --output bench/results/pivot-remaining.json",
-    "run_all": "scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ",
+    "run_all": "scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ --write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 --demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified",
     "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
     "verify_demo": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
     "verify_local_swe": "uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench_lite/results/swe10-local-YYYYMMDDTHHMMSSZ/summary.json",

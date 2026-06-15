@@ -66,3 +66,9 @@ def test_phase3_closeout_script_runs_required_audits() -> None:
     assert "nohup .poor-cli/local-cuda-run.sh" in text
     assert "phase3-closeout-server.pid" in text
     assert "wait_for_server" in text
+    assert "--write-demo-evidence" in text
+    assert "--demo-video-path" in text
+    assert "--demo-internet-disabled" in text
+    assert "--demo-local-gpu" in text
+    assert "--demo-graph-tools-visible" in text
+    assert "--demo-offline-replay-verified" in text

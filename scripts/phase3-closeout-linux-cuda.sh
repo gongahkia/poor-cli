@@ -6,11 +6,18 @@ RUN_ID="swe10-local-$(date -u +%Y%m%dT%H%M%SZ)"
 ENGINE="${POOR_CLI_LOCAL_ENGINE:-vllm}"
 MODEL="${POOR_CLI_LOCAL_MODEL:-Qwen/Qwen2.5-Coder-32B-Instruct}"
 DEMO_EVIDENCE="bench/results/phase3-demo.json"
+DEMO_VIDEO_PATH="bench/results/phase3-demo.mp4"
+DEMO_DURATION_SECONDS=60
 SKIP_SETUP=0
 SKIP_GENERATE=0
 SKIP_EVALUATE=0
 SKIP_DEMO_VERIFY=0
 START_SERVER=0
+WRITE_DEMO_EVIDENCE=0
+DEMO_INTERNET_DISABLED=0
+DEMO_LOCAL_GPU=0
+DEMO_GRAPH_TOOLS_VISIBLE=0
+DEMO_OFFLINE_REPLAY_VERIFIED=0
 EVAL_MAX_WORKERS=1
 TIMEOUT_SECONDS=1200
 HEALTH_TIMEOUT_SECONDS=300
@@ -33,11 +40,18 @@ Options:
   --engine ENGINE          vllm|sglang|ollama; default: $POOR_CLI_LOCAL_ENGINE or vllm
   --model MODEL            default: Qwen/Qwen2.5-Coder-32B-Instruct
   --demo-evidence PATH     default: bench/results/phase3-demo.json
+  --demo-video-path PATH   default: bench/results/phase3-demo.mp4
+  --demo-duration-seconds N default: 60
   --eval-max-workers N     default: 1
   --timeout-seconds N      default: 1200
   --health-timeout-seconds N default: 300
   --server-log PATH        default: .poor-cli/phase3-closeout-server.log
   --start-server           start .poor-cli/local-cuda-run.sh in the background and wait for health
+  --write-demo-evidence    write bench/results/phase3-demo.json before verification
+  --demo-internet-disabled assert the screencast proves internet was disabled
+  --demo-local-gpu         assert the screencast proves local GPU execution
+  --demo-graph-tools-visible assert graph tools are visible in the screencast
+  --demo-offline-replay-verified assert offline replay verification is shown
   --skip-setup
   --skip-generate
   --skip-evaluate
@@ -52,11 +66,18 @@ while [[ $# -gt 0 ]]; do
     --engine) ENGINE="$2"; shift ;;
     --model) MODEL="$2"; shift ;;
     --demo-evidence) DEMO_EVIDENCE="$2"; shift ;;
+    --demo-video-path) DEMO_VIDEO_PATH="$2"; shift ;;
+    --demo-duration-seconds) DEMO_DURATION_SECONDS="$2"; shift ;;
     --eval-max-workers) EVAL_MAX_WORKERS="$2"; shift ;;
     --timeout-seconds) TIMEOUT_SECONDS="$2"; shift ;;
     --health-timeout-seconds) HEALTH_TIMEOUT_SECONDS="$2"; shift ;;
     --server-log) SERVER_LOG="$2"; shift ;;
     --start-server) START_SERVER=1 ;;
+    --write-demo-evidence) WRITE_DEMO_EVIDENCE=1 ;;
+    --demo-internet-disabled) DEMO_INTERNET_DISABLED=1 ;;
+    --demo-local-gpu) DEMO_LOCAL_GPU=1 ;;
+    --demo-graph-tools-visible) DEMO_GRAPH_TOOLS_VISIBLE=1 ;;
+    --demo-offline-replay-verified) DEMO_OFFLINE_REPLAY_VERIFIED=1 ;;
     --skip-setup) SKIP_SETUP=1 ;;
     --skip-generate) SKIP_GENERATE=1 ;;
     --skip-evaluate) SKIP_EVALUATE=1 ;;
@@ -140,6 +161,21 @@ if [[ "$SKIP_EVALUATE" != "1" ]]; then
 fi
 
 uv run --locked python bench/phase3_local_benchmark.py --summary "bench/swe_bench_lite/results/${RUN_ID}/summary.json"
+
+if [[ "$WRITE_DEMO_EVIDENCE" == "1" ]]; then
+  DEMO_FLAGS=()
+  if [[ "$DEMO_INTERNET_DISABLED" == "1" ]]; then DEMO_FLAGS+=(--internet-disabled); fi
+  if [[ "$DEMO_LOCAL_GPU" == "1" ]]; then DEMO_FLAGS+=(--local-gpu); fi
+  if [[ "$DEMO_GRAPH_TOOLS_VISIBLE" == "1" ]]; then DEMO_FLAGS+=(--graph-tools-visible); fi
+  if [[ "$DEMO_OFFLINE_REPLAY_VERIFIED" == "1" ]]; then DEMO_FLAGS+=(--offline-replay-verified); fi
+  uv run --locked python bench/phase3_demo.py \
+    --write-template "$DEMO_EVIDENCE" \
+    --run-id "$RUN_ID" \
+    --video-path "$DEMO_VIDEO_PATH" \
+    --duration-seconds "$DEMO_DURATION_SECONDS" \
+    --model "$POOR_CLI_MODEL" \
+    "${DEMO_FLAGS[@]}"
+fi
 
 if [[ "$SKIP_DEMO_VERIFY" != "1" ]]; then
   uv run --locked python bench/phase3_demo.py --evidence "$DEMO_EVIDENCE"
