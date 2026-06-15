@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "evaluation_tasks.json"
 
 

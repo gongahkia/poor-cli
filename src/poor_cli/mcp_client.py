@@ -4,12 +4,14 @@ import asyncio
 import json
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .store import RunStore
-from .tools import ToolDispatcher, load_tool_schemas
+from .tools import ToolDispatcher
+from .tools.dispatcher import load_tool_schemas
 
 MCP_PROTOCOL_VERSION = "2025-06-18"
 MCP_CONFIG_PATHS = (".poor-cli/mcp.json", ".claude/mcp.json")
@@ -210,7 +212,8 @@ class PoorMcpServer:
             elif method == "tools/list":
                 self._send(req_id, {"tools": self._tools()})
             elif method == "tools/call":
-                self._send(req_id, self._call_tool(req.get("params") if isinstance(req.get("params"), dict) else {}))
+                params = req.get("params")
+                self._send(req_id, self._call_tool(params if isinstance(params, dict) else {}))
             else:
                 self._send_error(req_id, -32601, f"method not found: {method}")
         except Exception as exc:
@@ -304,7 +307,8 @@ def _exposed_tools(repo_root: Path) -> set[str]:
     config = discover_mcp_config(repo_root)
     raw = config.get("expose_tools")
     exposed = {str(item) for item in raw} if isinstance(raw, list) else set(DEFAULT_EXPOSED_TOOLS)
-    return exposed | {name for name in load_tool_schemas(repo_root) if name in {"find_symbol", "definition_of", "imports_of", "callers_of", "subgraph"}}
+    graph_names = {"find_symbol", "definition_of", "imports_of", "callers_of", "subgraph"}
+    return exposed | {name for name in load_tool_schemas(repo_root) if name in graph_names}
 
 
 def _redact(text: str, env: dict[str, str]) -> str:

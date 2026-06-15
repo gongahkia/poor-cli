@@ -126,7 +126,8 @@ def render_provider_panel(store_dir: Path, repo_path: Path | None = None) -> str
     route = config.get("routes", {}).get("executor") if isinstance(config.get("routes"), dict) else {}
     if isinstance(route, dict):
         lines.append(f"route executor profile={route.get('profile') or '-'} model={route.get('model') or '-'}")
-    budget = config.get("budgets") if isinstance(config.get("budgets"), dict) else {}
+    raw_budget = config.get("budgets")
+    budget = raw_budget if isinstance(raw_budget, dict) else {}
     lines.append(f"budget max_usd={budget.get('max_usd', '-')}")
     return "\n".join(lines)
 

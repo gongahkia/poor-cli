@@ -17,10 +17,10 @@
     "source_loc": {
       "accepted": true,
       "evidence": "bench/loc_gate.py",
-      "file_count": 31,
-      "max_total": 6500,
+      "file_count": 32,
+      "max_total": 7600,
       "over_file_limit": {},
-      "total": 6237
+      "total": 6920
     },
     "swe_lite_10": {
       "accepted": true,

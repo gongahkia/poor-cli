@@ -9,7 +9,6 @@ import re
 from pathlib import Path
 from typing import Any
 
-
 CLAIM_RE = re.compile(r"(\d+(?:\.\d+)?%|\d+/\d+|p95|mean cost|pass rate|resolved)", re.I)
 REQUIRED_RE = re.compile(r"(20\d\d-\d\d-\d\d|run_|bench/|task set|config)", re.I)
 

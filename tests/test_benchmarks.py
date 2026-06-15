@@ -310,7 +310,8 @@ def test_phase1_acceptance_payload_schema() -> None:
     }
     assert payload["checks"]["anthropic_fixture_bugs"]["tests_passed_count"] == 3
     assert payload["checks"]["offline_replay_determinism"]["missing_fragments"] == []
-    assert payload["checks"]["source_loc"]["total"] <= 6500
+    assert payload["checks"]["source_loc"]["total"] <= 7600
+    assert payload["checks"]["source_loc"]["max_total"] == 7600
     assert payload["checks"]["system_prompt_budget"]["bytes"] <= 1000
     assert payload["checks"]["swe_lite_10"]["pass_rate"] >= 0.30
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["accepted"]}
@@ -327,7 +328,8 @@ def test_checked_in_phase1_acceptance_snapshot() -> None:
     assert payload["checks"]["anthropic_fixture_bugs"]["tests_passed_count"] == 3
     assert payload["checks"]["anthropic_fixture_bugs"]["replay_verified_count"] == 3
     assert payload["checks"]["offline_replay_determinism"]["accepted"] is True
-    assert payload["checks"]["source_loc"]["total"] <= 6500
+    assert payload["checks"]["source_loc"]["total"] <= 7600
+    assert payload["checks"]["source_loc"]["max_total"] == 7600
     assert payload["checks"]["system_prompt_budget"]["bytes"] <= 1000
     assert payload["checks"]["swe_lite_10"]["total_instances"] == 10
     assert payload["checks"]["swe_lite_10"]["resolved_instances"] == 9

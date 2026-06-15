@@ -21,6 +21,8 @@ if TYPE_CHECKING:
     from .store import RunStore
     from .tools.dispatcher import ToolResult
 
+IPAddress = ipaddress.IPv4Address | ipaddress.IPv6Address
+
 
 class WebToolError(RuntimeError):
     pass
@@ -225,7 +227,7 @@ def _safe_url(value: str, config: WebConfig) -> str:
     return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path or "/", parsed.query, ""))
 
 
-def _resolved_ips(host: str) -> list[ipaddress._BaseAddress]:
+def _resolved_ips(host: str) -> list[IPAddress]:
     try:
         return [ipaddress.ip_address(host)]
     except ValueError:
@@ -234,7 +236,7 @@ def _resolved_ips(host: str) -> list[ipaddress._BaseAddress]:
         infos = socket.getaddrinfo(host, None)
     except OSError:
         return []
-    out = []
+    out: list[IPAddress] = []
     for info in infos:
         try:
             out.append(ipaddress.ip_address(info[4][0]))

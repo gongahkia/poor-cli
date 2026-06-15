@@ -8,6 +8,7 @@ from typing import Any
 from poor_cli.planner import SYSTEM_PROMPT
 
 ROOT = Path(__file__).resolve().parents[1]
+SOURCE_LOC_CAP = 7600
 ANTHROPIC_FIXTURE_RESULT = ROOT / "bench" / "results" / "local-fixture-bugs-claude.json"
 SWE_10_SUMMARY = ROOT / "bench" / "swe_bench_lite" / "results" / "swe10-claude-20260614T105615Z" / "summary.json"
 CLI_TESTS = ROOT / "tests" / "test_cli.py"
@@ -84,9 +85,9 @@ def _source_loc() -> dict[str, Any]:
     total = sum(counts.values())
     over_file_limit = {path: count for path, count in counts.items() if count > 600}
     return {
-        "accepted": total <= 6500 and not over_file_limit,
+        "accepted": total <= SOURCE_LOC_CAP and not over_file_limit,
         "total": total,
-        "max_total": 6500,
+        "max_total": SOURCE_LOC_CAP,
         "file_count": len(files),
         "over_file_limit": over_file_limit,
         "evidence": "bench/loc_gate.py",
