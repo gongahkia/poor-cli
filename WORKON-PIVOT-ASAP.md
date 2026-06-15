@@ -117,6 +117,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-15: aligned Phase 3 setup with readiness by making `scripts/setup-linux-cuda.sh` fail fast unless `nvidia-smi --query-gpu=name --format=csv,noheader` succeeds and returns a GPU name. Evidence: `scripts/setup-linux-cuda.sh` and `tests/test_setup_scripts.py::test_linux_cuda_setup_script_covers_local_engines`. Target Linux/CUDA execution remains pending.
 - 2026-06-15: added Phase 3 closeout server cleanup controls so target-host runs can stop the local model process they started, and setup-generated launch scripts now `exec` the server command for reliable PID handling. Evidence: `scripts/phase3-closeout-linux-cuda.sh`, `scripts/setup-linux-cuda.sh`, and `tests/test_setup_scripts.py::test_phase3_closeout_script_runs_required_audits`. Target Linux/CUDA execution remains pending.
 - 2026-06-15: added config-backed provider profiles, provider diagnostics, model registry, profile export/import, route explain, and route audit events. Evidence: `src/poor_cli/config.py`, `tests/test_config.py`, `tests/test_cli.py::test_cli_plan_graph_stores_graph_prompt_bias`, and `docs/providers.md`.
+- 2026-06-15: closed graph-first planner context, model-backed review/verifier lanes, and budget/cost model batch: graph runs now persist compact graph-context evidence, `review-run`/`verify-run` write real lane artifacts, and provider calls maintain a warning-first budget ledger with strict-budget fail-closed mode. Evidence: `src/poor_cli/graph_context.py`, `src/poor_cli/lanes.py`, `src/poor_cli/cost.py`, `tests/test_cli.py`, `tests/test_cost.py`, `docs/graph.md`, and `docs/providers.md`.
 
 ## TL;DR
 
@@ -484,18 +485,18 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [ ] P11-004: Add prompt regression tests -> Expected output: planner/executor/reviewer prompts produce stable structured outputs on fixtures.
 - [ ] P11-005: Add anti-sycophancy reviewer rubric -> Expected output: reviewer prompts require assumption checks, contrary evidence, and benchmark-gated claims.
 - [ ] P11-006: Add prompt efficiency pass -> Expected output: prompt packs remove redundant boilerplate and record token deltas before/after.
-- [ ] P12-001: Add graph-first context planner -> Expected output: planner uses graph index before broad grep when supported language files are present.
+- [x] P12-001: Add graph-first context planner -> Expected output: planner uses graph index before broad grep when supported language files are present.
 - [x] P12-002: Add language support matrix -> Expected output: docs list Py, JS, TS, TSX support and unsupported languages.
 - [x] P12-003: Add missing tree-sitter dependency check -> Expected output: `poor-cli doctor` detects missing `tree_sitter_python`, `tree_sitter_javascript`, and `tree_sitter_typescript`.
 - [x] P12-004: Add graph fallback -> Expected output: missing parser wheels degrade to rg-based context with explicit artifact warning.
 - [x] P12-005: Add graph vs grep benchmark -> Expected output: benchmark reports latency, recall proxy, and token-count impact.
-- [ ] P13-001: Add review lane command -> Expected output: `poor-cli review-run <run-id>` runs reviewer route over patches and artifacts.
-- [ ] P13-002: Add verifier lane command -> Expected output: `poor-cli verify-run <run-id>` runs configured tests and verifies expected outputs.
-- [ ] P13-003: Add second-model review option -> Expected output: reviewer can use a different provider/model than executor.
-- [ ] P13-004: Add Fusion review option -> Expected output: review can use Fusion only when risk and budget gates pass.
-- [ ] P13-005: Add patch rejection flow -> Expected output: rejected worker patch remains in artifacts and is not merged.
-- [ ] P13-006: Add review finding suppressions -> Expected output: suppressions require reason, scope, and expiry.
-- [ ] P13-007: Add review tests -> Expected output: fixtures cover accepted patch, rejected patch, false-positive suppression, and verifier failure.
+- [x] P13-001: Add review lane command -> Expected output: `poor-cli review-run <run-id>` runs reviewer route over patches and artifacts.
+- [x] P13-002: Add verifier lane command -> Expected output: `poor-cli verify-run <run-id>` runs configured tests and verifies expected outputs.
+- [x] P13-003: Add second-model review option -> Expected output: reviewer can use a different provider/model than executor.
+- [x] P13-004: Add Fusion review option -> Expected output: review can use Fusion only when risk and budget gates pass.
+- [x] P13-005: Add patch rejection flow -> Expected output: rejected worker patch remains in artifacts and is not merged.
+- [x] P13-006: Add review finding suppressions -> Expected output: suppressions require reason, scope, and expiry.
+- [x] P13-007: Add review tests -> Expected output: fixtures cover accepted patch, rejected patch, false-positive suppression, and verifier failure.
 - [ ] P14-001: Add headless JSONL RPC mode -> Expected output: `poor-cli rpc serve --stdio` accepts run, inspect, cancel, and status messages.
 - [ ] P14-002: Add RPC schema docs -> Expected output: JSON schema for requests, responses, events, errors, and auth boundaries.
 - [ ] P14-003: Add RPC run streaming -> Expected output: clients receive structured events for route, tool, worker, review, and verifier phases.
@@ -507,11 +508,11 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [ ] P15-002: Add MCP tool registry mapping -> Expected output: built-in tools can be exposed with schemas, auth policy, and sandbox rules.
 - [ ] P15-003: Add MCP client config -> Expected output: external MCP tools can be configured with allowlist, timeout, and replay boundaries.
 - [ ] P15-004: Add MCP security tests -> Expected output: tests cover untrusted tool names, schema mismatch, timeout, and secret redaction.
-- [ ] P16-001: Add cost model interface -> Expected output: each provider can estimate input, output, cache, web, and router cost when pricing is configured.
-- [ ] P16-002: Add budget fail-fast -> Expected output: run stops before exceeding user-defined max cost, max calls, max tokens, or max wall time.
-- [ ] P16-003: Add budget soft warnings -> Expected output: run emits warnings at 50, 80, and 100 percent of configured budget.
-- [ ] P16-004: Add price config update workflow -> Expected output: pricing data is manually versioned or fetched from trusted source with timestamp.
-- [ ] P16-005: Add cost tests -> Expected output: deterministic tests for price math, unknown prices, cache discounts, and router multi-call costs.
+- [x] P16-001: Add cost model interface -> Expected output: each provider can estimate input, output, cache, web, and router cost when pricing is configured.
+- [x] P16-002: Add budget fail-fast -> Expected output: run stops before exceeding user-defined max cost, max calls, max tokens, or max wall time.
+- [x] P16-003: Add budget soft warnings -> Expected output: run emits warnings at 50, 80, and 100 percent of configured budget.
+- [x] P16-004: Add price config update workflow -> Expected output: pricing data is manually versioned or fetched from trusted source with timestamp.
+- [x] P16-005: Add cost tests -> Expected output: deterministic tests for price math, unknown prices, cache discounts, and router multi-call costs.
 - [ ] P17-001: Build evaluation fixture set -> Expected output: repo-local tasks cover simple edit, multi-file refactor, bug fix, ambiguous design, graph lookup, and web-research answer.
 - [ ] P17-002: Build SWE-bench-lite smoke runner -> Expected output: `bench/swe_bench_lite` can run a fixed small subset and emit pass/fail/cost/latency.
 - [ ] P17-003: Build harness A/B runner -> Expected output: compare direct executor, planner+executor, swarm, Fusion planner, and second-model review on same tasks.

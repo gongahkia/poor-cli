@@ -53,10 +53,7 @@ def graph_context_text(context: dict[str, Any]) -> str:
     lines = [f"Graph context: {context.get('module_count', 0)} indexed modules."]
     for symbol in context.get("symbols", [])[:8]:
         scope = f"{symbol.get('scope')}." if symbol.get("scope") else ""
-        lines.append(
-            f"- symbol {scope}{symbol.get('name')} {symbol.get('kind')} "
-            f"{symbol.get('path')}:{symbol.get('line_start')}"
-        )
+        lines.append(f"- symbol {scope}{symbol.get('name')} {symbol.get('kind')} {symbol.get('path')}:{symbol.get('line_start')}")
     for row in context.get("imports", [])[:3]:
         imports = ", ".join(str(item) for item in row.get("imports", [])[:6])
         if imports:

@@ -1,15 +1,17 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from .agents import AgentInfo, _provider_for_agent
+from .agents import _provider_for_agent
 from .artifacts import write_review_artifact, write_verify_artifact
 from .config import explain_route, load_config
 from .cost import BudgetLedger
+from .models import AgentInfo
 from .providers import CachedReplayProvider, ProviderRequest
 from .sandbox import SandboxDenied, validate_shell_command
 from .store import RunStore
@@ -67,7 +69,13 @@ def review_run(
         write_review_artifact(store, run_id, payload)
         store.append_event(run_id, "review.failed", {"error": str(exc)})
         return 1
-    payload.update({"reviewer": asdict(agent), "source_artifacts": _artifact_paths(store, run_id), "cost": BudgetLedger.load(store, run_id).totals()})
+    payload.update(
+        {
+            "reviewer": asdict(agent),
+            "source_artifacts": _artifact_paths(store, run_id),
+            "cost": BudgetLedger.load(store, run_id).totals(),
+        }
+    )
     write_review_artifact(store, run_id, payload)
     event = "review.rejected" if payload["recommendation"] == "reject" else "review.completed"
     store.append_event(run_id, event, {"findings": len(payload["findings"]), "recommendation": payload["recommendation"]})
@@ -128,7 +136,8 @@ def _agent_for_route(config: dict[str, Any], route: dict[str, Any]) -> AgentInfo
         model = str(models[0])
     if not model:
         raise LaneError("reviewer route has no model")
-    auth = profile.get("auth") if isinstance(profile.get("auth"), dict) else {}
+    raw_auth = profile.get("auth")
+    auth = raw_auth if isinstance(raw_auth, dict) else {}
     return AgentInfo(
         agent_id=f"agent_reviewer_{profile_id}",
         name=profile_id,
@@ -144,7 +153,9 @@ def _agent_for_route(config: dict[str, Any], route: dict[str, Any]) -> AgentInfo
 
 def _check_router_budget(config: dict[str, Any], route: dict[str, Any], allow_expensive_router: bool) -> None:
     profile = (config.get("providers") or {}).get(str(route.get("profile") or ""))
-    kind = str(profile.get("kind") or "") if isinstance(profile, dict) else ""
+    if not isinstance(profile, dict):
+        return
+    kind = str(profile.get("kind") or "")
     model = str(route.get("model") or "")
     if kind == "openrouter" and "fusion" in model.lower() and not allow_expensive_router and not route.get("max_cost_usd"):
         raise LaneError("Fusion review requires --allow-expensive-router or routes.reviewer.max_cost_usd")
@@ -186,6 +197,8 @@ def _normalize_review(payload: dict[str, Any], suppressions: list[dict[str, str]
     recommendation = str(payload.get("recommendation") or ("reject" if active else "accept")).lower()
     if recommendation not in {"accept", "reject"}:
         recommendation = "reject" if active else "accept"
+    if not active:
+        recommendation = "accept"
     return {
         "schema_version": "poor-cli-review-v1",
         "status": "rejected" if recommendation == "reject" else "accepted",
@@ -203,7 +216,7 @@ def _artifact_paths(store: RunStore, run_id: str) -> list[str]:
 
 def _finding_id(raw: dict[str, Any]) -> str:
     text = "|".join(str(raw.get(key) or "") for key in ("severity", "file", "line", "evidence", "recommendation"))
-    return "rev_" + str(abs(hash(text)))[:12]
+    return "rev_" + hashlib.sha256(text.encode()).hexdigest()[:12]
 
 
 def _review_schema() -> dict[str, Any]:

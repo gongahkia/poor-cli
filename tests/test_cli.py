@@ -6,7 +6,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from poor_cli.cli import main
+from poor_cli.config import add_provider, empty_config, provider_preset, save_repo_config
+from poor_cli.lanes import LaneError, review_run
 from poor_cli.providers import ProviderResponse
 from poor_cli.store import RunStore
 
@@ -219,6 +223,9 @@ def test_cli_plan_graph_stores_graph_prompt_bias(tmp_path: Path, monkeypatch, ca
 
 
 def test_cli_run_graph_stores_graph_agent_prompt(tmp_path: Path, monkeypatch, capsys) -> None:
+    source = tmp_path / "src" / "parser.py"
+    source.parent.mkdir()
+    source.write_text("def parse_flow(value):\n    return value\n", encoding="utf-8")
     planner = tmp_path / "planner.py"
     planner.write_text(
         "import json, sys\n"
@@ -232,14 +239,18 @@ def test_cli_run_graph_stores_graph_agent_prompt(tmp_path: Path, monkeypatch, ca
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
 
-    assert main(["--store-dir", str(store), "run", "trace parser flow", "--graph", "--yes"]) == 0
+    assert main(["--store-dir", str(store), "run", "trace parse flow", "--graph", "--yes"]) == 0
     run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
     run_store = RunStore(store)
     try:
         task = run_store.list_tasks(run_id)[0]
         agent_input = json.loads(run_store.artifact_payload(run_store.list_artifacts(run_id, "agent.input")[0]["artifact_id"]))
+        graph_context = json.loads(run_store.artifact_payload(run_store.list_artifacts(run_id, "graph.context")[0]["artifact_id"]))
         assert task["metadata"]["graph_mode"] is True
+        assert graph_context["available"] is True
+        assert any(symbol["name"] == "parse_flow" for symbol in graph_context["symbols"])
         assert "Graph mode:" in agent_input["prompt"]
+        assert "symbol parse_flow" in agent_input["prompt"]
         assert "find_symbol" in agent_input["prompt"]
         assert "subgraph" in agent_input["prompt"]
     finally:
@@ -335,6 +346,190 @@ def test_cli_run_local_provider_agent_records_result(tmp_path: Path, monkeypatch
         assert run_store.get_run(run_id)["status"] == "completed"
     finally:
         run_store.close()
+
+
+def test_cli_review_run_uses_reviewer_route_and_writes_artifact(tmp_path: Path, monkeypatch, capsys) -> None:
+    class FakeProvider:
+        def call(self, request):
+            return ProviderResponse(
+                provider=request.provider,
+                model=request.model,
+                content=json.dumps({"findings": [], "recommendation": "accept"}),
+                raw={"usage": {"input_tokens": 100, "output_tokens": 20}},
+            )
+
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Record','objective':'record execution','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config = empty_config()
+    profile = provider_preset("openai-compatible", profile_id="reviewer", model="review-model", base_url="http://review.test")
+    config = add_provider(config, "reviewer", profile["reviewer"])
+    config["routes"] = {"reviewer": {"profile": "reviewer", "model": "review-model"}}
+    save_repo_config(config, tmp_path)
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+    monkeypatch.setattr("poor_cli.lanes._provider_for_agent", lambda agent: FakeProvider())
+
+    assert main(["--store-dir", str(store), "run", "review goal", "--yes"]) == 0
+    run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
+    assert main(["--store-dir", str(store), "review-run", run_id]) == 0
+
+    run_store = RunStore(store)
+    try:
+        review = json.loads((store / "runs" / run_id / "artifacts" / "review" / "REVIEW.json").read_text(encoding="utf-8"))
+        assert review["schema_version"] == "poor-cli-review-v1"
+        assert review["recommendation"] == "accept"
+        assert run_store.list_artifacts(run_id, "budget.ledger")
+        assert any(event["type"] == "review.completed" for event in run_store.list_events(run_id))
+    finally:
+        run_store.close()
+
+
+def test_cli_review_run_rejects_and_suppresses_findings(tmp_path: Path, monkeypatch, capsys) -> None:
+    class FakeProvider:
+        def call(self, request):
+            return ProviderResponse(
+                provider=request.provider,
+                model=request.model,
+                content=json.dumps(
+                    {
+                        "findings": [
+                            {
+                                "id": "rev_known",
+                                "severity": "high",
+                                "file": "a.py",
+                                "line": 1,
+                                "evidence": "bad patch",
+                                "recommendation": "fix",
+                            }
+                        ],
+                        "recommendation": "reject",
+                    }
+                ),
+            )
+
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Record','objective':'record execution','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config = empty_config()
+    profile = provider_preset("openai-compatible", profile_id="reviewer", model="review-model", base_url="http://review.test")
+    config = add_provider(config, "reviewer", profile["reviewer"])
+    config["routes"] = {"reviewer": {"profile": "reviewer", "model": "review-model"}}
+    save_repo_config(config, tmp_path)
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+    monkeypatch.setattr("poor_cli.lanes._provider_for_agent", lambda agent: FakeProvider())
+
+    assert main(["--store-dir", str(store), "run", "review goal", "--yes"]) == 0
+    run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
+    assert main(["--store-dir", str(store), "review-run", run_id]) == 2
+    rejected = json.loads((store / "runs" / run_id / "artifacts" / "review" / "REVIEW.json").read_text(encoding="utf-8"))
+    assert rejected["recommendation"] == "reject"
+    assert (
+        main(
+            [
+                "--store-dir",
+                str(store),
+                "review-run",
+                run_id,
+                "--suppress-finding",
+                "rev_known",
+                "--reason",
+                "false positive",
+                "--expires",
+                "2026-12-31",
+            ]
+        )
+        == 0
+    )
+    suppressed = json.loads((store / "runs" / run_id / "artifacts" / "review" / "REVIEW.json").read_text(encoding="utf-8"))
+    assert suppressed["recommendation"] == "accept"
+    assert suppressed["findings"][0]["suppressed"] is True
+
+
+def test_review_run_fusion_requires_budget_gate(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    config = empty_config()
+    profile = provider_preset("openrouter", profile_id="router", model="openrouter/fusion")
+    config = add_provider(config, "router", profile["router"])
+    config["routes"] = {"reviewer": {"profile": "router", "model": "openrouter/fusion"}}
+    save_repo_config(config, tmp_path)
+
+    try:
+        with pytest.raises(LaneError, match="Fusion review requires"):
+            review_run(store, run_id)
+    finally:
+        store.close()
+
+
+def test_cli_verify_run_executes_validation_command(tmp_path: Path, monkeypatch, capsys) -> None:
+    planner = tmp_path / "planner.py"
+    command = f"{sys.executable} -c \"from pathlib import Path; Path('fixed.txt').write_text('ok')\""
+    verify_command = f"{sys.executable} -c \"from pathlib import Path; assert Path('fixed.txt').read_text() == 'ok'\""
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        f"command = {command!r}\n"
+        f"verify_command = {verify_command!r}\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Fix','objective':'write file','suggested_agent':'generic','command':command,"
+        "'validation':[verify_command]}],"
+        "'validation_strategy':[verify_command],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n",
+        encoding="utf-8",
+    )
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    assert main(["--store-dir", str(store), "run", "verify goal", "--yes"]) == 0
+    run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
+    assert main(["--store-dir", str(store), "verify-run", run_id]) == 0
+
+    verify = json.loads((store / "runs" / run_id / "artifacts" / "verify" / "VERIFY.json").read_text(encoding="utf-8"))
+    assert verify["schema_version"] == "poor-cli-verify-v1"
+    assert verify["pass"] is True
+    assert verify["commands"][0]["returncode"] == 0
+
+
+def test_cli_verify_run_reports_failure(tmp_path: Path, monkeypatch, capsys) -> None:
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Record','objective':'record execution','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{'tokens':None,'usd':None}}))\n",
+        encoding="utf-8",
+    )
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    assert main(["--store-dir", str(store), "run", "verify goal", "--yes"]) == 0
+    run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
+    assert main(["--store-dir", str(store), "verify-run", run_id, "--command", "false"]) == 1
+
+    verify = json.loads((store / "runs" / run_id / "artifacts" / "verify" / "VERIFY.json").read_text(encoding="utf-8"))
+    assert verify["pass"] is False
+    assert verify["commands"][0]["returncode"] == 1
 
 
 def test_cli_run_without_yes_records_confirmation_event(tmp_path: Path) -> None:

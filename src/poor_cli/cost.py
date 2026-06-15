@@ -79,8 +79,10 @@ class BudgetLedger:
         estimated = estimate_cost(input_tokens, 0, 0, 0, price)
         if self.budget.get("strict_pricing") and estimated is None and self.budget.get("max_usd") is not None:
             self._exceeded("strict_pricing", f"unknown pricing for {request.provider}:{request.model}")
-        if estimated is not None and self.budget.get("max_usd") is not None and self.totals()["estimated_usd"] + estimated > float(self.budget["max_usd"]):
-            self._exceeded("max_usd", f"estimated provider call would exceed ${self.budget['max_usd']}")
+        if estimated is not None and self.budget.get("max_usd") is not None:
+            projected_usd = self.totals()["estimated_usd"] + estimated
+            if projected_usd > float(self.budget["max_usd"]):
+                self._exceeded("max_usd", f"estimated provider call would exceed ${self.budget['max_usd']}")
         if estimated is None and self.budget.get("max_usd") is not None:
             self._warning("unknown_pricing", f"unknown pricing for {request.provider}:{request.model}", 0)
 
@@ -89,8 +91,15 @@ class BudgetLedger:
     ) -> None:
         usage = usage_from_response(request, response)
         price = price_for(self.store, self.run_id, request.provider, request.model)
-        estimated = 0.0 if cached_response else estimate_cost(
-            usage["input_tokens"], usage["cached_input_tokens"], usage["output_tokens"], usage["web_calls"], price
+        reported = provider_reported_cost(response)
+        estimated = (
+            0.0
+            if cached_response
+            else (
+                reported
+                if reported is not None
+                else estimate_cost(usage["input_tokens"], usage["cached_input_tokens"], usage["output_tokens"], usage["web_calls"], price)
+            )
         )
         entry = BudgetEntry(
             kind="provider",
@@ -104,7 +113,7 @@ class BudgetLedger:
             estimated_usd=estimated,
             known_pricing=estimated is not None,
             cached_response=cached_response,
-            pricing_source=price.source_url,
+            pricing_source="provider_reported" if reported is not None else price.source_url,
         )
         self.entries.append(asdict(entry))
         self.store.append_event(self.run_id, "budget.entry", asdict(entry))
@@ -200,6 +209,21 @@ def usage_from_response(request: ProviderRequest, response: ProviderResponse) ->
     cached_tokens = _int(details.get("cached_tokens")) if isinstance(details, dict) else 0
     cached_tokens = cached_tokens or _int(usage.get("cache_read_input_tokens") or usage.get("cached_input_tokens"))
     return {"input_tokens": input_tokens, "cached_input_tokens": cached_tokens, "output_tokens": output_tokens, "web_calls": 0}
+
+
+def provider_reported_cost(response: ProviderResponse) -> float | None:
+    raw = response.raw if isinstance(response.raw, dict) else {}
+    for key in ("cost", "total_cost", "usage_cost", "credits"):
+        value = _float(raw.get(key))
+        if value is not None:
+            return value
+    usage = raw.get("usage")
+    if isinstance(usage, dict):
+        for key in ("cost", "total_cost", "usage_cost"):
+            value = _float(usage.get(key))
+            if value is not None:
+                return value
+    return None
 
 
 def estimate_cost(input_tokens: int, cached_input_tokens: int, output_tokens: int, web_calls: int, price: Price) -> float | None:

@@ -47,6 +47,10 @@ The alpha includes adapters for:
 
 Network-backed adapters call `require_online()` before live requests, so `poor-cli --offline` fails before a network call.
 
+## Budget Ledger
+
+Provider calls are recorded in `budget/LEDGER.json` for each run. The ledger estimates tokens at roughly four UTF-8 bytes per token unless a provider response includes exact usage. If a provider reports cost directly, that value is preferred. Otherwise, configured profile pricing is used before built-in timestamped seed prices. Unknown pricing emits warnings by default; strict budget mode fails before live provider calls when pricing is unknown.
+
 ## Profiles
 
 Provider profiles live in TOML config:

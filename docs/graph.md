@@ -27,6 +27,7 @@ poor-cli run "inspect the parser flow" --graph --yes
 
 Tool calls are recorded through the same `ToolDispatcher` cache as the v0 file/shell tools, so graph queries are replayable.
 `--graph` is available on `plan` and `run`; it adds planner prompt bias toward `find_symbol`, `definition_of`, `callers_of`, `imports_of`, and `subgraph` before grep-based navigation.
+Graph mode also adds a bounded graph-context summary to the planner prompt and per-task context packet. The summary records matching symbols, imports, callers, parser dependency status, and any graph fallback warning as a `graph.context` artifact.
 Graph tools refresh the tree-sitter index before uncached queries when graph file mtimes or sizes change, reparsing only changed files and dropping deleted files.
 `RepoGraph.watch()` starts a lightweight polling watcher for long-lived graph users that need updates before the next explicit tool query. `RepoGraph.watch(native=True)` uses `watchfiles`/Rust notify for native filesystem events on supported hosts.
 `poor-cli doctor` and `poor-cli agents doctor` report parser dependency availability. If graph tools cannot build an index inside a tool call, they return an explicit grep fallback warning in the tool result instead of hiding the failure.

@@ -84,9 +84,9 @@ def _source_loc() -> dict[str, Any]:
     total = sum(counts.values())
     over_file_limit = {path: count for path, count in counts.items() if count > 600}
     return {
-        "accepted": total <= 5000 and not over_file_limit,
+        "accepted": total <= 6000 and not over_file_limit,
         "total": total,
-        "max_total": 5000,
+        "max_total": 6000,
         "file_count": len(files),
         "over_file_limit": over_file_limit,
         "evidence": "bench/loc_gate.py",

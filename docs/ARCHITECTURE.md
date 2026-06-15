@@ -13,6 +13,9 @@
 - Deterministic human-facing artifacts are mirrored under `.poor-cli/v6/runs/<run_id>/artifacts/`.
 - Planner artifacts include `PLAN.json` and `PLAN.md`; worker artifacts include `RESULT.md`, `PATCH.diff`, and changed-file metadata.
 - Review and verifier artifacts are always typed, even when a run has no active reviewer or verifier lane.
+- `poor-cli review-run <run-id>` uses the configured `reviewer` route to run a model-backed review over plan, patch, and result artifacts.
+- `poor-cli verify-run <run-id>` executes sandbox-checked validation commands and writes deterministic verifier results.
+- Provider calls update `budget/LEDGER.json` with token estimates, provider-reported usage/cost where available, warning thresholds, and hard budget-stop events.
 - `poor-cli replay --verify` checks the per-run event mirror and CAS artifact hashes, then emits a stable trace digest.
 - `poor-cli --offline` sets `POOR_CLI_OFFLINE=1`; provider adapters, provider cache misses, and non-local delegated agents fail before live network calls.
 - Hook entry points use the `poor_cli.hooks` group and receive lifecycle callbacks for turns, model calls, tool calls, and run completion.
@@ -35,12 +38,14 @@
 - `poor-cli plan`: create and persist an LLM-backed structured plan.
 - `poor-cli run`: create a plan, require confirmation unless `--yes` or `--dry-run`, then execute tasks.
 - `poor-cli inspect`: inspect run internals.
+- `poor-cli review-run`: run the configured reviewer route over a completed run's artifacts.
+- `poor-cli verify-run`: run sandbox-checked validation commands for a completed run.
 - `poor-cli replay`: reconstruct orchestration state from events.
 - `poor-cli provider`: add, list, inspect, diagnose, and switch config-backed provider profiles.
 - `poor-cli route explain`: show the selected role/profile/model route and fallback reason for a task.
 - `poor-cli mcp`: list or call external stdio MCP server tools.
 - Graph tools: `find_symbol`, `definition_of`, `imports_of`, `callers_of`, and `subgraph`.
-- `poor-cli plan --graph` and `poor-cli run --graph` bias planner prompts toward symbolic-first graph navigation.
+- `poor-cli plan --graph` and `poor-cli run --graph` bias planner prompts toward symbolic-first graph navigation and persist graph-context evidence.
 
 ## Boundaries
 

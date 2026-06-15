@@ -41,12 +41,14 @@ def test_cached_replay_provider_records_then_replays(tmp_path: Path) -> None:
     assert first.content == "echo:hello"
     assert replayed.content == "echo:hello"
     assert replayed.cached is True
-    assert [event["type"] for event in store.list_events(run_id)] == [
+    event_types = [event["type"] for event in store.list_events(run_id)]
+    assert [event_type for event_type in event_types if event_type.startswith("provider.")] == [
         "provider.cache_miss",
         "provider.call.started",
         "provider.call.completed",
         "provider.cache_hit",
     ]
+    assert event_types.count("budget.entry") == 2
     store.close()
 
 
@@ -66,7 +68,8 @@ def test_cached_replay_provider_batches_uncached_requests_then_replays(tmp_path:
     assert [response.content for response in first] == ["batch:a", "batch:b"]
     assert [response.content for response in replayed] == ["batch:a", "batch:b"]
     assert all(response.cached for response in replayed)
-    assert [event["type"] for event in store.list_events(run_id)] == [
+    event_types = [event["type"] for event in store.list_events(run_id)]
+    assert [event_type for event_type in event_types if event_type.startswith("provider.")] == [
         "provider.cache_miss",
         "provider.cache_miss",
         "provider.call.started",
@@ -78,6 +81,7 @@ def test_cached_replay_provider_batches_uncached_requests_then_replays(tmp_path:
         "provider.cache_hit",
         "provider.cache_hit",
     ]
+    assert event_types.count("budget.entry") == 4
     store.close()
 
 
