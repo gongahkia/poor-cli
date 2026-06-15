@@ -78,6 +78,8 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-14: added OpenAI-compatible local structured-output and function-tool shims for vLLM/SGLang: `json_schema` maps to `response_format`, and `function_tools` maps to `tools` plus `tool_choice=auto`. Evidence: `tests/test_provider_adapters.py::test_openai_compatible_provider_normalizes_json_schema_response_format` and `tests/test_provider_adapters.py::test_openai_compatible_provider_normalizes_function_tools`. Checked against vLLM/SGLang public docs for OpenAI-compatible tool/structured APIs.
 - 2026-06-14: fixed `run --graph` propagation so graph mode is stored on planned tasks and delegated agent prompts include symbolic-first navigation guidance, not just planner prompt bias. Evidence: `tests/test_cli.py::test_cli_run_graph_stores_graph_agent_prompt`.
 - 2026-06-14: added a GitHub Pages docs deploy workflow for the MkDocs site so the landing/docs surface can publish from `main`. Evidence: `.github/workflows/docs-pages.yml` and `tests/test_docs.py::test_docs_pages_workflow_builds_mkdocs_site`.
+- 2026-06-15: closed the next Phase 2 graph grammar gap by extending repo graph indexing to TypeScript and TSX, including imports, classes, methods, functions, calls, and subgraph traversal. Evidence: `src/poor_cli/repo_graph.py` and `tests/test_repo_graph.py::test_repo_graph_indexes_typescript_and_tsx_symbols_imports_and_callers`.
+- 2026-06-15: closed the Phase 2 native watcher gap with `RepoGraph.watch(native=True)`, backed by `watchfiles` native filesystem events while keeping polling as the default. Evidence: `tests/test_repo_graph.py::test_repo_graph_native_watch_refreshes_changed_files` and `docs/graph.md`.
 
 ## TL;DR
 

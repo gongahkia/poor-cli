@@ -8,7 +8,10 @@ from typing import Any
 
 GraphSignature = tuple[int, int]
 GraphFingerprint = dict[str, GraphSignature]
-GRAPH_EXTENSIONS = {".py", ".js", ".mjs", ".cjs"}
+GRAPH_EXTENSIONS = {".py", ".js", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
+JAVASCRIPT_EXTENSIONS = {".js", ".mjs", ".cjs"}
+TYPESCRIPT_EXTENSIONS = {".ts", ".mts", ".cts"}
+TSX_EXTENSIONS = {".tsx"}
 
 
 @dataclass(frozen=True)
@@ -34,9 +37,10 @@ class RepoGraphError(RuntimeError):
 
 
 class GraphWatch:
-    def __init__(self, graph: RepoGraph, interval_seconds: float = 0.25):
+    def __init__(self, graph: RepoGraph, interval_seconds: float = 0.25, *, native: bool = False):
         self.graph = graph
         self.interval_seconds = interval_seconds
+        self.native = native
         self._stop = Event()
         self._thread = Thread(target=self._run, name="poor-cli-repo-graph-watch", daemon=True)
 
@@ -55,9 +59,28 @@ class GraphWatch:
         self.stop()
 
     def _run(self) -> None:
+        if self.native:
+            self._run_native()
+            return
         while not self._stop.is_set():
             self.graph.refresh_if_stale()
             self._stop.wait(self.interval_seconds)
+
+    def _run_native(self) -> None:
+        watch = _watchfiles_watch()
+        for changes in watch(
+            self.graph.root,
+            watch_filter=_graph_watch_filter,
+            debounce=50,
+            step=max(1, int(self.interval_seconds * 1000)),
+            stop_event=self._stop,
+            force_polling=False,
+            recursive=True,
+        ):
+            if changes:
+                self.graph.refresh_if_stale()
+            if self._stop.is_set():
+                break
 
 
 class RepoGraph:
@@ -98,8 +121,8 @@ class RepoGraph:
             self._fingerprint = current
             return self
 
-    def watch(self, *, interval_seconds: float = 0.25) -> GraphWatch:
-        return GraphWatch(self, interval_seconds=interval_seconds)
+    def watch(self, *, interval_seconds: float = 0.25, native: bool = False) -> GraphWatch:
+        return GraphWatch(self, interval_seconds=interval_seconds, native=native)
 
     def _rebuild_symbol_index(self) -> None:
         self._symbol_index = {}
@@ -176,20 +199,23 @@ class RepoGraph:
         return self.modules[normalized]
 
     def _resolve_import(self, from_path: str, imported: str) -> str | None:
-        candidate = imported.replace(".", "/") + ".py"
-        if candidate in self.modules:
-            return candidate
+        for candidate in _import_candidates(imported.replace(".", "/")):
+            if candidate in self.modules:
+                return candidate
         if imported.startswith("."):
             rel = Path(from_path).parent / imported
             candidates = [rel]
             if not rel.suffix:
-                candidates.extend([rel.with_suffix(".js"), rel / "index.js"])
+                candidates.extend(Path(candidate) for candidate in _import_candidates(str(rel)))
             for js_candidate in candidates:
                 normalized = str(js_candidate)
                 if normalized in self.modules:
                     return normalized
-        base = str(Path(from_path).parent / (imported.rsplit(".", 1)[-1] + ".py"))
-        return base if base in self.modules else None
+        base = Path(from_path).parent / imported.rsplit(".", 1)[-1]
+        for candidate in _import_candidates(str(base)):
+            if candidate in self.modules:
+                return candidate
+        return None
 
     def _scan_fingerprint(self) -> GraphFingerprint:
         return self._fingerprint_for(self._source_files())
@@ -233,7 +259,11 @@ def graph_tools(root: Path) -> dict[str, Any]:
 
 
 def _parse_module(root: Path, path: Path) -> ParsedModule:
-    return _parse_python(root, path) if path.suffix == ".py" else _parse_javascript(root, path)
+    if path.suffix == ".py":
+        return _parse_python(root, path)
+    if path.suffix in JAVASCRIPT_EXTENSIONS:
+        return _parse_javascript(root, path)
+    return _parse_typescript(root, path)
 
 
 def _parse_python(root: Path, path: Path) -> ParsedModule:
@@ -271,6 +301,30 @@ def _parse_javascript(root: Path, path: Path) -> ParsedModule:
     parser = Parser()
     language = Language(tree_sitter_javascript.language())
     parser.language = language
+    tree = parser.parse(source)
+    if tree is None:
+        raise RepoGraphError(f"tree-sitter failed to parse {path}")
+    rel = str(path.resolve().relative_to(root))
+    payload = _walk_javascript(source, tree.root_node)
+    return ParsedModule(
+        path=rel,
+        symbols=[GraphSymbol(path=rel, **symbol) for symbol in payload["symbols"]],
+        imports=payload["imports"],
+        calls=payload["calls"],
+    )
+
+
+def _parse_typescript(root: Path, path: Path) -> ParsedModule:
+    try:
+        import tree_sitter_typescript
+        from tree_sitter import Language, Parser
+    except ImportError as exc:
+        raise RepoGraphError("tree-sitter and tree-sitter-typescript are required for TypeScript graph indexing") from exc
+
+    source = path.read_bytes()
+    parser = Parser()
+    language_fn = tree_sitter_typescript.language_tsx if path.suffix in TSX_EXTENSIONS else tree_sitter_typescript.language_typescript
+    parser.language = Language(language_fn())
     tree = parser.parse(source)
     if tree is None:
         raise RepoGraphError(f"tree-sitter failed to parse {path}")
@@ -446,3 +500,40 @@ def _tool_result(name: str, output: Any) -> Any:
     from poor_cli.tools.dispatcher import ToolResult
 
     return ToolResult(name=name, ok=True, output=output)
+
+
+def _import_candidates(base: str) -> list[str]:
+    path = Path(base)
+    if path.suffix:
+        return [str(path)]
+    return [
+        f"{base}.py",
+        f"{base}.js",
+        f"{base}.mjs",
+        f"{base}.cjs",
+        f"{base}.ts",
+        f"{base}.tsx",
+        f"{base}.mts",
+        f"{base}.cts",
+        str(path / "index.js"),
+        str(path / "index.ts"),
+        str(path / "index.tsx"),
+    ]
+
+
+def _graph_watch_filter(_change: Any, path: str) -> bool:
+    file_path = Path(path)
+    return (
+        file_path.suffix in GRAPH_EXTENSIONS
+        and "__pycache__" not in file_path.parts
+        and "node_modules" not in file_path.parts
+        and ".git" not in file_path.parts
+    )
+
+
+def _watchfiles_watch() -> Any:
+    try:
+        from watchfiles import watch
+    except ImportError as exc:
+        raise RepoGraphError("watchfiles is required for native repo graph watching") from exc
+    return watch

@@ -45,6 +45,22 @@ def _sample_js_repo(root: Path) -> None:
     (root / "cli.js").write_text("import { run } from './core.js';\n\nfunction execute() {\n  return run();\n}\n", encoding="utf-8")
 
 
+def _sample_ts_repo(root: Path) -> None:
+    (root / "view.tsx").write_text("export const Widget = () => <span>ok</span>;\n", encoding="utf-8")
+    (root / "util.ts").write_text("export function helper(): string {\n  return 'ok';\n}\n", encoding="utf-8")
+    (root / "core.ts").write_text(
+        "import { helper } from './util';\n"
+        "import { Widget } from './view';\n\n"
+        "export class App {\n"
+        "  run(): string {\n"
+        "    return helper();\n"
+        "  }\n"
+        "}\n\n"
+        "export const execute = () => new App().run();\n",
+        encoding="utf-8",
+    )
+
+
 def test_repo_graph_indexes_python_symbols_imports_and_callers(tmp_path: Path) -> None:
     _sample_repo(tmp_path)
     graph = RepoGraph(tmp_path).build_index()
@@ -73,6 +89,18 @@ def test_repo_graph_indexes_javascript_symbols_imports_and_callers(tmp_path: Pat
     assert graph.imports_of("core.js") == {"path": "core.js", "imports": ["./util.js"]}
     assert graph.callers_of("helper") == [{"path": "core.js", "calls": "helper", "call_count": 1}]
     assert {item["path"] for item in graph.subgraph("execute", max_depth=2)["files"]} == {"cli.js", "core.js", "util.js"}
+
+
+def test_repo_graph_indexes_typescript_and_tsx_symbols_imports_and_callers(tmp_path: Path) -> None:
+    _sample_ts_repo(tmp_path)
+    graph = RepoGraph(tmp_path).build_index()
+
+    assert graph.definition_of("App")["path"] == "core.ts"
+    assert graph.definition_of("run")["scope"] == "App"
+    assert graph.definition_of("Widget")["path"] == "view.tsx"
+    assert graph.imports_of("core.ts") == {"path": "core.ts", "imports": ["./util", "./view"]}
+    assert graph.callers_of("helper") == [{"path": "core.ts", "calls": "helper", "call_count": 1}]
+    assert {item["path"] for item in graph.subgraph("execute", max_depth=2)["files"]} == {"core.ts", "util.ts", "view.tsx"}
 
 
 def test_repo_graph_refreshes_after_python_file_mutation(tmp_path: Path) -> None:
@@ -122,6 +150,33 @@ def test_repo_graph_watch_refreshes_changed_files(tmp_path: Path) -> None:
 
     assert definition is not None
     assert definition["path"] == "extra.py"
+
+
+def test_repo_graph_native_watch_refreshes_changed_files(tmp_path: Path, monkeypatch) -> None:
+    _sample_repo(tmp_path)
+    graph = RepoGraph(tmp_path).build_index()
+
+    def fake_watch(*_paths, **kwargs):
+        assert kwargs["force_polling"] is False
+        assert kwargs["recursive"] is True
+        assert kwargs["watch_filter"](None, str(tmp_path / "extra.ts")) is True
+        assert kwargs["watch_filter"](None, str(tmp_path / "notes.txt")) is False
+        (tmp_path / "extra.ts").write_text("export function watchedTs(): string {\n  return 'new';\n}\n", encoding="utf-8")
+        yield {(None, str(tmp_path / "extra.ts"))}
+        kwargs["stop_event"].wait(0.01)
+
+    monkeypatch.setattr(repo_graph, "_watchfiles_watch", lambda: fake_watch)
+    with graph.watch(interval_seconds=0.01, native=True):
+        deadline = time.monotonic() + 2.0
+        definition = None
+        while time.monotonic() < deadline:
+            definition = graph.definition_of("watchedTs")
+            if definition is not None:
+                break
+            time.sleep(0.02)
+
+    assert definition is not None
+    assert definition["path"] == "extra.ts"
 
 
 def test_graph_tools_are_replayable_builtin_tools(tmp_path: Path) -> None:

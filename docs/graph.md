@@ -1,6 +1,6 @@
 # Graph Tools
 
-Phase 2 starts with a tree-sitter-backed repo graph. The graph currently indexes Python and JavaScript files and exposes symbol, import, caller, and neighborhood queries through replayable tools.
+Phase 2 starts with a tree-sitter-backed repo graph. The graph currently indexes Python, JavaScript, TypeScript, and TSX files and exposes symbol, import, caller, and neighborhood queries through replayable tools.
 
 ## Built-in Tools
 
@@ -18,13 +18,12 @@ poor-cli run "inspect the parser flow" --graph --yes
 
 Tool calls are recorded through the same `ToolDispatcher` cache as the v0 file/shell tools, so graph queries are replayable.
 `--graph` is available on `plan` and `run`; it adds planner prompt bias toward `find_symbol`, `definition_of`, `callers_of`, `imports_of`, and `subgraph` before grep-based navigation.
-Graph tools refresh the tree-sitter index before uncached queries when Python file mtimes or sizes change, reparsing only changed files and dropping deleted files.
-`RepoGraph.watch()` starts a lightweight polling watcher for long-lived graph users that need updates before the next explicit tool query.
+Graph tools refresh the tree-sitter index before uncached queries when graph file mtimes or sizes change, reparsing only changed files and dropping deleted files.
+`RepoGraph.watch()` starts a lightweight polling watcher for long-lived graph users that need updates before the next explicit tool query. `RepoGraph.watch(native=True)` uses `watchfiles`/Rust notify for native filesystem events on supported hosts.
 
 ## Scope
 
-This is the first graph slice. Remaining Phase 2 work:
+Remaining Phase 2 work:
 
-- More tree-sitter grammars beyond Python and JavaScript.
-- Kernel-native FSEvents/inotify integration.
 - Token and correctness comparison against grep-mode on the fixed benchmark set.
+- Additional grammars beyond Python, JavaScript, TypeScript, and TSX if the benchmark set needs them.
