@@ -11,6 +11,8 @@ nav:
   - Native Runner ADR: adr-native-provider-runner.md
   - Replay: replay.md
   - Graph Tools: graph.md
+  - Worktree Swarm: swarm.md
+  - JSONL RPC: rpc.md
   - Security: security.md
   - Shell Sandbox ADR: adr-shell-sandbox.md
   - Migration: migration.md

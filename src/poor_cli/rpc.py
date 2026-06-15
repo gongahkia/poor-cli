@@ -37,7 +37,8 @@ class RpcServer:
             return
         rid = req.get("id")
         try:
-            result = self._call(str(req["method"]), req.get("params") if isinstance(req.get("params"), dict) else {})
+            raw_params = req.get("params")
+            result = self._call(str(req["method"]), raw_params if isinstance(raw_params, dict) else {})
             if rid is not None:
                 self._send({"jsonrpc": "2.0", "id": rid, "result": result})
         except KeyError:
@@ -82,10 +83,10 @@ class RpcServer:
                 store.close()
         if method == "cancel":
             run_id = str(params.get("run_id") or "")
-            cancel = self.active.get(run_id)
-            if cancel is None:
+            active_cancel = self.active.get(run_id)
+            if active_cancel is None:
                 return {"run_id": run_id, "cancelled": False, "reason": "not_active"}
-            cancel.set()
+            active_cancel.set()
             return {"run_id": run_id, "cancelled": True}
         if method == "replay":
             store = RunStore(self.root)

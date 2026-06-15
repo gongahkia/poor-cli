@@ -179,18 +179,18 @@ class Orchestrator:
             active: dict[Future[int], tuple[str, set[str]]] = {}
             while pending or active:
                 if cancel is not None and cancel.is_set():
-                    for task_id in sorted(pending, key=ords.get):
+                    for task_id in sorted(pending, key=lambda key: ords[key]):
                         self.store.set_task_status(task_id, "cancelled")
                         self.store.append_event(str(run["run_id"]), "task.cancelled", {"reason": "scheduler cancellation"}, task_id)
                     return 130
-                for task_id in sorted(list(pending), key=ords.get):
+                for task_id in sorted(list(pending), key=lambda key: ords[key]):
                     if any(dep in failed or dep in blocked for dep in deps[task_id]):
                         pending.remove(task_id)
                         blocked.add(task_id)
                         self.store.set_task_status(task_id, "blocked")
                         self.store.append_event(str(run["run_id"]), "task.blocked", {"dependencies": deps[task_id]}, task_id)
                 made_progress = False
-                for task_id in sorted(list(pending), key=ords.get):
+                for task_id in sorted(list(pending), key=lambda key: ords[key]):
                     if len(active) >= cap or not all(dep in done for dep in deps[task_id]):
                         continue
                     paths = _predicted_files(by_id[task_id])
@@ -204,10 +204,12 @@ class Orchestrator:
                     self.store.append_event(str(run["run_id"]), "scheduler.task_started", {"ordinal": ords[task_id]}, task_id)
                     made_progress = True
                 if not active:
-                    for task_id in sorted(pending, key=ords.get):
+                    if not pending:
+                        break
+                    for task_id in sorted(pending, key=lambda key: ords[key]):
                         self.store.set_task_status(task_id, "blocked")
                         self.store.append_event(str(run["run_id"]), "task.blocked", {"dependencies": deps[task_id]}, task_id)
-                    return 1
+                    return exit_code or 1
                 finished, _ = wait(active, timeout=0.1 if made_progress else None, return_when=FIRST_COMPLETED)
                 for future in sorted(finished, key=lambda item: ords[active[item][0]]):
                     task_id, _ = active.pop(future)

@@ -25,7 +25,7 @@ class CAS:
         path = self.root / digest[:2] / digest
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
-            tmp = path.with_suffix(".tmp")
+            tmp = path.with_suffix(f".{make_id('tmp')}.tmp")
             tmp.write_bytes(data)
             tmp.replace(path)
         return digest, path
@@ -383,7 +383,7 @@ class RunStore:
         path = self._run_dir(run_id) / "cas" / digest
         path.parent.mkdir(parents=True, exist_ok=True)
         if not path.exists():
-            tmp = path.with_suffix(".tmp")
+            tmp = path.with_suffix(f".{make_id('tmp')}.tmp")
             tmp.write_bytes(raw)
             tmp.replace(path)
 

@@ -42,7 +42,7 @@ def run_swarm_plan(store: RunStore, run_id: str, tasks: list[TaskSpec], budget: 
     root.mkdir(parents=True, exist_ok=True)
     store.set_run_status(run_id, "running")
     store.append_event(run_id, "swarm.started", {"workers": len(tasks), "allow_dirty": allow_dirty, "failure_policy": failure_policy})
-    workers = []
+    workers: list[dict[str, Any]] = []
     exit_code = 0
     for ordinal, task in enumerate(tasks, 1):
         if cancel is not None and cancel.is_set():

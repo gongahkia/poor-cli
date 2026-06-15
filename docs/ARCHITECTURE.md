@@ -15,6 +15,9 @@
 - Review and verifier artifacts are always typed, even when a run has no active reviewer or verifier lane.
 - `poor-cli review-run <run-id>` uses the configured `reviewer` route to run a model-backed review over plan, patch, and result artifacts.
 - `poor-cli verify-run <run-id>` executes sandbox-checked validation commands and writes deterministic verifier results.
+- The DAG scheduler runs independent tasks up to the configured cap, blocks failed dependents, records scheduler metrics, and honors cancellation.
+- `poor-cli run-swarm` creates detached worker worktrees, collects patch artifacts, and writes a collect-only merge plan.
+- `poor-cli rpc serve --stdio` exposes JSONL JSON-RPC methods for run, inspect, status, cancel, and replay.
 - Provider calls update `budget/LEDGER.json` with token estimates, provider-reported usage/cost where available, warning thresholds, and hard budget-stop events.
 - `poor-cli replay --verify` checks the per-run event mirror and CAS artifact hashes, then emits a stable trace digest.
 - `poor-cli --offline` sets `POOR_CLI_OFFLINE=1`; provider adapters, provider cache misses, and non-local delegated agents fail before live network calls.
@@ -37,10 +40,13 @@
 - `poor-cli doctor`: print agent and graph dependency diagnostics.
 - `poor-cli plan`: create and persist an LLM-backed structured plan.
 - `poor-cli run`: create a plan, require confirmation unless `--yes` or `--dry-run`, then execute tasks.
+- `poor-cli run-swarm`: execute plan tasks in isolated worktrees and collect patches without applying them.
 - `poor-cli inspect`: inspect run internals.
 - `poor-cli review-run`: run the configured reviewer route over a completed run's artifacts.
 - `poor-cli verify-run`: run sandbox-checked validation commands for a completed run.
 - `poor-cli replay`: reconstruct orchestration state from events.
+- `poor-cli cleanup-swarm`: remove recorded run-owned worker worktrees.
+- `poor-cli rpc serve --stdio`: serve the headless JSONL RPC interface.
 - `poor-cli provider`: add, list, inspect, diagnose, and switch config-backed provider profiles.
 - `poor-cli route explain`: show the selected role/profile/model route and fallback reason for a task.
 - `poor-cli mcp`: list or call external stdio MCP server tools.
@@ -49,4 +55,4 @@
 
 ## Boundaries
 
-The alpha intentionally excludes worktree isolation, parallel scheduling, MCP server hosting, live Linux/CUDA benchmark rows, and live graph-mode SWE-bench benchmarking. The TUI, MCP client, benchmark harness, provider adapters, native provider tool loop, cache-aware provider batching, provider-native cache launch controls, artifact contracts, and graph tools are present but intentionally small.
+The alpha intentionally excludes MCP server hosting, live Linux/CUDA benchmark rows, and remote RPC transports. The TUI, MCP client, benchmark harness, provider adapters, native provider tool loop, scheduler, swarm, stdio RPC, artifact contracts, and graph tools are present but intentionally small.

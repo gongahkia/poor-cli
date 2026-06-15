@@ -26,6 +26,7 @@ poor-cli plan "inspect this repo and propose a task graph"
 poor-cli plan "trace the parser flow" --graph
 poor-cli run "make a small scoped change" --yes
 poor-cli run "fix the caller lookup" --graph --yes
+poor-cli run-swarm "split independent fixes" --parallel 2
 poor-cli runs
 poor-cli inspect <run_id> --events --context
 poor-cli inspect <run_id> --artifacts --cost
@@ -36,8 +37,10 @@ poor-cli provider add openai --model gpt-5.5
 poor-cli provider list
 poor-cli route explain "fix the parser"
 poor-cli cleanup <run_id>
+poor-cli cleanup-swarm <run_id>
 poor-cli mcp list
 poor-cli mcp call server:tool --args '{"text":"hello"}'
+poor-cli rpc serve --stdio
 poor-cli tui --run-id <run_id>
 ```
 
