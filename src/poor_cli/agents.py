@@ -347,9 +347,11 @@ def _version(command: list[str]) -> str:
 
 
 def build_agent_prompt(goal: str, task: TaskSpec, context: str) -> str:
+    pack = str(task.metadata.get("prompt_pack_text") or "")
     return "\n".join(
         [
             "You are running as a delegated coding agent under poor-cli.",
+            pack,
             f"Parent goal: {goal}",
             f"Task: {task.title}",
             f"Objective: {task.objective}",

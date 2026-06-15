@@ -13,6 +13,7 @@ from .config import explain_route, load_config
 from .cost import BudgetLedger
 from .fusion import FusionRouteError, normalize_fusion_payload, route_uses_fusion, validate_fusion_route, write_fusion_artifact
 from .models import AgentInfo
+from .prompt_packs import prompt_prefix
 from .providers import CachedReplayProvider, ProviderRequest
 from .sandbox import SandboxDenied, validate_shell_command
 from .store import RunStore
@@ -49,7 +50,7 @@ def review_run(
             provider=agent.provider,
             model=agent.default_model or "",
             prompt=prompt,
-            system_prompt=REVIEW_SYSTEM_PROMPT,
+            system_prompt="\n".join([REVIEW_SYSTEM_PROMPT, prompt_prefix(config, "reviewer", repo)]),
             params=_review_params(route),
         )
     )
