@@ -15,7 +15,7 @@ from bench.phase3_closeout import closeout_payload
 from bench.phase3_demo import demo_evidence_template, demo_plan_payload, validate_demo_evidence
 from bench.phase3_demo import main as phase3_demo_main
 from bench.phase3_local_benchmark import benchmark_plan_payload, validate_local_summary
-from bench.phase3_readiness import _python_deps
+from bench.phase3_readiness import _ollama_binary, _python_deps
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
 from bench.swe_bench_lite import run as swe_run
@@ -222,6 +222,7 @@ def test_phase3_readiness_payload_schema() -> None:
     payload = phase3_readiness_payload()
 
     assert payload["schema_version"] == "poor-cli-phase3-readiness-v1"
+    assert payload["selected_engine"] == "vllm"
     assert isinstance(payload["ready"], bool)
     assert set(payload["checks"]) == {
         "setup_script",
@@ -234,7 +235,10 @@ def test_phase3_readiness_payload_schema() -> None:
     assert payload["checks"]["setup_script"]["ready"] is True
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["local_agent_path"]["ready"] is True
-    assert payload["checks"]["engine_python_deps"]["requirement"] == "one of vllm or sglang"
+    assert payload["checks"]["engine_python_deps"]["requirement"] == "selected engine module: vllm"
+    assert payload["checks"]["engine_python_deps"]["selected_engine"] == "vllm"
+    assert payload["checks"]["engine_python_deps"]["required"] is True
+    assert payload["checks"]["ollama_binary"]["required"] is False
     assert set(payload["checks"]["engine_python_deps"]["modules"]) == {"vllm", "sglang"}
     assert set(payload["checks"]["engine_python_deps"]["current_modules"]) == {"vllm", "sglang"}
     assert set(payload["checks"]["engine_python_deps"]["venv_modules"]) == {"vllm", "sglang"}
@@ -262,11 +266,40 @@ def test_phase3_readiness_detects_engine_deps_from_local_cuda_venv(tmp_path: Pat
     assert payload["venv_python_exists"] is True
 
 
+def test_phase3_readiness_requires_selected_python_engine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    venv = tmp_path / "local-cuda-venv"
+    python = venv / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        '#!/usr/bin/env bash\nif [[ "${3:-}" == "vllm" ]]; then\n  exit 0\nfi\nexit 1\n',
+        encoding="utf-8",
+    )
+    python.chmod(0o755)
+    monkeypatch.setenv("POOR_CLI_LOCAL_VENV", str(venv))
+
+    payload = _python_deps("vllm", "sglang", selected_engine="sglang")
+
+    assert payload["ready"] is False
+    assert payload["modules"]["vllm"] is True
+    assert payload["modules"]["sglang"] is False
+    assert payload["requirement"] == "selected engine module: sglang"
+
+
+def test_phase3_readiness_requires_ollama_binary_only_for_ollama(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    assert _ollama_binary("vllm")["ready"] is True
+    assert _ollama_binary("vllm")["required"] is False
+    assert _ollama_binary("ollama")["ready"] is False
+    assert _ollama_binary("ollama")["required"] is True
+
+
 def test_checked_in_phase3_readiness_snapshot() -> None:
     path = Path(__file__).resolve().parents[1] / "bench" / "results" / "phase3-readiness.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
 
     assert payload["schema_version"] == "poor-cli-phase3-readiness-v1"
+    assert payload["selected_engine"] == "vllm"
     assert isinstance(payload["ready"], bool)
     assert payload["checks"]["setup_script"]["ready"] is True
     assert payload["checks"]["setup_script"]["bash_syntax"] is True
@@ -274,7 +307,9 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["local_agent_path"]["ready"] is True
     assert payload["checks"]["local_agent_path"]["swe_runner_agent"] == "local"
-    assert payload["checks"]["engine_python_deps"]["requirement"] == "one of vllm or sglang"
+    assert payload["checks"]["engine_python_deps"]["requirement"] == "selected engine module: vllm"
+    assert payload["checks"]["engine_python_deps"]["required"] is True
+    assert payload["checks"]["ollama_binary"]["required"] is False
     assert set(payload["checks"]["engine_python_deps"]["modules"]) == {"vllm", "sglang"}
     assert set(payload["checks"]["engine_python_deps"]["current_modules"]) == {"vllm", "sglang"}
     assert set(payload["checks"]["engine_python_deps"]["venv_modules"]) == {"vllm", "sglang"}

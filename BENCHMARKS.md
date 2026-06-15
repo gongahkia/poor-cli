@@ -146,7 +146,7 @@ uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-r
 
 Checked-in snapshot: `bench/results/phase3-readiness.json`.
 
-Current snapshot status: setup script, provider adapters, local-agent routing, and Ollama binary are ready; this macOS host is not a Linux/CUDA host and does not have vLLM/SGLang installed in the active project env or setup-created local CUDA venv.
+Current snapshot status: setup script, provider adapters, local-agent routing, and non-selected Ollama binary handling are ready; this macOS host is not a Linux/CUDA host and does not have the selected vLLM dependency installed in the active project env or setup-created local CUDA venv.
 
 ## Graph vs grep
 

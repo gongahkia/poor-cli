@@ -11,7 +11,9 @@
         "vllm": false
       },
       "ready": false,
-      "requirement": "one of vllm or sglang",
+      "required": true,
+      "requirement": "selected engine module: vllm",
+      "selected_engine": "vllm",
       "venv_modules": {
         "sglang": false,
         "vllm": false
@@ -33,7 +35,9 @@
     "ollama_binary": {
       "available": true,
       "path": "/opt/homebrew/bin/ollama",
-      "ready": true
+      "ready": true,
+      "required": false,
+      "selected_engine": "vllm"
     },
     "provider_adapters": {
       "providers": [
@@ -55,5 +59,6 @@
     "linux_cuda_host",
     "engine_python_deps"
   ],
-  "schema_version": "poor-cli-phase3-readiness-v1"
+  "schema_version": "poor-cli-phase3-readiness-v1",
+  "selected_engine": "vllm"
 }

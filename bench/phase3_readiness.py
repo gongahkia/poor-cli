@@ -31,16 +31,18 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def readiness_payload() -> dict[str, Any]:
+    selected_engine = _selected_engine()
     checks = {
         "setup_script": _setup_script(),
         "provider_adapters": _provider_adapters(),
         "linux_cuda_host": _linux_cuda_host(),
-        "engine_python_deps": _python_deps("vllm", "sglang"),
-        "ollama_binary": _binary("ollama"),
+        "engine_python_deps": _python_deps("vllm", "sglang", selected_engine=selected_engine),
+        "ollama_binary": _ollama_binary(selected_engine),
         "local_agent_path": _local_agent_path(),
     }
     return {
         "schema_version": "poor-cli-phase3-readiness-v1",
+        "selected_engine": selected_engine,
         "ready": all(check["ready"] for check in checks.values()),
         "checks": checks,
         "remaining": [name for name, check in checks.items() if not check["ready"]],
@@ -92,20 +94,28 @@ def _linux_cuda_host() -> dict[str, Any]:
     }
 
 
-def _python_deps(*names: str) -> dict[str, Any]:
+def _selected_engine() -> str:
+    return (os.environ.get("POOR_CLI_LOCAL_ENGINE") or os.environ.get("POOR_CLI_PROVIDER") or "vllm").strip().lower()
+
+
+def _python_deps(*names: str, selected_engine: str | None = None) -> dict[str, Any]:
     current_modules = {name: importlib.util.find_spec(name) is not None for name in names}
     venv_path = _local_cuda_venv()
     venv_python = venv_path / "bin" / "python"
     venv_modules = {name: _venv_module_available(venv_python, name) for name in names}
     modules = {name: current_modules[name] or venv_modules[name] for name in names}
+    engine = selected_engine or _selected_engine()
+    required = engine in names
     return {
-        "ready": any(modules.values()),
+        "ready": not required or modules[engine],
+        "required": required,
+        "selected_engine": engine,
         "modules": modules,
         "current_modules": current_modules,
         "venv_modules": venv_modules,
         "venv_python": _display_path(venv_python),
         "venv_python_exists": venv_python.is_file(),
-        "requirement": "one of vllm or sglang",
+        "requirement": f"selected engine module: {engine}" if required else "not required for selected engine",
         "install": "scripts/setup-linux-cuda.sh --yes --engine vllm",
     }
 
@@ -146,6 +156,17 @@ def _display_path(path: Path) -> str:
 def _binary(name: str) -> dict[str, Any]:
     path = shutil.which(name)
     return {"ready": bool(path), "available": bool(path), "path": path or ""}
+
+
+def _ollama_binary(selected_engine: str) -> dict[str, Any]:
+    payload = _binary("ollama")
+    required = selected_engine == "ollama"
+    return {
+        **payload,
+        "ready": payload["ready"] if required else True,
+        "required": required,
+        "selected_engine": selected_engine,
+    }
 
 
 def _local_agent_path() -> dict[str, Any]:
