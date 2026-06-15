@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import os
+import signal
 import shlex
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -94,6 +96,7 @@ class AgentRunner:
         run_id: str | None = None,
         hooks: Any | None = None,
         replay_only: bool = False,
+        cancel: Any | None = None,
     ) -> AgentResult:
         prompt = build_agent_prompt(goal, task, context)
         if agent.provider != "local":
@@ -103,7 +106,7 @@ class AgentRunner:
             if budget_usd is not None:
                 command.extend(["--max-budget-usd", str(budget_usd)])
             command.append(prompt)
-            return _run(agent.agent_id, command, workdir, self.timeout_seconds)
+            return _run(agent.agent_id, command, workdir, self.timeout_seconds, cancel)
         if agent.invocation_adapter == "codex":
             command = [
                 agent.command,
@@ -116,7 +119,7 @@ class AgentRunner:
                 "never",
                 prompt,
             ]
-            return _run(agent.agent_id, command, workdir, self.timeout_seconds)
+            return _run(agent.agent_id, command, workdir, self.timeout_seconds, cancel)
         if agent.invocation_adapter in {"local_provider", "provider"}:
             if store is not None and run_id is not None and "tools" in agent.capabilities:
                 from .native_runner import ProviderBackedAgentRunner, native_params
@@ -158,7 +161,7 @@ class AgentRunner:
         command_text = task.metadata.get("command") if isinstance(task.metadata, dict) else None
         if command_text:
             command = [agent.command, "-lc", str(command_text)]
-            return _run(agent.agent_id, command, workdir, self.timeout_seconds)
+            return _run(agent.agent_id, command, workdir, self.timeout_seconds, cancel)
         stdout = f"generic shell adapter recorded task without executing commands: {task.title}\n"
         return AgentResult(agent.agent_id, [agent.command, "-lc", "<no command>"], 0, stdout, "")
 
@@ -289,6 +292,32 @@ def build_agent_prompt(goal: str, task: TaskSpec, context: str) -> str:
     )
 
 
-def _run(agent_id: str, command: list[str], workdir: Path, timeout_seconds: int) -> AgentResult:
-    result = subprocess.run(command, cwd=workdir, text=True, capture_output=True, timeout=timeout_seconds, check=False)
-    return AgentResult(agent_id, [shlex.quote(part) for part in command], result.returncode, result.stdout, result.stderr)
+def _run(agent_id: str, command: list[str], workdir: Path, timeout_seconds: int, cancel: Any | None = None) -> AgentResult:
+    started = time.monotonic()
+    process = subprocess.Popen(command, cwd=workdir, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+    while process.poll() is None:
+        if cancel is not None and cancel.is_set():
+            _stop(process)
+            out, err = process.communicate()
+            return AgentResult(agent_id, [shlex.quote(part) for part in command], 130, out, err + "\ncancelled\n")
+        if time.monotonic() - started > timeout_seconds:
+            _stop(process)
+            out, err = process.communicate()
+            return AgentResult(agent_id, [shlex.quote(part) for part in command], 124, out, err + "\ntimeout\n")
+        time.sleep(0.05)
+    out, err = process.communicate()
+    return AgentResult(agent_id, [shlex.quote(part) for part in command], int(process.returncode or 0), out, err)
+
+
+def _stop(process: subprocess.Popen[str]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except Exception:
+        process.terminate()
+    try:
+        process.wait(timeout=2)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except Exception:
+            process.kill()
