@@ -230,6 +230,7 @@ def test_phase3_readiness_payload_schema() -> None:
         "provider_adapters",
         "selected_engine",
         "linux_cuda_host",
+        "docker",
         "engine_python_deps",
         "ollama_binary",
         "local_agent_path",
@@ -240,6 +241,7 @@ def test_phase3_readiness_payload_schema() -> None:
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["selected_engine"]["ready"] is True
     assert payload["checks"]["selected_engine"]["engine"] == "vllm"
+    assert payload["checks"]["docker"]["requirement"] == "Docker daemon for SWE-bench eval"
     assert payload["checks"]["local_agent_path"]["ready"] is True
     assert payload["checks"]["engine_python_deps"]["requirement"] == "selected engine module: vllm"
     assert payload["checks"]["engine_python_deps"]["selected_engine"] == "vllm"
@@ -340,6 +342,9 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["selected_engine"]["ready"] is True
     assert payload["checks"]["selected_engine"]["engine"] == "vllm"
+    assert payload["checks"]["docker"]["ready"] is True
+    assert payload["checks"]["docker"]["daemon"] is True
+    assert payload["checks"]["docker"]["version"]
     assert payload["checks"]["local_agent_path"]["ready"] is True
     assert payload["checks"]["local_agent_path"]["swe_runner_agent"] == "local"
     assert payload["checks"]["engine_python_deps"]["requirement"] == "selected engine module: vllm"

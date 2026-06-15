@@ -38,6 +38,7 @@ def readiness_payload() -> dict[str, Any]:
         "provider_adapters": _provider_adapters(),
         "selected_engine": _selected_engine_supported(selected_engine),
         "linux_cuda_host": _linux_cuda_host(),
+        "docker": _docker(),
         "engine_python_deps": _python_deps("vllm", "sglang", selected_engine=selected_engine),
         "ollama_binary": _ollama_binary(selected_engine),
         "local_agent_path": _local_agent_path(),
@@ -131,6 +132,20 @@ def _linux_cuda_host() -> dict[str, Any]:
         "system": system,
         "nvidia_smi": bool(nvidia_smi),
         "gpu_names": [line for line in gpu_query.splitlines() if line.strip()],
+    }
+
+
+def _docker() -> dict[str, Any]:
+    if shutil.which("docker") is None:
+        return {"ready": False, "available": False, "daemon": False, "version": "", "requirement": "Docker daemon for SWE-bench eval"}
+    result = subprocess.run(["docker", "info", "--format", "{{.ServerVersion}}"], text=True, capture_output=True, timeout=10, check=False)
+    version = result.stdout.strip()
+    return {
+        "ready": result.returncode == 0,
+        "available": True,
+        "daemon": result.returncode == 0,
+        "version": version,
+        "requirement": "Docker daemon for SWE-bench eval",
     }
 
 

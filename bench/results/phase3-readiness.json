@@ -1,5 +1,12 @@
 {
   "checks": {
+    "docker": {
+      "available": true,
+      "daemon": true,
+      "ready": true,
+      "requirement": "Docker daemon for SWE-bench eval",
+      "version": "29.5.3"
+    },
     "engine_python_deps": {
       "current_modules": {
         "sglang": false,
