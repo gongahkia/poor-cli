@@ -1,13 +1,23 @@
 {
   "checks": {
     "engine_python_deps": {
+      "current_modules": {
+        "sglang": false,
+        "vllm": false
+      },
       "install": "scripts/setup-linux-cuda.sh --yes --engine vllm",
       "modules": {
         "sglang": false,
         "vllm": false
       },
       "ready": false,
-      "requirement": "one of vllm or sglang"
+      "requirement": "one of vllm or sglang",
+      "venv_modules": {
+        "sglang": false,
+        "vllm": false
+      },
+      "venv_python": ".poor-cli/local-cuda-venv/bin/python",
+      "venv_python_exists": false
     },
     "linux_cuda_host": {
       "gpu_names": [],

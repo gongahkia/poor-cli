@@ -96,6 +96,7 @@ fi
 {
   printf 'export POOR_CLI_LOCAL_ENGINE=%q\n' "$ENGINE"
   printf 'export POOR_CLI_LOCAL_MODEL=%q\n' "$MODEL"
+  printf 'export POOR_CLI_LOCAL_VENV=%q\n' "$VENV"
   printf 'export POOR_CLI_LOCAL_BASE_URL=%q\n' "$BASE_URL"
   printf 'export POOR_CLI_LOCAL_PREFIX_CACHE=%q\n' "$PREFIX_CACHE"
   printf 'export POOR_CLI_LOCAL_PREFIX_CACHE_HASH_ALGO=%q\n' "$PREFIX_CACHE_HASH_ALGO"

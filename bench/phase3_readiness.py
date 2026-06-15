@@ -93,13 +93,54 @@ def _linux_cuda_host() -> dict[str, Any]:
 
 
 def _python_deps(*names: str) -> dict[str, Any]:
-    modules = {name: importlib.util.find_spec(name) is not None for name in names}
+    current_modules = {name: importlib.util.find_spec(name) is not None for name in names}
+    venv_path = _local_cuda_venv()
+    venv_python = venv_path / "bin" / "python"
+    venv_modules = {name: _venv_module_available(venv_python, name) for name in names}
+    modules = {name: current_modules[name] or venv_modules[name] for name in names}
     return {
         "ready": any(modules.values()),
         "modules": modules,
+        "current_modules": current_modules,
+        "venv_modules": venv_modules,
+        "venv_python": _display_path(venv_python),
+        "venv_python_exists": venv_python.is_file(),
         "requirement": "one of vllm or sglang",
         "install": "scripts/setup-linux-cuda.sh --yes --engine vllm",
     }
+
+
+def _local_cuda_venv() -> Path:
+    raw = Path(os.environ.get("POOR_CLI_LOCAL_VENV", ".poor-cli/local-cuda-venv")).expanduser()
+    return raw if raw.is_absolute() else ROOT / raw
+
+
+def _venv_module_available(python: Path, name: str) -> bool:
+    if not python.is_file():
+        return False
+    try:
+        result = subprocess.run(
+            [
+                str(python),
+                "-c",
+                "import importlib.util, sys; sys.exit(0 if importlib.util.find_spec(sys.argv[1]) else 1)",
+                name,
+            ],
+            text=True,
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
 
 
 def _binary(name: str) -> dict[str, Any]:

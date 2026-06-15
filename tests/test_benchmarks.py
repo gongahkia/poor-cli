@@ -14,6 +14,7 @@ from bench.phase3_acceptance import acceptance_payload as phase3_acceptance_payl
 from bench.phase3_closeout import closeout_payload
 from bench.phase3_demo import demo_plan_payload, validate_demo_evidence
 from bench.phase3_local_benchmark import benchmark_plan_payload, validate_local_summary
+from bench.phase3_readiness import _python_deps
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
 from bench.swe_bench_lite import run as swe_run
@@ -233,7 +234,31 @@ def test_phase3_readiness_payload_schema() -> None:
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["local_agent_path"]["ready"] is True
     assert payload["checks"]["engine_python_deps"]["requirement"] == "one of vllm or sglang"
+    assert set(payload["checks"]["engine_python_deps"]["modules"]) == {"vllm", "sglang"}
+    assert set(payload["checks"]["engine_python_deps"]["current_modules"]) == {"vllm", "sglang"}
+    assert set(payload["checks"]["engine_python_deps"]["venv_modules"]) == {"vllm", "sglang"}
+    assert payload["checks"]["engine_python_deps"]["venv_python"].endswith(".poor-cli/local-cuda-venv/bin/python")
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
+
+
+def test_phase3_readiness_detects_engine_deps_from_local_cuda_venv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    venv = tmp_path / "local-cuda-venv"
+    python = venv / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text(
+        '#!/usr/bin/env bash\nif [[ "${3:-}" == "vllm" ]]; then\n  exit 0\nfi\nexit 1\n',
+        encoding="utf-8",
+    )
+    python.chmod(0o755)
+    monkeypatch.setenv("POOR_CLI_LOCAL_VENV", str(venv))
+
+    payload = _python_deps("vllm", "sglang")
+
+    assert payload["ready"] is True
+    assert payload["modules"]["vllm"] is True
+    assert payload["venv_modules"] == {"vllm": True, "sglang": False}
+    assert payload["venv_python"] == str(python)
+    assert payload["venv_python_exists"] is True
 
 
 def test_checked_in_phase3_readiness_snapshot() -> None:
@@ -249,6 +274,10 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert payload["checks"]["local_agent_path"]["ready"] is True
     assert payload["checks"]["local_agent_path"]["swe_runner_agent"] == "local"
     assert payload["checks"]["engine_python_deps"]["requirement"] == "one of vllm or sglang"
+    assert set(payload["checks"]["engine_python_deps"]["modules"]) == {"vllm", "sglang"}
+    assert set(payload["checks"]["engine_python_deps"]["current_modules"]) == {"vllm", "sglang"}
+    assert set(payload["checks"]["engine_python_deps"]["venv_modules"]) == {"vllm", "sglang"}
+    assert "venv_python_exists" in payload["checks"]["engine_python_deps"]
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 
