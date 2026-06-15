@@ -8,8 +8,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from .store import RunStore
+from .tools import ToolDispatcher, load_tool_schemas
+
 MCP_PROTOCOL_VERSION = "2025-06-18"
 MCP_CONFIG_PATHS = (".poor-cli/mcp.json", ".claude/mcp.json")
+DEFAULT_EXPOSED_TOOLS = {"read_file", "glob", "grep", "replay_emit", "review", "web_search", "web_fetch"}
 
 
 class McpError(RuntimeError):
@@ -22,6 +26,8 @@ class McpServerSpec:
     command: list[str]
     env: dict[str, str] = field(default_factory=dict)
     enabled: bool = True
+    allow_tools: tuple[str, ...] = ()
+    timeout_seconds: int = 30
 
 
 class MCPClient:
@@ -55,7 +61,11 @@ class MCPClient:
     async def list_tools(self) -> list[dict[str, Any]]:
         result = await self._request("tools/list")
         tools = result.get("tools", [])
-        return tools if isinstance(tools, list) else []
+        rows = tools if isinstance(tools, list) else []
+        if not self.spec.allow_tools:
+            return rows
+        allowed = set(self.spec.allow_tools)
+        return [tool for tool in rows if isinstance(tool, dict) and str(tool.get("name") or "") in allowed]
 
     async def call_tool_raw(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         return await self._request("tools/call", {"name": name, "arguments": arguments})
@@ -149,12 +159,90 @@ async def call_mcp_tool(repo_root: Path | None, qualified_name: str, arguments: 
     specs = {spec.name: spec for spec in load_mcp_server_specs(repo_root)}
     if server_name not in specs:
         raise McpError(f"unknown MCP server: {server_name}")
+    if specs[server_name].allow_tools and tool_name not in set(specs[server_name].allow_tools):
+        raise McpError(f"MCP tool not allowlisted: {qualified_name}")
     client = MCPClient(specs[server_name])
-    await client.connect()
     try:
-        return await client.call_tool(tool_name, arguments)
+        await client.connect()
+        return await asyncio.wait_for(client.call_tool(tool_name, arguments), timeout=specs[server_name].timeout_seconds)
+    except McpError as exc:
+        raise McpError(_redact(str(exc), specs[server_name].env)) from exc
     finally:
         await client.disconnect()
+
+
+def serve_mcp_stdio(root: Path, repo_root: Path | None = None) -> int:
+    server = PoorMcpServer(root, repo_root or Path.cwd())
+    try:
+        for line in sys.stdin:
+            server.handle(line)
+    finally:
+        server.close()
+    return 0
+
+
+class PoorMcpServer:
+    def __init__(self, root: Path, repo_root: Path):
+        self.repo_root = repo_root.resolve()
+        self.store = RunStore(root)
+        self.run_id = self.store.create_run(
+            user_goal="mcp stdio tool server",
+            repo_path=self.repo_root,
+            git_commit_start=None,
+            mode="mcp",
+            budget={},
+        )
+        self.exposed = _exposed_tools(self.repo_root)
+
+    def close(self) -> None:
+        self.store.set_run_status(self.run_id, "completed", "mcp server closed")
+        self.store.close()
+
+    def handle(self, line: str) -> None:
+        try:
+            req = json.loads(line)
+            if not isinstance(req, dict):
+                raise ValueError("request must be an object")
+            req_id = req.get("id")
+            method = str(req.get("method") or "")
+            if method == "initialize":
+                self._send(req_id, {"protocolVersion": MCP_PROTOCOL_VERSION, "capabilities": {"tools": {"listChanged": False}}})
+            elif method == "tools/list":
+                self._send(req_id, {"tools": self._tools()})
+            elif method == "tools/call":
+                self._send(req_id, self._call_tool(req.get("params") if isinstance(req.get("params"), dict) else {}))
+            else:
+                self._send_error(req_id, -32601, f"method not found: {method}")
+        except Exception as exc:
+            self._send_error(None, -32603, _redact(f"{type(exc).__name__}: {exc}", {}))
+
+    def _tools(self) -> list[dict[str, Any]]:
+        schemas = load_tool_schemas(self.repo_root)
+        return [
+            {"name": name, "description": schema.description, "inputSchema": schema.parameters}
+            for name, schema in sorted(schemas.items())
+            if name in self.exposed
+        ]
+
+    def _call_tool(self, params: dict[str, Any]) -> dict[str, Any]:
+        name = str(params.get("name") or "")
+        arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
+        if name not in self.exposed:
+            return {"content": [{"type": "text", "text": f"tool not allowed: {name}"}], "isError": True}
+        dispatcher = ToolDispatcher(self.store, self.run_id, workdir=self.repo_root)
+        result = dispatcher.call(name, arguments)
+        text = json.dumps({"ok": result.ok, "output": result.output, "error": result.error}, sort_keys=True)
+        return {"content": [{"type": "text", "text": text}], "isError": not result.ok}
+
+    def _send(self, req_id: Any, result: dict[str, Any]) -> None:
+        payload = {"jsonrpc": "2.0", "id": req_id, "result": result}
+        sys.stdout.write(json.dumps(payload, sort_keys=True) + "\n")
+        sys.stdout.flush()
+
+    def _send_error(self, req_id: Any, code: int, message: str) -> None:
+        payload = {"jsonrpc": "2.0", "id": req_id, "error": {"code": code, "message": message}}
+        sys.stdout.write(json.dumps(payload, sort_keys=True) + "\n")
+        sys.stdout.flush()
 
 
 def _server_items(config: dict[str, Any]) -> list[tuple[str, Any]]:
@@ -181,6 +269,8 @@ def _spec_from_mapping(name: str, raw: dict[str, Any]) -> McpServerSpec:
         command=command,
         env={str(key): _expand_env(str(value)) for key, value in env.items()},
         enabled=bool(raw.get("enabled", True)),
+        allow_tools=tuple(str(item) for item in raw.get("allow_tools") or []),
+        timeout_seconds=max(1, int(raw.get("timeout_seconds") or 30)),
     )
 
 
@@ -208,3 +298,20 @@ def _render_mcp_result(result: dict[str, Any]) -> str:
         if parts:
             return "".join(parts)
     return json.dumps(result, ensure_ascii=False, sort_keys=True)
+
+
+def _exposed_tools(repo_root: Path) -> set[str]:
+    config = discover_mcp_config(repo_root)
+    raw = config.get("expose_tools")
+    exposed = {str(item) for item in raw} if isinstance(raw, list) else set(DEFAULT_EXPOSED_TOOLS)
+    return exposed | {name for name in load_tool_schemas(repo_root) if name in {"find_symbol", "definition_of", "imports_of", "callers_of", "subgraph"}}
+
+
+def _redact(text: str, env: dict[str, str]) -> str:
+    values = [value for value in env.values() if value]
+    values.extend(value for key, value in os.environ.items() if any(part in key.upper() for part in ("TOKEN", "SECRET", "KEY")))
+    out = text
+    for value in sorted(set(values), key=len, reverse=True):
+        if len(value) >= 4:
+            out = out.replace(value, "[redacted]")
+    return out

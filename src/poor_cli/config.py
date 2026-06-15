@@ -137,6 +137,24 @@ def switch_provider(config: dict[str, Any], profile_id: str) -> dict[str, Any]:
     return next_config
 
 
+def set_route(config: dict[str, Any], role: str, profile_id: str, model: str | None = None) -> dict[str, Any]:
+    if role not in ROLE_NAMES:
+        raise ConfigError(f"unsupported route role: {role}")
+    if profile_id not in config.get("providers", {}):
+        raise ConfigError(f"profile not found: {profile_id}")
+    next_config = deepcopy(config)
+    route = next_config.setdefault("routes", {}).setdefault(role, {})
+    route["profile"] = profile_id
+    if model:
+        route["model"] = model
+    elif not route.get("model"):
+        models = next_config["providers"][profile_id].get("models")
+        if isinstance(models, list) and models:
+            route["model"] = str(models[0])
+    validate_config(next_config)
+    return next_config
+
+
 def export_config(config: dict[str, Any], profile_id: str | None = None) -> dict[str, Any]:
     validate_config(config)
     exported = empty_config()

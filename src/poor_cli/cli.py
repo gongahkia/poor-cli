@@ -24,6 +24,7 @@ from .config import (
     provider_preset,
     provider_rows,
     save_repo_config,
+    set_route,
     switch_provider,
     to_toml,
 )
@@ -93,7 +94,7 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
     if args.command == "replay":
         return _replay(args, store)
     if args.command == "mcp":
-        return _mcp(args)
+        return _mcp(args, store)
     if args.command == "rpc":
         return _rpc(args, store)
     if args.command == "tui":
@@ -300,6 +301,11 @@ def _route(args: argparse.Namespace) -> int:
             f"provider={explanation['provider_kind']} reason={explanation['reason']}"
         )
         return 0
+    if args.route_command == "set":
+        path = save_repo_config(set_route(load_config(include_env=False), args.role, args.profile, args.model))
+        print(f"route {args.role}: profile={args.profile} model={args.model or ''}")
+        print(f"wrote {path}")
+        return 0
     raise RuntimeError("missing route command")
 
 
@@ -379,7 +385,7 @@ def _replay(args: argparse.Namespace, store: RunStore) -> int:
     return 0
 
 
-def _mcp(args: argparse.Namespace) -> int:
+def _mcp(args: argparse.Namespace, store: RunStore) -> int:
     if args.mcp_command == "list":
         tools = asyncio.run(list_mcp_tools(Path.cwd()))
         if args.json:
@@ -394,6 +400,10 @@ def _mcp(args: argparse.Namespace) -> int:
             raise RuntimeError("--args must decode to a JSON object")
         print(asyncio.run(call_mcp_tool(Path.cwd(), args.tool, arguments)))
         return 0
+    if args.mcp_command == "serve" and args.stdio:
+        from .mcp_client import serve_mcp_stdio
+
+        return serve_mcp_stdio(store.root, Path.cwd())
     raise RuntimeError("missing mcp command")
 
 
@@ -516,6 +526,10 @@ def _parser() -> argparse.ArgumentParser:
     route_explain.add_argument("task", nargs="+")
     route_explain.add_argument("--role", default="executor")
     route_explain.add_argument("--json", action="store_true")
+    route_set = route_sub.add_parser("set")
+    route_set.add_argument("--role", required=True)
+    route_set.add_argument("--profile", required=True)
+    route_set.add_argument("--model")
 
     inspect = sub.add_parser("inspect")
     inspect.add_argument("run_id")
@@ -545,6 +559,8 @@ def _parser() -> argparse.ArgumentParser:
     mcp_call = mcp_sub.add_parser("call")
     mcp_call.add_argument("tool")
     mcp_call.add_argument("--args", default="{}")
+    mcp_serve = mcp_sub.add_parser("serve")
+    mcp_serve.add_argument("--stdio", action="store_true")
 
     rpc = sub.add_parser("rpc")
     rpc_sub = rpc.add_subparsers(dest="rpc_command")

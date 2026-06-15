@@ -211,3 +211,19 @@ def test_cli_provider_export_import(tmp_path: Path, monkeypatch, capsys) -> None
     assert main(["provider", "list", "--json"]) == 0
     providers = json.loads(capsys.readouterr().out)["providers"]
     assert providers[0]["id"] == "openai"
+
+
+def test_cli_route_set_updates_validated_route(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+
+    assert main(["provider", "add", "openai", "--model", "gpt-5.5"]) == 0
+    capsys.readouterr()
+    assert main(["route", "set", "--role", "reviewer", "--profile", "openai", "--model", "gpt-5.5"]) == 0
+    capsys.readouterr()
+    assert main(["route", "explain", "--role", "reviewer", "review patch", "--json"]) == 0
+    route = json.loads(capsys.readouterr().out)
+
+    assert route["role"] == "reviewer"
+    assert route["profile"] == "openai"
+    assert route["model"] == "gpt-5.5"
