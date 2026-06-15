@@ -427,6 +427,68 @@ def test_phase3_demo_validator_accepts_real_evidence(tmp_path: Path) -> None:
     assert payload["errors"] == []
 
 
+def test_phase3_demo_validator_resolves_video_relative_to_evidence(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "results"
+    evidence_dir.mkdir()
+    video = evidence_dir / "phase3-demo.mp4"
+    video.write_bytes(b"demo")
+    evidence = evidence_dir / "phase3-demo.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "duration_seconds": 60,
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "internet_disabled": True,
+                "local_gpu": True,
+                "graph_tools_visible": True,
+                "offline_replay_verified": True,
+                "run_id": "run_demo",
+                "video_path": "phase3-demo.mp4",
+                "commands": [
+                    'poor-cli run "fix bug" --graph --agents local --yes',
+                    "poor-cli --offline replay run_demo --verify",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is True
+    assert payload["errors"] == []
+
+
+def test_phase3_demo_validator_requires_replay_of_same_run_id(tmp_path: Path) -> None:
+    video = tmp_path / "phase3-demo.mp4"
+    video.write_bytes(b"demo")
+    evidence = tmp_path / "phase3-demo.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "duration_seconds": 60,
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "internet_disabled": True,
+                "local_gpu": True,
+                "graph_tools_visible": True,
+                "offline_replay_verified": True,
+                "run_id": "run_demo",
+                "video_path": str(video),
+                "commands": [
+                    'poor-cli run "fix bug" --graph --agents local --yes',
+                    "poor-cli --offline replay other_run --verify",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is False
+    assert "commands must replay the recorded run_id offline" in payload["errors"]
+
+
 def test_phase3_demo_template_writer_outputs_valid_schema(tmp_path: Path) -> None:
     video = tmp_path / "phase3-demo.mp4"
     video.write_bytes(b"demo")

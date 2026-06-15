@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 from pathlib import Path
 from typing import Any
 
@@ -77,11 +78,13 @@ def demo_plan_payload() -> dict[str, Any]:
 
 def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
     payload = _json_file(path)
-    video_path = ROOT / str(payload.get("video_path") or "")
-    command_transcript = "\n".join(str(item) for item in payload.get("commands", [])) if isinstance(payload.get("commands"), list) else ""
+    video_path = _resolve_video_path(path, str(payload.get("video_path") or ""))
+    commands = payload.get("commands", []) if isinstance(payload.get("commands"), list) else []
+    command_transcript = "\n".join(str(item) for item in commands)
     missing_fragments = [fragment for fragment in REQUIRED_COMMAND_FRAGMENTS if fragment not in command_transcript]
     duration = int(payload.get("duration_seconds") or 0)
     model = str(payload.get("model") or "")
+    run_id = str(payload.get("run_id") or "")
     errors = []
     if not 45 <= duration <= 75:
         errors.append("duration_seconds must be between 45 and 75")
@@ -90,8 +93,10 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
     for field in ("internet_disabled", "local_gpu", "graph_tools_visible", "offline_replay_verified"):
         if not bool(payload.get(field)):
             errors.append(f"{field} must be true")
-    if not str(payload.get("run_id") or ""):
+    if not run_id:
         errors.append("run_id is required")
+    elif not _commands_replay_run_id(commands, run_id):
+        errors.append("commands must replay the recorded run_id offline")
     if missing_fragments:
         errors.append("commands must show local graph run and offline replay verification")
     if not video_path.is_file():
@@ -106,7 +111,7 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
         "local_gpu": bool(payload.get("local_gpu")),
         "graph_tools_visible": bool(payload.get("graph_tools_visible")),
         "offline_replay_verified": bool(payload.get("offline_replay_verified")),
-        "run_id": payload.get("run_id", ""),
+        "run_id": run_id,
         "video_path": payload.get("video_path", ""),
         "missing_command_fragments": missing_fragments,
     }
@@ -122,6 +127,29 @@ def _json_file(path: Path) -> dict[str, Any]:
 def _display_path(path: Path) -> str:
     resolved = path.resolve()
     return str(resolved.relative_to(ROOT)) if resolved.is_relative_to(ROOT) else str(path)
+
+
+def _resolve_video_path(evidence_path: Path, raw_path: str) -> Path:
+    if not raw_path:
+        return ROOT / ""
+    path = Path(raw_path).expanduser()
+    if path.is_absolute():
+        return path
+    root_candidate = ROOT / path
+    return root_candidate if root_candidate.is_file() else evidence_path.parent / path
+
+
+def _commands_replay_run_id(commands: list[Any], run_id: str) -> bool:
+    for command in commands:
+        text = str(command)
+        try:
+            parts = shlex.split(text)
+        except ValueError:
+            parts = text.split()
+        for index, part in enumerate(parts[:-1]):
+            if part == "replay" and parts[index + 1] == run_id and "--offline" in parts and "--verify" in parts:
+                return True
+    return False
 
 
 def main(argv: list[str] | None = None) -> int:
