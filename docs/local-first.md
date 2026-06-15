@@ -15,7 +15,7 @@ The setup script creates:
 - `.poor-cli/local-cuda-run.sh`
 
 It requires Linux and `nvidia-smi` by default. For CI or syntax validation only, pass `--skip-cuda-check` and set `POOR_CLI_ALLOW_NON_LINUX=1`.
-The generated `.poor-cli/local-cuda.env` exports the provider, model, local venv, and base URL variables used by the `local` agent path and readiness checks.
+The generated `.poor-cli/local-cuda.env` exports the provider, model, local Python, local venv, and base URL variables used by the `local` agent path and readiness checks.
 
 ## Engines
 
@@ -23,6 +23,7 @@ The generated `.poor-cli/local-cuda.env` exports the provider, model, local venv
 scripts/setup-linux-cuda.sh --yes --engine vllm
 scripts/setup-linux-cuda.sh --yes --engine sglang
 scripts/setup-linux-cuda.sh --yes --engine ollama --skip-engine-install
+scripts/setup-linux-cuda.sh --yes --engine vllm --python python3.12
 ```
 
 The script installs `vllm` or `sglang[all]` into the local venv when selected. Ollama is expected to be installed as a system service or binary.

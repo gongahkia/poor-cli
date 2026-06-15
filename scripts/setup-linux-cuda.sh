@@ -3,6 +3,7 @@ set -euo pipefail
 
 ENGINE="${POOR_CLI_LOCAL_ENGINE:-vllm}"
 MODEL="${POOR_CLI_LOCAL_MODEL:-Qwen/Qwen2.5-Coder-32B-Instruct}"
+PYTHON="${POOR_CLI_LOCAL_PYTHON:-python3}"
 VENV="${POOR_CLI_LOCAL_VENV:-.poor-cli/local-cuda-venv}"
 HOST="${POOR_CLI_LOCAL_HOST:-127.0.0.1}"
 PORT="${POOR_CLI_LOCAL_PORT:-}"
@@ -15,7 +16,7 @@ SKIP_ENGINE_INSTALL=0
 
 usage() {
   cat <<'EOF'
-usage: scripts/setup-linux-cuda.sh --yes [--engine vllm|sglang|ollama] [--model MODEL] [--venv PATH]
+usage: scripts/setup-linux-cuda.sh --yes [--engine vllm|sglang|ollama] [--model MODEL] [--python PYTHON] [--venv PATH]
 
 Creates a Linux CUDA local-first poor-cli environment and writes:
   .poor-cli/local-cuda.env
@@ -24,6 +25,7 @@ Creates a Linux CUDA local-first poor-cli environment and writes:
 Environment overrides:
   POOR_CLI_LOCAL_ENGINE=vllm|sglang|ollama
   POOR_CLI_LOCAL_MODEL=Qwen/Qwen2.5-Coder-32B-Instruct
+  POOR_CLI_LOCAL_PYTHON=python3
   POOR_CLI_LOCAL_VENV=.poor-cli/local-cuda-venv
   POOR_CLI_LOCAL_HOST=127.0.0.1
   POOR_CLI_LOCAL_PORT=8000
@@ -38,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --yes) YES=1 ;;
     --engine) ENGINE="$2"; shift ;;
     --model) MODEL="$2"; shift ;;
+    --python) PYTHON="$2"; shift ;;
     --venv) VENV="$2"; shift ;;
     --host) HOST="$2"; shift ;;
     --port) PORT="$2"; shift ;;
@@ -76,7 +79,7 @@ if [[ "$PORT" == "" ]]; then
   PORT="$DEFAULT_PORT"
 fi
 
-python3 -m venv "$VENV"
+"$PYTHON" -m venv "$VENV"
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
 python -m pip install --upgrade pip wheel
@@ -96,6 +99,7 @@ fi
 {
   printf 'export POOR_CLI_LOCAL_ENGINE=%q\n' "$ENGINE"
   printf 'export POOR_CLI_LOCAL_MODEL=%q\n' "$MODEL"
+  printf 'export POOR_CLI_LOCAL_PYTHON=%q\n' "$PYTHON"
   printf 'export POOR_CLI_LOCAL_VENV=%q\n' "$VENV"
   printf 'export POOR_CLI_LOCAL_BASE_URL=%q\n' "$BASE_URL"
   printf 'export POOR_CLI_LOCAL_PREFIX_CACHE=%q\n' "$PREFIX_CACHE"

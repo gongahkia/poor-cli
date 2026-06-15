@@ -15,7 +15,7 @@ from bench.phase3_closeout import closeout_payload
 from bench.phase3_demo import demo_evidence_template, demo_plan_payload, validate_demo_evidence
 from bench.phase3_demo import main as phase3_demo_main
 from bench.phase3_local_benchmark import benchmark_plan_payload, is_local_summary_candidate, validate_local_summary
-from bench.phase3_readiness import _ollama_binary, _python_deps, _selected_engine_supported
+from bench.phase3_readiness import _ollama_binary, _python_deps, _selected_engine_supported, _setup_python
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
 from bench.swe_bench_lite import run as swe_run
@@ -226,6 +226,7 @@ def test_phase3_readiness_payload_schema() -> None:
     assert isinstance(payload["ready"], bool)
     assert set(payload["checks"]) == {
         "setup_script",
+        "setup_python",
         "provider_adapters",
         "selected_engine",
         "linux_cuda_host",
@@ -234,6 +235,8 @@ def test_phase3_readiness_payload_schema() -> None:
         "local_agent_path",
     }
     assert payload["checks"]["setup_script"]["ready"] is True
+    assert payload["checks"]["setup_python"]["ready"] is True
+    assert payload["checks"]["setup_python"]["requirement"] == ">=3.11,<3.15"
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["selected_engine"]["ready"] is True
     assert payload["checks"]["selected_engine"]["engine"] == "vllm"
@@ -298,6 +301,21 @@ def test_phase3_readiness_rejects_unsupported_selected_engine() -> None:
     assert payload["supported"] == ["ollama", "sglang", "vllm"]
 
 
+def test_phase3_readiness_reports_setup_python(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_python = tmp_path / "python3"
+    fake_python.write_text("#!/usr/bin/env bash\nprintf '3.10.9\\n'\n", encoding="utf-8")
+    fake_python.chmod(0o755)
+    monkeypatch.setenv("POOR_CLI_LOCAL_PYTHON", str(fake_python))
+
+    payload = _setup_python()
+
+    assert payload["ready"] is False
+    assert payload["executable"] == str(fake_python)
+    assert payload["path"] == str(fake_python)
+    assert payload["version"] == "3.10.9"
+    assert payload["requirement"] == ">=3.11,<3.15"
+
+
 def test_phase3_readiness_requires_ollama_binary_only_for_ollama(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("PATH", str(tmp_path))
 
@@ -316,6 +334,8 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert isinstance(payload["ready"], bool)
     assert payload["checks"]["setup_script"]["ready"] is True
     assert payload["checks"]["setup_script"]["bash_syntax"] is True
+    assert payload["checks"]["setup_python"]["ready"] is True
+    assert payload["checks"]["setup_python"]["requirement"] == ">=3.11,<3.15"
     assert payload["checks"]["provider_adapters"]["ready"] is True
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["selected_engine"]["ready"] is True

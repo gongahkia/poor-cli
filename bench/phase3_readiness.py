@@ -34,6 +34,7 @@ def readiness_payload() -> dict[str, Any]:
     selected_engine = _selected_engine()
     checks = {
         "setup_script": _setup_script(),
+        "setup_python": _setup_python(),
         "provider_adapters": _provider_adapters(),
         "selected_engine": _selected_engine_supported(selected_engine),
         "linux_cuda_host": _linux_cuda_host(),
@@ -61,6 +62,44 @@ def _setup_script() -> dict[str, Any]:
         "executable": executable,
         "bash_syntax": syntax.returncode == 0,
     }
+
+
+def _setup_python() -> dict[str, Any]:
+    raw = os.environ.get("POOR_CLI_LOCAL_PYTHON", "python3")
+    resolved = shutil.which(raw) or (raw if Path(raw).is_file() else "")
+    if not resolved:
+        return {"ready": False, "executable": raw, "path": "", "version": "", "requirement": ">=3.11,<3.15"}
+    result = subprocess.run(
+        [
+            resolved,
+            "-c",
+            "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}')",
+        ],
+        text=True,
+        capture_output=True,
+        timeout=10,
+        check=False,
+    )
+    version = result.stdout.strip() if result.returncode == 0 else ""
+    major, minor = _version_pair(version)
+    compatible = major == 3 and 11 <= minor < 15
+    return {
+        "ready": result.returncode == 0 and compatible,
+        "executable": raw,
+        "path": _display_path(Path(resolved)),
+        "version": version,
+        "requirement": ">=3.11,<3.15",
+    }
+
+
+def _version_pair(version: str) -> tuple[int, int]:
+    parts = version.split(".")
+    if len(parts) < 2:
+        return (0, 0)
+    try:
+        return (int(parts[0]), int(parts[1]))
+    except ValueError:
+        return (0, 0)
 
 
 def _provider_adapters() -> dict[str, Any]:
