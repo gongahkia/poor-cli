@@ -61,3 +61,7 @@ def test_phase3_closeout_script_runs_required_audits() -> None:
     assert "bench/pivot_remaining.py" in text
     assert "bench/phase3_closeout.py" in text
     assert "curl --fail" in text
+    assert "--start-server" in text
+    assert "nohup .poor-cli/local-cuda-run.sh" in text
+    assert "phase3-closeout-server.pid" in text
+    assert "wait_for_server" in text

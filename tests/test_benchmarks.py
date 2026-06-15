@@ -307,7 +307,7 @@ def test_phase3_closeout_payload_schema() -> None:
     assert payload["schema_version"] == "poor-cli-phase3-closeout-v1"
     assert payload["accepted"] is False
     assert set(payload["checks"]) == {"phase3_acceptance", "pivot_remaining"}
-    assert "phase3-closeout-linux-cuda.sh" in payload["target_host_commands"]["run_all"]
+    assert "--start-server" in payload["target_host_commands"]["run_all"]
     assert "--agent local" in payload["target_host_commands"]["generate_local_swe"]
     assert "phase3_demo.py --evidence" in payload["target_host_commands"]["verify_demo"]
     assert set(payload["remaining"]) == set(payload["checks"]["phase3_acceptance"]["remaining"]) | set(
@@ -322,7 +322,7 @@ def test_checked_in_phase3_closeout_snapshot() -> None:
     assert payload["schema_version"] == "poor-cli-phase3-closeout-v1"
     assert payload["accepted"] is False
     assert payload["target_host_commands"] == closeout_payload()["target_host_commands"]
-    assert "phase3-closeout-linux-cuda.sh" in payload["target_host_commands"]["run_all"]
+    assert "--start-server" in payload["target_host_commands"]["run_all"]
     assert set(payload["remaining"]) == set(payload["checks"]["phase3_acceptance"]["remaining"]) | set(
         payload["checks"]["pivot_remaining"]["remaining"]
     )

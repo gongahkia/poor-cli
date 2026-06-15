@@ -61,7 +61,7 @@ Record/replay remains the control plane. A local model run should still produce 
 ## Phase 3 Benchmark Gate
 
 ```sh
-scripts/phase3-closeout-linux-cuda.sh --yes --run-id swe10-local-YYYYMMDDTHHMMSSZ
+scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ
 uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json
 uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
 uv run --locked python bench/phase3_local_benchmark.py --output bench/results/phase3-local-benchmark-plan.json
@@ -69,3 +69,4 @@ uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench
 ```
 
 The verifier is the local-mode closeout gate for the pivot audit. It rejects non-local providers, non-graph runs, partial replay verification, incomplete official eval, and pass rates below 50% of the checked-in Anthropic 10-task row.
+With `--start-server`, the closeout runner starts `.poor-cli/local-cuda-run.sh` in the background, waits for the local provider health endpoint, and writes `.poor-cli/phase3-closeout-server.pid`.
