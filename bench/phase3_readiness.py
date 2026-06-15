@@ -118,6 +118,8 @@ def _linux_cuda_host() -> dict[str, Any]:
     system = platform.system()
     nvidia_smi = shutil.which("nvidia-smi")
     gpu_query = ""
+    gpu_error = ""
+    query_exit_code: int | None = None
     if nvidia_smi:
         result = subprocess.run(
             [nvidia_smi, "--query-gpu=name", "--format=csv,noheader"],
@@ -126,12 +128,18 @@ def _linux_cuda_host() -> dict[str, Any]:
             timeout=10,
             check=False,
         )
+        query_exit_code = result.returncode
         gpu_query = result.stdout.strip()
+        gpu_error = result.stderr.strip()
+    gpu_names = [line for line in gpu_query.splitlines() if line.strip()]
     return {
-        "ready": system == "Linux" and bool(nvidia_smi),
+        "ready": system == "Linux" and bool(nvidia_smi) and query_exit_code == 0 and bool(gpu_names),
         "system": system,
         "nvidia_smi": bool(nvidia_smi),
-        "gpu_names": [line for line in gpu_query.splitlines() if line.strip()],
+        "query_exit_code": query_exit_code,
+        "gpu_names": gpu_names,
+        "stderr": gpu_error,
+        "requirement": "Linux with nvidia-smi returning at least one GPU",
     }
 
 

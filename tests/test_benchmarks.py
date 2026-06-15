@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import tomllib
 from pathlib import Path
 
@@ -15,7 +16,7 @@ from bench.phase3_closeout import closeout_payload
 from bench.phase3_demo import demo_evidence_template, demo_plan_payload, validate_demo_evidence
 from bench.phase3_demo import main as phase3_demo_main
 from bench.phase3_local_benchmark import benchmark_plan_payload, is_local_summary_candidate, validate_local_summary
-from bench.phase3_readiness import _ollama_binary, _python_deps, _selected_engine_supported, _setup_python
+from bench.phase3_readiness import _linux_cuda_host, _ollama_binary, _python_deps, _selected_engine_supported, _setup_python
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
 from bench.swe_bench_lite import run as swe_run
@@ -299,6 +300,9 @@ def test_phase3_readiness_payload_schema() -> None:
     assert payload["checks"]["setup_script"]["ready"] is True
     assert payload["checks"]["setup_python"]["ready"] is True
     assert payload["checks"]["setup_python"]["requirement"] == ">=3.11,<3.15"
+    assert payload["checks"]["linux_cuda_host"]["requirement"] == "Linux with nvidia-smi returning at least one GPU"
+    assert "query_exit_code" in payload["checks"]["linux_cuda_host"]
+    assert "stderr" in payload["checks"]["linux_cuda_host"]
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["checks"]["selected_engine"]["ready"] is True
     assert payload["checks"]["selected_engine"]["engine"] == "vllm"
@@ -314,6 +318,40 @@ def test_phase3_readiness_payload_schema() -> None:
     assert set(payload["checks"]["engine_python_deps"]["venv_modules"]) == {"vllm", "sglang"}
     assert payload["checks"]["engine_python_deps"]["venv_python"].endswith(".poor-cli/local-cuda-venv/bin/python")
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
+
+
+def test_phase3_readiness_requires_successful_nvidia_smi(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("bench.phase3_readiness.platform.system", lambda: "Linux")
+    monkeypatch.setattr("bench.phase3_readiness.shutil.which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None)
+
+    def failed_query(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(["nvidia-smi"], 9, "", "driver not loaded")
+
+    monkeypatch.setattr("bench.phase3_readiness.subprocess.run", failed_query)
+
+    payload = _linux_cuda_host()
+
+    assert payload["ready"] is False
+    assert payload["nvidia_smi"] is True
+    assert payload["query_exit_code"] == 9
+    assert payload["gpu_names"] == []
+    assert payload["stderr"] == "driver not loaded"
+
+
+def test_phase3_readiness_accepts_successful_gpu_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("bench.phase3_readiness.platform.system", lambda: "Linux")
+    monkeypatch.setattr("bench.phase3_readiness.shutil.which", lambda name: "/usr/bin/nvidia-smi" if name == "nvidia-smi" else None)
+
+    def successful_query(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(["nvidia-smi"], 0, "NVIDIA GeForce RTX 4090\n", "")
+
+    monkeypatch.setattr("bench.phase3_readiness.subprocess.run", successful_query)
+
+    payload = _linux_cuda_host()
+
+    assert payload["ready"] is True
+    assert payload["query_exit_code"] == 0
+    assert payload["gpu_names"] == ["NVIDIA GeForce RTX 4090"]
 
 
 def test_phase3_readiness_detects_engine_deps_from_local_cuda_venv(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

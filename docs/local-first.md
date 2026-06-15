@@ -14,7 +14,7 @@ The setup script creates:
 - `.poor-cli/local-cuda.env`
 - `.poor-cli/local-cuda-run.sh`
 
-It requires Linux and `nvidia-smi` by default. For CI or syntax validation only, pass `--skip-cuda-check` and set `POOR_CLI_ALLOW_NON_LINUX=1`.
+It requires Linux and a working `nvidia-smi --query-gpu=name --format=csv,noheader` GPU query by default. For CI or syntax validation only, pass `--skip-cuda-check` and set `POOR_CLI_ALLOW_NON_LINUX=1`.
 The generated `.poor-cli/local-cuda.env` exports the provider, model, local Python, local venv, and base URL variables used by the `local` agent path and readiness checks.
 The closeout path also requires a running Docker daemon for official SWE-bench evaluation.
 

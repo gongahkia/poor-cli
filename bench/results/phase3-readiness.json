@@ -31,7 +31,10 @@
     "linux_cuda_host": {
       "gpu_names": [],
       "nvidia_smi": false,
+      "query_exit_code": null,
       "ready": false,
+      "requirement": "Linux with nvidia-smi returning at least one GPU",
+      "stderr": "",
       "system": "Darwin"
     },
     "local_agent_path": {
