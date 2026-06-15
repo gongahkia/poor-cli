@@ -7,10 +7,10 @@ from typing import Any
 
 try:
     from bench.phase3_acceptance import acceptance_payload as phase3_acceptance_payload
-    from bench.phase3_local_benchmark import ALLOWED_PROVIDERS, target_payload, validate_local_summary
+    from bench.phase3_local_benchmark import is_local_summary_candidate, target_payload, validate_local_summary
 except ModuleNotFoundError:
     from phase3_acceptance import acceptance_payload as phase3_acceptance_payload
-    from phase3_local_benchmark import ALLOWED_PROVIDERS, target_payload, validate_local_summary
+    from phase3_local_benchmark import is_local_summary_candidate, target_payload, validate_local_summary
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -81,7 +81,7 @@ def _phase3_local_mode_benchmark() -> dict[str, Any]:
     }
     for summary_path in sorted((ROOT / "bench" / "swe_bench_lite" / "results").glob("*/summary.json")):
         validation = validate_local_summary(summary_path.resolve())
-        if validation["provider"] not in ALLOWED_PROVIDERS and validation["agent"] != "local":
+        if not is_local_summary_candidate(validation):
             continue
         if validation["accepted"]:
             return {"done": True, **validation}

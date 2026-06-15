@@ -74,6 +74,10 @@ def validate_local_summary(summary_path: Path, *, anthropic_summary: Path = ANTH
     }
 
 
+def is_local_summary_candidate(validation: dict[str, Any]) -> bool:
+    return validation.get("provider") in ALLOWED_PROVIDERS and validation.get("agent") == "local"
+
+
 def target_payload(anthropic_summary: Path = ANTHROPIC_SUMMARY) -> dict[str, Any]:
     summary = _read_json(anthropic_summary)
     results = summary.get("official_evaluation", {}).get("results", {})

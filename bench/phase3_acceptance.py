@@ -7,10 +7,10 @@ from typing import Any
 
 try:
     from bench.phase3_demo import DEMO_EVIDENCE, validate_demo_evidence
-    from bench.phase3_local_benchmark import target_payload, validate_local_summary
+    from bench.phase3_local_benchmark import is_local_summary_candidate, target_payload, validate_local_summary
 except ModuleNotFoundError:
     from phase3_demo import DEMO_EVIDENCE, validate_demo_evidence
-    from phase3_local_benchmark import target_payload, validate_local_summary
+    from phase3_local_benchmark import is_local_summary_candidate, target_payload, validate_local_summary
 
 ROOT = Path(__file__).resolve().parents[1]
 PHASE3_READINESS = ROOT / "bench" / "results" / "phase3-readiness.json"
@@ -60,7 +60,7 @@ def _local_swe_lite_10() -> dict[str, Any]:
     }
     for summary_path in sorted((ROOT / "bench" / "swe_bench_lite" / "results").glob("*/summary.json")):
         validation = validate_local_summary(summary_path.resolve())
-        if validation["provider"] not in {"ollama", "sglang", "vllm"} and validation["agent"] != "local":
+        if not is_local_summary_candidate(validation):
             continue
         if validation["accepted"]:
             return validation

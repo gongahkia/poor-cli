@@ -14,7 +14,7 @@ from bench.phase3_acceptance import acceptance_payload as phase3_acceptance_payl
 from bench.phase3_closeout import closeout_payload
 from bench.phase3_demo import demo_evidence_template, demo_plan_payload, validate_demo_evidence
 from bench.phase3_demo import main as phase3_demo_main
-from bench.phase3_local_benchmark import benchmark_plan_payload, validate_local_summary
+from bench.phase3_local_benchmark import benchmark_plan_payload, is_local_summary_candidate, validate_local_summary
 from bench.phase3_readiness import _ollama_binary, _python_deps
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
@@ -604,6 +604,12 @@ def test_phase3_local_benchmark_rejects_missing_graph_or_low_pass(tmp_path: Path
     assert "summary was not run in graph mode" in payload["errors"]
     assert "offline replay did not verify every task" in payload["errors"]
     assert "local pass rate is below 50% of Anthropic pass rate" in payload["errors"]
+
+
+def test_phase3_local_benchmark_candidate_requires_local_agent_and_provider() -> None:
+    assert is_local_summary_candidate({"provider": "vllm", "agent": "local"}) is True
+    assert is_local_summary_candidate({"provider": "vllm", "agent": "claude"}) is False
+    assert is_local_summary_candidate({"provider": "anthropic", "agent": "local"}) is False
 
 
 def test_graph_vs_grep_payload_schema() -> None:
