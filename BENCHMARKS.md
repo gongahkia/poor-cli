@@ -82,6 +82,16 @@ Checked-in snapshot: `bench/results/phase1-acceptance.json`.
 
 Current acceptance status: all Phase 1 acceptance checks pass from checked-in evidence.
 
+Pivot remaining-work audit:
+
+```sh
+uv run --locked python bench/pivot_remaining.py --output bench/results/pivot-remaining.json
+```
+
+Checked-in snapshot: `bench/results/pivot-remaining.json`.
+
+Current remaining evidence gaps: fixed 10-task graph-mode SWE-bench row, target Linux/CUDA Phase 3 readiness, and local-mode SWE-bench row.
+
 ## Phase 3 readiness
 
 No-cost local-first readiness probe:

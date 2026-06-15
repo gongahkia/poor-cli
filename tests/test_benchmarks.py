@@ -11,6 +11,7 @@ from bench.local_fixture_bugs import compact_payload, run_fixture_suite
 from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
+from bench.pivot_remaining import remaining_payload
 from bench.swe_bench_lite import run as swe_run
 
 
@@ -239,6 +240,31 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert payload["checks"]["provider_adapters"]["ready"] is True
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
+
+
+def test_pivot_remaining_payload_schema() -> None:
+    payload = remaining_payload()
+
+    assert payload["schema_version"] == "poor-cli-pivot-remaining-v1"
+    assert set(payload["checks"]) == {
+        "phase2_fixed_swe_graph_mode",
+        "phase3_linux_cuda_readiness",
+        "phase3_local_mode_benchmark",
+    }
+    assert payload["complete"] is False
+    assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["done"]}
+
+
+def test_checked_in_pivot_remaining_snapshot() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "pivot-remaining.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "poor-cli-pivot-remaining-v1"
+    assert payload["complete"] is False
+    assert payload["checks"]["phase2_fixed_swe_graph_mode"]["done"] is False
+    assert payload["checks"]["phase3_linux_cuda_readiness"]["done"] is False
+    assert payload["checks"]["phase3_local_mode_benchmark"]["done"] is False
+    assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["done"]}
 
 
 def test_graph_vs_grep_payload_schema() -> None:

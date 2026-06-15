@@ -1,0 +1,32 @@
+{
+  "checks": {
+    "phase2_fixed_swe_graph_mode": {
+      "done": false,
+      "evidence": "",
+      "reason": "no checked-in fixed 10-task SWE-bench Lite graph-mode summary with official evaluation"
+    },
+    "phase3_linux_cuda_readiness": {
+      "done": false,
+      "evidence": "bench/results/phase3-readiness.json",
+      "remaining": [
+        "linux_cuda_host",
+        "engine_python_deps"
+      ]
+    },
+    "phase3_local_mode_benchmark": {
+      "done": false,
+      "evidence": "",
+      "pass_rate": 0.0,
+      "resolved_instances": 0,
+      "target_rate": 0.45,
+      "total_instances": 0
+    }
+  },
+  "complete": false,
+  "remaining": [
+    "phase2_fixed_swe_graph_mode",
+    "phase3_linux_cuda_readiness",
+    "phase3_local_mode_benchmark"
+  ],
+  "schema_version": "poor-cli-pivot-remaining-v1"
+}

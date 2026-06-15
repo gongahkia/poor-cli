@@ -81,6 +81,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-15: closed the next Phase 2 graph grammar gap by extending repo graph indexing to TypeScript and TSX, including imports, classes, methods, functions, calls, and subgraph traversal. Evidence: `src/poor_cli/repo_graph.py` and `tests/test_repo_graph.py::test_repo_graph_indexes_typescript_and_tsx_symbols_imports_and_callers`.
 - 2026-06-15: closed the Phase 2 native watcher gap with `RepoGraph.watch(native=True)`, backed by `watchfiles` native filesystem events while keeping polling as the default. Evidence: `tests/test_repo_graph.py::test_repo_graph_native_watch_refreshes_changed_files` and `docs/graph.md`.
 - 2026-06-15: closed the first provider-native prefix/KV-cache control gap by making Linux/CUDA setup emit vLLM `--enable-prefix-caching`, `--prefix-caching-hash-algo`, `--no-enable-prefix-caching`, SGLang `--disable-radix-cache`, and shared `--kv-cache-dtype` launch controls. Evidence: `scripts/setup-linux-cuda.sh`, `tests/test_setup_scripts.py::test_linux_cuda_setup_script_covers_local_engines`, and `docs/local-first.md`. Checked against current vLLM and SGLang server docs.
+- 2026-06-15: added a machine-checkable pivot remaining-work audit so stale log text cannot imply completion. Current snapshot still reports three evidence gaps: fixed 10-task graph-mode SWE-bench, target Linux/CUDA Phase 3 readiness, and local-mode SWE-bench. Evidence: `bench/pivot_remaining.py`, `bench/results/pivot-remaining.json`, and `tests/test_benchmarks.py::test_checked_in_pivot_remaining_snapshot`.
 
 ## TL;DR
 
