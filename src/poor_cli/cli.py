@@ -17,6 +17,7 @@ from .config import (
     export_config,
     import_config,
     load_config,
+    model_registry,
     parse_config_text,
     provider_preset,
     provider_rows,
@@ -152,7 +153,19 @@ def _provider(args: argparse.Namespace) -> int:
             base_url=args.base_url,
             auth_env=args.auth_env,
         )
-        path = save_repo_config(add_provider(config, profile_id, profile[profile_id], make_active=not args.no_switch))
+        next_config = add_provider(config, profile_id, profile[profile_id], make_active=not args.no_switch)
+        if not args.skip_verify and kind in {"openrouter", "kimi", "ollama", "vllm", "sglang"}:
+            report = doctor(next_config, profile_id)
+            if report["endpoint"] != "ok":
+                raise ConfigError(f"provider verification failed for {profile_id}: {report.get('error') or report['endpoint']}")
+            if report["model_exists"] is False:
+                raise ConfigError(f"configured model was not found for {profile_id}")
+            discovered = report.get("discovered_models")
+            if kind == "ollama" and not args.model:
+                if not isinstance(discovered, list) or not discovered:
+                    raise ConfigError("ollama discovery returned no models")
+                next_config["providers"][profile_id]["models"] = discovered
+        path = save_repo_config(next_config)
         print(f"wrote {path}")
         return 0
     if args.provider_command == "list":
@@ -179,6 +192,14 @@ def _provider(args: argparse.Namespace) -> int:
                 f"{report['profile']}\t{report['kind']}\tauth={auth['ref'] or 'none'} present={auth['present']}\t"
                 f"endpoint={report['endpoint']}\tmodel_exists={report['model_exists']}"
             )
+        return 0
+    if args.provider_command == "models":
+        models = model_registry(config)
+        if args.json:
+            print(json.dumps({"models": models}, indent=2, sort_keys=True))
+            return 0
+        for model in models:
+            print(f"{model['alias']}\t{model['profile']}\t{model['model']}")
         return 0
     if args.provider_command == "switch":
         path = save_repo_config(switch_provider(load_config(include_env=False), args.profile))
@@ -340,11 +361,14 @@ def _parser() -> argparse.ArgumentParser:
     provider_add.add_argument("--base-url")
     provider_add.add_argument("--auth-env")
     provider_add.add_argument("--no-switch", action="store_true")
+    provider_add.add_argument("--skip-verify", action="store_true")
     provider_list = provider_sub.add_parser("list")
     provider_list.add_argument("--json", action="store_true")
     provider_doctor = provider_sub.add_parser("doctor")
     provider_doctor.add_argument("profile", nargs="?")
     provider_doctor.add_argument("--json", action="store_true")
+    provider_models = provider_sub.add_parser("models")
+    provider_models.add_argument("--json", action="store_true")
     provider_switch = provider_sub.add_parser("switch")
     provider_switch.add_argument("profile")
     provider_export = provider_sub.add_parser("export")

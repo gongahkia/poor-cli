@@ -54,6 +54,66 @@ def test_provider_profiles_models_and_routes(tmp_path: Path, monkeypatch) -> Non
     assert route["model"] == "gpt-5.5"
 
 
+def test_route_alias_and_missing_profile_fallback(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config = empty_config()
+    profile = provider_preset("openai", profile_id="openai", model="gpt-5.5")
+    config = add_provider(config, "openai", profile["openai"])
+    config["models"] = {"fast": {"profile": "openai", "model": "gpt-5.5"}}
+    config["routes"] = {"executor": {"profile": "missing", "model": "fast"}}
+
+    route = explain_route(config, "fix parser")
+
+    assert route["profile"] == "openai"
+    assert route["model"] == "gpt-5.5"
+    assert route["reason"] == "model alias"
+
+    config["routes"] = {"executor": {"profile": "missing", "model": "unknown"}}
+    fallback = explain_route(config, "fix parser")
+    assert fallback["profile"] == "openai"
+    assert fallback["fallbacks"] == [{"profile": "missing", "reason": "missing profile"}]
+
+
+def test_route_capability_fallback(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config = empty_config()
+    ollama = provider_preset("ollama", profile_id="ollama", model="qwen")
+    openai = provider_preset("openai", profile_id="openai", model="gpt-5.5")
+    config = add_provider(config, "ollama", ollama["ollama"])
+    config = add_provider(config, "openai", openai["openai"], make_active=False)
+    config["routes"] = {"executor": {"profile": "ollama", "required_capability": "tools"}}
+
+    route = explain_route(config, "fix parser")
+
+    assert route["profile"] == "openai"
+    assert route["reason"] == "capability fallback"
+    assert route["fallbacks"] == [{"profile": "ollama", "reason": "missing capability: tools"}]
+
+
+def test_route_budget_and_rate_limit_fallback(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    config = empty_config()
+    primary = provider_preset("openai", profile_id="primary", model="gpt-5.5")
+    fallback = provider_preset("openai", profile_id="fallback", model="gpt-5.5-mini")
+    primary["primary"]["limits"] = {"requests_per_minute": 0}
+    config = add_provider(config, "primary", primary["primary"])
+    config = add_provider(config, "fallback", fallback["fallback"], make_active=False)
+    config["budgets"] = {"max_usd": 0.25}
+    config["routes"] = {"executor": {"profile": "primary", "fallback_profile": "fallback", "max_cost_usd": 1.0}}
+
+    route = explain_route(config, "fix parser")
+
+    assert route["profile"] == "fallback"
+    assert route["reason"] == "budget fallback"
+    assert route["fallbacks"] == [{"profile": "primary", "reason": "over budget"}]
+
+    config["routes"] = {"executor": {"profile": "primary"}}
+    limited = explain_route(config, "fix parser")
+    assert limited["profile"] == "fallback"
+    assert limited["reason"] == "rate-limit fallback"
+    assert limited["fallbacks"] == [{"profile": "primary", "reason": "rate limit unavailable"}]
+
+
 def test_provider_doctor_discovers_ollama_models(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     config = empty_config()
@@ -120,6 +180,9 @@ def test_cli_provider_add_list_switch_and_route_explain(tmp_path: Path, monkeypa
     providers = json.loads(capsys.readouterr().out)["providers"]
     assert providers[0]["id"] == "local"
     assert providers[0]["active"] is True
+    assert main(["provider", "models", "--json"]) == 0
+    models = json.loads(capsys.readouterr().out)["models"]
+    assert models == [{"alias": "local:qwen", "model": "qwen", "profile": "local"}]
 
     assert main(["provider", "switch", "local"]) == 0
     capsys.readouterr()

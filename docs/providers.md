@@ -63,12 +63,15 @@ poor-cli provider add kimi --model kimi-k2-0711-preview
 poor-cli provider add ollama
 poor-cli provider add vllm --base-url http://localhost:8000 --model Qwen/Qwen2.5-Coder-32B-Instruct
 poor-cli provider list
+poor-cli provider models
 poor-cli provider doctor local
 poor-cli provider switch local
+poor-cli provider export local --json
+poor-cli provider import profiles.json
 poor-cli route explain "fix the parser"
 ```
 
-`provider doctor` uses redacted auth refs and probes model discovery endpoints where available: OpenAI-compatible `/models` and Ollama `/api/tags`.
+OpenRouter, Kimi, Ollama, vLLM, and SGLang presets verify model discovery during `provider add` unless `--skip-verify` is set. `provider doctor` reruns the same redacted diagnostics later. Probes use OpenAI-compatible `/models` and Ollama `/api/tags`.
 
 Default local endpoints:
 

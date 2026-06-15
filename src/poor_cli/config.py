@@ -252,6 +252,26 @@ def explain_route(config: dict[str, Any], task: str, *, role: str = "executor") 
         models = providers[profile_id].get("models")
         if isinstance(models, list) and models:
             model = str(models[0])
+    max_cost = route.get("max_cost_usd")
+    budget_max = config.get("budgets", {}).get("max_usd")
+    if profile_id and isinstance(max_cost, int | float) and isinstance(budget_max, int | float) and max_cost > budget_max:
+        fallbacks.append({"profile": profile_id, "reason": "over budget"})
+        profile_id, reason = str(route.get("fallback_profile") or _first_profile(providers)), "budget fallback"
+    if profile_id and _rate_limited(providers.get(profile_id, {})):
+        fallbacks.append({"profile": profile_id, "reason": "rate limit unavailable"})
+        profile_id, reason = _first_profile_where(providers, lambda item: not _rate_limited(item)), "rate-limit fallback"
+    capability = str(route.get("required_capability") or route.get("capability") or "")
+    if profile_id and capability and not _has_capability(providers.get(profile_id, {}), capability):
+        fallbacks.append({"profile": profile_id, "reason": f"missing capability: {capability}"})
+        profile_id = _first_profile_where(providers, lambda item: _has_capability(item, capability))
+        reason = "capability fallback" if profile_id else "no capable profile"
+        if profile_id:
+            models = providers[profile_id].get("models")
+            model = str(models[0]) if isinstance(models, list) and models else ""
+    if profile_id and fallbacks:
+        models = providers[profile_id].get("models")
+        if isinstance(models, list) and models:
+            model = str(models[0])
     return {
         "role": role,
         "task": task,
@@ -403,6 +423,25 @@ def _api_base(base_url: str, kind: str) -> str:
 
 def _first_profile(providers: dict[str, Any]) -> str:
     return sorted(providers)[0] if providers else ""
+
+
+def _first_profile_where(providers: dict[str, Any], predicate: Any) -> str:
+    for profile_id in sorted(providers):
+        if predicate(providers[profile_id]):
+            return profile_id
+    return ""
+
+
+def _rate_limited(profile: Any) -> bool:
+    limits = profile.get("limits") if isinstance(profile, dict) else {}
+    if not isinstance(limits, dict):
+        return False
+    return limits.get("max_concurrent_requests") == 0 or limits.get("requests_per_minute") == 0
+
+
+def _has_capability(profile: Any, capability: str) -> bool:
+    caps = profile.get("capabilities") if isinstance(profile, dict) else {}
+    return bool(caps.get(capability)) if isinstance(caps, dict) else False
 
 
 def _host(url: str) -> str:

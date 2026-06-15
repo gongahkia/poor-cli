@@ -113,6 +113,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 - 2026-06-15: tightened Phase 3 Linux/CUDA readiness so target hosts must prove `nvidia-smi` runs successfully and returns at least one GPU name, not merely that the binary exists. Evidence: `bench/phase3_readiness.py`, `bench/results/phase3-readiness.json`, and `tests/test_benchmarks.py::test_phase3_readiness_requires_successful_nvidia_smi`. Target Linux/CUDA execution remains pending.
 - 2026-06-15: aligned Phase 3 setup with readiness by making `scripts/setup-linux-cuda.sh` fail fast unless `nvidia-smi --query-gpu=name --format=csv,noheader` succeeds and returns a GPU name. Evidence: `scripts/setup-linux-cuda.sh` and `tests/test_setup_scripts.py::test_linux_cuda_setup_script_covers_local_engines`. Target Linux/CUDA execution remains pending.
 - 2026-06-15: added Phase 3 closeout server cleanup controls so target-host runs can stop the local model process they started, and setup-generated launch scripts now `exec` the server command for reliable PID handling. Evidence: `scripts/phase3-closeout-linux-cuda.sh`, `scripts/setup-linux-cuda.sh`, and `tests/test_setup_scripts.py::test_phase3_closeout_script_runs_required_audits`. Target Linux/CUDA execution remains pending.
+- 2026-06-15: added config-backed provider profiles, provider diagnostics, model registry, profile export/import, route explain, and route audit events. Evidence: `src/poor_cli/config.py`, `tests/test_config.py`, `tests/test_cli.py::test_cli_plan_graph_stores_graph_prompt_bias`, and `docs/providers.md`.
 
 ## TL;DR
 
@@ -369,29 +370,29 @@ P1 config foundation spec, 2026-06-15:
 - P1-002: Precedence order, highest wins: CLI flags, env vars, repo config, user config, built-in defaults. CLI flags override only the fields they explicitly set. Env vars keep the current compatibility names, including `POOR_CLI_PROVIDER`, `POOR_CLI_MODEL`, `POOR_CLI_LOCAL_BASE_URL`, `POOR_CLI_LOCAL_ENGINE`, and `POOR_CLI_LOCAL_MODEL`; config loading must not silently change existing env-only behavior.
 - P1-003: Secrets policy: config stores references only. Valid auth refs are `auth.env = "OPENAI_API_KEY"` or `auth.keychain = "service/account"`. Invalid plaintext fields include `api_key`, `apikey`, `token`, `secret`, `password`, `bearer`, and direct credential values under `auth.value`. Diagnostics and future `provider doctor` output print the ref kind/name but never resolved values.
 - P1-004: Provider profile type fields: required `id` is the TOML table key, required `kind`, required non-empty `models`; optional `base_url`, `active_model`, `auth`, `timeout_seconds`, `retry`, `capabilities`, `cost`, `limits`, and `default_params`. Allowed `kind` values are `openai`, `anthropic`, `gemini`, `ollama`, `openai-compatible`, `vllm`, `sglang`, `openrouter`, and `kimi`. Capability fields are `tools`, `streaming`, `structured_outputs`, `web`, `cache`, `multimodal`, and `max_context_tokens`. Retry fields are `max_attempts`, `initial_backoff_seconds`, and `max_backoff_seconds`. Cost fields are `input_per_million`, `output_per_million`, and optional `currency`. Limits fields are `max_concurrent_requests`, `requests_per_minute`, and `tokens_per_minute`.
-- [ ] P1-005: Add OpenAI profile preset -> Expected output: `poor-cli provider add openai` creates a profile using OpenAI Responses where credentials are present.
-- [ ] P1-006: Add OpenAI-compatible profile preset -> Expected output: `poor-cli provider add compatible --base-url ... --model ...` creates a generic profile without hardcoded vendor assumptions.
-- [ ] P1-007: Add OpenRouter profile preset -> Expected output: `poor-cli provider add openrouter` creates an OpenAI-compatible profile and verifies `/models` or a dry-run completion.
-- [ ] P1-008: Add Kimi profile preset -> Expected output: `poor-cli provider add kimi` creates an OpenAI-compatible profile after live endpoint verification or documented skip.
-- [ ] P1-009: Add Ollama/local profile preset -> Expected output: local profile discovers available models and marks offline-safe usage.
-- [ ] P1-010: Add vLLM/SGLang profile presets -> Expected output: local-server profiles with base URL, model, and tool-capability probe.
-- [ ] P1-011: Add `poor-cli provider list` -> Expected output: table showing active profile, provider kind, model, base URL host, tool support, web support, and health.
-- [ ] P1-012: Add `poor-cli provider doctor` -> Expected output: redacted diagnostic report for auth, endpoint reachability, model existence, streaming, tools, and cache support.
-- [ ] P1-013: Add `poor-cli provider switch` -> Expected output: command updates active profile without editing env vars manually.
-- [ ] P1-014: Add model registry generated from profiles -> Expected output: `/model` or CLI picker includes configured profile models and excludes irrelevant hardcoded models.
-- [ ] P1-015: Add profile export/import -> Expected output: redacted portable config for moving provider setup across machines.
-- [ ] P1-016: Add profile tests with fake endpoints -> Expected output: unit tests for validation, redaction, precedence, and model-picker contents.
-- [ ] P2-001: Define role route schema -> Expected output: config fields for `planner`, `executor`, `reviewer`, `verifier`, `fallback`, `researcher`, and `graph_navigator`.
+- [x] P1-005: Add OpenAI profile preset -> Expected output: `poor-cli provider add openai` creates a profile using OpenAI Responses where credentials are present.
+- [x] P1-006: Add OpenAI-compatible profile preset -> Expected output: `poor-cli provider add compatible --base-url ... --model ...` creates a generic profile without hardcoded vendor assumptions.
+- [x] P1-007: Add OpenRouter profile preset -> Expected output: `poor-cli provider add openrouter` creates an OpenAI-compatible profile and verifies `/models` or a dry-run completion.
+- [x] P1-008: Add Kimi profile preset -> Expected output: `poor-cli provider add kimi` creates an OpenAI-compatible profile after live endpoint verification or documented skip.
+- [x] P1-009: Add Ollama/local profile preset -> Expected output: local profile discovers available models and marks offline-safe usage.
+- [x] P1-010: Add vLLM/SGLang profile presets -> Expected output: local-server profiles with base URL, model, and tool-capability probe.
+- [x] P1-011: Add `poor-cli provider list` -> Expected output: table showing active profile, provider kind, model, base URL host, tool support, web support, and health.
+- [x] P1-012: Add `poor-cli provider doctor` -> Expected output: redacted diagnostic report for auth, endpoint reachability, model existence, streaming, tools, and cache support.
+- [x] P1-013: Add `poor-cli provider switch` -> Expected output: command updates active profile without editing env vars manually.
+- [x] P1-014: Add model registry generated from profiles -> Expected output: `/model` or CLI picker includes configured profile models and excludes irrelevant hardcoded models.
+- [x] P1-015: Add profile export/import -> Expected output: redacted portable config for moving provider setup across machines.
+- [x] P1-016: Add profile tests with fake endpoints -> Expected output: unit tests for validation, redaction, precedence, and model-picker contents.
+- [x] P2-001: Define role route schema -> Expected output: config fields for `planner`, `executor`, `reviewer`, `verifier`, `fallback`, `researcher`, and `graph_navigator`.
 - [ ] P2-002: Define complexity classifier inputs -> Expected output: deterministic metadata from task count, file count, graph hits, risk labels, expected test scope, and user flags.
 - [ ] P2-003: Define routing policy for small tasks -> Expected output: direct executor route without Fusion or swarm unless user opts in.
 - [ ] P2-004: Define routing policy for hard or ambiguous tasks -> Expected output: planner plus reviewer route with optional Fusion when budget allows.
 - [ ] P2-005: Define routing policy for design/UI tasks -> Expected output: design-review route using project design rules before implementation.
 - [ ] P2-006: Define routing policy for parallelizable tasks -> Expected output: plan-task route that emits independent worker jobs and merge constraints.
-- [ ] P2-007: Add route aliases -> Expected output: human-readable aliases map to profile/model ids and fail fast if missing.
-- [ ] P2-008: Add route fallback semantics -> Expected output: deterministic failover order with budget, rate-limit, and capability checks.
-- [ ] P2-009: Add route explain mode -> Expected output: `poor-cli route explain "task"` prints chosen role, profile, model, reason, and estimated budget.
-- [ ] P2-010: Add route audit events -> Expected output: run log records route decisions, profile ids, model ids, and redacted errors.
-- [ ] P2-011: Add route tests -> Expected output: tests cover exact alias validation, missing profile errors, fallback behavior, and deterministic classifier outputs.
+- [x] P2-007: Add route aliases -> Expected output: human-readable aliases map to profile/model ids and fail fast if missing.
+- [x] P2-008: Add route fallback semantics -> Expected output: deterministic failover order with budget, rate-limit, and capability checks.
+- [x] P2-009: Add route explain mode -> Expected output: `poor-cli route explain "task"` prints chosen role, profile, model, reason, and estimated budget.
+- [x] P2-010: Add route audit events -> Expected output: run log records route decisions, profile ids, model ids, and redacted errors.
+- [x] P2-011: Add route tests -> Expected output: tests cover exact alias validation, missing profile errors, fallback behavior, and deterministic classifier outputs.
 - [ ] P3-001: Design native `ProviderBackedAgentRunner` -> Expected output: ADR comparing current shell runner with provider-native tool loops and replay integration.
 - [ ] P3-002: Implement native runner interface without replacing shell runners -> Expected output: `AgentRunner` supports `shell` and `provider` backends behind existing orchestration API.
 - [ ] P3-003: Generate tool schemas from built-in tool registry -> Expected output: JSON schemas for read, write, edit, glob, grep, shell, graph, replay, web, and review tools.
