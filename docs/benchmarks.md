@@ -46,7 +46,7 @@ The graph-mode unresolved instances are `astropy__astropy-14182` and `django__dj
 uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json
 ```
 
-Checked-in snapshot: setup script and provider adapters are ready; Linux/CUDA host and vLLM/SGLang package readiness are environment-dependent.
+Checked-in snapshot: setup script, provider adapters, local-agent routing, and Ollama binary are ready; Linux/CUDA host and vLLM/SGLang package readiness are environment-dependent.
 
 ## Graph vs Grep
 

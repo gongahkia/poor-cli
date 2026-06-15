@@ -3,14 +3,18 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import os
 import platform
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 SETUP_SCRIPT = ROOT / "scripts" / "setup-linux-cuda.sh"
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -33,6 +37,7 @@ def readiness_payload() -> dict[str, Any]:
         "linux_cuda_host": _linux_cuda_host(),
         "engine_python_deps": _python_deps("vllm", "sglang"),
         "ollama_binary": _binary("ollama"),
+        "local_agent_path": _local_agent_path(),
     }
     return {
         "schema_version": "poor-cli-phase3-readiness-v1",
@@ -95,6 +100,38 @@ def _python_deps(*names: str) -> dict[str, Any]:
 def _binary(name: str) -> dict[str, Any]:
     path = shutil.which(name)
     return {"ready": bool(path), "available": bool(path), "path": path or ""}
+
+
+def _local_agent_path() -> dict[str, Any]:
+    old_values = {key: os.environ.get(key) for key in ("POOR_CLI_PROVIDER", "POOR_CLI_MODEL", "POOR_CLI_LOCAL_BASE_URL")}
+    try:
+        os.environ["POOR_CLI_PROVIDER"] = "vllm"
+        os.environ["POOR_CLI_MODEL"] = "qwen"
+        os.environ["POOR_CLI_LOCAL_BASE_URL"] = "http://localhost:8000"
+        from poor_cli.agents import detect_agents
+
+        local_agents = [agent for agent in detect_agents() if agent.name == "local"]
+        agent_ready = bool(local_agents) and local_agents[0].provider == "vllm" and local_agents[0].default_model == "qwen"
+    except Exception as exc:
+        return {"ready": False, "error": f"{type(exc).__name__}: {exc}"}
+    finally:
+        for key, value in old_values.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+    try:
+        from bench.swe_bench_lite import run as swe_run
+
+        args = swe_run.parse_args(["--confirm-cost", "--no-evaluate", "--limit", "1", "--agent", "local"])
+        runner_ready = args.agent == "local"
+    except Exception as exc:
+        return {"ready": False, "agent_detected": agent_ready, "error": f"{type(exc).__name__}: {exc}"}
+    return {
+        "ready": agent_ready and runner_ready,
+        "agent_detected": agent_ready,
+        "swe_runner_agent": "local" if runner_ready else "",
+    }
 
 
 if __name__ == "__main__":

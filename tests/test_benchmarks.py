@@ -223,9 +223,11 @@ def test_phase3_readiness_payload_schema() -> None:
         "linux_cuda_host",
         "engine_python_deps",
         "ollama_binary",
+        "local_agent_path",
     }
     assert payload["checks"]["setup_script"]["ready"] is True
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
+    assert payload["checks"]["local_agent_path"]["ready"] is True
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 
@@ -239,6 +241,8 @@ def test_checked_in_phase3_readiness_snapshot() -> None:
     assert payload["checks"]["setup_script"]["bash_syntax"] is True
     assert payload["checks"]["provider_adapters"]["ready"] is True
     assert payload["checks"]["provider_adapters"]["providers"] == ["ollama", "sglang", "vllm"]
+    assert payload["checks"]["local_agent_path"]["ready"] is True
+    assert payload["checks"]["local_agent_path"]["swe_runner_agent"] == "local"
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["ready"]}
 
 

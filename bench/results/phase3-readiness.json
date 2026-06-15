@@ -14,6 +14,11 @@
       "ready": false,
       "system": "Darwin"
     },
+    "local_agent_path": {
+      "agent_detected": true,
+      "ready": true,
+      "swe_runner_agent": "local"
+    },
     "ollama_binary": {
       "available": true,
       "path": "/opt/homebrew/bin/ollama",
