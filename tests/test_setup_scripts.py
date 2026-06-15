@@ -79,6 +79,10 @@ def test_phase3_closeout_script_runs_required_audits() -> None:
     assert "--demo-graph-tools-visible" in text
     assert "--demo-offline-replay-verified" in text
     assert "derive_demo_replay_evidence" in text
+    assert "capture_network_disabled_probe" in text
+    assert "capture_gpu_probe" in text
+    assert "--network-probe-exit-code" in text
+    assert "--gpu-probe-output" in text
     assert "poor_cli_run_id" in text
     assert "poor_cli_store_dir" in text
     assert '--store-dir "$DEMO_STORE_DIR"' in text

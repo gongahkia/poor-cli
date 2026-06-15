@@ -21,6 +21,20 @@ from bench.pivot_remaining import remaining_payload
 from bench.swe_bench_lite import run as swe_run
 
 
+def _demo_probe_evidence() -> dict[str, object]:
+    return {
+        "network_probe": {
+            "command": "curl --fail --silent --show-error --max-time 5 https://example.com",
+            "exit_code": 6,
+        },
+        "gpu_probe": {
+            "command": "nvidia-smi --query-gpu=name --format=csv,noheader",
+            "exit_code": 0,
+            "output": "NVIDIA GeForce RTX 4090\n",
+        },
+    }
+
+
 def test_v6_baseline_task_fixture_schema() -> None:
     path = Path(__file__).resolve().parents[1] / "bench" / "fixtures" / "v6_baseline_tasks.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -395,6 +409,8 @@ def test_phase3_demo_plan_schema() -> None:
     assert payload["schema_version"] == "poor-cli-phase3-demo-plan-v1"
     assert payload["target"]["requires_linux_cuda"] is True
     assert payload["target"]["requires_internet_disabled"] is True
+    assert payload["target"]["requires_network_disabled_probe"] is True
+    assert payload["target"]["requires_gpu_probe"] is True
     assert payload["target"]["model_markers"] == ["qwen2.5-coder", "32b"]
     assert "--agents local" in payload["commands"]["run_demo"]
     assert "--offline --store-dir <poor_cli_store_dir> replay <poor_cli_run_id> --verify" in payload["commands"]["replay"]
@@ -456,6 +472,7 @@ def test_phase3_demo_validator_accepts_real_evidence(tmp_path: Path) -> None:
                 "run_id": "run_demo",
                 "store_dir": str(tmp_path / "store"),
                 "video_path": str(video),
+                **_demo_probe_evidence(),
                 "commands": [
                     'poor-cli run "fix bug" --graph --agents local --yes',
                     f"poor-cli --offline --store-dir {tmp_path / 'store'} replay run_demo --verify",
@@ -489,6 +506,7 @@ def test_phase3_demo_validator_resolves_video_relative_to_evidence(tmp_path: Pat
                 "offline_replay_verified": True,
                 "run_id": "run_demo",
                 "video_path": "phase3-demo.mp4",
+                **_demo_probe_evidence(),
                 "commands": [
                     'poor-cli run "fix bug" --graph --agents local --yes',
                     "poor-cli --offline replay run_demo --verify",
@@ -562,6 +580,37 @@ def test_phase3_demo_validator_requires_target_model_size(tmp_path: Path) -> Non
 
     assert payload["accepted"] is False
     assert "model must be qwen2.5-coder-32b" in payload["errors"]
+
+
+def test_phase3_demo_validator_requires_probe_evidence(tmp_path: Path) -> None:
+    video = tmp_path / "phase3-demo.mp4"
+    video.write_bytes(b"demo")
+    evidence = tmp_path / "phase3-demo.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "duration_seconds": 60,
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "internet_disabled": True,
+                "local_gpu": True,
+                "graph_tools_visible": True,
+                "offline_replay_verified": True,
+                "run_id": "run_demo",
+                "video_path": str(video),
+                "commands": [
+                    'poor-cli run "fix bug" --graph --agents local --yes',
+                    "poor-cli --offline replay run_demo --verify",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is False
+    assert "network_probe must show internet request failed" in payload["errors"]
+    assert "gpu_probe must show nvidia-smi detected a GPU" in payload["errors"]
 
 
 def test_phase3_demo_validator_requires_recorded_store_dir(tmp_path: Path) -> None:
@@ -645,7 +694,13 @@ def test_phase3_demo_template_writer_outputs_valid_schema(tmp_path: Path) -> Non
             "--model",
             "Qwen/Qwen2.5-Coder-32B-Instruct",
             "--internet-disabled",
+            "--network-probe-exit-code",
+            "6",
             "--local-gpu",
+            "--gpu-probe-exit-code",
+            "0",
+            "--gpu-probe-output",
+            "NVIDIA GeForce RTX 4090",
             "--graph-tools-visible",
             "--offline-replay-verified",
         ]

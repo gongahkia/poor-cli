@@ -64,7 +64,9 @@ def target_host_commands() -> dict[str, str]:
             "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json "
             "--run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> "
             "--video-path bench/results/phase3-demo.mp4 --duration-seconds 60 "
-            "--internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
+            "--internet-disabled --network-probe-exit-code <nonzero> --local-gpu "
+            "--gpu-probe-exit-code 0 --gpu-probe-output <nvidia-smi-gpu-name> "
+            "--graph-tools-visible --offline-replay-verified"
         ),
         "verify_demo": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
         "refresh_acceptance": "uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json",

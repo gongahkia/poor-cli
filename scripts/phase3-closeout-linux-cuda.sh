@@ -24,6 +24,13 @@ EVAL_MAX_WORKERS=1
 TIMEOUT_SECONDS=1200
 HEALTH_TIMEOUT_SECONDS=300
 SERVER_LOG=".poor-cli/phase3-closeout-server.log"
+NETWORK_PROBE_ARGS=(curl --fail --silent --show-error --max-time 5 https://example.com)
+NETWORK_PROBE_COMMAND="${NETWORK_PROBE_ARGS[*]}"
+NETWORK_PROBE_EXIT_CODE=""
+GPU_PROBE_ARGS=(nvidia-smi --query-gpu=name --format=csv,noheader)
+GPU_PROBE_COMMAND="${GPU_PROBE_ARGS[*]}"
+GPU_PROBE_EXIT_CODE=""
+GPU_PROBE_OUTPUT=""
 
 usage() {
   cat <<'EOF'
@@ -161,6 +168,28 @@ raise SystemExit("no replay-verified SWE task with poor_cli_run_id and poor_cli_
 PY
 }
 
+capture_network_disabled_probe() {
+  set +e
+  "${NETWORK_PROBE_ARGS[@]}" >/dev/null 2>&1
+  NETWORK_PROBE_EXIT_CODE="$?"
+  set -e
+  if [[ "$NETWORK_PROBE_EXIT_CODE" == "0" ]]; then
+    echo "internet-disabled proof failed: ${NETWORK_PROBE_COMMAND} succeeded" >&2
+    exit 2
+  fi
+}
+
+capture_gpu_probe() {
+  set +e
+  GPU_PROBE_OUTPUT="$("${GPU_PROBE_ARGS[@]}" 2>&1)"
+  GPU_PROBE_EXIT_CODE="$?"
+  set -e
+  if [[ "$GPU_PROBE_EXIT_CODE" != "0" || "$GPU_PROBE_OUTPUT" == "" ]]; then
+    echo "local-GPU proof failed: ${GPU_PROBE_COMMAND} did not return a GPU name" >&2
+    exit 2
+  fi
+}
+
 if [[ "$START_SERVER" == "1" ]] && ! server_healthy; then
   mkdir -p "$(dirname "$SERVER_LOG")"
   nohup .poor-cli/local-cuda-run.sh > "$SERVER_LOG" 2>&1 &
@@ -211,6 +240,14 @@ if [[ "$WRITE_DEMO_EVIDENCE" == "1" ]]; then
   if [[ "$DEMO_LOCAL_GPU" == "1" ]]; then DEMO_FLAGS+=(--local-gpu); fi
   if [[ "$DEMO_GRAPH_TOOLS_VISIBLE" == "1" ]]; then DEMO_FLAGS+=(--graph-tools-visible); fi
   if [[ "$DEMO_OFFLINE_REPLAY_VERIFIED" == "1" ]]; then DEMO_FLAGS+=(--offline-replay-verified); fi
+  if [[ "$DEMO_INTERNET_DISABLED" == "1" ]]; then
+    capture_network_disabled_probe
+    DEMO_FLAGS+=(--network-probe-command "$NETWORK_PROBE_COMMAND" --network-probe-exit-code "$NETWORK_PROBE_EXIT_CODE")
+  fi
+  if [[ "$DEMO_LOCAL_GPU" == "1" ]]; then
+    capture_gpu_probe
+    DEMO_FLAGS+=(--gpu-probe-command "$GPU_PROBE_COMMAND" --gpu-probe-exit-code "$GPU_PROBE_EXIT_CODE" --gpu-probe-output "$GPU_PROBE_OUTPUT")
+  fi
   uv run --locked python bench/phase3_demo.py \
     --write-template "$DEMO_EVIDENCE" \
     --run-id "$DEMO_RUN_ID" \

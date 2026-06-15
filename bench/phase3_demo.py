@@ -9,6 +9,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEMO_EVIDENCE = ROOT / "bench" / "results" / "phase3-demo.json"
 TARGET_MODEL_MARKERS = ("qwen2.5-coder", "32b")
+DEFAULT_NETWORK_PROBE_COMMAND = "curl --fail --silent --show-error --max-time 5 https://example.com"
+DEFAULT_GPU_PROBE_COMMAND = "nvidia-smi --query-gpu=name --format=csv,noheader"
 REQUIRED_COMMAND_FRAGMENTS = (
     "poor-cli run",
     "--agents local",
@@ -30,6 +32,11 @@ def demo_evidence_template(
     graph_tools_visible: bool,
     offline_replay_verified: bool,
     store_dir: str = "",
+    network_probe_command: str = "",
+    network_probe_exit_code: int | None = None,
+    gpu_probe_command: str = "",
+    gpu_probe_exit_code: int | None = None,
+    gpu_probe_output: str = "",
 ) -> dict[str, Any]:
     replay_command = f"poor-cli --offline replay {run_id or '<run_id>'} --verify"
     if store_dir:
@@ -44,6 +51,15 @@ def demo_evidence_template(
         "run_id": run_id,
         "store_dir": store_dir,
         "video_path": video_path,
+        "network_probe": {
+            "command": network_probe_command,
+            "exit_code": network_probe_exit_code,
+        },
+        "gpu_probe": {
+            "command": gpu_probe_command,
+            "exit_code": gpu_probe_exit_code,
+            "output": gpu_probe_output,
+        },
         "commands": [
             'poor-cli run "fix a real bug using graph tools" --graph --agents local --yes',
             replay_command,
@@ -63,6 +79,8 @@ def demo_plan_payload() -> dict[str, Any]:
             "requires_internet_disabled": True,
             "requires_graph_tools_visible": True,
             "requires_offline_replay_verified": True,
+            "requires_network_disabled_probe": True,
+            "requires_gpu_probe": True,
         },
         "commands": {
             "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
@@ -77,7 +95,9 @@ def demo_plan_payload() -> dict[str, Any]:
                 "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json "
                 "--run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> "
                 "--video-path bench/results/phase3-demo.mp4 --duration-seconds 60 "
-                "--internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
+                "--internet-disabled --network-probe-exit-code <nonzero> --local-gpu "
+                "--gpu-probe-exit-code 0 --gpu-probe-output <nvidia-smi-gpu-name> "
+                "--graph-tools-visible --offline-replay-verified"
             ),
             "verify": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
         },
@@ -94,6 +114,8 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
     model = str(payload.get("model") or "")
     run_id = str(payload.get("run_id") or "")
     store_dir = str(payload.get("store_dir") or "")
+    network_probe = _dict_payload(payload.get("network_probe"))
+    gpu_probe = _dict_payload(payload.get("gpu_probe"))
     errors = []
     if not 45 <= duration <= 75:
         errors.append("duration_seconds must be between 45 and 75")
@@ -102,6 +124,10 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
     for field in ("internet_disabled", "local_gpu", "graph_tools_visible", "offline_replay_verified"):
         if not bool(payload.get(field)):
             errors.append(f"{field} must be true")
+    if bool(payload.get("internet_disabled")) and not _network_probe_proves_disabled(network_probe):
+        errors.append("network_probe must show internet request failed")
+    if bool(payload.get("local_gpu")) and not _gpu_probe_proves_local_gpu(gpu_probe):
+        errors.append("gpu_probe must show nvidia-smi detected a GPU")
     if not run_id:
         errors.append("run_id is required")
     elif not _commands_replay_run_id(commands, run_id):
@@ -127,6 +153,8 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
         "run_id": run_id,
         "store_dir": store_dir,
         "video_path": payload.get("video_path", ""),
+        "network_probe": network_probe,
+        "gpu_probe": gpu_probe,
         "missing_command_fragments": missing_fragments,
     }
 
@@ -141,6 +169,32 @@ def _json_file(path: Path) -> dict[str, Any]:
 def _display_path(path: Path) -> str:
     resolved = path.resolve()
     return str(resolved.relative_to(ROOT)) if resolved.is_relative_to(ROOT) else str(path)
+
+
+def _dict_payload(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _int_value(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _network_probe_proves_disabled(probe: dict[str, Any]) -> bool:
+    command = str(probe.get("command") or "")
+    exit_code = _int_value(probe.get("exit_code"))
+    return exit_code is not None and exit_code != 0 and "curl" in command and "http" in command
+
+
+def _gpu_probe_proves_local_gpu(probe: dict[str, Any]) -> bool:
+    command = str(probe.get("command") or "")
+    output = str(probe.get("output") or "")
+    exit_code = _int_value(probe.get("exit_code"))
+    return exit_code == 0 and "nvidia-smi" in command and bool([line for line in output.splitlines() if line.strip()])
 
 
 def _resolve_video_path(evidence_path: Path, raw_path: str) -> Path:
@@ -197,7 +251,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--duration-seconds", type=int, default=60)
     parser.add_argument("--model", default="Qwen/Qwen2.5-Coder-32B-Instruct")
     parser.add_argument("--internet-disabled", action="store_true")
+    parser.add_argument("--network-probe-command", default=DEFAULT_NETWORK_PROBE_COMMAND)
+    parser.add_argument("--network-probe-exit-code", type=int)
     parser.add_argument("--local-gpu", action="store_true")
+    parser.add_argument("--gpu-probe-command", default=DEFAULT_GPU_PROBE_COMMAND)
+    parser.add_argument("--gpu-probe-exit-code", type=int)
+    parser.add_argument("--gpu-probe-output", default="")
     parser.add_argument("--graph-tools-visible", action="store_true")
     parser.add_argument("--offline-replay-verified", action="store_true")
     args = parser.parse_args(argv)
@@ -212,6 +271,11 @@ def main(argv: list[str] | None = None) -> int:
             graph_tools_visible=bool(args.graph_tools_visible),
             offline_replay_verified=bool(args.offline_replay_verified),
             store_dir=str(args.store_dir),
+            network_probe_command=str(args.network_probe_command),
+            network_probe_exit_code=args.network_probe_exit_code,
+            gpu_probe_command=str(args.gpu_probe_command),
+            gpu_probe_exit_code=args.gpu_probe_exit_code,
+            gpu_probe_output=str(args.gpu_probe_output),
         )
         text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
         args.write_template.parent.mkdir(parents=True, exist_ok=True)

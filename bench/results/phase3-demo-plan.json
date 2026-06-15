@@ -7,7 +7,7 @@
       "run_demo": "set -a; source .poor-cli/local-cuda.env; set +a; poor-cli run \"fix a real bug using graph tools\" --graph --agents local --yes",
       "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
       "verify": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
-      "write_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
+      "write_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <poor_cli_run_id> --store-dir <poor_cli_store_dir> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --network-probe-exit-code <nonzero> --local-gpu --gpu-probe-exit-code 0 --gpu-probe-output <nvidia-smi-gpu-name> --graph-tools-visible --offline-replay-verified"
     },
     "schema_version": "poor-cli-phase3-demo-plan-v1",
     "target": {
@@ -18,9 +18,11 @@
         "qwen2.5-coder",
         "32b"
       ],
+      "requires_gpu_probe": true,
       "requires_graph_tools_visible": true,
       "requires_internet_disabled": true,
       "requires_linux_cuda": true,
+      "requires_network_disabled_probe": true,
       "requires_offline_replay_verified": true
     }
   },
@@ -39,6 +41,7 @@
       "video_path must exist"
     ],
     "evidence": "bench/results/phase3-demo.json",
+    "gpu_probe": {},
     "graph_tools_visible": false,
     "internet_disabled": false,
     "local_gpu": false,
@@ -51,6 +54,7 @@
       "--verify"
     ],
     "model": "",
+    "network_probe": {},
     "offline_replay_verified": false,
     "run_id": "",
     "store_dir": "",

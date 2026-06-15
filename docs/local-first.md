@@ -76,3 +76,4 @@ uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench
 The verifier is the local-mode closeout gate for the pivot audit. It rejects non-local providers, non-graph runs, partial replay verification, incomplete official eval, and pass rates below 50% of the checked-in Anthropic 10-task row.
 With `--start-server`, the closeout runner starts `.poor-cli/local-cuda-run.sh` in the background, waits for the local provider health endpoint, and writes `.poor-cli/phase3-closeout-server.pid`.
 When writing demo evidence from a SWE-bench run, the closeout runner derives the replay run id and store dir from the first replay-verified task in `task_results.jsonl`.
+It also records a failed internet probe and an `nvidia-smi` GPU probe before writing accepted screencast evidence.
