@@ -25,6 +25,12 @@ jobs:
           poor-cli --version
           poor-cli --help
           poor-cli agents
+      - name: Graph dependency gate
+        run: |
+          poor-cli doctor | tee doctor.txt
+          grep -q "graph:python: ok" doctor.txt
+          grep -q "graph:javascript: ok" doctor.txt
+          grep -q "graph:typescript: ok" doctor.txt
       - name: Lint
         run: ruff check src/poor_cli tests bench/loc_gate.py bench/packaging_gate.py bench/replay_determinism_gate.py bench/phase1_acceptance.py bench/graph_vs_grep.py bench/phase3_readiness.py bench/phase3_acceptance.py bench/phase3_closeout.py bench/phase3_demo.py bench/phase3_local_benchmark.py bench/pivot_remaining.py
       - name: Format

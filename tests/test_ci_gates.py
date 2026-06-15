@@ -17,6 +17,8 @@ def test_ci_workflows_include_v6_gates() -> None:
     for path in (ROOT / ".github" / "workflows" / "ci.yml", ROOT / ".github" / "workflows" / "v6.yml"):
         text = path.read_text(encoding="utf-8")
         assert "python -m pytest --cov=src/poor_cli --cov-fail-under=60 tests/" in text
+        assert "poor-cli doctor | tee doctor.txt" in text
+        assert 'grep -q "graph:python: ok" doctor.txt' in text
         assert "tests/test_provider_adapters.py tests/test_providers.py tests/test_native_runner.py" in text
         assert "python bench/replay_determinism_gate.py" in text
         assert "python bench/loc_gate.py" in text

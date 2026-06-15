@@ -6,6 +6,9 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 
 ## Implementation log
 
+- 2026-06-15: closed the P10 shell sandbox hardening batch with a documented conservative parser choice, denial coverage for substitution/wrappers/redirect escapes, allowlisted low-risk commands, and structured deny artifacts. Evidence: `docs/adr-shell-sandbox.md`, `docs/security.md`, `src/poor_cli/sandbox.py`, and `tests/test_tools.py`.
+- 2026-06-15: closed the P12 graph polish batch with a language support matrix, `poor-cli doctor` graph dependency diagnostics, graph-tool grep fallback warnings for parser failures, and graph-vs-grep latency/recall/token proxy fields. Evidence: `docs/graph.md`, `src/poor_cli/repo_graph.py`, `bench/graph_vs_grep.py`, and `tests/test_repo_graph.py`.
+- 2026-06-15: closed the requested P19/P20 docs and gate batch: README/architecture/provider/replay docs refreshed, migration and release-checklist docs added, live-provider marker policy registered, replay determinism and packaging gates added, LOC cap raised to 6000 with rationale, and CI now checks graph parser dependencies. Evidence: `README.md`, `docs/`, `.github/workflows/ci.yml`, `.github/workflows/v6.yml`, `bench/replay_determinism_gate.py`, `bench/packaging_gate.py`, and `tests/test_ci_gates.py`.
 - 2026-06-14: hardened planner schema parsing so scalar list fields from Claude/Codex/custom planners are normalized as one-item lists instead of character arrays. Evidence: `tests/test_planner.py::test_parse_plan_accepts_string_list_fields`.
 - 2026-06-14: added initial v6 release gates for source LOC and system-prompt budget, wired into CI. Evidence: `bench/loc_gate.py`, `tests/test_gates.py::test_system_prompt_under_1000_token_ceiling`, `.github/workflows/v6.yml`.
 - 2026-06-14: added provider request/response contracts plus a `CachedReplayProvider` that records live calls and fails closed on replay cache misses. Evidence: `tests/test_providers.py`.
@@ -528,7 +531,7 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [ ] P19-004: Update security docs after sandbox/web/MCP land -> Expected output: docs state boundaries, blocked defaults, and known residual risks.
 - [ ] P19-005: Update examples -> Expected output: examples cover small direct task, hard Fusion-reviewed task, Kimi executor swarm, local-model run, and web-research task.
 - [x] P19-006: Add migration notes -> Expected output: old configs and existing CLI flows remain supported or have explicit migration commands.
-- [ ] P20-001: Add CI dependency gate -> Expected output: CI installs graph parser wheels and fails with clear error if unavailable.
+- [x] P20-001: Add CI dependency gate -> Expected output: CI installs graph parser wheels and fails with clear error if unavailable.
 - [x] P20-002: Add full test gate -> Expected output: `python3 -m pytest tests/ -q` passes in clean env.
 - [x] P20-003: Add focused provider tests -> Expected output: fake-provider tests pass without network or secrets.
 - [x] P20-004: Add live-provider test markers -> Expected output: live tests require explicit env vars and are skipped by default.
