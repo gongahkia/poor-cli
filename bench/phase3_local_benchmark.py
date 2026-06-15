@@ -55,8 +55,10 @@ def validate_local_summary(summary_path: Path, *, anthropic_summary: Path = ANTH
     results = official.get("results") if isinstance(official.get("results"), dict) else {}
     total = int(results.get("total_instances") or results.get("submitted_instances") or 0)
     resolved = int(results.get("resolved_instances") or len(results.get("resolved_ids") or []))
+    completed = int(results.get("completed_instances") or len(results.get("completed_ids") or []))
+    error_count = int(results.get("error_instances") or len(results.get("error_ids") or []))
     pass_rate = resolved / total if total else 0.0
-    errors = _summary_errors(summary, target, task_count, replay_verified, official, total, pass_rate)
+    errors = _summary_errors(summary, target, task_count, replay_verified, official, total, completed, error_count, pass_rate)
     return {
         "accepted": not errors,
         "evidence": _display_path(summary_path),
@@ -67,6 +69,8 @@ def validate_local_summary(summary_path: Path, *, anthropic_summary: Path = ANTH
         "graph_mode": bool(summary.get("graph_mode")),
         "task_count": task_count,
         "replay_verified_count": replay_verified,
+        "completed_instances": completed,
+        "error_instances": error_count,
         "resolved_instances": resolved,
         "total_instances": total,
         "pass_rate": pass_rate,
@@ -100,6 +104,8 @@ def _summary_errors(
     replay_verified: int,
     official: dict[str, Any],
     total: int,
+    completed: int,
+    error_count: int,
     pass_rate: float,
 ) -> list[str]:
     errors = []
@@ -120,6 +126,10 @@ def _summary_errors(
         errors.append("official SWE-bench evaluation did not exit cleanly")
     if total < 10:
         errors.append("official SWE-bench evaluation has fewer than 10 submitted instances")
+    if completed < total or total == 0:
+        errors.append("official SWE-bench evaluation did not complete every submitted instance")
+    if error_count:
+        errors.append("official SWE-bench evaluation reported errors")
     if pass_rate < float(target["target_rate"]):
         errors.append("local pass rate is below 50% of Anthropic pass rate")
     return errors

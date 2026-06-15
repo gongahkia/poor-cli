@@ -489,6 +489,36 @@ def test_phase3_demo_validator_requires_replay_of_same_run_id(tmp_path: Path) ->
     assert "commands must replay the recorded run_id offline" in payload["errors"]
 
 
+def test_phase3_demo_validator_rejects_empty_video(tmp_path: Path) -> None:
+    video = tmp_path / "phase3-demo.mp4"
+    video.write_bytes(b"")
+    evidence = tmp_path / "phase3-demo.json"
+    evidence.write_text(
+        json.dumps(
+            {
+                "duration_seconds": 60,
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "internet_disabled": True,
+                "local_gpu": True,
+                "graph_tools_visible": True,
+                "offline_replay_verified": True,
+                "run_id": "run_demo",
+                "video_path": str(video),
+                "commands": [
+                    'poor-cli run "fix bug" --graph --agents local --yes',
+                    "poor-cli --offline replay run_demo --verify",
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is False
+    assert "video_path must be non-empty" in payload["errors"]
+
+
 def test_phase3_demo_template_writer_outputs_valid_schema(tmp_path: Path) -> None:
     video = tmp_path / "phase3-demo.mp4"
     video.write_bytes(b"demo")
@@ -620,6 +650,8 @@ def test_phase3_local_benchmark_accepts_target_summary(tmp_path: Path) -> None:
                 "official_evaluation": {
                     "exit_code": 0,
                     "results": {
+                        "completed_instances": 10,
+                        "error_instances": 0,
                         "total_instances": 10,
                         "resolved_instances": 5,
                     },
@@ -652,6 +684,8 @@ def test_phase3_local_benchmark_rejects_missing_graph_or_low_pass(tmp_path: Path
                     "exit_code": 0,
                     "results": {
                         "total_instances": 10,
+                        "completed_instances": 10,
+                        "error_instances": 0,
                         "resolved_instances": 4,
                     },
                 },
@@ -666,6 +700,38 @@ def test_phase3_local_benchmark_rejects_missing_graph_or_low_pass(tmp_path: Path
     assert "summary was not run in graph mode" in payload["errors"]
     assert "offline replay did not verify every task" in payload["errors"]
     assert "local pass rate is below 50% of Anthropic pass rate" in payload["errors"]
+
+
+def test_phase3_local_benchmark_rejects_eval_errors(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "provider": "vllm",
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "agent": "local",
+                "graph_mode": True,
+                "task_count": 10,
+                "replay_verified_count": 10,
+                "official_evaluation": {
+                    "exit_code": 0,
+                    "results": {
+                        "completed_instances": 9,
+                        "error_instances": 1,
+                        "total_instances": 10,
+                        "resolved_instances": 5,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_local_summary(summary)
+
+    assert payload["accepted"] is False
+    assert "official SWE-bench evaluation did not complete every submitted instance" in payload["errors"]
+    assert "official SWE-bench evaluation reported errors" in payload["errors"]
 
 
 def test_phase3_local_benchmark_candidate_requires_local_agent_and_provider() -> None:

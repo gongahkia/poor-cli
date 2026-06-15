@@ -101,6 +101,8 @@ def validate_demo_evidence(path: Path = DEMO_EVIDENCE) -> dict[str, Any]:
         errors.append("commands must show local graph run and offline replay verification")
     if not video_path.is_file():
         errors.append("video_path must exist")
+    elif video_path.stat().st_size <= 0:
+        errors.append("video_path must be non-empty")
     return {
         "accepted": not errors,
         "evidence": _display_path(path),
