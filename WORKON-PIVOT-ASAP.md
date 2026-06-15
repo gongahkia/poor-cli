@@ -6,7 +6,7 @@ Status: in progress, 2026-06-14. Owner: gongahkia.
 
 ## Implementation log
 
-- 2026-06-15: closed the P5/P6/P14 worktree swarm, parallel scheduler, and JSONL RPC batch: `--parallel` now uses a dependency-aware threaded DAG scheduler with cancellation and cap metrics, `run-swarm` creates detached worker worktrees and collect-only merge plans, `cleanup-swarm` removes recorded worktrees, `plan --emit-tasks` exports DAG tasks, and `rpc serve --stdio` exposes run/status/inspect/cancel/replay over JSONL JSON-RPC. LOC cap raised to 6500 after trimming because scheduler+swarm+RPC are now core release surfaces. Evidence: `src/poor_cli/orchestrator.py`, `src/poor_cli/swarm.py`, `src/poor_cli/rpc.py`, `tests/test_scheduler.py`, `tests/test_swarm.py`, `tests/test_rpc.py`, `docs/swarm.md`, `docs/rpc.md`, and `bench/results/phase1-acceptance.json`.
+- 2026-06-15: closed the P5 worktree swarm, P14 JSONL RPC, and P6 real scheduler batch except provider retry/backoff: `--parallel` now uses a dependency-aware threaded DAG scheduler with cancellation and cap metrics, `run-swarm` creates detached worker worktrees and collect-only merge plans, `cleanup-swarm` removes recorded worktrees, `plan --emit-tasks` exports DAG tasks, and `rpc serve --stdio` exposes run/status/inspect/cancel/replay over JSONL JSON-RPC. LOC cap raised to 6500 after trimming because scheduler+swarm+RPC are now core release surfaces. Evidence: `src/poor_cli/orchestrator.py`, `src/poor_cli/swarm.py`, `src/poor_cli/rpc.py`, `tests/test_scheduler.py`, `tests/test_swarm.py`, `tests/test_rpc.py`, `docs/swarm.md`, `docs/rpc.md`, and `bench/results/phase1-acceptance.json`.
 - 2026-06-15: closed the P10 shell sandbox hardening batch with a documented conservative parser choice, denial coverage for substitution/wrappers/redirect escapes, allowlisted low-risk commands, and structured deny artifacts. Evidence: `docs/adr-shell-sandbox.md`, `docs/security.md`, `src/poor_cli/sandbox.py`, and `tests/test_tools.py`.
 - 2026-06-15: closed the P12 graph polish batch with a language support matrix, `poor-cli doctor` graph dependency diagnostics, graph-tool grep fallback warnings for parser failures, and graph-vs-grep latency/recall/token proxy fields. Evidence: `docs/graph.md`, `src/poor_cli/repo_graph.py`, `bench/graph_vs_grep.py`, and `tests/test_repo_graph.py`.
 - 2026-06-15: closed the requested P19/P20 docs and gate batch: README/architecture/provider/replay docs refreshed, migration and release-checklist docs added, live-provider marker policy registered, replay determinism and packaging gates added, LOC cap raised to 6000 with rationale, and CI now checks graph parser dependencies. Evidence: `README.md`, `docs/`, `.github/workflows/ci.yml`, `.github/workflows/v6.yml`, `bench/replay_determinism_gate.py`, `bench/packaging_gate.py`, and `tests/test_ci_gates.py`.
@@ -425,29 +425,29 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [x] P4-006: Add artifact retention policy -> Expected output: cleanup command removes temp worktrees while preserving plan, result, review, verifier, and replay files.
 - [x] P4-007: Add artifact CLI inspection -> Expected output: `poor-cli inspect <run-id>` shows plan, workers, diffs, reviews, costs, and failures.
 - [x] P4-008: Add artifact tests -> Expected output: golden tests validate schema compatibility and replay stability.
-- [ ] P5-001: Design worktree swarm architecture -> Expected output: ADR for `git worktree` creation, isolation, patch collection, merge, conflict handling, and cleanup.
-- [ ] P5-002: Add `poor-cli plan --emit-tasks` -> Expected output: command writes DAG tasks without modifying repo code.
-- [ ] P5-003: Add `poor-cli run-swarm` command -> Expected output: command creates worker worktrees, dispatches tasks, collects artifacts, and stops on policy violations.
-- [ ] P5-004: Add worktree naming scheme -> Expected output: deterministic names include run id, worker id, role, and sanitized task slug.
-- [ ] P5-005: Add worktree dirty-check gate -> Expected output: swarm refuses to start or records explicit allow flag when main worktree has conflicting dirty files.
-- [ ] P5-006: Add per-worker route selection -> Expected output: planner can assign Kimi or another configured executor per worker based on task metadata.
-- [ ] P5-007: Add patch collection -> Expected output: each worker output includes normalized unified diff, changed files, and binary-file handling.
-- [ ] P5-008: Add patch merge planner -> Expected output: merge stage detects overlapping hunks and orders non-conflicting patches deterministically.
-- [ ] P5-009: Add conflict resolution path -> Expected output: conflicts become review tasks instead of silent overwrites.
-- [ ] P5-010: Add worker failure policy -> Expected output: configurable `fail-fast`, `continue`, and `quarantine` modes.
-- [ ] P5-011: Add cleanup-swarm command -> Expected output: all temporary worktrees and branches are pruned after artifacts are preserved.
-- [ ] P5-012: Add swarm replay mode -> Expected output: recorded swarm can be replayed without provider calls.
-- [ ] P5-013: Add swarm tests using temp git repos -> Expected output: tests cover independent patches, conflicts, failures, cleanup, and replay.
-- [ ] P6-001: Implement real `--parallel` scheduling -> Expected output: orchestrator executes independent DAG nodes concurrently up to configured caps.
-- [ ] P6-002: Add dependency-aware queue -> Expected output: tasks with deps wait; ready tasks run; failed deps block dependent tasks with clear status.
-- [ ] P6-003: Add global concurrency cap -> Expected output: `POOR_CLI_MAX_PARALLEL_AGENTS` and config cap bound all worker concurrency.
+- [x] P5-001: Design worktree swarm architecture -> Expected output: ADR for `git worktree` creation, isolation, patch collection, merge, conflict handling, and cleanup.
+- [x] P5-002: Add `poor-cli plan --emit-tasks` -> Expected output: command writes DAG tasks without modifying repo code.
+- [x] P5-003: Add `poor-cli run-swarm` command -> Expected output: command creates worker worktrees, dispatches tasks, collects artifacts, and stops on policy violations.
+- [x] P5-004: Add worktree naming scheme -> Expected output: deterministic names include run id, worker id, role, and sanitized task slug.
+- [x] P5-005: Add worktree dirty-check gate -> Expected output: swarm refuses to start or records explicit allow flag when main worktree has conflicting dirty files.
+- [x] P5-006: Add per-worker route selection -> Expected output: planner can assign Kimi or another configured executor per worker based on task metadata.
+- [x] P5-007: Add patch collection -> Expected output: each worker output includes normalized unified diff, changed files, and binary-file handling.
+- [x] P5-008: Add patch merge planner -> Expected output: merge stage detects overlapping hunks and orders non-conflicting patches deterministically.
+- [x] P5-009: Add conflict resolution path -> Expected output: conflicts become review tasks instead of silent overwrites.
+- [x] P5-010: Add worker failure policy -> Expected output: configurable `fail-fast`, `continue`, and `quarantine` modes.
+- [x] P5-011: Add cleanup-swarm command -> Expected output: all temporary worktrees and branches are pruned after artifacts are preserved.
+- [x] P5-012: Add swarm replay mode -> Expected output: recorded swarm can be replayed without provider calls.
+- [x] P5-013: Add swarm tests using temp git repos -> Expected output: tests cover independent patches, conflicts, failures, cleanup, and replay.
+- [x] P6-001: Implement real `--parallel` scheduling -> Expected output: orchestrator executes independent DAG nodes concurrently up to configured caps.
+- [x] P6-002: Add dependency-aware queue -> Expected output: tasks with deps wait; ready tasks run; failed deps block dependent tasks with clear status.
+- [x] P6-003: Add global concurrency cap -> Expected output: `POOR_CLI_MAX_PARALLEL_AGENTS` and config cap bound all worker concurrency.
 - [ ] P6-004: Add provider concurrency cap -> Expected output: each profile has max concurrent requests, rate-limit backoff, and queue visibility.
-- [ ] P6-005: Add route concurrency cap -> Expected output: expensive routes like Fusion can be capped independently from executor workers.
-- [ ] P6-006: Add sync override -> Expected output: `POOR_CLI_FORCE_SYNC_AGENTS=1` forces sequential execution for debugging.
-- [ ] P6-007: Add explicit parallel opt-in for risky writes -> Expected output: tasks touching same predicted file set require serial execution unless approved.
-- [ ] P6-008: Add budget ledger -> Expected output: run records planned and actual calls, tokens, cost estimates, wall time, and cache hits where known.
-- [ ] P6-009: Add cancellation handling -> Expected output: Ctrl-C stops workers, preserves artifacts, and cleans worktrees according to policy.
-- [ ] P6-010: Add parallel scheduling tests -> Expected output: tests verify concurrency, dependency ordering, caps, cancellation, and deterministic event logs.
+- [x] P6-005: Add route concurrency cap -> Expected output: expensive routes like Fusion can be capped independently from executor workers.
+- [x] P6-006: Add sync override -> Expected output: `POOR_CLI_FORCE_SYNC_AGENTS=1` forces sequential execution for debugging.
+- [x] P6-007: Add explicit parallel opt-in for risky writes -> Expected output: tasks touching same predicted file set require serial execution unless approved.
+- [x] P6-008: Add budget ledger -> Expected output: run records planned and actual calls, tokens, cost estimates, wall time, and cache hits where known.
+- [x] P6-009: Add cancellation handling -> Expected output: Ctrl-C stops workers, preserves artifacts, and cleans worktrees according to policy.
+- [x] P6-010: Add parallel scheduling tests -> Expected output: tests verify concurrency, dependency ordering, caps, cancellation, and deterministic event logs.
 - [ ] P7-001: Add Fusion route only for planning/review by default -> Expected output: config uses Fusion for high-risk planner or reviewer roles, not routine executor work.
 - [ ] P7-002: Add Fusion budget gate -> Expected output: Fusion requires configured max cost or explicit `--allow-expensive-router`.
 - [ ] P7-003: Add Fusion mode probe -> Expected output: diagnostic verifies `openrouter/fusion` alias and explicit `openrouter:fusion` tool path where available.
@@ -498,13 +498,13 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [x] P13-005: Add patch rejection flow -> Expected output: rejected worker patch remains in artifacts and is not merged.
 - [x] P13-006: Add review finding suppressions -> Expected output: suppressions require reason, scope, and expiry.
 - [x] P13-007: Add review tests -> Expected output: fixtures cover accepted patch, rejected patch, false-positive suppression, and verifier failure.
-- [ ] P14-001: Add headless JSONL RPC mode -> Expected output: `poor-cli rpc serve --stdio` accepts run, inspect, cancel, and status messages.
-- [ ] P14-002: Add RPC schema docs -> Expected output: JSON schema for requests, responses, events, errors, and auth boundaries.
-- [ ] P14-003: Add RPC run streaming -> Expected output: clients receive structured events for route, tool, worker, review, and verifier phases.
-- [ ] P14-004: Add RPC cancellation -> Expected output: cancel request stops active workers and returns cleanup result.
-- [ ] P14-005: Add RPC auth/locality policy -> Expected output: stdio is default; socket modes require explicit bind and auth token.
-- [ ] P14-006: Add optional HTTP or gRPC phase decision -> Expected output: ADR decides whether to add HTTP/gRPC after JSONL proves useful.
-- [ ] P14-007: Add RPC tests -> Expected output: contract tests cover run lifecycle, malformed input, cancellation, and event order.
+- [x] P14-001: Add headless JSONL RPC mode -> Expected output: `poor-cli rpc serve --stdio` accepts run, inspect, cancel, and status messages.
+- [x] P14-002: Add RPC schema docs -> Expected output: JSON schema for requests, responses, events, errors, and auth boundaries.
+- [x] P14-003: Add RPC run streaming -> Expected output: clients receive structured events for route, tool, worker, review, and verifier phases.
+- [x] P14-004: Add RPC cancellation -> Expected output: cancel request stops active workers and returns cleanup result.
+- [x] P14-005: Add RPC auth/locality policy -> Expected output: stdio is default; socket modes require explicit bind and auth token.
+- [x] P14-006: Add optional HTTP or gRPC phase decision -> Expected output: ADR decides whether to add HTTP/gRPC after JSONL proves useful.
+- [x] P14-007: Add RPC tests -> Expected output: contract tests cover run lifecycle, malformed input, cancellation, and event order.
 - [ ] P15-001: Add MCP server hosting plan -> Expected output: ADR defines whether poor-cli exposes tools over MCP, consumes MCP, or both.
 - [ ] P15-002: Add MCP tool registry mapping -> Expected output: built-in tools can be exposed with schemas, auth policy, and sandbox rules.
 - [ ] P15-003: Add MCP client config -> Expected output: external MCP tools can be configured with allowlist, timeout, and replay boundaries.
@@ -529,7 +529,7 @@ P1/P2 provider-route implementation evidence, 2026-06-15:
 - [ ] P18-005: Add CLI noninteractive parity -> Expected output: every TUI action has a CLI command for scripting.
 - [x] P19-001: Update README after provider profiles land -> Expected output: README documents provider setup, route setup, replay, and doctor commands.
 - [x] P19-002: Update architecture docs after native runner lands -> Expected output: docs explain provider-backed agents, tool loop, replay, and shell runner compatibility.
-- [ ] P19-003: Update swarm docs after worktrees land -> Expected output: docs explain plan, worker worktrees, patch merge, review, verify, and cleanup.
+- [x] P19-003: Update swarm docs after worktrees land -> Expected output: docs explain plan, worker worktrees, patch merge, review, verify, and cleanup.
 - [ ] P19-004: Update security docs after sandbox/web/MCP land -> Expected output: docs state boundaries, blocked defaults, and known residual risks.
 - [ ] P19-005: Update examples -> Expected output: examples cover small direct task, hard Fusion-reviewed task, Kimi executor swarm, local-model run, and web-research task.
 - [x] P19-006: Add migration notes -> Expected output: old configs and existing CLI flows remain supported or have explicit migration commands.
