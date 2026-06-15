@@ -227,10 +227,14 @@ class Orchestrator:
                     if len(active) >= cap or not all(dep in done for dep in deps[task_id]):
                         continue
                     paths = _predicted_files(by_id[task_id])
-                    if not allow_overlap and paths and any(paths & active_paths for _, active_paths in active.values()):
+                    if not allow_overlap and paths and any(paths & active_paths for _, active_paths, _ in active.values()):
                         continue
                     keys = _cap_keys(by_id[task_id])
-                    if any(sum(1 for _, _, active_keys in active.values() if key in active_keys) >= limits[key] for key in keys if key in limits):
+                    if any(
+                        sum(1 for _, _, active_keys in active.values() if key in active_keys) >= limits[key]
+                        for key in keys
+                        if key in limits
+                    ):
                         continue
                     pending.remove(task_id)
                     future = pool.submit(
@@ -246,7 +250,9 @@ class Orchestrator:
                         self.hooks,
                     )
                     active[future] = (task_id, paths, keys)
-                    self.store.append_event(str(run["run_id"]), "scheduler.task_started", {"ordinal": ords[task_id], "cap_keys": keys}, task_id)
+                    self.store.append_event(
+                        str(run["run_id"]), "scheduler.task_started", {"ordinal": ords[task_id], "cap_keys": keys}, task_id
+                    )
                     made_progress = True
                 if not active:
                     if not pending:
@@ -419,6 +425,32 @@ def _deps(tasks: list[TaskSpec]) -> dict[str, list[str]]:
 def _predicted_files(task: TaskSpec) -> set[str]:
     raw = task.metadata.get("expected_files") or task.metadata.get("files") or task.metadata.get("changed_files") or []
     return {str(item) for item in raw if str(item).strip()} if isinstance(raw, list) else set()
+
+
+def _cap_keys(task: TaskSpec) -> list[str]:
+    route = task.metadata.get("route_config")
+    if not isinstance(route, dict):
+        return []
+    keys = [f"profile:{route['profile']}"] if route.get("profile") else []
+    if route.get("role"):
+        keys.append(f"route:{route['role']}")
+    if "fusion" in str(route.get("model") or "").lower():
+        keys.append("route:fusion")
+    return keys
+
+
+def _cap_limits(config: dict[str, Any]) -> dict[str, int]:
+    out: dict[str, int] = {"route:fusion": 1}
+    for profile_id, profile in (config.get("providers") or {}).items():
+        limits = profile.get("limits") if isinstance(profile, dict) else None
+        value = limits.get("max_concurrent_requests") if isinstance(limits, dict) else None
+        if isinstance(value, int) and value > 0:
+            out[f"profile:{profile_id}"] = value
+    for role, route in (config.get("routes") or {}).items():
+        value = route.get("max_concurrent_requests") if isinstance(route, dict) else None
+        if isinstance(value, int) and value > 0:
+            out[f"route:{role}"] = value
+    return out
 
 
 def _thread_task(

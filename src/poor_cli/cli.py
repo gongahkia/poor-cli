@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import sys
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -162,20 +163,33 @@ def _run(args: argparse.Namespace, store: RunStore) -> int:
             store.append_event(run_id, "run.cancelled", {"reason": "user declined execution"})
             print("cancelled")
             return 2
-    return orchestrator.run(run_id, budget, _selected(args), dry_run=False, allow_overlap=args.allow_overlap)
+    cancel = threading.Event()
+    try:
+        return orchestrator.run(run_id, budget, _selected(args), dry_run=False, allow_overlap=args.allow_overlap, cancel=cancel)
+    except KeyboardInterrupt:
+        cancel.set()
+        store.set_run_status(run_id, "cancelled", "interrupted")
+        store.append_event(run_id, "run.cancelled", {"reason": "keyboard interrupt"})
+        return 130
 
 
 def _run_swarm(args: argparse.Namespace, store: RunStore) -> int:
-    result = run_swarm(
-        store,
-        " ".join(args.goal),
-        _budget(args),
-        graph_mode=args.graph,
-        selected_agents=_selected(args),
-        allow_dirty=args.allow_dirty,
-        allow_overlap=args.allow_overlap,
-        failure_policy=args.failure_policy,
-    )
+    cancel = threading.Event()
+    try:
+        result = run_swarm(
+            store,
+            " ".join(args.goal),
+            _budget(args),
+            graph_mode=args.graph,
+            selected_agents=_selected(args),
+            allow_dirty=args.allow_dirty,
+            allow_overlap=args.allow_overlap,
+            failure_policy=args.failure_policy,
+            cancel=cancel,
+        )
+    except KeyboardInterrupt:
+        cancel.set()
+        return 130
     print(f"run_id: {result['run_id']}")
     print(f"workers: {result['workers']} conflicts: {len(result['conflicts'])}")
     return int(result["exit_code"])

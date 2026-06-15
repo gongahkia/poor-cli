@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from poor_cli.cli import main
+from poor_cli.config import add_provider, empty_config, provider_preset, save_repo_config
 from poor_cli.store import RunStore
 
 
@@ -67,6 +68,36 @@ def test_scheduler_blocks_failed_dependencies(tmp_path: Path, monkeypatch, capsy
         statuses = {task["title"]: task["status"] for task in store.list_tasks(run_id)}
         assert statuses == {"A": "failed", "B": "blocked"}
         assert any(event["type"] == "task.blocked" for event in store.list_events(run_id))
+    finally:
+        store.close()
+
+
+def test_scheduler_honors_provider_concurrency_cap(tmp_path: Path, monkeypatch, capsys) -> None:
+    planner = tmp_path / "planner.py"
+    cmd = f'{sys.executable} -c "import time; time.sleep(0.1)"'
+    _planner(
+        planner,
+        [
+            {"title": "A", "objective": "a", "suggested_agent": "generic", "command": cmd},
+            {"title": "B", "objective": "b", "suggested_agent": "generic", "command": cmd},
+        ],
+    )
+    profile = provider_preset("openai-compatible", profile_id="limited", model="m", base_url="http://limited.test")
+    profile["limited"]["limits"] = {"max_concurrent_requests": 1}
+    config = add_provider(empty_config(), "limited", profile["limited"])
+    config["routes"] = {"executor": {"profile": "limited", "model": "m"}}
+    save_repo_config(config, tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    assert main(["--store-dir", str(tmp_path / "store"), "run", "profile cap", "--yes", "--parallel", "2"]) == 0
+    run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
+    store = RunStore(tmp_path / "store")
+    try:
+        events = store.list_events(run_id)
+        second_start = [i for i, event in enumerate(events) if event["type"] == "scheduler.task_started"][1]
+        first_done = next(i for i, event in enumerate(events) if event["type"] == "task.completed")
+        assert first_done < second_start
     finally:
         store.close()
 
