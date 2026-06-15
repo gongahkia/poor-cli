@@ -302,6 +302,212 @@ Writing collaborator: needed by **week 3**. User ships code; collaborator ships 
 - Prompt budget gate: system prompt ≤1000 tokens (test-asserted).
 - Determinism gate: rerun a fixture run, assert byte-equal CAS output.
 
+## Pre-closeout backlog from NEXT-TODO
+
+Priority: complete this queue before resuming the remaining Phase 3 target-host backlog. This queue is merged from `NEXT-TODO.md` to keep `WORKON-PIVOT-ASAP.md` authoritative.
+
+- [ ] P0-001: Confirm this phase is documentation-only before implementation starts -> Expected output: current diff contains roadmap/checklist docs only.
+- [ ] P0-002: Snapshot current repo state with `git status --short` and baseline test commands -> Expected output: baseline note showing unrelated dirty files and reproducible verification commands.
+- [ ] P0-003: Record local architecture gaps from `docs/ARCHITECTURE.md` -> Expected output: gap list for worktree isolation, real parallel scheduling, MCP hosting, and provider-native cache controls.
+- [ ] P0-004: Record current provider surface from `src/poor_cli/provider_adapters.py` -> Expected output: adapter matrix covering OpenAI Responses, Anthropic, Gemini, Ollama, OpenAI-compatible chat, vLLM, and SGLang.
+- [ ] P0-005: Record current execution limitation from `src/poor_cli/orchestrator.py` -> Expected output: finding that `--parallel` is exposed but tasks are still executed sequentially.
+- [ ] P0-006: Record current runner limitation from `src/poor_cli/agents.py` -> Expected output: finding that shell runners support `claude` and `codex`, but not native provider-backed tool loops.
+- [ ] P0-007: Record current sandbox limitation from `src/poor_cli/sandbox.py` -> Expected output: shell-risk checklist covering substitutions, redirects, aliases, function wrappers, shell builtins, URL args, and write escapes.
+- [ ] P0-008: Record OpenClaude source and provenance boundary from https://github.com/Gitlawb/openclaude and https://github.com/Gitlawb/openclaude/blob/main/LICENSE -> Expected output: ADR banning code copy and allowing concept-only comparison.
+- [ ] P0-009: Record OpenClaude provider-profile ideas from its README -> Expected output: concept list for guided provider setup, saved profiles, OpenAI-compatible providers, Gemini, Ollama, MCP, web tools, and streaming.
+- [ ] P0-010: Record OpenClaude agent-routing ideas from https://github.com/Gitlawb/openclaude/discussions/412 -> Expected output: concept list for `agentModels`, `agentRouting`, exact alias validation, and restart/doctor diagnostics.
+- [ ] P0-011: Record OpenClaude routed-Responses bug from https://github.com/Gitlawb/openclaude/issues/1259 -> Expected output: regression test requirement for tool-call args delivered only in final Responses stream events.
+- [ ] P0-012: Record OpenClaude model-picker issue from https://github.com/Gitlawb/openclaude/issues/1119 -> Expected output: UX requirement that provider profile models and routed agent models are visible and not polluted by irrelevant hardcoded choices.
+- [ ] P0-013: Record OpenClaude web-search provider ideas from https://github.com/Gitlawb/openclaude/blob/main/.env.example -> Expected output: concept list for native, custom, ddg, and paid search-provider modes with explicit fallback rules.
+- [ ] P0-014: Record Pi harness source from https://pi.dev/ and https://github.com/earendil-works/pi/blob/main/packages/coding-agent/docs/index.md -> Expected output: design note for minimal core plus extensions, skills, prompt templates, themes, RPC, SDK, and provider switching.
+- [ ] P0-015: Record OpenRouter Fusion source from https://openrouter.ai/docs/guides/routing/routers/fusion-router -> Expected output: design note that Fusion is a router/tool path for multi-model panel analysis plus judge output.
+- [ ] P0-016: Record OpenRouter Fusion cost source from https://openrouter.ai/openrouter/fusion -> Expected output: budget rule that Fusion is gated because cost is sum of underlying panel and judge calls.
+- [ ] P0-017: Record Kimi K2.7 Code source from https://platform.kimi.ai/docs/guide/kimi-k2-7-code-quickstart -> Expected output: provider note that Kimi is OpenAI-API-compatible and supports multi-step tool/reasoning workflows.
+- [ ] P0-018: Record OpenAI latest-model source from https://developers.openai.com/api/docs/guides/latest-model.md -> Expected output: provider note for `gpt-5.5`, Responses API, `reasoning.effort`, and `text.verbosity`.
+- [ ] P0-019: Record OpenAI tool source from https://developers.openai.com/api/docs/guides/tools -> Expected output: adapter requirement for typed tool schemas, hosted tool gating, and function-call round trips.
+- [ ] P0-020: Record OpenAI prompt-caching source from https://developers.openai.com/api/docs/guides/prompt-caching -> Expected output: cache requirement for stable prompt prefixes and `prompt_cache_key` support where available.
+- [ ] P0-021: Record Artificial Analysis benchmark source from https://artificialanalysis.ai/agents/coding-agents -> Expected output: benchmark caveat that harness plus model plus settings must be measured before capability claims.
+- [ ] P0-022: Add claim-discipline policy for marketing phrases -> Expected output: no "Fable-level" or "frontier-equivalent" claim unless local benchmark data supports it.
+- [ ] P0-023: Add source-license gate for public prompt and skill repo analysis -> Expected output: allowed-source list with licenses, URLs, and copied-text prohibition.
+- [ ] P1-001: Define `poor-cli config` schema for providers, models, routes, budgets, tools, and concurrency -> Expected output: versioned config spec with migration path and JSON-schema/TOML validation.
+- [ ] P1-002: Add config precedence order -> Expected output: documented order for CLI flags, env vars, repo config, user config, and built-in defaults.
+- [ ] P1-003: Add secret-handling policy -> Expected output: config stores env-var names or keychain refs, never plaintext API keys.
+- [ ] P1-004: Add provider profile type -> Expected output: profile fields for id, provider kind, base URL, model list, auth ref, timeout, retry policy, tool support, streaming support, and cost metadata.
+- [ ] P1-005: Add OpenAI profile preset -> Expected output: `poor-cli provider add openai` creates a profile using OpenAI Responses where credentials are present.
+- [ ] P1-006: Add OpenAI-compatible profile preset -> Expected output: `poor-cli provider add compatible --base-url ... --model ...` creates a generic profile without hardcoded vendor assumptions.
+- [ ] P1-007: Add OpenRouter profile preset -> Expected output: `poor-cli provider add openrouter` creates an OpenAI-compatible profile and verifies `/models` or a dry-run completion.
+- [ ] P1-008: Add Kimi profile preset -> Expected output: `poor-cli provider add kimi` creates an OpenAI-compatible profile after live endpoint verification or documented skip.
+- [ ] P1-009: Add Ollama/local profile preset -> Expected output: local profile discovers available models and marks offline-safe usage.
+- [ ] P1-010: Add vLLM/SGLang profile presets -> Expected output: local-server profiles with base URL, model, and tool-capability probe.
+- [ ] P1-011: Add `poor-cli provider list` -> Expected output: table showing active profile, provider kind, model, base URL host, tool support, web support, and health.
+- [ ] P1-012: Add `poor-cli provider doctor` -> Expected output: redacted diagnostic report for auth, endpoint reachability, model existence, streaming, tools, and cache support.
+- [ ] P1-013: Add `poor-cli provider switch` -> Expected output: command updates active profile without editing env vars manually.
+- [ ] P1-014: Add model registry generated from profiles -> Expected output: `/model` or CLI picker includes configured profile models and excludes irrelevant hardcoded models.
+- [ ] P1-015: Add profile export/import -> Expected output: redacted portable config for moving provider setup across machines.
+- [ ] P1-016: Add profile tests with fake endpoints -> Expected output: unit tests for validation, redaction, precedence, and model-picker contents.
+- [ ] P2-001: Define role route schema -> Expected output: config fields for `planner`, `executor`, `reviewer`, `verifier`, `fallback`, `researcher`, and `graph_navigator`.
+- [ ] P2-002: Define complexity classifier inputs -> Expected output: deterministic metadata from task count, file count, graph hits, risk labels, expected test scope, and user flags.
+- [ ] P2-003: Define routing policy for small tasks -> Expected output: direct executor route without Fusion or swarm unless user opts in.
+- [ ] P2-004: Define routing policy for hard or ambiguous tasks -> Expected output: planner plus reviewer route with optional Fusion when budget allows.
+- [ ] P2-005: Define routing policy for design/UI tasks -> Expected output: design-review route using project design rules before implementation.
+- [ ] P2-006: Define routing policy for parallelizable tasks -> Expected output: plan-task route that emits independent worker jobs and merge constraints.
+- [ ] P2-007: Add route aliases -> Expected output: human-readable aliases map to profile/model ids and fail fast if missing.
+- [ ] P2-008: Add route fallback semantics -> Expected output: deterministic failover order with budget, rate-limit, and capability checks.
+- [ ] P2-009: Add route explain mode -> Expected output: `poor-cli route explain "task"` prints chosen role, profile, model, reason, and estimated budget.
+- [ ] P2-010: Add route audit events -> Expected output: run log records route decisions, profile ids, model ids, and redacted errors.
+- [ ] P2-011: Add route tests -> Expected output: tests cover exact alias validation, missing profile errors, fallback behavior, and deterministic classifier outputs.
+- [ ] P3-001: Design native `ProviderBackedAgentRunner` -> Expected output: ADR comparing current shell runner with provider-native tool loops and replay integration.
+- [ ] P3-002: Implement native runner interface without replacing shell runners -> Expected output: `AgentRunner` supports `shell` and `provider` backends behind existing orchestration API.
+- [ ] P3-003: Generate tool schemas from built-in tool registry -> Expected output: JSON schemas for read, write, edit, glob, grep, shell, graph, replay, web, and review tools.
+- [ ] P3-004: Validate tool input before execution -> Expected output: malformed model tool args fail with structured error artifacts, not Python tracebacks.
+- [ ] P3-005: Add provider-neutral tool-call loop -> Expected output: loop accepts model output, executes tools, appends tool results, and continues until final result or budget stop.
+- [ ] P3-006: Add replay integration to native runner -> Expected output: provider calls and tool calls are recorded and can be replayed fail-closed.
+- [ ] P3-007: Add streaming event normalizer -> Expected output: OpenAI, Anthropic, Gemini, and compatible providers emit one internal event format.
+- [ ] P3-008: Add OpenAI Responses final-args guard -> Expected output: regression test where function-call args arrive only in `done` events still executes the tool correctly.
+- [ ] P3-009: Add Responses `reasoning.effort` mapping -> Expected output: route config can set low, medium, high, or xhigh effort where supported.
+- [ ] P3-010: Add Responses `text.verbosity` mapping -> Expected output: route config can set terse, normal, or verbose output where supported.
+- [ ] P3-011: Add prompt-cache-key support -> Expected output: stable cache keys for system, project, route, and tool-prefix prompts where provider supports it.
+- [ ] P3-012: Add provider capability probes -> Expected output: adapter reports tool calling, streaming, structured outputs, web tools, cache hints, multimodal inputs, and max context.
+- [ ] P3-013: Add structured result contracts -> Expected output: planner, executor, reviewer, verifier, and swarm workers emit typed artifacts.
+- [ ] P3-014: Add context compaction hook -> Expected output: long sessions compact deterministically and preserve phase, route, tool state, and open tasks.
+- [ ] P3-015: Add native runner tests -> Expected output: fake-provider tests cover tool loops, streaming args, replay, compaction, budget stops, and structured outputs.
+- [ ] P4-001: Define planner artifact contract -> Expected output: `PLAN.json` and `PLAN.md` include tasks, deps, risk, route, expected files, and verification.
+- [ ] P4-002: Define worker artifact contract -> Expected output: each worker emits `PATCH.diff`, `RESULT.md`, changed-file list, tests run, and unresolved risks.
+- [ ] P4-003: Define review artifact contract -> Expected output: reviewer emits findings with severity, file, line, evidence, and accept/reject recommendation.
+- [ ] P4-004: Define verifier artifact contract -> Expected output: verifier emits command results, benchmark deltas, and final pass/fail.
+- [ ] P4-005: Add artifact directory layout -> Expected output: every run stores artifacts under deterministic run id paths.
+- [ ] P4-006: Add artifact retention policy -> Expected output: cleanup command removes temp worktrees while preserving plan, result, review, verifier, and replay files.
+- [ ] P4-007: Add artifact CLI inspection -> Expected output: `poor-cli inspect <run-id>` shows plan, workers, diffs, reviews, costs, and failures.
+- [ ] P4-008: Add artifact tests -> Expected output: golden tests validate schema compatibility and replay stability.
+- [ ] P5-001: Design worktree swarm architecture -> Expected output: ADR for `git worktree` creation, isolation, patch collection, merge, conflict handling, and cleanup.
+- [ ] P5-002: Add `poor-cli plan --emit-tasks` -> Expected output: command writes DAG tasks without modifying repo code.
+- [ ] P5-003: Add `poor-cli run-swarm` command -> Expected output: command creates worker worktrees, dispatches tasks, collects artifacts, and stops on policy violations.
+- [ ] P5-004: Add worktree naming scheme -> Expected output: deterministic names include run id, worker id, role, and sanitized task slug.
+- [ ] P5-005: Add worktree dirty-check gate -> Expected output: swarm refuses to start or records explicit allow flag when main worktree has conflicting dirty files.
+- [ ] P5-006: Add per-worker route selection -> Expected output: planner can assign Kimi or another configured executor per worker based on task metadata.
+- [ ] P5-007: Add patch collection -> Expected output: each worker output includes normalized unified diff, changed files, and binary-file handling.
+- [ ] P5-008: Add patch merge planner -> Expected output: merge stage detects overlapping hunks and orders non-conflicting patches deterministically.
+- [ ] P5-009: Add conflict resolution path -> Expected output: conflicts become review tasks instead of silent overwrites.
+- [ ] P5-010: Add worker failure policy -> Expected output: configurable `fail-fast`, `continue`, and `quarantine` modes.
+- [ ] P5-011: Add cleanup-swarm command -> Expected output: all temporary worktrees and branches are pruned after artifacts are preserved.
+- [ ] P5-012: Add swarm replay mode -> Expected output: recorded swarm can be replayed without provider calls.
+- [ ] P5-013: Add swarm tests using temp git repos -> Expected output: tests cover independent patches, conflicts, failures, cleanup, and replay.
+- [ ] P6-001: Implement real `--parallel` scheduling -> Expected output: orchestrator executes independent DAG nodes concurrently up to configured caps.
+- [ ] P6-002: Add dependency-aware queue -> Expected output: tasks with deps wait; ready tasks run; failed deps block dependent tasks with clear status.
+- [ ] P6-003: Add global concurrency cap -> Expected output: `POOR_CLI_MAX_PARALLEL_AGENTS` and config cap bound all worker concurrency.
+- [ ] P6-004: Add provider concurrency cap -> Expected output: each profile has max concurrent requests, rate-limit backoff, and queue visibility.
+- [ ] P6-005: Add route concurrency cap -> Expected output: expensive routes like Fusion can be capped independently from executor workers.
+- [ ] P6-006: Add sync override -> Expected output: `POOR_CLI_FORCE_SYNC_AGENTS=1` forces sequential execution for debugging.
+- [ ] P6-007: Add explicit parallel opt-in for risky writes -> Expected output: tasks touching same predicted file set require serial execution unless approved.
+- [ ] P6-008: Add budget ledger -> Expected output: run records planned and actual calls, tokens, cost estimates, wall time, and cache hits where known.
+- [ ] P6-009: Add cancellation handling -> Expected output: Ctrl-C stops workers, preserves artifacts, and cleans worktrees according to policy.
+- [ ] P6-010: Add parallel scheduling tests -> Expected output: tests verify concurrency, dependency ordering, caps, cancellation, and deterministic event logs.
+- [ ] P7-001: Add Fusion route only for planning/review by default -> Expected output: config uses Fusion for high-risk planner or reviewer roles, not routine executor work.
+- [ ] P7-002: Add Fusion budget gate -> Expected output: Fusion requires configured max cost or explicit `--allow-expensive-router`.
+- [ ] P7-003: Add Fusion mode probe -> Expected output: diagnostic verifies `openrouter/fusion` alias and explicit `openrouter:fusion` tool path where available.
+- [ ] P7-004: Add Fusion panel config -> Expected output: route config can set analysis models, judge model, and max panel size with validation.
+- [ ] P7-005: Add Fusion recursion guard -> Expected output: Fusion route cannot recursively invoke itself through nested review/planning routes.
+- [ ] P7-006: Add Fusion structured review parser -> Expected output: consensus, contradictions, gaps, unique insights, and blind spots are normalized into review artifacts.
+- [ ] P7-007: Add Fusion fallback -> Expected output: if Fusion is unavailable or over budget, planner/reviewer falls back to configured single-model route and records reason.
+- [ ] P7-008: Add Fusion eval fixture -> Expected output: benchmark compares single planner vs Fusion planner on fixed ambiguous tasks with cost and latency.
+- [ ] P8-001: Add Kimi executor route preset -> Expected output: `executor` can route to Kimi K2.7 Code through OpenAI-compatible adapter when configured.
+- [ ] P8-002: Add Kimi tool-call compatibility test -> Expected output: fake or live-gated test proves tool calls round trip through Kimi-compatible profile.
+- [ ] P8-003: Add Kimi long-context policy -> Expected output: route can use larger context windows only after capability probe confirms actual limit.
+- [ ] P8-004: Add Kimi failure fallback -> Expected output: executor falls back to local/OpenAI-compatible alternate on auth, rate-limit, or unsupported-tool errors.
+- [ ] P8-005: Add Kimi cost/latency telemetry -> Expected output: run artifacts include latency and token/cost metadata when provider reports it.
+- [ ] P8-006: Add Kimi docs -> Expected output: setup guide covers env vars, base URL verification, model id, tool support, and limitations.
+- [ ] P9-001: Define web tool threat model -> Expected output: ADR covers SSRF, localhost/private IP blocking, redirects, file URLs, content limits, caching, and replay.
+- [ ] P9-002: Add `web_search` tool contract -> Expected output: tool returns title, URL, snippet, source provider, timestamp, and replay id.
+- [ ] P9-003: Add `web_fetch` tool contract -> Expected output: tool returns sanitized content, final URL, content type, byte count, and truncation marker.
+- [ ] P9-004: Add native-provider web mode -> Expected output: OpenAI/OpenRouter/provider-hosted search can be selected only when capability probe says available.
+- [ ] P9-005: Add custom web provider mode -> Expected output: configurable HTTP search endpoint supports redacted auth and strict schema validation.
+- [ ] P9-006: Add free fallback mode -> Expected output: ddg or equivalent fallback is clearly marked best-effort and test-isolated.
+- [ ] P9-007: Add web cache -> Expected output: fetched pages are cached by URL, timestamp, content hash, and run id for replay.
+- [ ] P9-008: Add web citation enforcement -> Expected output: answers that use web evidence include source URLs in artifacts.
+- [ ] P9-009: Add web allow/deny lists -> Expected output: config can restrict domains and block private networks by default.
+- [ ] P9-010: Add web tests -> Expected output: tests cover redirects, blocked schemes, private IPs, truncation, cache replay, and provider fallback.
+- [ ] P10-001: Replace shell guard with parsed command model or documented parser choice -> Expected output: ADR chooses parser/dependency and states unsupported shell features.
+- [ ] P10-002: Add shell deny tests for command substitution -> Expected output: `$(curl ...)`, backticks, and nested substitution are blocked.
+- [ ] P10-003: Add shell deny tests for alias/function wrappers -> Expected output: common wrapper attempts around network tools are blocked or require approval.
+- [ ] P10-004: Add shell deny tests for redirects outside workdir -> Expected output: `> /tmp/x`, `>> ~/.zshrc`, heredoc writes, and process substitution are handled by policy.
+- [ ] P10-005: Add shell deny tests for URL-like args -> Expected output: network-capable commands with URL args are blocked unless web tool path is used.
+- [ ] P10-006: Add shell allowlist mode -> Expected output: low-risk commands such as `rg`, `sed`, `python -m pytest`, `git diff`, and `git status` pass without broad shell escape.
+- [ ] P10-007: Add per-command approval artifact -> Expected output: blocked command records exact reason, parsed tokens, and remediation.
+- [ ] P10-008: Add sandbox docs -> Expected output: docs explain command policy, bypass boundaries, and how to extend safely.
+- [ ] P11-001: Add prompt-pack registry -> Expected output: prompts are versioned, licensed, testable, and selected by route or task type.
+- [ ] P11-002: Add public prompt analysis workflow -> Expected output: workflow summarizes patterns from allowed public prompts without copying proprietary text.
+- [ ] P11-003: Add engineering-skill import policy -> Expected output: skills can be referenced by URL/license and converted into local route guidance after review.
+- [ ] P11-004: Add prompt regression tests -> Expected output: planner/executor/reviewer prompts produce stable structured outputs on fixtures.
+- [ ] P11-005: Add anti-sycophancy reviewer rubric -> Expected output: reviewer prompts require assumption checks, contrary evidence, and benchmark-gated claims.
+- [ ] P11-006: Add prompt efficiency pass -> Expected output: prompt packs remove redundant boilerplate and record token deltas before/after.
+- [ ] P12-001: Add graph-first context planner -> Expected output: planner uses graph index before broad grep when supported language files are present.
+- [ ] P12-002: Add language support matrix -> Expected output: docs list Py, JS, TS, TSX support and unsupported languages.
+- [ ] P12-003: Add missing tree-sitter dependency check -> Expected output: `poor-cli doctor` detects missing `tree_sitter_python`, `tree_sitter_javascript`, and `tree_sitter_typescript`.
+- [ ] P12-004: Add graph fallback -> Expected output: missing parser wheels degrade to rg-based context with explicit artifact warning.
+- [ ] P12-005: Add graph vs grep benchmark -> Expected output: benchmark reports latency, recall proxy, and token-count impact.
+- [ ] P13-001: Add review lane command -> Expected output: `poor-cli review-run <run-id>` runs reviewer route over patches and artifacts.
+- [ ] P13-002: Add verifier lane command -> Expected output: `poor-cli verify-run <run-id>` runs configured tests and verifies expected outputs.
+- [ ] P13-003: Add second-model review option -> Expected output: reviewer can use a different provider/model than executor.
+- [ ] P13-004: Add Fusion review option -> Expected output: review can use Fusion only when risk and budget gates pass.
+- [ ] P13-005: Add patch rejection flow -> Expected output: rejected worker patch remains in artifacts and is not merged.
+- [ ] P13-006: Add review finding suppressions -> Expected output: suppressions require reason, scope, and expiry.
+- [ ] P13-007: Add review tests -> Expected output: fixtures cover accepted patch, rejected patch, false-positive suppression, and verifier failure.
+- [ ] P14-001: Add headless JSONL RPC mode -> Expected output: `poor-cli rpc serve --stdio` accepts run, inspect, cancel, and status messages.
+- [ ] P14-002: Add RPC schema docs -> Expected output: JSON schema for requests, responses, events, errors, and auth boundaries.
+- [ ] P14-003: Add RPC run streaming -> Expected output: clients receive structured events for route, tool, worker, review, and verifier phases.
+- [ ] P14-004: Add RPC cancellation -> Expected output: cancel request stops active workers and returns cleanup result.
+- [ ] P14-005: Add RPC auth/locality policy -> Expected output: stdio is default; socket modes require explicit bind and auth token.
+- [ ] P14-006: Add optional HTTP or gRPC phase decision -> Expected output: ADR decides whether to add HTTP/gRPC after JSONL proves useful.
+- [ ] P14-007: Add RPC tests -> Expected output: contract tests cover run lifecycle, malformed input, cancellation, and event order.
+- [ ] P15-001: Add MCP server hosting plan -> Expected output: ADR defines whether poor-cli exposes tools over MCP, consumes MCP, or both.
+- [ ] P15-002: Add MCP tool registry mapping -> Expected output: built-in tools can be exposed with schemas, auth policy, and sandbox rules.
+- [ ] P15-003: Add MCP client config -> Expected output: external MCP tools can be configured with allowlist, timeout, and replay boundaries.
+- [ ] P15-004: Add MCP security tests -> Expected output: tests cover untrusted tool names, schema mismatch, timeout, and secret redaction.
+- [ ] P16-001: Add cost model interface -> Expected output: each provider can estimate input, output, cache, web, and router cost when pricing is configured.
+- [ ] P16-002: Add budget fail-fast -> Expected output: run stops before exceeding user-defined max cost, max calls, max tokens, or max wall time.
+- [ ] P16-003: Add budget soft warnings -> Expected output: run emits warnings at 50, 80, and 100 percent of configured budget.
+- [ ] P16-004: Add price config update workflow -> Expected output: pricing data is manually versioned or fetched from trusted source with timestamp.
+- [ ] P16-005: Add cost tests -> Expected output: deterministic tests for price math, unknown prices, cache discounts, and router multi-call costs.
+- [ ] P17-001: Build evaluation fixture set -> Expected output: repo-local tasks cover simple edit, multi-file refactor, bug fix, ambiguous design, graph lookup, and web-research answer.
+- [ ] P17-002: Build SWE-bench-lite smoke runner -> Expected output: `bench/swe_bench_lite` can run a fixed small subset and emit pass/fail/cost/latency.
+- [ ] P17-003: Build harness A/B runner -> Expected output: compare direct executor, planner+executor, swarm, Fusion planner, and second-model review on same tasks.
+- [ ] P17-004: Build local provider benchmark -> Expected output: Ollama/vLLM/SGLang/Kimi-compatible local routes can be measured separately from cloud routes.
+- [ ] P17-005: Build cost-per-passed-task report -> Expected output: report includes pass rate, mean cost, mean time, p95 time, and failure categories.
+- [ ] P17-006: Build quality-review rubric -> Expected output: human-review checklist covers correctness, minimal diff, tests, security, and maintainability.
+- [ ] P17-007: Add benchmark gating for claims -> Expected output: README only states measured results with date, config, and task set.
+- [ ] P17-008: Add benchmark reproducibility docs -> Expected output: exact commands, env vars, profiles, seeds, and replay ids are documented.
+- [ ] P18-001: Add TUI provider panel -> Expected output: TUI shows active profile, model, route, budget, and health without exposing secrets.
+- [ ] P18-002: Add TUI run graph panel -> Expected output: TUI shows plan DAG, worker states, review state, verifier state, and failures.
+- [ ] P18-003: Add TUI artifact viewer -> Expected output: TUI can open `PLAN.md`, `RESULT.md`, `PATCH.diff`, review findings, and verifier logs.
+- [ ] P18-004: Add TUI route switcher -> Expected output: user can switch role/model route within validated profiles.
+- [ ] P18-005: Add CLI noninteractive parity -> Expected output: every TUI action has a CLI command for scripting.
+- [ ] P19-001: Update README after provider profiles land -> Expected output: README documents provider setup, route setup, replay, and doctor commands.
+- [ ] P19-002: Update architecture docs after native runner lands -> Expected output: docs explain provider-backed agents, tool loop, replay, and shell runner compatibility.
+- [ ] P19-003: Update swarm docs after worktrees land -> Expected output: docs explain plan, worker worktrees, patch merge, review, verify, and cleanup.
+- [ ] P19-004: Update security docs after sandbox/web/MCP land -> Expected output: docs state boundaries, blocked defaults, and known residual risks.
+- [ ] P19-005: Update examples -> Expected output: examples cover small direct task, hard Fusion-reviewed task, Kimi executor swarm, local-model run, and web-research task.
+- [ ] P19-006: Add migration notes -> Expected output: old configs and existing CLI flows remain supported or have explicit migration commands.
+- [ ] P20-001: Add CI dependency gate -> Expected output: CI installs graph parser wheels and fails with clear error if unavailable.
+- [ ] P20-002: Add full test gate -> Expected output: `python3 -m pytest tests/ -q` passes in clean env.
+- [ ] P20-003: Add focused provider tests -> Expected output: fake-provider tests pass without network or secrets.
+- [ ] P20-004: Add live-provider test markers -> Expected output: live tests require explicit env vars and are skipped by default.
+- [ ] P20-005: Add replay determinism gate -> Expected output: recorded runs replay byte-stable artifacts.
+- [ ] P20-006: Add LOC gate decision -> Expected output: either maintain current LOC cap with scoped phases or update cap with rationale.
+- [ ] P20-007: Add packaging gate -> Expected output: build/install command verifies console entrypoints and optional extras.
+- [ ] P20-008: Add release checklist -> Expected output: checklist includes tests, docs, security review, benchmark report, and backwards compatibility.
+- [ ] P21-001: Dogfood direct mode on poor-cli -> Expected output: run artifact showing a small real task completed with direct executor route.
+- [ ] P21-002: Dogfood planner+reviewer mode on poor-cli -> Expected output: run artifact showing planner, executor, reviewer, verifier, and accepted patch.
+- [ ] P21-003: Dogfood swarm mode on poor-cli -> Expected output: run artifact showing at least two isolated worker worktrees and clean merge or documented conflict.
+- [ ] P21-004: Dogfood web-research mode on poor-cli docs -> Expected output: run artifact with cited sources and replayable fetch cache.
+- [ ] P21-005: Dogfood cost controls -> Expected output: run artifacts prove budget warnings and hard stops work.
+- [ ] P21-006: Dogfood failure cleanup -> Expected output: aborted swarm leaves no stale worktrees after cleanup and preserves artifacts.
+- [ ] P21-007: Dogfood benchmark report -> Expected output: before/after report compares pass rate, cost, latency, and failure modes.
+- [ ] P22-001: Prioritize v6.1 implementation cut -> Expected output: approved scope contains provider profiles, route schema, provider-backed runner skeleton, and doctor tests.
+- [ ] P22-002: Prioritize v6.2 implementation cut -> Expected output: approved scope contains real parallel DAG scheduling, worktree swarm, artifacts, and cleanup.
+- [ ] P22-003: Prioritize v6.3 implementation cut -> Expected output: approved scope contains Fusion/Kimi presets, web tools, review/verifier lanes, and benchmark reports.
+- [ ] P22-004: Prioritize v6.4 implementation cut -> Expected output: approved scope contains RPC, MCP hosting, TUI panels, and advanced prompt-pack workflow.
+- [ ] P22-005: Stop implementation if provenance, security, or budget gates fail -> Expected output: blocked status with exact failing gate and no partial unsafe merge.
+
 ## Week 1-4 plan (phase 1 only)
 
 **Week 1 — substrate.**
