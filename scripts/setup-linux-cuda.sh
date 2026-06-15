@@ -6,6 +6,9 @@ MODEL="${POOR_CLI_LOCAL_MODEL:-Qwen/Qwen2.5-Coder-32B-Instruct}"
 VENV="${POOR_CLI_LOCAL_VENV:-.poor-cli/local-cuda-venv}"
 HOST="${POOR_CLI_LOCAL_HOST:-127.0.0.1}"
 PORT="${POOR_CLI_LOCAL_PORT:-}"
+PREFIX_CACHE="${POOR_CLI_LOCAL_PREFIX_CACHE:-1}"
+PREFIX_CACHE_HASH_ALGO="${POOR_CLI_LOCAL_PREFIX_CACHE_HASH_ALGO:-sha256}"
+KV_CACHE_DTYPE="${POOR_CLI_LOCAL_KV_CACHE_DTYPE:-auto}"
 YES=0
 SKIP_CUDA_CHECK=0
 SKIP_ENGINE_INSTALL=0
@@ -24,6 +27,9 @@ Environment overrides:
   POOR_CLI_LOCAL_VENV=.poor-cli/local-cuda-venv
   POOR_CLI_LOCAL_HOST=127.0.0.1
   POOR_CLI_LOCAL_PORT=8000
+  POOR_CLI_LOCAL_PREFIX_CACHE=1
+  POOR_CLI_LOCAL_PREFIX_CACHE_HASH_ALGO=sha256
+  POOR_CLI_LOCAL_KV_CACHE_DTYPE=auto
 EOF
 }
 
@@ -35,6 +41,10 @@ while [[ $# -gt 0 ]]; do
     --venv) VENV="$2"; shift ;;
     --host) HOST="$2"; shift ;;
     --port) PORT="$2"; shift ;;
+    --prefix-cache) PREFIX_CACHE=1 ;;
+    --no-prefix-cache) PREFIX_CACHE=0 ;;
+    --prefix-cache-hash-algo) PREFIX_CACHE_HASH_ALGO="$2"; shift ;;
+    --kv-cache-dtype) KV_CACHE_DTYPE="$2"; shift ;;
     --skip-cuda-check) SKIP_CUDA_CHECK=1 ;;
     --skip-engine-install) SKIP_ENGINE_INSTALL=1 ;;
     -h|--help) usage; exit 0 ;;
@@ -87,16 +97,35 @@ cat > .poor-cli/local-cuda.env <<EOF
 POOR_CLI_LOCAL_ENGINE=$ENGINE
 POOR_CLI_LOCAL_MODEL=$MODEL
 POOR_CLI_LOCAL_BASE_URL=$BASE_URL
+POOR_CLI_LOCAL_PREFIX_CACHE=$PREFIX_CACHE
+POOR_CLI_LOCAL_PREFIX_CACHE_HASH_ALGO=$PREFIX_CACHE_HASH_ALGO
+POOR_CLI_LOCAL_KV_CACHE_DTYPE=$KV_CACHE_DTYPE
 POOR_CLI_PROVIDER=$PROVIDER
 POOR_CLI_MODEL=$MODEL
 EOF
 
 case "$ENGINE" in
   vllm)
-    LAUNCH_CMD="source '$VENV/bin/activate' && vllm serve '$MODEL' --host '$HOST' --port '$PORT'"
+    CACHE_ARGS=""
+    if [[ "$PREFIX_CACHE" == "1" ]]; then
+      CACHE_ARGS=" --enable-prefix-caching --prefix-caching-hash-algo '$PREFIX_CACHE_HASH_ALGO'"
+    else
+      CACHE_ARGS=" --no-enable-prefix-caching"
+    fi
+    if [[ "$KV_CACHE_DTYPE" != "auto" ]]; then
+      CACHE_ARGS="${CACHE_ARGS} --kv-cache-dtype '$KV_CACHE_DTYPE'"
+    fi
+    LAUNCH_CMD="source '$VENV/bin/activate' && vllm serve '$MODEL' --host '$HOST' --port '$PORT'$CACHE_ARGS"
     ;;
   sglang)
-    LAUNCH_CMD="source '$VENV/bin/activate' && python -m sglang.launch_server --model-path '$MODEL' --host '$HOST' --port '$PORT'"
+    CACHE_ARGS=""
+    if [[ "$PREFIX_CACHE" != "1" ]]; then
+      CACHE_ARGS=" --disable-radix-cache"
+    fi
+    if [[ "$KV_CACHE_DTYPE" != "auto" ]]; then
+      CACHE_ARGS="${CACHE_ARGS} --kv-cache-dtype '$KV_CACHE_DTYPE'"
+    fi
+    LAUNCH_CMD="source '$VENV/bin/activate' && python -m sglang.launch_server --model-path '$MODEL' --host '$HOST' --port '$PORT'$CACHE_ARGS"
     ;;
   ollama)
     LAUNCH_CMD="ollama serve"

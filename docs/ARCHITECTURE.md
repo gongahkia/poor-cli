@@ -18,6 +18,7 @@
 - Provider adapters wrap Anthropic, OpenAI Responses, Gemini, Ollama, vLLM, and SGLang clients behind the shared replayable provider contract.
 - `CachedReplayProvider.call_many()` batches uncached provider misses when the wrapped provider exposes `call_many()`, while replaying cached requests individually.
 - vLLM and SGLang adapters normalize local structured-output and function-tool shims into OpenAI-compatible chat payloads.
+- Linux/CUDA setup emits provider-native cache controls for vLLM prefix caching/hash/KV dtype and SGLang radix/KV dtype.
 - MCP is client-only in v6.0.0: `poor-cli mcp list` and `poor-cli mcp call server:tool` consume configured stdio MCP servers.
 - Graph tools use tree-sitter-backed Python, JavaScript, TypeScript, and TSX indexing, incrementally refresh changed graph files before uncached queries, expose polling and native watch handles for long-lived graph users, and are exposed through the replayable `ToolDispatcher`.
 
@@ -34,4 +35,4 @@
 
 ## Boundaries
 
-The alpha intentionally excludes worktree isolation, parallel scheduling, MCP server hosting, broad graph indexing beyond Python/JavaScript/TypeScript/TSX, provider-native prefix/KV-cache control, and live graph-mode SWE-bench benchmarking. The TUI, MCP client, benchmark harness, local provider adapters, OpenAI-compatible local structured-output/tool-call shims, cache-aware provider batching, and graph tools are present but intentionally small.
+The alpha intentionally excludes worktree isolation, parallel scheduling, MCP server hosting, broad graph indexing beyond Python/JavaScript/TypeScript/TSX, live Linux/CUDA benchmark rows, and live graph-mode SWE-bench benchmarking. The TUI, MCP client, benchmark harness, local provider adapters, OpenAI-compatible local structured-output/tool-call shims, cache-aware provider batching, provider-native cache launch controls, and graph tools are present but intentionally small.

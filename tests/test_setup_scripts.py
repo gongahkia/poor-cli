@@ -26,3 +26,9 @@ def test_linux_cuda_setup_script_covers_local_engines() -> None:
     assert ".poor-cli/local-cuda.env" in text
     assert ".poor-cli/local-cuda-run.sh" in text
     assert "nvidia-smi" in text
+    assert "--enable-prefix-caching" in text
+    assert "--prefix-caching-hash-algo" in text
+    assert "--no-enable-prefix-caching" in text
+    assert "--disable-radix-cache" in text
+    assert "--kv-cache-dtype" in text
+    assert "POOR_CLI_LOCAL_PREFIX_CACHE" in text
