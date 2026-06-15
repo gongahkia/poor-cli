@@ -28,9 +28,10 @@ def benchmark_plan_payload() -> dict[str, Any]:
             "launch_server": ".poor-cli/local-cuda-run.sh",
             "readiness": "uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json",
             "generate": (
-                "source .poor-cli/local-cuda.env && "
+                "set -a; source .poor-cli/local-cuda.env; set +a; "
                 "uv run --locked --extra bench python bench/swe_bench_lite/run.py "
                 '--graph --agent local --provider "$POOR_CLI_PROVIDER" --model "$POOR_CLI_MODEL" '
+                '--local-base-url "$POOR_CLI_LOCAL_BASE_URL" '
                 f"--no-evaluate --confirm-cost --timeout-seconds 1200 --run-id {run_id}"
             ),
             "evaluate": (

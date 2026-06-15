@@ -178,8 +178,8 @@ uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --no-ev
 Local-mode generation command:
 
 ```sh
-source .poor-cli/local-cuda.env
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider "$POOR_CLI_PROVIDER" --model "$POOR_CLI_MODEL" --no-evaluate --confirm-cost --timeout-seconds 1200 --run-id swe10-local-YYYYMMDDTHHMMSSZ
+set -a; source .poor-cli/local-cuda.env; set +a
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider "$POOR_CLI_PROVIDER" --model "$POOR_CLI_MODEL" --local-base-url "$POOR_CLI_LOCAL_BASE_URL" --no-evaluate --confirm-cost --timeout-seconds 1200 --run-id swe10-local-YYYYMMDDTHHMMSSZ
 ```
 
 Local-mode result verifier:

@@ -33,6 +33,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="bench/swe_bench_lite/run.py")
     parser.add_argument("--provider", default=os.getenv("POOR_CLI_BENCH_PROVIDER", DEFAULT_PROVIDER))
     parser.add_argument("--model", default=os.getenv("POOR_CLI_BENCH_MODEL", DEFAULT_MODEL))
+    parser.add_argument("--local-base-url", default=os.getenv("POOR_CLI_LOCAL_BASE_URL", ""))
     parser.add_argument(
         "--agent",
         choices=["claude", "codex", "generic", "local"],
@@ -277,7 +278,28 @@ def poor_cli_env(args: argparse.Namespace, planner: Path | None = None) -> dict[
     env["PYTHONPATH"] = src if not old_pythonpath else f"{src}{os.pathsep}{old_pythonpath}"
     if planner is not None:
         env["POOR_CLI_PLANNER_COMMAND"] = shlex.join([args.python, str(planner.resolve())])
+    if args.agent == "local":
+        env.update(local_provider_env(args.provider, args.model, args.local_base_url))
     return env
+
+
+def local_provider_env(provider: str, model: str, base_url: str = "") -> dict[str, str]:
+    normalized = provider.strip().lower()
+    return {
+        "POOR_CLI_PROVIDER": normalized,
+        "POOR_CLI_MODEL": model,
+        "POOR_CLI_LOCAL_ENGINE": normalized,
+        "POOR_CLI_LOCAL_MODEL": model,
+        "POOR_CLI_LOCAL_BASE_URL": base_url or default_local_base_url(normalized),
+    }
+
+
+def default_local_base_url(provider: str) -> str:
+    if provider == "ollama":
+        return "http://localhost:11434"
+    if provider == "sglang":
+        return "http://localhost:30000"
+    return "http://localhost:8000"
 
 
 def poor_cli_run_command(args: argparse.Namespace, store_dir: Path, prompt: str) -> list[str]:
@@ -419,6 +441,7 @@ def summarize(records: list[dict[str, Any]], args: argparse.Namespace, run_id: s
         "provider": args.provider,
         "model": args.model,
         "agent": args.agent,
+        "local_base_url": args.local_base_url if args.agent == "local" else "",
         "graph_mode": args.graph,
         "budget_usd": args.budget_usd,
         "seed": args.seed,
@@ -605,6 +628,7 @@ def main(argv: list[str] | None = None) -> int:
             "seed": args.seed,
             "provider": args.provider,
             "model": args.model,
+            "local_base_url": args.local_base_url,
             "agent": args.agent,
             "graph_mode": args.graph,
             "budget_usd": args.budget_usd,

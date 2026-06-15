@@ -468,19 +468,37 @@ def test_swe_lite_runner_supports_graph_mode(tmp_path: Path) -> None:
 
 def test_swe_lite_runner_supports_local_agent(tmp_path: Path) -> None:
     args = swe_run.parse_args(
-        ["--confirm-cost", "--no-evaluate", "--limit", "1", "--agent", "local", "--provider", "vllm", "--model", "qwen"]
+        [
+            "--confirm-cost",
+            "--no-evaluate",
+            "--limit",
+            "1",
+            "--agent",
+            "local",
+            "--provider",
+            "vllm",
+            "--model",
+            "qwen",
+            "--local-base-url",
+            "http://vllm.test",
+        ]
     )
     task = {"instance_id": "repo__proj-1", "problem_statement": "Fix the bug", "repo": "repo/proj"}
 
     command = swe_run.poor_cli_run_command(args, tmp_path / "store", "Fix the bug")
+    env = swe_run.poor_cli_env(args)
     payload = swe_run.planner_payload(task, "local")
     summary = swe_run.summarize([], args, "run-local")
 
     assert command[-1] == "--yes"
+    assert env["POOR_CLI_PROVIDER"] == "vllm"
+    assert env["POOR_CLI_MODEL"] == "qwen"
+    assert env["POOR_CLI_LOCAL_BASE_URL"] == "http://vllm.test"
     assert payload["tasks"][0]["suggested_agent"] == "local"
     assert summary["agent"] == "local"
     assert summary["provider"] == "vllm"
     assert summary["model"] == "qwen"
+    assert summary["local_base_url"] == "http://vllm.test"
 
 
 def test_swe_lite_runner_evaluates_existing_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

@@ -25,6 +25,9 @@ def test_linux_cuda_setup_script_covers_local_engines() -> None:
     assert "Qwen/Qwen2.5-Coder-32B-Instruct" in text
     assert ".poor-cli/local-cuda.env" in text
     assert ".poor-cli/local-cuda-run.sh" in text
+    assert "export POOR_CLI_PROVIDER" in text
+    assert "export POOR_CLI_MODEL" in text
+    assert "export POOR_CLI_LOCAL_BASE_URL" in text
     assert "nvidia-smi" in text
     assert "--enable-prefix-caching" in text
     assert "--prefix-caching-hash-algo" in text

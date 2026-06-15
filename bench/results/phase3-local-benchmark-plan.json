@@ -3,7 +3,7 @@
     "commands": {
       "audit": "uv run --locked python bench/pivot_remaining.py --output bench/results/pivot-remaining.json",
       "evaluate": "uv run --locked --extra bench python bench/swe_bench_lite/run.py --evaluate-existing-run swe10-local-YYYYMMDDTHHMMSSZ --confirm-cost --eval-max-workers 1 --eval-namespace none",
-      "generate": "source .poor-cli/local-cuda.env && uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider \"$POOR_CLI_PROVIDER\" --model \"$POOR_CLI_MODEL\" --no-evaluate --confirm-cost --timeout-seconds 1200 --run-id swe10-local-YYYYMMDDTHHMMSSZ",
+      "generate": "set -a; source .poor-cli/local-cuda.env; set +a; uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider \"$POOR_CLI_PROVIDER\" --model \"$POOR_CLI_MODEL\" --local-base-url \"$POOR_CLI_LOCAL_BASE_URL\" --no-evaluate --confirm-cost --timeout-seconds 1200 --run-id swe10-local-YYYYMMDDTHHMMSSZ",
       "launch_server": ".poor-cli/local-cuda-run.sh",
       "readiness": "uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json",
       "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",

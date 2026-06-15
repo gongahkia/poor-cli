@@ -15,6 +15,7 @@ The setup script creates:
 - `.poor-cli/local-cuda-run.sh`
 
 It requires Linux and `nvidia-smi` by default. For CI or syntax validation only, pass `--skip-cuda-check` and set `POOR_CLI_ALLOW_NON_LINUX=1`.
+The generated `.poor-cli/local-cuda.env` exports the provider, model, and base URL variables used by the `local` agent path.
 
 ## Engines
 
@@ -31,9 +32,9 @@ The script installs `vllm` or `sglang[all]` into the local venv when selected. O
 The setup env exposes a provider-backed delegated agent named `local`:
 
 ```sh
-source .poor-cli/local-cuda.env
+set -a; source .poor-cli/local-cuda.env; set +a
 poor-cli run "inspect this bug" --agents local --yes
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider vllm --model Qwen/Qwen2.5-Coder-32B-Instruct --confirm-cost --no-evaluate
+uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider "$POOR_CLI_PROVIDER" --model "$POOR_CLI_MODEL" --local-base-url "$POOR_CLI_LOCAL_BASE_URL" --confirm-cost --no-evaluate
 ```
 
 `POOR_CLI_PROVIDER` must be `vllm`, `sglang`, or `ollama`, and `POOR_CLI_MODEL` must be set. `POOR_CLI_LOCAL_BASE_URL` selects the local server endpoint.
