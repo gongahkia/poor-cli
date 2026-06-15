@@ -17,6 +17,33 @@ REQUIRED_COMMAND_FRAGMENTS = (
 )
 
 
+def demo_evidence_template(
+    *,
+    run_id: str,
+    video_path: str,
+    model: str,
+    duration_seconds: int,
+    internet_disabled: bool,
+    local_gpu: bool,
+    graph_tools_visible: bool,
+    offline_replay_verified: bool,
+) -> dict[str, Any]:
+    return {
+        "duration_seconds": duration_seconds,
+        "model": model,
+        "internet_disabled": internet_disabled,
+        "local_gpu": local_gpu,
+        "graph_tools_visible": graph_tools_visible,
+        "offline_replay_verified": offline_replay_verified,
+        "run_id": run_id,
+        "video_path": video_path,
+        "commands": [
+            'poor-cli run "fix a real bug using graph tools" --graph --agents local --yes',
+            f"poor-cli --offline replay {run_id or '<run_id>'} --verify",
+        ],
+    }
+
+
 def demo_plan_payload() -> dict[str, Any]:
     return {
         "schema_version": "poor-cli-phase3-demo-plan-v1",
@@ -38,7 +65,11 @@ def demo_plan_payload() -> dict[str, Any]:
                 'poor-cli run "fix a real bug using graph tools" --graph --agents local --yes'
             ),
             "replay": "poor-cli --offline replay <run_id> --verify",
-            "write_evidence": "write bench/results/phase3-demo.json with the schema documented by bench/phase3_demo.py",
+            "write_evidence": (
+                "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json "
+                "--run-id <run_id> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 "
+                "--internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
+            ),
             "verify": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
         },
     }
@@ -97,7 +128,32 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="bench/phase3_demo.py")
     parser.add_argument("--evidence", type=Path, default=DEMO_EVIDENCE)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--write-template", type=Path)
+    parser.add_argument("--run-id", default="")
+    parser.add_argument("--video-path", default="")
+    parser.add_argument("--duration-seconds", type=int, default=60)
+    parser.add_argument("--model", default="Qwen/Qwen2.5-Coder-32B-Instruct")
+    parser.add_argument("--internet-disabled", action="store_true")
+    parser.add_argument("--local-gpu", action="store_true")
+    parser.add_argument("--graph-tools-visible", action="store_true")
+    parser.add_argument("--offline-replay-verified", action="store_true")
     args = parser.parse_args(argv)
+    if args.write_template:
+        payload = demo_evidence_template(
+            run_id=str(args.run_id),
+            video_path=str(args.video_path),
+            model=str(args.model),
+            duration_seconds=int(args.duration_seconds),
+            internet_disabled=bool(args.internet_disabled),
+            local_gpu=bool(args.local_gpu),
+            graph_tools_visible=bool(args.graph_tools_visible),
+            offline_replay_verified=bool(args.offline_replay_verified),
+        )
+        text = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+        args.write_template.parent.mkdir(parents=True, exist_ok=True)
+        args.write_template.write_text(text, encoding="utf-8")
+        print(text, end="")
+        return 0
     payload = {
         "plan": demo_plan_payload(),
         "validation": validate_demo_evidence(args.evidence.resolve()),

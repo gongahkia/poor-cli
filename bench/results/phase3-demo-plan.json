@@ -7,7 +7,7 @@
       "run_demo": "set -a; source .poor-cli/local-cuda.env; set +a; poor-cli run \"fix a real bug using graph tools\" --graph --agents local --yes",
       "setup": "scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct",
       "verify": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
-      "write_evidence": "write bench/results/phase3-demo.json with the schema documented by bench/phase3_demo.py"
+      "write_evidence": "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <run_id> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
     },
     "schema_version": "poor-cli-phase3-demo-plan-v1",
     "target": {

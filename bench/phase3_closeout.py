@@ -56,6 +56,11 @@ def target_host_commands() -> dict[str, str]:
         "verify_local_swe": (
             f"uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench_lite/results/{run_id}/summary.json"
         ),
+        "write_demo_evidence": (
+            "uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json "
+            f"--run-id {run_id} --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 "
+            "--internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified"
+        ),
         "verify_demo": "uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json",
         "refresh_acceptance": "uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json",
         "refresh_pivot": "uv run --locked python bench/pivot_remaining.py --output bench/results/pivot-remaining.json",

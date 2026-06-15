@@ -62,6 +62,8 @@ Record/replay remains the control plane. A local model run should still produce 
 
 ```sh
 scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ
+uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <run_id> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified
+uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json
 uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json
 uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
 uv run --locked python bench/phase3_local_benchmark.py --output bench/results/phase3-local-benchmark-plan.json

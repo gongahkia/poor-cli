@@ -58,9 +58,11 @@ Current checked-in evidence proves offline graph replay and offline network-call
 
 ```sh
 uv run --locked python bench/phase3_demo.py --output bench/results/phase3-demo-plan.json
+uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <run_id> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified
+uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json
 ```
 
-`bench/phase3_demo.py` validates the screencast evidence JSON and linked video path before the Phase 3 demo check can pass.
+`bench/phase3_demo.py` writes a schema-correct screencast evidence template and validates the linked video path before the Phase 3 demo check can pass.
 
 ```sh
 scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ

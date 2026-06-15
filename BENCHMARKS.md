@@ -100,6 +100,13 @@ uv run --locked python bench/phase3_demo.py --output bench/results/phase3-demo-p
 
 Checked-in plan: `bench/results/phase3-demo-plan.json`.
 
+Phase 3 demo evidence template:
+
+```sh
+uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <run_id> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified
+uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json
+```
+
 Phase 3 target-host closeout:
 
 ```sh

@@ -12,7 +12,8 @@ from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
 from bench.phase3_acceptance import acceptance_payload as phase3_acceptance_payload
 from bench.phase3_closeout import closeout_payload
-from bench.phase3_demo import demo_plan_payload, validate_demo_evidence
+from bench.phase3_demo import demo_evidence_template, demo_plan_payload, validate_demo_evidence
+from bench.phase3_demo import main as phase3_demo_main
 from bench.phase3_local_benchmark import benchmark_plan_payload, validate_local_summary
 from bench.phase3_readiness import _python_deps
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
@@ -320,6 +321,7 @@ def test_phase3_demo_plan_schema() -> None:
     assert payload["target"]["requires_internet_disabled"] is True
     assert "--agents local" in payload["commands"]["run_demo"]
     assert "--offline replay" in payload["commands"]["replay"]
+    assert "--write-template" in payload["commands"]["write_evidence"]
 
 
 def test_checked_in_phase3_demo_plan() -> None:
@@ -338,6 +340,7 @@ def test_phase3_closeout_payload_schema() -> None:
     assert set(payload["checks"]) == {"phase3_acceptance", "pivot_remaining"}
     assert "--start-server" in payload["target_host_commands"]["run_all"]
     assert "--agent local" in payload["target_host_commands"]["generate_local_swe"]
+    assert "phase3_demo.py --write-template" in payload["target_host_commands"]["write_demo_evidence"]
     assert "phase3_demo.py --evidence" in payload["target_host_commands"]["verify_demo"]
     assert set(payload["remaining"]) == set(payload["checks"]["phase3_acceptance"]["remaining"]) | set(
         payload["checks"]["pivot_remaining"]["remaining"]
@@ -385,6 +388,62 @@ def test_phase3_demo_validator_accepts_real_evidence(tmp_path: Path) -> None:
 
     assert payload["accepted"] is True
     assert payload["errors"] == []
+
+
+def test_phase3_demo_template_writer_outputs_valid_schema(tmp_path: Path) -> None:
+    video = tmp_path / "phase3-demo.mp4"
+    video.write_bytes(b"demo")
+    evidence = tmp_path / "phase3-demo.json"
+
+    code = phase3_demo_main(
+        [
+            "--write-template",
+            str(evidence),
+            "--run-id",
+            "run_demo",
+            "--video-path",
+            str(video),
+            "--duration-seconds",
+            "60",
+            "--model",
+            "Qwen/Qwen2.5-Coder-32B-Instruct",
+            "--internet-disabled",
+            "--local-gpu",
+            "--graph-tools-visible",
+            "--offline-replay-verified",
+        ]
+    )
+    payload = validate_demo_evidence(evidence)
+
+    assert code == 0
+    assert payload["accepted"] is True
+    assert payload["missing_command_fragments"] == []
+
+
+def test_phase3_demo_template_requires_explicit_evidence_flags(tmp_path: Path) -> None:
+    video = tmp_path / "phase3-demo.mp4"
+    video.write_bytes(b"demo")
+    evidence = tmp_path / "phase3-demo.json"
+    evidence.write_text(
+        json.dumps(
+            demo_evidence_template(
+                run_id="run_demo",
+                video_path=str(video),
+                model="Qwen/Qwen2.5-Coder-32B-Instruct",
+                duration_seconds=60,
+                internet_disabled=False,
+                local_gpu=False,
+                graph_tools_visible=False,
+                offline_replay_verified=False,
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_demo_evidence(evidence)
+
+    assert payload["accepted"] is False
+    assert {"internet_disabled must be true", "local_gpu must be true"} <= set(payload["errors"])
 
 
 def test_phase3_demo_validator_rejects_missing_evidence(tmp_path: Path) -> None:
