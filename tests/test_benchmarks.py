@@ -680,6 +680,29 @@ def test_swe_lite_runner_supports_local_agent(tmp_path: Path) -> None:
     assert summary["local_base_url"] == "http://vllm.test"
 
 
+def test_swe_lite_runner_records_default_local_base_url() -> None:
+    args = swe_run.parse_args(
+        [
+            "--confirm-cost",
+            "--no-evaluate",
+            "--limit",
+            "1",
+            "--agent",
+            "local",
+            "--provider",
+            "sglang",
+            "--model",
+            "qwen",
+        ]
+    )
+
+    env = swe_run.poor_cli_env(args)
+    summary = swe_run.summarize([], args, "run-local")
+
+    assert env["POOR_CLI_LOCAL_BASE_URL"] == "http://localhost:30000"
+    assert summary["local_base_url"] == "http://localhost:30000"
+
+
 def test_swe_lite_runner_evaluates_existing_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     run_dir = tmp_path / "results" / "run-1"
     run_dir.mkdir(parents=True)

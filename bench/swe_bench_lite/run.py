@@ -290,8 +290,13 @@ def local_provider_env(provider: str, model: str, base_url: str = "") -> dict[st
         "POOR_CLI_MODEL": model,
         "POOR_CLI_LOCAL_ENGINE": normalized,
         "POOR_CLI_LOCAL_MODEL": model,
-        "POOR_CLI_LOCAL_BASE_URL": base_url or default_local_base_url(normalized),
+        "POOR_CLI_LOCAL_BASE_URL": effective_local_base_url(normalized, base_url),
     }
+
+
+def effective_local_base_url(provider: str, base_url: str = "") -> str:
+    normalized = provider.strip().lower()
+    return base_url or default_local_base_url(normalized)
 
 
 def default_local_base_url(provider: str) -> str:
@@ -441,7 +446,7 @@ def summarize(records: list[dict[str, Any]], args: argparse.Namespace, run_id: s
         "provider": args.provider,
         "model": args.model,
         "agent": args.agent,
-        "local_base_url": args.local_base_url if args.agent == "local" else "",
+        "local_base_url": effective_local_base_url(args.provider, args.local_base_url) if args.agent == "local" else "",
         "graph_mode": args.graph,
         "budget_usd": args.budget_usd,
         "seed": args.seed,
@@ -628,7 +633,7 @@ def main(argv: list[str] | None = None) -> int:
             "seed": args.seed,
             "provider": args.provider,
             "model": args.model,
-            "local_base_url": args.local_base_url,
+            "local_base_url": effective_local_base_url(args.provider, args.local_base_url) if args.agent == "local" else "",
             "agent": args.agent,
             "graph_mode": args.graph,
             "budget_usd": args.budget_usd,
