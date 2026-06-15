@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .hooks import Hook, HookManager
 from .fusion import fusion_params
+from .hooks import Hook, HookManager
 from .provider_events import normalize_tool_calls, tool_schema_dicts
 from .providers import CachedReplayProvider, Provider, ProviderRequest
 from .store import RunStore

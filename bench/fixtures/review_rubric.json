@@ -5,6 +5,9 @@
     {"id": "minimal_diff", "question": "Is the diff scoped to the task without unrelated refactors?"},
     {"id": "tests", "question": "Were relevant focused tests added or run, and are failures explained?"},
     {"id": "security", "question": "Does the patch avoid new unsafe I/O, secret, network, or sandbox behavior?"},
-    {"id": "maintainability", "question": "Is the implementation understandable and consistent with local patterns?"}
+    {"id": "maintainability", "question": "Is the implementation understandable and consistent with local patterns?"},
+    {"id": "assumptions", "question": "Are assumptions labeled and checked against artifacts rather than accepted by default?"},
+    {"id": "contrary_evidence", "question": "Does the review look for evidence that weakens the proposed conclusion?"},
+    {"id": "claim_discipline", "question": "Are quality, performance, and superiority claims backed by benchmark evidence?"}
   ]
 }

@@ -64,7 +64,7 @@ CLI flags override env vars, which override repo config, user config, then built
 poor-cli provider add openai --model gpt-5.5
 poor-cli provider add compatible --id local --base-url http://localhost:8000 --model Qwen/Qwen2.5-Coder-32B-Instruct
 poor-cli provider add openrouter --model openrouter/fusion
-poor-cli provider add kimi --model kimi-k2-0711-preview
+poor-cli provider add kimi --model kimi-k2.7-code
 poor-cli provider add ollama
 poor-cli provider add vllm --base-url http://localhost:8000 --model Qwen/Qwen2.5-Coder-32B-Instruct
 poor-cli provider list
@@ -94,6 +94,22 @@ For vLLM and SGLang, `ProviderRequest.params` accepts OpenAI-compatible pass-thr
 - `function_tools`: converted to `tools=[{"type":"function", ...}]` with default `tool_choice="auto"`.
 
 OpenAI Responses requests also accept native-runner mappings for `function_tools`, `reasoning_effort`, `text_verbosity`, and `prompt_cache_key`.
+
+## Fusion
+
+OpenRouter Fusion is allowed for planner/reviewer/researcher routes, not executor routes. Configure it with an explicit budget gate:
+
+```toml
+[routes.reviewer]
+profile = "openrouter"
+model = "openrouter/fusion"
+fusion = true
+max_cost_usd = 1.00
+analysis_models = ["~google/gemini-flash-latest", "~moonshotai/kimi-latest"]
+judge_model = "~anthropic/claude-opus-latest"
+```
+
+`review-run` writes `review/FUSION.json` when Fusion is used. If `fallback_profile` is configured and Fusion is unavailable or blocked by policy, `fusion.fallback` is recorded and the single-model fallback route is used.
 
 ## Native Runner
 

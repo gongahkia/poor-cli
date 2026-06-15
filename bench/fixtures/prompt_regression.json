@@ -1,0 +1,19 @@
+{
+  "schema_version": "poor-cli-prompt-regression-v1",
+  "fixtures": [
+    {
+      "id": "planner-json",
+      "role": "planner",
+      "prompt_pack": "planner.default",
+      "input": "fix parser bug",
+      "required_terms": ["JSON", "assumptions", "risks", "tasks", "validation"]
+    },
+    {
+      "id": "reviewer-anti-sycophancy",
+      "role": "reviewer",
+      "prompt_pack": "reviewer.anti_sycophancy",
+      "input": "review patch",
+      "required_terms": ["assumptions", "contrary evidence", "benchmark-gated claims"]
+    }
+  ]
+}

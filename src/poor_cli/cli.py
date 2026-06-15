@@ -34,7 +34,7 @@ from .mcp_client import call_mcp_tool, list_mcp_tools
 from .models import Budget, to_jsonable
 from .offline import enable_offline
 from .orchestrator import Orchestrator
-from .prompt_packs import pack_rows, prompt_efficiency_report
+from .prompt_packs import add_prompt_parser, handle_prompt_command
 from .replay import replay_summary, replay_verify
 from .repo_graph import graph_dependency_report
 from .store import RunStore, StoreError
@@ -87,7 +87,7 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
     if args.command == "route":
         return _route(args)
     if args.command == "prompt":
-        return _prompt(args)
+        return handle_prompt_command(args, Path.cwd())
     if args.command == "inspect":
         return _inspect(args, store)
     if args.command == "cleanup":
@@ -312,23 +312,6 @@ def _route(args: argparse.Namespace) -> int:
     raise RuntimeError("missing route command")
 
 
-def _prompt(args: argparse.Namespace) -> int:
-    if args.prompt_command == "packs":
-        rows = pack_rows(Path.cwd())
-        if args.json:
-            print(json.dumps({"packs": rows}, indent=2, sort_keys=True))
-            return 0
-        for row in rows:
-            print(f"{row['id']}\t{','.join(row['roles'])}\t{row['license']}\t{row['token_estimate']}")
-        return 0
-    if args.prompt_command == "efficiency":
-        before = Path(args.before).read_text(encoding="utf-8")
-        after = Path(args.after).read_text(encoding="utf-8")
-        print(json.dumps(prompt_efficiency_report(before, after), indent=2, sort_keys=True))
-        return 0
-    raise RuntimeError("missing prompt command")
-
-
 def _inspect(args: argparse.Namespace, store: RunStore) -> int:
     run = store.get_run(args.run_id)
     if args.json:
@@ -551,13 +534,7 @@ def _parser() -> argparse.ArgumentParser:
     route_set.add_argument("--profile", required=True)
     route_set.add_argument("--model")
 
-    prompt = sub.add_parser("prompt")
-    prompt_sub = prompt.add_subparsers(dest="prompt_command")
-    prompt_packs = prompt_sub.add_parser("packs")
-    prompt_packs.add_argument("--json", action="store_true")
-    prompt_eff = prompt_sub.add_parser("efficiency")
-    prompt_eff.add_argument("--before", required=True)
-    prompt_eff.add_argument("--after", required=True)
+    add_prompt_parser(sub)
 
     inspect = sub.add_parser("inspect")
     inspect.add_argument("run_id")

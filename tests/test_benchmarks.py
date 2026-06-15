@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from bench.claims_gate import scan_claims
+from bench.dogfood_report import audit as dogfood_audit
 from bench.graph_vs_grep import graph_vs_grep_payload
 from bench.harness_report import evaluation_fixture_payload, reduce_report, swe_smoke_audit
 from bench.local_fixture_bugs import compact_payload, run_fixture_suite
@@ -21,7 +22,9 @@ from bench.phase3_local_benchmark import benchmark_plan_payload, is_local_summar
 from bench.phase3_readiness import _linux_cuda_host, _ollama_binary, _python_deps, _selected_engine_supported, _setup_python
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
+from bench.release_gate import CUTS
 from bench.swe_bench_lite import run as swe_run
+from poor_cli.store import RunStore
 
 
 def _demo_probe_evidence() -> dict[str, object]:
@@ -127,7 +130,16 @@ def test_review_rubric_covers_quality_dimensions() -> None:
     ids = {row["id"] for row in payload["checklist"]}
 
     assert payload["schema_version"] == "poor-cli-review-rubric-v1"
-    assert ids == {"correctness", "minimal_diff", "tests", "security", "maintainability"}
+    assert ids == {
+        "correctness",
+        "minimal_diff",
+        "tests",
+        "security",
+        "maintainability",
+        "assumptions",
+        "contrary_evidence",
+        "claim_discipline",
+    }
 
 
 def test_harness_report_reduces_cost_per_passed_task() -> None:
@@ -143,6 +155,47 @@ def test_harness_report_reduces_cost_per_passed_task() -> None:
     assert payload["modes"]["direct"]["cost_per_passed_task_usd"] == 0.3
     assert payload["modes"]["direct"]["failure_categories"] == {"tests": 1}
     assert payload["modes"]["swarm"]["p95_time_seconds"] == 20
+
+
+def test_fusion_eval_fixture_compares_single_and_fusion() -> None:
+    payload = json.loads((Path(__file__).resolve().parents[1] / "bench" / "results" / "fusion-eval-fixture.json").read_text())
+
+    assert {"single_planner", "fusion_planner"} <= set(payload["modes"])
+    assert payload["task_set"] == "poor-cli-evaluation-ambiguous-design"
+
+
+def test_dogfood_report_requires_all_scenarios(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    try:
+        for index, kinds in enumerate(
+            [
+                ["agent.result", "handoff.packet"],
+                ["artifact.review", "artifact.verify"],
+                ["swarm.merge_plan"],
+                ["web.search", "web.fetch", "web.citation"],
+                ["budget.ledger"],
+                [],
+                ["benchmark.report"],
+            ]
+        ):
+            run_id = store.create_run(user_goal=f"dogfood {index}", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+            for kind in kinds:
+                store.put_artifact(run_id=run_id, kind=kind, data={"ok": True})
+            if index == 5:
+                store.append_event(run_id, "artifacts.cleanup", {"removed": ["worktrees"]})
+        payload = dogfood_audit(tmp_path / "store")
+    finally:
+        store.close()
+
+    assert payload["accepted"] is True
+    assert payload["checks"]["failure_cleanup"]["done"] is True
+
+
+def test_release_cut_matrix_names_expected_surfaces() -> None:
+    assert "Fusion" in CUTS["v6.3"]
+    assert "prompt packs" in CUTS["v6.4"]
+    payload = json.loads((Path(__file__).resolve().parents[1] / "bench" / "results" / "dogfood-report.json").read_text())
+    assert payload["accepted"] is True
 
 
 def test_swe_smoke_audit_accepts_checked_in_runner_outputs() -> None:

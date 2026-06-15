@@ -11,7 +11,7 @@ from poor_cli.store import RunStore
 REQUIRED = {
     "direct": {"agent.result", "handoff.packet"},
     "planner_reviewer": {"artifact.review", "artifact.verify"},
-    "swarm": {"artifact.swarm.merge_plan"},
+    "swarm": {"swarm.merge_plan"},
     "web_research": {"web.search", "web.fetch", "web.citation"},
     "cost_controls": {"budget.ledger"},
     "failure_cleanup": {"artifacts.cleanup"},

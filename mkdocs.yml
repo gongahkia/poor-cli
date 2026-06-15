@@ -8,6 +8,9 @@ nav:
   - Architecture: ARCHITECTURE.md
   - Hooks: hooks.md
   - Providers: providers.md
+  - Kimi: kimi.md
+  - Prompt Packs: prompt-packs.md
+  - Examples: examples.md
   - Native Runner ADR: adr-native-provider-runner.md
   - Replay: replay.md
   - Graph Tools: graph.md
@@ -19,6 +22,7 @@ nav:
   - MCP Hosting ADR: adr-mcp-hosting.md
   - Migration: migration.md
   - Release Checklist: release-checklist.md
+  - Release Cuts: release-cuts.md
   - Local First: local-first.md
   - Benchmarks: benchmarks.md
   - Launch: launch.md

@@ -306,6 +306,18 @@ def explain_route(config: dict[str, Any], task: str, *, role: str = "executor") 
         "policy": classify_goal_text(task, role=role),
         "estimated_budget": {"max_usd": route.get("max_cost_usd") or config.get("budgets", {}).get("max_usd")},
     }
+    for key in (
+        "fusion",
+        "max_cost_usd",
+        "analysis_models",
+        "judge_model",
+        "force_tool",
+        "fallback_profile",
+        "fallback_model",
+        "prompt_pack",
+    ):
+        if key in route:
+            result[key] = route[key]
     result["fusion"] = fusion_summary(providers.get(profile_id, {}), route, role) if isinstance(route, dict) else {}
     return result
 

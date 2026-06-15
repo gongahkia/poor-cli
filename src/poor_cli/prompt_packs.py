@@ -58,7 +58,8 @@ BUILTIN_PACKS: dict[str, PromptPack] = {
         "local:poor-cli",
         "review",
         ["reviewer"],
-        "Review critically. Check assumptions, contrary evidence, missing tests, security risk, and benchmark-gated claims. Do not agree by default.",
+        "Review critically. Check assumptions, contrary evidence, missing tests, security risk, "
+        "and benchmark-gated claims. Do not agree by default.",
         ["artifacts"],
         "local-authored",
     ),
@@ -132,7 +133,7 @@ def prompt_prefix(config: dict[str, Any], role: str, repo: Path | None = None) -
 
 def validate_prompt_pack_payload(payload: dict[str, Any], *, source: str = "<prompt-pack>") -> PromptPack:
     required = ("id", "version", "license", "source_url", "scope", "roles", "template", "arguments", "provenance_status")
-    missing = [key for key in required if not payload.get(key)]
+    missing = [key for key in required if key not in payload or payload[key] in ("", None)]
     if missing:
         raise PromptPackError(f"{source} missing fields: {', '.join(missing)}")
     roles = payload["roles"]
@@ -168,6 +169,33 @@ def prompt_efficiency_report(before: str, after: str) -> dict[str, Any]:
         "before_token_estimate": max(1, before_bytes // 4),
         "after_token_estimate": max(1, after_bytes // 4),
     }
+
+
+def handle_prompt_command(args: Any, repo: Path | None = None) -> int:
+    if args.prompt_command == "packs":
+        rows = pack_rows(repo)
+        if args.json:
+            print(json.dumps({"packs": rows}, indent=2, sort_keys=True))
+            return 0
+        for row in rows:
+            print(f"{row['id']}\t{','.join(row['roles'])}\t{row['license']}\t{row['token_estimate']}")
+        return 0
+    if args.prompt_command == "efficiency":
+        before = Path(args.before).read_text(encoding="utf-8")
+        after = Path(args.after).read_text(encoding="utf-8")
+        print(json.dumps(prompt_efficiency_report(before, after), indent=2, sort_keys=True))
+        return 0
+    raise RuntimeError("missing prompt command")
+
+
+def add_prompt_parser(subparsers: Any) -> None:
+    prompt = subparsers.add_parser("prompt")
+    prompt_sub = prompt.add_subparsers(dest="prompt_command")
+    prompt_packs = prompt_sub.add_parser("packs")
+    prompt_packs.add_argument("--json", action="store_true")
+    prompt_eff = prompt_sub.add_parser("efficiency")
+    prompt_eff.add_argument("--before", required=True)
+    prompt_eff.add_argument("--after", required=True)
 
 
 def _read_pack_file(path: Path) -> list[PromptPack]:

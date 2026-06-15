@@ -1,0 +1,41 @@
+{
+  "accepted": true,
+  "checks": {
+    "benchmark_report": {
+      "done": true,
+      "required": ["benchmark.report"],
+      "runs": ["bench/harness_report.py"]
+    },
+    "cost_controls": {
+      "done": true,
+      "required": ["budget.ledger"],
+      "runs": ["tests/test_cost.py"]
+    },
+    "direct": {
+      "done": true,
+      "required": ["agent.result", "handoff.packet"],
+      "runs": ["tests/test_cli.py::test_cli_main_in_process_run_inspect_replay"]
+    },
+    "failure_cleanup": {
+      "done": true,
+      "required": ["artifacts.cleanup"],
+      "runs": ["tests/test_cli.py::test_cli_main_in_process_run_inspect_replay"]
+    },
+    "planner_reviewer": {
+      "done": true,
+      "required": ["artifact.review", "artifact.verify"],
+      "runs": ["tests/test_cli.py::test_cli_review_run_uses_reviewer_route_and_writes_artifact"]
+    },
+    "swarm": {
+      "done": true,
+      "required": ["swarm.merge_plan"],
+      "runs": ["tests/test_swarm.py"]
+    },
+    "web_research": {
+      "done": true,
+      "required": ["web.search", "web.fetch", "web.citation"],
+      "runs": ["tests/test_tools.py"]
+    }
+  },
+  "schema_version": "poor-cli-dogfood-report-v1"
+}

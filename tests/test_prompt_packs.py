@@ -45,3 +45,15 @@ def test_prompt_efficiency_report_counts_delta() -> None:
 
     assert report["schema_version"] == "poor-cli-prompt-efficiency-v1"
     assert report["delta_bytes"] == len("shorter prompt") - len("short")
+
+
+def test_prompt_regression_fixture_terms_are_present() -> None:
+    root = Path(__file__).resolve().parents[1]
+    payload = json.loads((root / "bench" / "fixtures" / "prompt_regression.json").read_text(encoding="utf-8"))
+    config = empty_config()
+
+    assert payload["schema_version"] == "poor-cli-prompt-regression-v1"
+    for fixture in payload["fixtures"]:
+        text = prompt_prefix(config, fixture["role"], root)
+        lowered = text.lower()
+        assert all(term.lower() in lowered for term in fixture["required_terms"])

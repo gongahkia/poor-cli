@@ -11,7 +11,7 @@ from .agents import _provider_for_agent
 from .artifacts import write_review_artifact, write_verify_artifact
 from .config import explain_route, load_config
 from .cost import BudgetLedger
-from .fusion import FusionRouteError, normalize_fusion_payload, route_uses_fusion, validate_fusion_route, write_fusion_artifact
+from .fusion import normalize_fusion_payload, route_uses_fusion, validate_fusion_route, write_fusion_artifact
 from .models import AgentInfo
 from .prompt_packs import prompt_prefix
 from .providers import CachedReplayProvider, ProviderRequest

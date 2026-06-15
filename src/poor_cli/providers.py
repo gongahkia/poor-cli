@@ -141,7 +141,8 @@ class CachedReplayProvider:
         if len(live_responses) != len(misses):
             raise RuntimeError("batch provider returned wrong response count")
         for (index, request, request_hash), response in zip(misses, live_responses, strict=True):
-            responses[index] = self._complete_live_request(request, request_hash, request_artifacts[index], replace(response, cached=False), 0.0)
+            live = replace(response, cached=False)
+            responses[index] = self._complete_live_request(request, request_hash, request_artifacts[index], live, 0.0)
         self.store.append_event(
             self.run_id,
             "provider.batch.completed",

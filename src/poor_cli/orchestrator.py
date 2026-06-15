@@ -423,7 +423,8 @@ def _route_config(config: dict[str, Any], role: str) -> dict[str, Any]:
     explained = explain_route(config, "route config", role=role)
     profile = (config.get("providers") or {}).get(str(explained.get("profile") or ""))
     caps = profile.get("capabilities") if isinstance(profile, dict) else {}
-    return {**raw, **{key: explained[key] for key in ("role", "profile", "model", "provider_kind") if key in explained}, **(caps if isinstance(caps, dict) else {})}
+    resolved = {key: explained[key] for key in ("role", "profile", "model", "provider_kind") if key in explained}
+    return {**raw, **resolved, **(caps if isinstance(caps, dict) else {})}
 
 
 def _cap(budget: Budget) -> int:

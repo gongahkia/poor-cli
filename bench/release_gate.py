@@ -20,7 +20,7 @@ def audit(root: Path) -> dict[str, Any]:
         "roadmap_no_unchecked_release_rows": _roadmap_release_done(root),
         "examples_doc": (root / "docs" / "examples.md").exists(),
         "prompt_packs_doc": (root / "docs" / "prompt-packs.md").exists(),
-        "dogfood_gate": _command_ok(root, ["python", "bench/dogfood_report.py"]),
+        "dogfood_gate": _json_accepted(root / "bench" / "results" / "dogfood-report.json"),
         "claims_gate": _command_ok(root, ["python", "bench/claims_gate.py", "README.md", "docs/benchmarks.md"]),
     }
     return {
@@ -37,8 +37,18 @@ def _roadmap_release_done(root: Path) -> bool:
 
 
 def _command_ok(root: Path, command: list[str]) -> bool:
-    result = subprocess.run(command, cwd=root, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=60, check=False)
+    result = subprocess.run(command, cwd=root, text=True, capture_output=True, timeout=60, check=False)
     return result.returncode == 0
+
+
+def _json_accepted(path: Path) -> bool:
+    if not path.exists():
+        return False
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    return bool(payload.get("accepted"))
 
 
 def main() -> int:

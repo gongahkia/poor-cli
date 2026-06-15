@@ -1,0 +1,28 @@
+{
+  "schema_version": "poor-cli-benchmark-report-v1",
+  "task_set": "poor-cli-evaluation-ambiguous-design",
+  "modes": {
+    "fusion_planner": {
+      "tasks": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "total_cost_usd": 0.0,
+      "mean_cost_usd": 0.0,
+      "mean_time_seconds": 0.0,
+      "p95_time_seconds": 0.0,
+      "cost_per_passed_task_usd": null,
+      "failure_categories": {"not_run": 1}
+    },
+    "single_planner": {
+      "tasks": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "total_cost_usd": 0.0,
+      "mean_cost_usd": 0.0,
+      "mean_time_seconds": 0.0,
+      "p95_time_seconds": 0.0,
+      "cost_per_passed_task_usd": null,
+      "failure_categories": {"not_run": 1}
+    }
+  }
+}
