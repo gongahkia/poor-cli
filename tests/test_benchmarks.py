@@ -35,6 +35,53 @@ def _demo_probe_evidence() -> dict[str, object]:
     }
 
 
+def _write_phase3_local_artifacts(
+    run_dir: Path,
+    *,
+    provider: str = "vllm",
+    model: str = "Qwen/Qwen2.5-Coder-32B-Instruct",
+    agent: str = "local",
+    graph_mode: bool = True,
+    task_count: int = 10,
+    local_base_url: str = "http://localhost:8000",
+) -> None:
+    environment = {
+        "provider": provider,
+        "model": model,
+        "agent": agent,
+        "graph_mode": graph_mode,
+        "local_base_url": local_base_url,
+    }
+    (run_dir / "environment.json").write_text(json.dumps(environment), encoding="utf-8")
+    task_lines = []
+    prediction_lines = []
+    for index in range(task_count):
+        instance_id = f"repo__proj-{index}"
+        task_lines.append(
+            json.dumps(
+                {
+                    "instance_id": instance_id,
+                    "provider": provider,
+                    "model": model,
+                    "agent": agent,
+                    "graph_mode": graph_mode,
+                    "replay_verified": True,
+                    "poor_cli_run_id": f"run-{index}",
+                    "poor_cli_store_dir": f"store/{index}",
+                },
+                sort_keys=True,
+            )
+        )
+        prediction_lines.append(
+            json.dumps(
+                {"instance_id": instance_id, "model_patch": "diff --git a/file.py b/file.py\n"},
+                sort_keys=True,
+            )
+        )
+    (run_dir / "task_results.jsonl").write_text("\n".join(task_lines) + "\n", encoding="utf-8")
+    (run_dir / "predictions.jsonl").write_text("\n".join(prediction_lines) + "\n", encoding="utf-8")
+
+
 def test_v6_baseline_task_fixture_schema() -> None:
     path = Path(__file__).resolve().parents[1] / "bench" / "fixtures" / "v6_baseline_tasks.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -791,6 +838,9 @@ def test_phase3_local_benchmark_plan_schema() -> None:
     assert payload["target"]["model_markers"] == ["qwen2.5-coder", "32b"]
     assert payload["target"]["minimum_of_anthropic_pass_rate"] == 0.5
     assert payload["target"]["requires_graph_mode"] is True
+    assert payload["target"]["requires_environment_artifact"] is True
+    assert payload["target"]["requires_task_results_artifact"] is True
+    assert payload["target"]["requires_predictions_artifact"] is True
     assert "--graph --agent local" in payload["commands"]["generate"]
     assert "phase3_local_benchmark.py --summary" in payload["commands"]["verify"]
 
@@ -810,6 +860,44 @@ def test_phase3_local_benchmark_accepts_target_summary(tmp_path: Path) -> None:
                 "provider": "vllm",
                 "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
                 "agent": "local",
+                "local_base_url": "http://localhost:8000",
+                "graph_mode": True,
+                "task_count": 10,
+                "replay_verified_count": 10,
+                "official_evaluation": {
+                    "exit_code": 0,
+                    "results": {
+                        "completed_instances": 10,
+                        "error_instances": 0,
+                        "total_instances": 10,
+                        "resolved_instances": 5,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_phase3_local_artifacts(tmp_path)
+
+    payload = validate_local_summary(summary)
+
+    assert payload["accepted"] is True
+    assert payload["pass_rate"] == 0.5
+    assert payload["target_rate"] == 0.45
+    assert payload["artifacts"]["task_results_count"] == 10
+    assert payload["artifacts"]["predictions_count"] == 10
+    assert payload["errors"] == []
+
+
+def test_phase3_local_benchmark_rejects_summary_without_run_artifacts(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "provider": "vllm",
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "agent": "local",
+                "local_base_url": "http://localhost:8000",
                 "graph_mode": True,
                 "task_count": 10,
                 "replay_verified_count": 10,
@@ -829,10 +917,10 @@ def test_phase3_local_benchmark_accepts_target_summary(tmp_path: Path) -> None:
 
     payload = validate_local_summary(summary)
 
-    assert payload["accepted"] is True
-    assert payload["pass_rate"] == 0.5
-    assert payload["target_rate"] == 0.45
-    assert payload["errors"] == []
+    assert payload["accepted"] is False
+    assert "environment.json is required" in payload["errors"]
+    assert "task_results.jsonl count must match task_count" in payload["errors"]
+    assert "predictions.jsonl count must match task_count" in payload["errors"]
 
 
 def test_phase3_local_benchmark_rejects_missing_graph_or_low_pass(tmp_path: Path) -> None:

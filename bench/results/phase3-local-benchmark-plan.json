@@ -23,8 +23,11 @@
         "sglang",
         "vllm"
       ],
+      "requires_environment_artifact": true,
       "requires_full_replay_verification": true,
       "requires_graph_mode": true,
+      "requires_predictions_artifact": true,
+      "requires_task_results_artifact": true,
       "task_count": 10
     }
   }

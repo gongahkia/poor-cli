@@ -79,7 +79,7 @@ uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-cl
 uv run --locked python bench/phase3_local_benchmark.py --output bench/results/phase3-local-benchmark-plan.json
 ```
 
-The checked-in plan defines the target-host setup, graph-mode local SWE-bench run, official eval, and artifact verifier. The verifier requires `agent=local`, a vLLM/SGLang/Ollama provider, graph mode, 10 replay-verified tasks, clean official eval, and at least 50% of the Anthropic 10-task pass rate.
+The checked-in plan defines the target-host setup, graph-mode local SWE-bench run, official eval, and artifact verifier. The verifier requires `agent=local`, a vLLM/SGLang/Ollama provider, a local endpoint, graph mode, 10 replay-verified tasks, matching `environment.json`/`task_results.jsonl`/`predictions.jsonl` artifacts, clean official eval, and at least 50% of the Anthropic 10-task pass rate.
 
 ## Graph vs Grep
 

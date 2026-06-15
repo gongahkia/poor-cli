@@ -24,6 +24,9 @@ def benchmark_plan_payload() -> dict[str, Any]:
             "minimum_of_anthropic_pass_rate": 0.5,
             "requires_graph_mode": True,
             "requires_full_replay_verification": True,
+            "requires_environment_artifact": True,
+            "requires_task_results_artifact": True,
+            "requires_predictions_artifact": True,
         },
         "commands": {
             "setup": ("scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct"),
@@ -60,7 +63,9 @@ def validate_local_summary(summary_path: Path, *, anthropic_summary: Path = ANTH
     completed = int(results.get("completed_instances") or len(results.get("completed_ids") or []))
     error_count = int(results.get("error_instances") or len(results.get("error_ids") or []))
     pass_rate = resolved / total if total else 0.0
+    artifacts = _artifact_validation(summary_path, summary, task_count)
     errors = _summary_errors(summary, target, task_count, replay_verified, official, total, completed, error_count, pass_rate)
+    errors.extend(artifacts["errors"])
     return {
         "accepted": not errors,
         "evidence": _display_path(summary_path),
@@ -77,6 +82,8 @@ def validate_local_summary(summary_path: Path, *, anthropic_summary: Path = ANTH
         "total_instances": total,
         "pass_rate": pass_rate,
         "target_rate": target["target_rate"],
+        "local_base_url": summary.get("local_base_url", ""),
+        "artifacts": artifacts,
     }
 
 
@@ -120,6 +127,8 @@ def _summary_errors(
     model = str(summary.get("model") or "").lower()
     if not all(marker in model for marker in TARGET_MODEL_MARKERS):
         errors.append("summary model is not qwen2.5-coder-32b")
+    if not _is_local_endpoint(str(summary.get("local_base_url") or "")):
+        errors.append("summary local_base_url is not local")
     if summary.get("graph_mode") is not True:
         errors.append("summary was not run in graph mode")
     if task_count < 10:
@@ -140,11 +149,74 @@ def _summary_errors(
     return errors
 
 
+def _artifact_validation(summary_path: Path, summary: dict[str, Any], task_count: int) -> dict[str, Any]:
+    run_dir = summary_path.parent
+    environment_path = run_dir / "environment.json"
+    task_results_path = run_dir / "task_results.jsonl"
+    predictions_path = run_dir / "predictions.jsonl"
+    environment = _read_json(environment_path)
+    task_results = _read_jsonl(task_results_path)
+    predictions = _read_jsonl(predictions_path)
+    errors: list[str] = []
+    if not environment:
+        errors.append("environment.json is required")
+    else:
+        _extend_mismatch_errors(errors, "environment", environment, summary)
+        if not _is_local_endpoint(str(environment.get("local_base_url") or "")):
+            errors.append("environment local_base_url is not local")
+    if len(task_results) != task_count or task_count == 0:
+        errors.append("task_results.jsonl count must match task_count")
+    task_ids = []
+    for record in task_results:
+        task_ids.append(str(record.get("instance_id") or ""))
+        _extend_mismatch_errors(errors, "task_results", record, summary)
+        if record.get("replay_verified") is not True:
+            errors.append("task_results.jsonl must replay-verify every task")
+        if not record.get("poor_cli_run_id") or not record.get("poor_cli_store_dir"):
+            errors.append("task_results.jsonl must record run ids and store dirs")
+    prediction_ids = [str(record.get("instance_id") or "") for record in predictions]
+    if len(predictions) != task_count or task_count == 0:
+        errors.append("predictions.jsonl count must match task_count")
+    if task_ids and prediction_ids and set(task_ids) != set(prediction_ids):
+        errors.append("predictions.jsonl instance ids must match task_results.jsonl")
+    return {
+        "environment": _display_path(environment_path),
+        "task_results": _display_path(task_results_path),
+        "predictions": _display_path(predictions_path),
+        "task_results_count": len(task_results),
+        "predictions_count": len(predictions),
+        "errors": sorted(set(errors)),
+    }
+
+
+def _extend_mismatch_errors(errors: list[str], label: str, record: dict[str, Any], summary: dict[str, Any]) -> None:
+    for key in ("provider", "model", "agent", "graph_mode"):
+        if record.get(key) != summary.get(key):
+            errors.append(f"{label} {key} does not match summary")
+
+
+def _is_local_endpoint(value: str) -> bool:
+    return value.startswith(("http://localhost", "http://127.0.0.1", "http://[::1]"))
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
     payload = json.loads(path.read_text(encoding="utf-8"))
     return payload if isinstance(payload, dict) else {}
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    records = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        payload = json.loads(line)
+        if isinstance(payload, dict):
+            records.append(payload)
+    return records
 
 
 def _display_path(path: Path) -> str:
