@@ -11,6 +11,7 @@ from bench.local_fixture_bugs import compact_payload, run_fixture_suite
 from bench.phase1_acceptance import acceptance_payload
 from bench.phase1_readiness import readiness_payload
 from bench.phase3_acceptance import acceptance_payload as phase3_acceptance_payload
+from bench.phase3_closeout import closeout_payload
 from bench.phase3_demo import demo_plan_payload, validate_demo_evidence
 from bench.phase3_local_benchmark import benchmark_plan_payload, validate_local_summary
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
@@ -298,6 +299,31 @@ def test_checked_in_phase3_demo_plan() -> None:
 
     assert payload["plan"] == demo_plan_payload()
     assert payload["validation"]["accepted"] is False
+
+
+def test_phase3_closeout_payload_schema() -> None:
+    payload = closeout_payload()
+
+    assert payload["schema_version"] == "poor-cli-phase3-closeout-v1"
+    assert payload["accepted"] is False
+    assert set(payload["checks"]) == {"phase3_acceptance", "pivot_remaining"}
+    assert "--agent local" in payload["target_host_commands"]["generate_local_swe"]
+    assert "phase3_demo.py --evidence" in payload["target_host_commands"]["verify_demo"]
+    assert set(payload["remaining"]) == set(payload["checks"]["phase3_acceptance"]["remaining"]) | set(
+        payload["checks"]["pivot_remaining"]["remaining"]
+    )
+
+
+def test_checked_in_phase3_closeout_snapshot() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "phase3-closeout.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "poor-cli-phase3-closeout-v1"
+    assert payload["accepted"] is False
+    assert payload["target_host_commands"] == closeout_payload()["target_host_commands"]
+    assert set(payload["remaining"]) == set(payload["checks"]["phase3_acceptance"]["remaining"]) | set(
+        payload["checks"]["pivot_remaining"]["remaining"]
+    )
 
 
 def test_phase3_demo_validator_accepts_real_evidence(tmp_path: Path) -> None:

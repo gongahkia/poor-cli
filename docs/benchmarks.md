@@ -62,6 +62,12 @@ uv run --locked python bench/phase3_demo.py --output bench/results/phase3-demo-p
 
 `bench/phase3_demo.py` validates the screencast evidence JSON and linked video path before the Phase 3 demo check can pass.
 
+```sh
+uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
+```
+
+`bench/phase3_closeout.py` aggregates Phase 3 acceptance and pivot remaining-work evidence, and lists the exact target-host commands needed to close the phase.
+
 ## Phase 3 Local Benchmark
 
 ```sh

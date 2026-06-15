@@ -100,6 +100,14 @@ uv run --locked python bench/phase3_demo.py --output bench/results/phase3-demo-p
 
 Checked-in plan: `bench/results/phase3-demo-plan.json`.
 
+Phase 3 target-host closeout:
+
+```sh
+uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
+```
+
+Checked-in snapshot: `bench/results/phase3-closeout.json`.
+
 Pivot remaining-work audit:
 
 ```sh
