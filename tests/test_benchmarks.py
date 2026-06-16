@@ -281,6 +281,51 @@ def test_claims_gate_rejects_disallowed_superiority_claim(tmp_path: Path) -> Non
     assert rejected["violations"][0]["kind"] == "disallowed_claim"
 
 
+def test_claims_gate_requires_allowed_claim_evidence(tmp_path: Path) -> None:
+    claim = tmp_path / "claim.md"
+    claim.write_text(
+        "poor-cli records replayable artifacts\n"
+        "poor-cli supports graph-aware context\n"
+        "poor-cli supports local provider routes\n"
+        "poor-cli was measured on task set swe-lite-10\n",
+        encoding="utf-8",
+    )
+
+    rejected = scan_claims([claim], root=tmp_path)
+
+    assert rejected["accepted"] is False
+    kinds = {violation["kind"] for violation in rejected["violations"]}
+    assert {
+        "missing_replay_evidence",
+        "missing_graph_evidence",
+        "missing_local_provider_evidence",
+        "missing_task_set_evidence",
+    } <= kinds
+
+
+def test_claims_gate_accepts_allowed_claim_evidence(tmp_path: Path) -> None:
+    (tmp_path / "bench/results").mkdir(parents=True)
+    (tmp_path / "bench/results/replay-verify-acceptance.json").write_text('{"accepted":true}', encoding="utf-8")
+    (tmp_path / "bench/results/graph-vs-grep-synthetic.json").write_text('{"accepted":true}', encoding="utf-8")
+    (tmp_path / "bench/results/phase3-readiness.json").write_text(
+        '{"ready":true,"checks":{"provider_adapters":{"ready":true}}}',
+        encoding="utf-8",
+    )
+    (tmp_path / "bench/results/phase3-closeout.json").write_text('{"accepted":true}', encoding="utf-8")
+    claim = tmp_path / "claim.md"
+    claim.write_text(
+        "poor-cli records replayable artifacts\n"
+        "poor-cli supports graph-aware context\n"
+        "poor-cli supports local provider routes\n"
+        "poor-cli was measured on task set swe-lite-10 via bench/results/x.json\n",
+        encoding="utf-8",
+    )
+
+    accepted = scan_claims([claim], root=tmp_path)
+
+    assert accepted["accepted"] is True
+
+
 def test_bench_extra_matches_swe_lite_requirements() -> None:
     root = Path(__file__).resolve().parents[1]
     pyproject = root / "pyproject.toml"

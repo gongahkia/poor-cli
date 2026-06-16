@@ -17,9 +17,16 @@ DISALLOWED_RE = re.compile(
 )
 PHASE3_UNBACKED_RE = re.compile(r"((phase ?3|linux/cuda|local[- ]gpu).{0,48}\b(done|complete|ready|passed|supported)\b)", re.I)
 POLICY_LINE_RE = re.compile(r"(do not claim|disallowed without evidence|not claim|before .*evidence|requires|blocked|missing)", re.I)
+REPLAY_CLAIM_RE = re.compile(
+    r"(records? replayable artifacts|replayable artifacts|replay(?:ed)? offline|verified offline|checked offline)", re.I
+)
+GRAPH_CLAIM_RE = re.compile(r"(graph-aware context|graph context|graph tools)", re.I)
+LOCAL_PROVIDER_CLAIM_RE = re.compile(r"(supports local provider routes|local provider routes)", re.I)
+TASK_SET_CLAIM_RE = re.compile(r"\bmeasured on task set\b", re.I)
 
 
-def scan_claims(paths: list[Path]) -> dict[str, Any]:
+def scan_claims(paths: list[Path], *, root: Path | None = None) -> dict[str, Any]:
+    evidence_root = root or Path.cwd()
     violations = []
     for path in paths:
         if not path.exists():
@@ -31,11 +38,48 @@ def scan_claims(paths: list[Path]) -> dict[str, Any]:
                 violations.append({"kind": "missing_reproducibility_context", "path": str(path), "line": lineno, "text": line.strip()})
             if POLICY_LINE_RE.search(line):
                 continue
+            violations.extend(_allowed_claim_violations(evidence_root, path, lineno, line, context))
             if DISALLOWED_RE.search(line):
                 violations.append({"kind": "disallowed_claim", "path": str(path), "line": lineno, "text": line.strip()})
             if PHASE3_UNBACKED_RE.search(line) and "bench/results/phase3" not in context:
                 violations.append({"kind": "unbacked_phase3_claim", "path": str(path), "line": lineno, "text": line.strip()})
     return {"schema_version": "poor-cli-claims-gate-v1", "accepted": not violations, "violations": violations}
+
+
+def _allowed_claim_violations(root: Path, path: Path, lineno: int, line: str, context: str) -> list[dict[str, Any]]:
+    checks = (
+        ("missing_replay_evidence", REPLAY_CLAIM_RE, _json_true(root / "bench/results/replay-verify-acceptance.json", "accepted")),
+        ("missing_graph_evidence", GRAPH_CLAIM_RE, _json_true(root / "bench/results/graph-vs-grep-synthetic.json", "accepted")),
+        ("missing_local_provider_evidence", LOCAL_PROVIDER_CLAIM_RE, _phase3_target_host_green(root)),
+    )
+    violations = [
+        {"kind": kind, "path": str(path), "line": lineno, "text": line.strip()}
+        for kind, regex, accepted in checks
+        if regex.search(line) and not accepted
+    ]
+    if TASK_SET_CLAIM_RE.search(line) and "bench/" not in context:
+        violations.append({"kind": "missing_task_set_evidence", "path": str(path), "line": lineno, "text": line.strip()})
+    return violations
+
+
+def _phase3_target_host_green(root: Path) -> bool:
+    readiness = _read_json(root / "bench/results/phase3-readiness.json")
+    closeout = _read_json(root / "bench/results/phase3-closeout.json")
+    adapters = readiness.get("checks", {}).get("provider_adapters", {}) if isinstance(readiness.get("checks"), dict) else {}
+    return bool(adapters.get("ready")) and bool(readiness.get("ready")) and bool(closeout.get("accepted"))
+
+
+def _json_true(path: Path, key: str) -> bool:
+    return bool(_read_json(path).get(key))
+
+
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
 
 
 def main() -> int:
