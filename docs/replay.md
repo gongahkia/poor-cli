@@ -48,3 +48,13 @@ poor-cli replay <run_id> --from-event <event_id>
 ```
 
 `--from-event` rebuilds state from an event window for debugging a later segment of a run.
+
+## Diff And Fork
+
+```sh
+poor-cli runs diff <run_a> <run_b>
+poor-cli runs diff <run_a> <run_b> --fail-on-change
+poor-cli runs fork <run_id>
+```
+
+Diff compares route decisions, context packets, plan/task shape, artifact hashes, and repo-delta artifacts. Changes in those sections are classified as `behavior-changing`. Fork creates a new recorded run with a `run.fork` artifact pointing at the source run, so the next edit/re-run can be compared back with `runs diff`.

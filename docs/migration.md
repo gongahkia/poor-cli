@@ -23,4 +23,4 @@ Run artifacts now include deterministic files under `.poor-cli/v6/runs/<run_id>/
 
 ## LOC Gate
 
-The source LOC cap is 7600 lines. This keeps v6 compact while allowing provider profiles, native runner, artifacts, shell hardening, graph fallback, real scheduling, swarm, RPC, web tools, MCP hosting, and TUI panels to coexist without deleting useful safety checks.
+The source LOC cap is 7800 lines. This keeps v6 compact while allowing provider profiles, native runner, artifacts, shell hardening, graph fallback, real scheduling, swarm, run diff/fork, RPC, web tools, MCP hosting, and TUI panels to coexist without deleting useful safety checks.

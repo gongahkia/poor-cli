@@ -24,6 +24,7 @@ from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
 from bench.release_gate import CUTS
 from bench.release_gate import audit as release_audit
+from bench.run_diff_acceptance import acceptance_payload as run_diff_acceptance_payload
 from bench.swe_bench_lite import run as swe_run
 from poor_cli.store import RunStore
 
@@ -408,8 +409,8 @@ def test_phase1_acceptance_payload_schema() -> None:
     }
     assert payload["checks"]["anthropic_fixture_bugs"]["tests_passed_count"] == 3
     assert payload["checks"]["offline_replay_determinism"]["missing_fragments"] == []
-    assert payload["checks"]["source_loc"]["total"] <= 7600
-    assert payload["checks"]["source_loc"]["max_total"] == 7600
+    assert payload["checks"]["source_loc"]["total"] <= 7800
+    assert payload["checks"]["source_loc"]["max_total"] == 7800
     assert payload["checks"]["system_prompt_budget"]["bytes"] <= 1000
     assert payload["checks"]["swe_lite_10"]["pass_rate"] >= 0.30
     assert set(payload["remaining"]) == {name for name, check in payload["checks"].items() if not check["accepted"]}
@@ -426,8 +427,8 @@ def test_checked_in_phase1_acceptance_snapshot() -> None:
     assert payload["checks"]["anthropic_fixture_bugs"]["tests_passed_count"] == 3
     assert payload["checks"]["anthropic_fixture_bugs"]["replay_verified_count"] == 3
     assert payload["checks"]["offline_replay_determinism"]["accepted"] is True
-    assert payload["checks"]["source_loc"]["total"] <= 7600
-    assert payload["checks"]["source_loc"]["max_total"] == 7600
+    assert payload["checks"]["source_loc"]["total"] <= 7800
+    assert payload["checks"]["source_loc"]["max_total"] == 7800
     assert payload["checks"]["system_prompt_budget"]["bytes"] <= 1000
     assert payload["checks"]["swe_lite_10"]["total_instances"] == 10
     assert payload["checks"]["swe_lite_10"]["resolved_instances"] == 9
@@ -444,6 +445,30 @@ def test_checked_in_replay_verify_acceptance_snapshot() -> None:
     assert payload["first"]["record_schema_version"] == "poor-cli-record-v1"
     assert payload["first"]["network"] == {"asserted": True, "attempts": 0}
     assert payload["first"]["verified"] is True
+
+
+def test_run_diff_acceptance_payload_schema() -> None:
+    payload = run_diff_acceptance_payload()
+
+    assert payload["schema_version"] == "poor-cli-run-diff-acceptance-v1"
+    assert payload["accepted"] is True
+    assert payload["checks"] == {
+        "artifact_change": True,
+        "fail_on_change": True,
+        "fork_record": True,
+        "repo_delta_change": True,
+        "route_change": True,
+    }
+
+
+def test_checked_in_run_diff_acceptance_snapshot() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "run-diff-acceptance.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["schema_version"] == "poor-cli-run-diff-acceptance-v1"
+    assert payload["accepted"] is True
+    assert payload["diff_schema_version"] == "poor-cli-run-diff-v1"
+    assert payload["fork_schema_version"] == "poor-cli-run-fork-v1"
 
 
 def test_phase3_readiness_payload_schema() -> None:

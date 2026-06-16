@@ -195,6 +195,40 @@ def test_cli_runs_filters_by_prefix(tmp_path: Path, capsys) -> None:
     assert "beta fix tools" not in output
 
 
+def test_cli_runs_diff_flags_route_and_artifact_changes(tmp_path: Path, capsys) -> None:
+    store = RunStore(tmp_path / "store")
+    run_a = store.create_run(user_goal="a", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    run_b = store.create_run(user_goal="b", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    store.append_event(run_a, "route.selected", {"profile": "openai"})
+    store.append_event(run_b, "route.selected", {"profile": "local"})
+    store.put_artifact(run_id=run_a, kind="artifact.worker.patch", data="diff a\n", media_type="text/x-diff")
+    store.put_artifact(run_id=run_b, kind="artifact.worker.patch", data="diff b\n", media_type="text/x-diff")
+    store.close()
+
+    assert main(["--store-dir", str(tmp_path / "store"), "runs", "diff", run_a, run_b, "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert {change["section"] for change in payload["changes"]} >= {"route", "artifacts", "repo_delta"}
+    assert all(change["classification"] == "behavior-changing" for change in payload["changes"])
+    assert main(["--store-dir", str(tmp_path / "store"), "runs", "diff", run_a, run_b, "--fail-on-change"]) == 1
+
+
+def test_cli_runs_fork_records_source_run(tmp_path: Path, capsys) -> None:
+    store = RunStore(tmp_path / "store")
+    source = store.create_run(user_goal="source", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={"max": None})
+    store.close()
+
+    assert main(["--store-dir", str(tmp_path / "store"), "runs", "fork", source, "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    run_store = RunStore(tmp_path / "store")
+    try:
+        fork = run_store.get_run(payload["fork_run_id"])
+        assert fork["status"] == "forked"
+        assert fork["user_goal"].startswith(f"fork of {source}")
+        assert run_store.list_artifacts(payload["fork_run_id"], "run.fork")
+    finally:
+        run_store.close()
+
+
 def test_cli_plan_graph_stores_graph_prompt_bias(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
     planner.write_text(

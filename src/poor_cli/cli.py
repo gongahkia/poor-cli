@@ -37,6 +37,7 @@ from .orchestrator import Orchestrator
 from .prompt_packs import add_prompt_parser, handle_prompt_command
 from .replay import replay_summary, replay_verify
 from .repo_graph import graph_dependency_report
+from .run_records import handle_runs_command
 from .store import RunStore, StoreError
 from .swarm import cleanup_swarm, run_swarm
 
@@ -200,9 +201,7 @@ def _run_swarm(args: argparse.Namespace, store: RunStore) -> int:
 
 
 def _runs(args: argparse.Namespace, store: RunStore) -> int:
-    for run in store.list_runs(failed_only=args.failed, prompt_prefix=args.prefix):
-        print(f"{run['run_id']}\t{run['status']}\t{run['created_at']}\t{run['user_goal'][:80]}")
-    return 0
+    return handle_runs_command(args, store)
 
 
 def _review_run(args: argparse.Namespace, store: RunStore) -> int:
@@ -498,6 +497,15 @@ def _parser() -> argparse.ArgumentParser:
     runs = sub.add_parser("runs")
     runs.add_argument("--failed", action="store_true")
     runs.add_argument("--prefix", help="Filter runs by goal prefix")
+    runs_sub = runs.add_subparsers(dest="runs_command")
+    runs_diff = runs_sub.add_parser("diff")
+    runs_diff.add_argument("run_a")
+    runs_diff.add_argument("run_b")
+    runs_diff.add_argument("--json", action="store_true")
+    runs_diff.add_argument("--fail-on-change", action="store_true")
+    runs_fork = runs_sub.add_parser("fork")
+    runs_fork.add_argument("run_id")
+    runs_fork.add_argument("--json", action="store_true")
 
     provider = sub.add_parser("provider")
     provider_sub = provider.add_subparsers(dest="provider_command")

@@ -28,6 +28,8 @@ poor-cli run "make a small scoped change" --yes
 poor-cli run "fix the caller lookup" --graph --yes
 poor-cli run-swarm "split independent fixes" --parallel 2
 poor-cli runs
+poor-cli runs diff <run_a> <run_b> --fail-on-change
+poor-cli runs fork <run_id>
 poor-cli inspect <run_id> --events --context
 poor-cli inspect <run_id> --artifacts --cost
 poor-cli review-run <run_id>
