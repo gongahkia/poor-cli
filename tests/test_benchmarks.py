@@ -434,6 +434,18 @@ def test_checked_in_phase1_acceptance_snapshot() -> None:
     assert payload["checks"]["swe_lite_10"]["unresolved_ids"] == ["astropy__astropy-14182"]
 
 
+def test_checked_in_replay_verify_acceptance_snapshot() -> None:
+    path = Path(__file__).resolve().parents[1] / "bench" / "results" / "replay-verify-acceptance.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+
+    assert payload["accepted"] is True
+    assert payload["first"] == payload["second"]
+    assert payload["first"]["schema_version"] == "poor-cli-replay-verify-v1"
+    assert payload["first"]["record_schema_version"] == "poor-cli-record-v1"
+    assert payload["first"]["network"] == {"asserted": True, "attempts": 0}
+    assert payload["first"]["verified"] is True
+
+
 def test_phase3_readiness_payload_schema() -> None:
     payload = phase3_readiness_payload()
 

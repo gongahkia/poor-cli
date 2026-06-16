@@ -218,7 +218,7 @@ Secret hygiene at rest:
 - [ ] `replay --verify` is deterministic, offline, non-zero-on-mismatch, and emits JSON verdict.
 - [ ] Scheduler `ResourceWarning`s eliminated; full suite green (currently 208 passed / 1 skipped / 83% cov — keep at/above this).
 - [x] Record schema spec committed under `docs/` and referenced from README.
-- [ ] Evidence: refreshed `bench/results/phase1-acceptance.json` plus a new `bench/results/replay-verify-acceptance.json`.
+- [x] Evidence: refreshed `bench/results/phase1-acceptance.json` plus a new `bench/results/replay-verify-acceptance.json`.
 
 ---
 
