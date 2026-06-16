@@ -69,6 +69,12 @@ def test_generated_shims_capture_claude_and_codex_records(tmp_path: Path, monkey
         for run in runs:
             assert store.list_artifacts(run["run_id"], "shim.capture")
             assert store.list_artifacts(run["run_id"], "shim.result")
+            assert store.list_artifacts(run["run_id"], "route.decision")
+            preflight_artifacts = store.list_artifacts(run["run_id"], "route.preflight")
+            assert preflight_artifacts
+            preflight = json.loads(store.artifact_payload(preflight_artifacts[0]["artifact_id"]))
+            assert preflight["command"] in {"claude", "codex"}
+            assert preflight["pass_through_command"][0] == preflight["command"]
             assert replay_verify(store, run["run_id"])["verified"] is True
             capture = json.loads(store.artifact_payload(store.list_artifacts(run["run_id"], "shim.capture")[0]["artifact_id"]))
             assert capture["redacted_env"].get("OPENAI_API_KEY") == "[redacted]"

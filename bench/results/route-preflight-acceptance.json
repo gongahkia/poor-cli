@@ -1,0 +1,11 @@
+{
+  "accepted": true,
+  "checks": {
+    "pass_through_command": true,
+    "preflight_labels": true,
+    "preflight_selected_route": true,
+    "route_explain_cli": true,
+    "shim_records_preflight_artifact": true
+  },
+  "schema_version": "poor-cli-route-preflight-acceptance-v1"
+}

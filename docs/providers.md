@@ -74,6 +74,7 @@ poor-cli provider switch local
 poor-cli provider export local --json
 poor-cli provider import profiles.json
 poor-cli route explain "fix the parser"
+poor-cli route explain --shim-agent codex --shim-arg exec --shim-arg "fix the parser" --json
 ```
 
 OpenRouter, Kimi, Ollama, vLLM, and SGLang presets verify model discovery during `provider add` unless `--skip-verify` is set. `provider doctor` reruns the same redacted diagnostics later. Probes use OpenAI-compatible `/models` and Ollama `/api/tags`.

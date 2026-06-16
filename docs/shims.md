@@ -23,6 +23,17 @@ Bare interactive `claude` or `codex` calls pass through unchanged. Unsupported s
 
 Captured runs write normal run records with `shim.capture`, `shim.invoked`, and `shim.completed` entries, then `poor-cli replay <run_id> --verify` can verify the record offline. Noninteractive captures also write `shim.result` with stdout, stderr, and exit code.
 
+## Route Preflight
+
+Every captured shim run writes a `route.decision` artifact and a `route.preflight` artifact. The preflight input is command name, argv, stdin mode, cwd, and safe environment-derived flags. The output records classifier labels, selected route, intervention reason, and the exact pass-through command.
+
+```sh
+poor-cli route explain --shim-agent codex --shim-arg exec --shim-arg "fix tests" --json
+poor-cli route explain --shim-agent claude --shim-arg -p --shim-arg "review patch"
+```
+
+Classifier labels and route names are heuristic. They are recorded for audit/replay and policy decisions; they are not learned model predictions.
+
 ## Mechanism Decision
 
 v1 uses a PATH shim because it is explicit, reversible, and does not require changing Claude/Codex API endpoint settings. The trade-off is that it sees process invocation, argv, stdin for supported noninteractive forms, stdout/stderr, and exit status; it does not see the full HTTP request stream or every tool event inside an opaque upstream CLI.

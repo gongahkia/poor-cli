@@ -15,7 +15,6 @@ from .config import (
     ConfigError,
     add_provider,
     doctor,
-    explain_route,
     export_config,
     import_config,
     load_config,
@@ -24,7 +23,6 @@ from .config import (
     provider_preset,
     provider_rows,
     save_repo_config,
-    set_route,
     switch_provider,
     to_toml,
 )
@@ -37,6 +35,7 @@ from .orchestrator import Orchestrator
 from .prompt_packs import add_prompt_parser, handle_prompt_command
 from .replay import replay_summary, replay_verify
 from .repo_graph import graph_dependency_report
+from .route_cli import add_route_parser, handle_route_command
 from .run_records import handle_runs_command
 from .shims import add_shims_parser, handle_shims_command
 from .store import RunStore, StoreError
@@ -86,7 +85,7 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
     if args.command == "provider":
         return _provider(args)
     if args.command == "route":
-        return _route(args)
+        return handle_route_command(args)
     if args.command == "prompt":
         return handle_prompt_command(args, Path.cwd())
     if args.command == "inspect":
@@ -285,26 +284,6 @@ def _provider(args: argparse.Namespace) -> int:
         print(f"wrote {path}")
         return 0
     raise RuntimeError("missing provider command")
-
-
-def _route(args: argparse.Namespace) -> int:
-    config = load_config()
-    if args.route_command == "explain":
-        explanation = explain_route(config, " ".join(args.task), role=args.role)
-        if args.json:
-            print(json.dumps(explanation, indent=2, sort_keys=True))
-            return 0
-        print(
-            f"role={explanation['role']} profile={explanation['profile']} model={explanation['model']} "
-            f"provider={explanation['provider_kind']} reason={explanation['reason']}"
-        )
-        return 0
-    if args.route_command == "set":
-        path = save_repo_config(set_route(load_config(include_env=False), args.role, args.profile, args.model))
-        print(f"route {args.role}: profile={args.profile} model={args.model or ''}")
-        print(f"wrote {path}")
-        return 0
-    raise RuntimeError("missing route command")
 
 
 def _inspect(args: argparse.Namespace, store: RunStore) -> int:
@@ -530,16 +509,7 @@ def _parser() -> argparse.ArgumentParser:
     provider_import = provider_sub.add_parser("import")
     provider_import.add_argument("path")
 
-    route = sub.add_parser("route")
-    route_sub = route.add_subparsers(dest="route_command")
-    route_explain = route_sub.add_parser("explain")
-    route_explain.add_argument("task", nargs="+")
-    route_explain.add_argument("--role", default="executor")
-    route_explain.add_argument("--json", action="store_true")
-    route_set = route_sub.add_parser("set")
-    route_set.add_argument("--role", required=True)
-    route_set.add_argument("--profile", required=True)
-    route_set.add_argument("--model")
+    add_route_parser(sub)
 
     add_prompt_parser(sub)
 

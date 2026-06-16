@@ -251,6 +251,7 @@ def test_cli_plan_graph_stores_graph_prompt_bias(tmp_path: Path, monkeypatch, ca
         prompt = run_store.artifact_payload(prompt_artifact["artifact_id"]).decode()
         plan_events = [event for event in run_store.list_events(run_id) if event["type"] == "plan.created"]
         route_events = [event for event in run_store.list_events(run_id) if event["type"] == "route.selected"]
+        assert run_store.list_artifacts(run_id, "route.decision")
         assert "Graph mode:" in prompt
         assert "find_symbol" in prompt
         assert "subgraph" in prompt

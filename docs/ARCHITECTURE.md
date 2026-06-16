@@ -21,6 +21,7 @@
 - Provider calls update `budget/LEDGER.json` with token estimates, provider-reported usage/cost where available, warning thresholds, and hard budget-stop events.
 - `poor-cli replay --verify` checks the per-run event mirror and CAS artifact hashes under a socket guard, then emits a stable trace digest and JSON verdict.
 - `poor-cli --offline` sets `POOR_CLI_OFFLINE=1`; provider adapters, provider cache misses, and non-local delegated agents fail before live network calls.
+- Route decisions are recorded as `route.decision` artifacts; shim captures also record `route.preflight` artifacts with labels, selected route, intervention reason, and pass-through command.
 - Hook entry points use the `poor_cli.hooks` group and receive lifecycle callbacks for turns, model calls, tool calls, and run completion.
 - Tool entry points use the `poor_cli.tools` group and merge with built-ins at dispatcher startup.
 - Provider entry points use the `poor_cli.providers` group and return provider instances behind the shared `Provider` contract.
@@ -49,6 +50,7 @@
 - `poor-cli rpc serve --stdio`: serve the headless JSONL RPC interface.
 - `poor-cli provider`: add, list, inspect, diagnose, and switch config-backed provider profiles.
 - `poor-cli route explain`: show the selected role/profile/model route and fallback reason for a task.
+- `poor-cli route explain --shim-agent ...`: show route preflight labels and pass-through policy for a shim-style invocation.
 - `poor-cli mcp`: list or call external stdio MCP server tools.
 - Graph tools: `find_symbol`, `definition_of`, `imports_of`, `callers_of`, and `subgraph`.
 - `poor-cli plan --graph` and `poor-cli run --graph` bias planner prompts toward symbolic-first graph navigation and persist graph-context evidence.

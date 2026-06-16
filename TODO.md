@@ -309,13 +309,13 @@ Narrative order (lead with the moat, not the router):
 
 Routing stays useful as capture-time enrichment, not as the pitch. Keep it practical.
 
-- [ ] Keep classifier labels: `explain`, `review`, `small-edit`, `multi-file-edit`, `test-fix`, `security-risk`, `data-risk`, `migration-risk`, `design-ui`, `needs-graph`, `needs-web`, `local-ok`, `local-required`, `high-cost`, `ambiguous`.
-- [ ] Keep route decisions: `pass-through`, `graph-enriched`, `review-lane`, `planner-reviewer`, `swarm`, `local-provider`, `fusion-review`.
-- [ ] Add a route preflight function: inputs = command name, args, stdin mode, cwd, env; outputs = labels, selected route, intervention reason, pass-through command.
-- [ ] Extend `poor-cli route explain` to cover shim-style inputs.
-- [ ] Always record the route decision as an artifact (it is part of the verifiable record — this is the point).
+- [x] Keep classifier labels: `explain`, `review`, `small-edit`, `multi-file-edit`, `test-fix`, `security-risk`, `data-risk`, `migration-risk`, `design-ui`, `needs-graph`, `needs-web`, `local-ok`, `local-required`, `high-cost`, `ambiguous`.
+- [x] Keep route decisions: `pass-through`, `graph-enriched`, `review-lane`, `planner-reviewer`, `swarm`, `local-provider`, `fusion-review`.
+- [x] Add a route preflight function: inputs = command name, args, stdin mode, cwd, env; outputs = labels, selected route, intervention reason, pass-through command.
+- [x] Extend `poor-cli route explain` to cover shim-style inputs.
+- [x] Always record the route decision as an artifact (it is part of the verifiable record — this is the point).
 - [ ] Visible-interruption policy: interrupt only on material intent change (cross-provider reroute, write-capable high-risk, budget exceed, offline blocks a network agent, missing provider). Otherwise stay quiet.
-- [ ] Note limitation honestly: classifier is heuristic, not learned, and is not pluggable today. Do not imply ML where there is none.
+- [x] Note limitation honestly: classifier is heuristic, not learned, and is not pluggable today. Do not imply ML where there is none.
 
 ---
 
@@ -401,8 +401,8 @@ Batch D — shim installer (P1):
 
 Batch E — route-only preflight + noninteractive wrapper execution (P1):
 
-- [ ] Add route preflight function (§10) and wire `claude -p` / `codex exec` through router -> chosen backend.
-- [ ] Write route-decision artifact; preserve stdout/stderr/exit-code behavior; pass through unsupported invocations.
+- [x] Add route preflight function (§10) and wire `claude -p` / `codex exec` through router -> chosen backend.
+- [x] Write route-decision artifact; preserve stdout/stderr/exit-code behavior; pass through unsupported invocations.
 
 Batch F — benchmark + screencast (P2):
 

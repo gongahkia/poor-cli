@@ -306,6 +306,8 @@ class Orchestrator:
         self.store.append_event(run_id, "run.created", {"goal": goal, "budget": to_jsonable(budget)})
         route = explain_route(load_config(self.repo_path), goal)
         self.store.append_event(run_id, "route.selected", route)
+        artifact = self.store.put_artifact(run_id=run_id, kind="route.decision", data=route)
+        self.store.append_event(run_id, "route.decision.recorded", {"artifact_id": artifact.artifact_id})
         self.store.append_event(run_id, "repo.scanned", {"repo_path": str(self.repo_path), "git_commit_start": commit})
         return run_id
 

@@ -7,10 +7,10 @@ import bench.loc_gate as loc_gate
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_loc_gate_default_documents_8000_cap() -> None:
+def test_loc_gate_default_documents_8200_cap() -> None:
     text = (ROOT / "bench" / "loc_gate.py").read_text(encoding="utf-8")
 
-    assert "default=8000" in text
+    assert "default=8200" in text
 
 
 def test_ci_workflows_include_v6_gates() -> None:

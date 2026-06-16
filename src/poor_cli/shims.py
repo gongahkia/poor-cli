@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from .config import ConfigError, explain_route, load_config
+from .route_policy import preflight_route
 from .store import RunStore
 
 MANAGED = "# poor-cli-shim-v1"
@@ -91,11 +92,12 @@ def _exec(agent: str, argv: list[str], root: Path, store: RunStore) -> int:
     if prompt is None:
         return subprocess.run([str(real), *argv], check=False).returncode
     if _claude_prompt_arg(agent, argv):
-        run_id = _record_start(store, agent, argv, prompt, real, b"")
+        run_id = _record_start(store, agent, argv, prompt, real, b"", "tty")
         result = subprocess.run([str(real), *argv], check=False)
         return _finish(store, run_id, agent, result.returncode)
     stdin = sys.stdin.buffer.read() if not sys.stdin.isatty() else b""
-    run_id = _record_start(store, agent, argv, prompt or _text(stdin).strip(), real, stdin)
+    stdin_mode = "pipe" if stdin else "tty"
+    run_id = _record_start(store, agent, argv, prompt or _text(stdin).strip(), real, stdin, stdin_mode)
     result = subprocess.run([str(real), *argv], input=stdin or None, capture_output=True, check=False)
     sys.stdout.buffer.write(result.stdout)
     sys.stderr.buffer.write(result.stderr)
@@ -119,11 +121,16 @@ def resolve_real_binary(name: str, root: Path, path_env: str | None = None) -> P
     return None
 
 
-def _record_start(store: RunStore, agent: str, argv: list[str], prompt: str, real: Path, stdin: bytes) -> str:
+def _record_start(store: RunStore, agent: str, argv: list[str], prompt: str, real: Path, stdin: bytes, stdin_mode: str) -> str:
     run_id = store.create_run(user_goal=prompt, repo_path=Path.cwd(), git_commit_start=_git_head(), mode="shim", budget={})
     route = _route(prompt)
     if route:
         store.append_event(run_id, "route.selected", route)
+        route_artifact = store.put_artifact(run_id=run_id, kind="route.decision", data=route)
+        store.append_event(run_id, "route.decision.recorded", {"artifact_id": route_artifact.artifact_id})
+    preflight = preflight_route(agent, argv, stdin_mode, Path.cwd(), os.environ, prompt=prompt, route=route)
+    artifact = store.put_artifact(run_id=run_id, kind="route.preflight", data=preflight)
+    store.append_event(run_id, "route.preflight.selected", {**preflight, "artifact_id": artifact.artifact_id})
     payload = {
         "agent": agent,
         "argv": argv,

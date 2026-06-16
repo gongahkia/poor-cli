@@ -192,6 +192,11 @@ def test_cli_provider_add_list_switch_and_route_explain(tmp_path: Path, monkeypa
     assert route["profile"] == "local"
     assert route["model"] == "qwen"
 
+    assert main(["route", "explain", "--shim-agent", "codex", "--shim-arg", "exec", "--shim-arg", "fix parser", "--json"]) == 0
+    shim_route = json.loads(capsys.readouterr().out)
+    assert shim_route["preflight"]["command"] == "codex"
+    assert shim_route["preflight"]["pass_through_command"] == ["codex", "exec", "fix parser"]
+
 
 def test_cli_provider_export_import(tmp_path: Path, monkeypatch, capsys) -> None:
     monkeypatch.chdir(tmp_path)
