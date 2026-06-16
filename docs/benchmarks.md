@@ -107,6 +107,7 @@ uv run --locked python bench/phase3_local_benchmark.py --output bench/results/ph
 ```
 
 The checked-in plan defines the target-host setup, graph-mode local SWE-bench run, official eval, and artifact verifier. The verifier requires `agent=local`, a vLLM/SGLang/Ollama provider, a local endpoint, graph mode, 10 replay-verified tasks, matching `environment.json`/`task_results.jsonl`/`predictions.jsonl` artifacts, clean official eval, and at least 50% of the Anthropic 10-task pass rate.
+Each `task_results.jsonl` row must include `poor_cli_run_id` and `poor_cli_store_dir`; the verifier reopens that store and runs the offline replay verifier for every task before accepting the benchmark row.
 The verifier also requires `run_manifest.json` beside `summary.json`. The manifest must pin every Docker image by `@sha256:...`, record `PYTHONHASHSEED`, `temperature=0`, `top_p=1.0`, source and served model names, quantization, dtype, context length, model weight hash (`md5:` or `sha256:`), and harness/library versions for `swebench`, `datasets`, and `poor_cli`.
 The plan includes both strict `Qwen/Qwen2.5-Coder-32B-Instruct` and quantized 32B setup commands. Quantized rows are accepted only when the recorded source model still contains the `qwen2.5-coder` and `32b` markers and the manifest records the source/served/quant/dtype/context tuple.
 

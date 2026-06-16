@@ -104,6 +104,7 @@ uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench
 ```
 
 The verifier is the local-mode closeout gate for the pivot audit. It rejects non-local providers, non-local endpoints, non-graph runs, missing or mismatched run artifacts, partial replay verification, incomplete official eval, and pass rates below 50% of the checked-in Anthropic 10-task row.
+For each task row, it reopens the recorded `poor_cli_store_dir` and verifies `poor_cli_run_id` with the offline replay verifier.
 It also rejects missing or incomplete `run_manifest.json`. Required manifest fields are `docker_images` pinned with `@sha256:`, `runtime.PYTHONHASHSEED`, `generation.temperature=0`, `generation.top_p=1.0`, `model.source`, `model.served`, `model.quantization`, `model.dtype`, `model.context_length`, `model.weight_hash`, and `harness_versions.swebench`, `harness_versions.datasets`, plus `harness_versions.poor_cli`.
 Quantized runs must still identify a Qwen2.5-Coder-32B-class source model; smaller models do not satisfy the Phase 3 target gate.
 With `--start-server`, the closeout runner starts `.poor-cli/local-cuda-run.sh` in the background, waits for the local provider health endpoint, and writes `.poor-cli/phase3-closeout-server.pid`. Add `--stop-server-on-exit` when the closeout command should stop the server it started.

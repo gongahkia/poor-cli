@@ -270,7 +270,7 @@ Target-hardware readiness (the active blocker — no Linux/CUDA access on curren
 - [ ] Verify `nvidia-smi` presence and capture its output as an artifact.
 - [ ] Verify a local serving stack (vLLM/SGLang) starts and serves the pinned model.
 - [ ] Run the fixed 10-task graph-mode benchmark end-to-end on target hardware and pass the per-task verifier. `[claims-gated]`
-- [ ] Wire the benchmark output into the normal run store so its evidence replays like any other run (this is the differentiator — the score is a replayable record).
+- [x] Wire the benchmark output into the normal run store so its evidence replays like any other run (this is the differentiator — the score is a replayable record).
 
 **Acceptance / evidence gate (P2 benchmark):**
 

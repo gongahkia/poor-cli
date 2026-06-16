@@ -33,6 +33,7 @@
       "requires_graph_mode": true,
       "requires_official_docker_eval": true,
       "requires_predictions_artifact": true,
+      "requires_recorded_run_store_replay": true,
       "requires_run_manifest": true,
       "requires_task_results_artifact": true,
       "run_manifest_required": [

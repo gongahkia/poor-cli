@@ -83,6 +83,19 @@ def _write_phase3_local_artifacts(
     prediction_lines = []
     for index in range(task_count):
         instance_id = f"repo__proj-{index}"
+        task_store_dir = run_dir / "stores" / str(index)
+        task_store = RunStore(task_store_dir)
+        task_run_id = task_store.create_run(
+            user_goal=f"benchmark task {index}",
+            repo_path=run_dir,
+            git_commit_start="abc",
+            mode="benchmark",
+            budget={},
+        )
+        artifact = task_store.put_artifact(run_id=task_run_id, kind="benchmark.note", data={"instance_id": instance_id})
+        task_store.append_event(task_run_id, "run.completed", {"artifact_id": artifact.artifact_id})
+        task_store.set_run_status(task_run_id, "completed", "benchmark fixture")
+        task_store.close()
         task_lines.append(
             json.dumps(
                 {
@@ -92,8 +105,8 @@ def _write_phase3_local_artifacts(
                     "agent": agent,
                     "graph_mode": graph_mode,
                     "replay_verified": True,
-                    "poor_cli_run_id": f"run-{index}",
-                    "poor_cli_store_dir": f"store/{index}",
+                    "poor_cli_run_id": task_run_id,
+                    "poor_cli_store_dir": f"stores/{index}",
                     **local_metadata,
                 },
                 sort_keys=True,
@@ -1230,6 +1243,7 @@ def test_phase3_local_benchmark_plan_schema() -> None:
     assert payload["target"]["minimum_of_anthropic_pass_rate"] == 0.5
     assert payload["target"]["requires_graph_mode"] is True
     assert payload["target"]["requires_official_docker_eval"] is True
+    assert payload["target"]["requires_recorded_run_store_replay"] is True
     assert payload["target"]["requires_environment_artifact"] is True
     assert payload["target"]["requires_task_results_artifact"] is True
     assert payload["target"]["requires_predictions_artifact"] is True
@@ -1281,6 +1295,7 @@ def test_phase3_local_benchmark_accepts_target_summary(tmp_path: Path) -> None:
     assert payload["target_rate"] == 0.45
     assert payload["artifacts"]["task_results_count"] == 10
     assert payload["artifacts"]["predictions_count"] == 10
+    assert all(check["verified"] for check in payload["artifacts"]["replay_store_checks"])
     assert payload["manifest"]["errors"] == []
     assert payload["errors"] == []
 
@@ -1421,6 +1436,40 @@ def test_phase3_local_benchmark_rejects_unpinned_manifest(tmp_path: Path) -> Non
     assert "run_manifest harness_versions.swebench is required" in payload["errors"]
     assert "run_manifest harness_versions.datasets is required" in payload["errors"]
     assert "run_manifest harness_versions.poor_cli is required" in payload["errors"]
+
+
+def test_phase3_local_benchmark_rejects_missing_replay_store(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "provider": "vllm",
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "agent": "local",
+                "local_base_url": "http://localhost:8000",
+                "graph_mode": True,
+                "task_count": 10,
+                "replay_verified_count": 10,
+                "official_evaluation": {
+                    "exit_code": 0,
+                    "results": {
+                        "completed_instances": 10,
+                        "error_instances": 0,
+                        "total_instances": 10,
+                        "resolved_instances": 5,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_phase3_local_artifacts(tmp_path)
+    (tmp_path / "stores" / "0" / "runs.sqlite3").unlink()
+
+    payload = validate_local_summary(summary)
+
+    assert payload["accepted"] is False
+    assert "task_results replay store verification failed: repo__proj-0" in payload["errors"]
 
 
 def test_phase3_local_benchmark_rejects_missing_graph_or_low_pass(tmp_path: Path) -> None:

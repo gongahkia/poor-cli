@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+from contextlib import closing
 from pathlib import Path
 from typing import Any
+
+from poor_cli.replay import replay_verify
+from poor_cli.store import RunStore, StoreError
 
 ROOT = Path(__file__).resolve().parents[1]
 ANTHROPIC_SUMMARY = ROOT / "bench" / "swe_bench_lite" / "results" / "swe10-claude-20260614T105615Z" / "summary.json"
@@ -31,6 +35,7 @@ def benchmark_plan_payload() -> dict[str, Any]:
             "requires_graph_mode": True,
             "requires_official_docker_eval": True,
             "requires_full_replay_verification": True,
+            "requires_recorded_run_store_replay": True,
             "requires_environment_artifact": True,
             "requires_task_results_artifact": True,
             "requires_predictions_artifact": True,
@@ -201,6 +206,7 @@ def _artifact_validation(summary_path: Path, summary: dict[str, Any], task_count
     if len(task_results) != task_count or task_count == 0:
         errors.append("task_results.jsonl count must match task_count")
     task_ids = []
+    replay_checks = []
     for record in task_results:
         task_ids.append(str(record.get("instance_id") or ""))
         _extend_mismatch_errors(errors, "task_results", record, summary)
@@ -208,6 +214,10 @@ def _artifact_validation(summary_path: Path, summary: dict[str, Any], task_count
             errors.append("task_results.jsonl must replay-verify every task")
         if not record.get("poor_cli_run_id") or not record.get("poor_cli_store_dir"):
             errors.append("task_results.jsonl must record run ids and store dirs")
+        check = _verify_recorded_replay(summary_path, record)
+        replay_checks.append(check)
+        if not check["verified"]:
+            errors.append(f"task_results replay store verification failed: {check['instance_id']}")
     prediction_ids = [str(record.get("instance_id") or "") for record in predictions]
     if len(predictions) != task_count or task_count == 0:
         errors.append("predictions.jsonl count must match task_count")
@@ -219,8 +229,35 @@ def _artifact_validation(summary_path: Path, summary: dict[str, Any], task_count
         "predictions": _display_path(predictions_path),
         "task_results_count": len(task_results),
         "predictions_count": len(predictions),
+        "replay_store_checks": replay_checks,
         "errors": sorted(set(errors)),
     }
+
+
+def _verify_recorded_replay(summary_path: Path, record: dict[str, Any]) -> dict[str, Any]:
+    instance_id = str(record.get("instance_id") or "")
+    run_id = str(record.get("poor_cli_run_id") or "")
+    raw_store_dir = str(record.get("poor_cli_store_dir") or "")
+    path = Path(raw_store_dir).expanduser()
+    if raw_store_dir and not path.is_absolute():
+        path = (summary_path.parent / path).resolve()
+    payload: dict[str, Any] = {"instance_id": instance_id, "run_id": run_id, "store_dir": str(path), "verified": False}
+    if not run_id or not raw_store_dir:
+        payload["error"] = "missing run id or store dir"
+        return payload
+    if not (path / "runs.sqlite3").exists():
+        payload["error"] = "missing runs.sqlite3"
+        return payload
+    try:
+        with closing(RunStore(path)) as store:
+            verification = replay_verify(store, run_id)
+    except (RuntimeError, StoreError, OSError) as exc:
+        payload["error"] = str(exc)
+        return payload
+    payload["verified"] = bool(verification.get("verified"))
+    payload["trace_sha256"] = verification.get("trace_sha256", "")
+    payload["network"] = verification.get("network", {})
+    return payload
 
 
 def _manifest_validation(summary_path: Path, summary: dict[str, Any]) -> dict[str, Any]:
