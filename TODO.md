@@ -34,7 +34,7 @@ What this means for emphasis going forward:
 - [ ] Treat "offline-deterministic replay of a complete run" as the P0 demonstrable capability.
 - [ ] Treat "reproducible local-GPU benchmark whose evidence lives in the same store" as the P0 credibility anchor.
 - [ ] Treat the shim/router as P1 plumbing that feeds the store, explicitly demoted from "the product."
-- [ ] `[breaking]` Rewrite README headline from "preflight router" to the verifiable-run-record sentence above.
+- [x] `[breaking]` Rewrite README headline from "preflight router" to the verifiable-run-record sentence above.
 
 ---
 
@@ -49,8 +49,8 @@ This section exists so the project can be defended honestly in interviews and a 
 
 Implications for our tasks:
 
-- [ ] `[breaking]` Stop describing the router as the differentiator anywhere user-facing.
-- [ ] Note in README that per-task routing is table stakes, and cite CCR as prior art rather than pretending to invent it.
+- [x] `[breaking]` Stop describing the router as the differentiator anywhere user-facing.
+- [x] Note in README that per-task routing is table stakes, and cite CCR as prior art rather than pretending to invent it.
 - [ ] Recognize the mechanism gap: a **PATH shim** only sees the *invocation*; a **base-URL proxy** (CCR's approach) sees the *request stream*. For anything beyond launch-time decisions we either accept the shim's limits or adopt a proxy — decide explicitly (see §5 and Open Questions §16).
 
 ### 2.2 Local replay of agent runs is also occupied — differentiate on the vertical, not the verb
@@ -61,8 +61,8 @@ Implications for our tasks:
 
 Implications for our tasks:
 
-- [ ] Do not claim "first local replay CLI." It is not.
-- [ ] Differentiate explicitly on the combination competitors lack: **route decision + context packet + plan/DAG + agent I/O + reproducible local-GPU benchmark evidence, all in one content-addressed store, all offline-verifiable.** Make this combination legible in the README and demo.
+- [x] Do not claim "first local replay CLI." It is not.
+- [x] Differentiate explicitly on the combination competitors lack: **route decision + context packet + plan/DAG + agent I/O + reproducible local-GPU benchmark evidence, all in one content-addressed store, all offline-verifiable.** Make this combination legible in the README and demo.
 - [ ] Adopt the proven good ideas from competitors where we lack them: secret-stripping on capture (cagent), recording-to-recording diff (Agent VCR), fork-a-run-to-test-a-fix (agent-replay). Tracked as concrete tasks in §6 and §7.
 
 ### 2.3 Reproducible benchmark infra exists, but is cloud/Ray-shaped — local-first is the wedge
@@ -348,7 +348,7 @@ Claims gate (enforced by release gate, §14):
 
 - [ ] Allowed only with evidence: "records replayable artifacts" (replay gate green), "supports graph-aware context" (graph tests green), "supports local provider routes" (adapter + target-host gates green), "measured on task set X" (linked to checked-in benchmark files).
 - [ ] Disallowed without evidence: competitive-superiority claims, "best"/"SOTA" claims, model-only capability inference, implying Linux/CUDA Phase 3 done before target-host evidence exists.
-- [ ] Add a release-gate check that scans README/docs for disallowed claim patterns and fails if evidence files are absent.
+- [x] Add a release-gate check that scans README/docs for disallowed claim patterns and fails if evidence files are absent.
 
 Checked-in evidence index (keep current):
 
@@ -382,10 +382,10 @@ Reordered so the moat and its proof come before the front-door, per §4.
 
 Batch A — strategy + docs (P0):
 
-- [ ] `[breaking]` Replace `IDEA.md` with this `TODO.md`.
-- [ ] `[breaking]` Rewrite README headline to the verifiable-run-record sentence (§1).
-- [ ] Add the §2 competitive-landscape section (or a condensed form) to README/docs.
-- [ ] Update release gate to validate this strategy doc and the §12 claims gate.
+- [x] `[breaking]` Replace `IDEA.md` with this `TODO.md`.
+- [x] `[breaking]` Rewrite README headline to the verifiable-run-record sentence (§1).
+- [x] Add the §2 competitive-landscape section (or a condensed form) to README/docs.
+- [x] Update release gate to validate this strategy doc and the §12 claims gate.
 
 Batch B — replay hardening (P0):
 

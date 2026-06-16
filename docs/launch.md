@@ -2,17 +2,23 @@
 
 ## Hero Copy
 
-`poor-cli` is a minimal Python coding harness with deterministic record-and-replay.
+`poor-cli` is a verifiable run-record for coding agents.
 
-It is built for developers who want AI coding sessions they can inspect, replay, benchmark, and run locally.
+It is built for developers who want AI coding sessions they can inspect, replay offline, benchmark, and defend with checked-in evidence.
 
 Primary line:
 
-> Reproducible AI coding sessions in under 5,000 lines of Python.
+> Verifiable AI coding runs from prompt to replay.
 
 Support line:
 
-> Plan, run, inspect, and replay agent work from an on-disk event log; add graph-aware tools and local model providers when the task needs them.
+> Capture the route, context, plan, agent I/O, artifacts, and benchmark evidence in one content-addressed store.
+
+Prior-art posture:
+
+- Claude Code Router shows that a router front-door is table stakes, not the differentiator.
+- agent-replay, cagent, and Agent VCR show that replay, cassettes, and recording diffs are occupied.
+- The launch claim is narrower: `poor-cli` ties route decision, context, DAG, agent I/O, and benchmark evidence into the same offline-verifiable record.
 
 ## Demo Slots
 
@@ -38,7 +44,7 @@ Phase 3:
 
 ## Publication Checklist
 
-- README points at `IDEA.md`.
+- README points at `TODO.md`.
 - MkDocs builds with `mkdocs build --strict`.
 - `BENCHMARKS.md` links checked-in result rows.
 - Phase 1 acceptance snapshot is green.

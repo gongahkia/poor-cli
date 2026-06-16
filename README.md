@@ -1,14 +1,14 @@
 # poor-cli
 
-`poor-cli` v6 is a deterministic orchestration runtime for AI software work.
+`poor-cli` v6 is a verifiable run-record for coding agents.
 
-It sits above local coding agents such as Claude Code, Codex, and shell-based tools. Given a software goal, it records a structured plan, detected agents, task state, context packets, agent inputs/outputs, artifacts, and replayable orchestration events.
+It captures what an agent was asked, what context and route it got, what it did, and what changed into a content-addressed store that can be replayed offline.
 
 ## Status
 
 `6.0.0a1` is an alpha rewrite. The v5 codebase is preserved under `legacy/`.
 
-Current product direction: [`IDEA.md`](IDEA.md).
+Current product direction and task list: [`TODO.md`](TODO.md).
 
 ## Install
 
@@ -32,7 +32,7 @@ poor-cli inspect <run_id> --events --context
 poor-cli inspect <run_id> --artifacts --cost
 poor-cli review-run <run_id>
 poor-cli verify-run <run_id>
-poor-cli replay <run_id>
+poor-cli replay <run_id> --verify
 poor-cli provider add openai --model gpt-5.5
 poor-cli provider list
 poor-cli route explain "fix the parser"
@@ -64,6 +64,12 @@ Run state lives in `.poor-cli/v6/`:
 - `cas/`: content-addressed artifacts for prompts, plans, context packets, and agent results
 - `runs/<run_id>/artifacts/`: deterministic `PLAN.md`, worker `RESULT.md`, `PATCH.diff`, review, and verifier artifacts
 
+## Differentiation
+
+Per-task routing and local replay are existing categories, not novel claims. [Claude Code Router](https://github.com/musistudio/claude-code-router) demonstrates the router/proxy front door; [agent-replay](https://github.com/clay-good/agent-replay), [cagent session recording](https://www.docker.com/blog/deterministic-ai-testing-with-session-recording-in-cagent/), and [Agent VCR](https://github.com/Jarvis2021/agent-vcr) demonstrate local replay, cassettes, and recording diffs.
+
+`poor-cli` is scoped around the vertical record: route decision, context packet, plan/DAG, agent I/O, artifacts, and benchmark evidence in one content-addressed store that can be checked offline.
+
 ## Providers
 
 Provider profiles are stored in config using secret references, not plaintext keys. Built-in presets cover OpenAI, OpenAI-compatible endpoints, OpenRouter, Kimi, Ollama, vLLM, and SGLang.
@@ -72,7 +78,7 @@ Local or configured providers can run through the native provider-backed tool lo
 
 ## Gates
 
-The v6 gate set is tests, ruff, strict mypy, docs build, replay determinism, packaging, and the 6500-line source LOC cap.
+The v6 gate set is tests, ruff, strict mypy, docs build, replay determinism, packaging, and the source LOC cap.
 
 ## Goal
 

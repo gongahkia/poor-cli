@@ -1,6 +1,8 @@
 # Quickstart
 
-`poor-cli` v6 is an alpha Python runtime for recording, inspecting, and replaying AI coding-agent orchestration.
+`poor-cli` v6 is an alpha Python runtime for verifiable coding-agent run records.
+
+It captures the prompt, route decision, context packet, plan, agent I/O, artifacts, and replay metadata into an on-disk store that can be verified offline.
 
 ## Install
 

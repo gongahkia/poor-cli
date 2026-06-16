@@ -23,6 +23,7 @@ from bench.phase3_readiness import _linux_cuda_host, _ollama_binary, _python_dep
 from bench.phase3_readiness import readiness_payload as phase3_readiness_payload
 from bench.pivot_remaining import remaining_payload
 from bench.release_gate import CUTS
+from bench.release_gate import audit as release_audit
 from bench.swe_bench_lite import run as swe_run
 from poor_cli.store import RunStore
 
@@ -216,6 +217,13 @@ def test_release_cut_matrix_names_expected_surfaces() -> None:
     assert payload["accepted"] is True
 
 
+def test_release_gate_tracks_todo_strategy_doc() -> None:
+    payload = release_audit(Path(__file__).resolve().parents[1])
+
+    assert payload["checks"]["strategy_doc"] is True
+    assert payload["checks"]["strategy_refs"] is True
+
+
 def test_swe_smoke_audit_accepts_checked_in_runner_outputs() -> None:
     payload = swe_smoke_audit(Path(__file__).resolve().parents[1])
 
@@ -235,6 +243,16 @@ def test_claims_gate_requires_reproducibility_context(tmp_path: Path) -> None:
     assert accepted["accepted"] is True
     assert rejected["accepted"] is False
     assert rejected["violations"][0]["line"] == 1
+
+
+def test_claims_gate_rejects_disallowed_superiority_claim(tmp_path: Path) -> None:
+    bad = tmp_path / "bad.md"
+    bad.write_text("poor-cli is the best replay CLI\n", encoding="utf-8")
+
+    rejected = scan_claims([bad])
+
+    assert rejected["accepted"] is False
+    assert rejected["violations"][0]["kind"] == "disallowed_claim"
 
 
 def test_bench_extra_matches_swe_lite_requirements() -> None:

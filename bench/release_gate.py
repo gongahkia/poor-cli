@@ -17,11 +17,15 @@ CUTS = {
 
 def audit(root: Path) -> dict[str, Any]:
     checks = {
-        "idea_doc": _idea_doc_ready(root),
+        "strategy_doc": _strategy_doc_ready(root),
+        "strategy_refs": _strategy_refs_ready(root),
         "examples_doc": (root / "docs" / "examples.md").exists(),
         "prompt_packs_doc": (root / "docs" / "prompt-packs.md").exists(),
         "dogfood_gate": _json_accepted(root / "bench" / "results" / "dogfood-report.json"),
-        "claims_gate": _command_ok(root, ["python", "bench/claims_gate.py", "README.md", "docs/benchmarks.md", "IDEA.md"]),
+        "claims_gate": _command_ok(
+            root,
+            ["python", "bench/claims_gate.py", "README.md", "docs/benchmarks.md", "docs/launch.md", "docs/index.md"],
+        ),
     }
     return {
         "schema_version": "poor-cli-release-gate-v1",
@@ -31,19 +35,33 @@ def audit(root: Path) -> dict[str, Any]:
     }
 
 
-def _idea_doc_ready(root: Path) -> bool:
-    path = root / "IDEA.md"
+def _strategy_doc_ready(root: Path) -> bool:
+    path = root / "TODO.md"
     if not path.exists():
         return False
     text = path.read_text(encoding="utf-8").lower()
     required = (
-        "near-invisible preflight router",
-        "opt-in path shims",
-        "replay substrate",
-        "tui role",
-        "what from workon still matters",
+        "verifiable run-record for coding agents",
+        "router is the capture mechanism",
+        "reproducible local-gpu benchmark",
+        "competitive landscape",
+        "batch b",
+        "replay hardening",
     )
-    return all(item in text for item in required)
+    return all(item in text for item in required) and not (root / "IDEA.md").exists()
+
+
+def _strategy_refs_ready(root: Path) -> bool:
+    paths = [root / "README.md", root / "docs" / "launch.md"]
+    for path in paths:
+        if not path.exists():
+            return False
+        text = path.read_text(encoding="utf-8")
+        if "IDEA.md" in text:
+            return False
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    launch = (root / "docs" / "launch.md").read_text(encoding="utf-8")
+    return "[`TODO.md`](TODO.md)" in readme and "README points at `TODO.md`" in launch
 
 
 def _command_ok(root: Path, command: list[str]) -> bool:
