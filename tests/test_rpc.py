@@ -31,6 +31,25 @@ def test_rpc_rejects_malformed_json(tmp_path: Path, capsys) -> None:
     assert response["error"]["code"] == -32700
 
 
+def test_rpc_route_classifies_without_running(tmp_path: Path, capsys) -> None:
+    server = RpcServer(tmp_path / "store")
+
+    server.handle(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "route",
+                "params": {"task": "fix failing parser test", "shim_agent": "codex", "shim_args": ["exec", "fix failing parser test"]},
+            }
+        )
+    )
+    response = _lines(capsys.readouterr().out)[0]["result"]
+
+    assert response["role"] == "executor"
+    assert response["preflight"]["selected_route"] == "graph-enriched"
+
+
 def test_rpc_run_status_inspect_replay(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
     _planner(planner)

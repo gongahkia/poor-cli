@@ -41,11 +41,23 @@ Visible interruption is intentionally narrow. The shim asks for TTY confirmation
 allow_high_risk = true
 ```
 
+## Default Behavior
+
+| Input | Default behavior |
+| --- | --- |
+| Low-risk explain or review | Pass through and record |
+| Normal repo edit | Add graph/context when useful, then run the selected agent |
+| High-risk security, deletion, migration, payment, or data mutation | Ask before write-capable execution |
+| Missing provider or config | Stop and print the missing requirement |
+| Interactive bare `claude` or `codex` | Pass through in v1 |
+
 ## Mechanism Decision
 
 v1 uses a PATH shim because it is explicit, reversible, and does not require changing Claude/Codex API endpoint settings. The trade-off is that it sees process invocation, argv, stdin for supported noninteractive forms, stdout/stderr, and exit status; it does not see the full HTTP request stream or every tool event inside an opaque upstream CLI.
 
 A base-URL proxy is the migration trigger if the product needs request-stream capture, per-turn routing, or provider-level policy enforcement. That is richer, but it changes more user environment and competes directly with existing router/proxy tools.
+
+Claude Code hooks are useful for deterministic lifecycle automation inside Claude Code, especially `UserPromptSubmit`, `PreToolUse`, and `PostToolUse`, but they are not a cross-agent front door for both Claude and Codex. They remain a later integration option rather than the v1 capture mechanism.
 
 ## Uninstall
 

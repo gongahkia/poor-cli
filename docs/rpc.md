@@ -6,6 +6,7 @@ RPC is a secondary integration surface for editors and headless automation. It c
 
 ## Methods
 
+- `route`: returns the same route explanation and optional shim preflight shape as `poor-cli route explain`; it does not create a run or invoke an agent.
 - `run`: plans synchronously, starts execution in the background, and returns `{run_id, status}`.
 - `status`: returns current run status and summary.
 - `inspect`: returns run, task, and event rows.
@@ -15,6 +16,8 @@ RPC is a secondary integration surface for editors and headless automation. It c
 ## Events
 
 The server emits `poor/event` notifications on stdout as JSON-RPC notifications. Stderr is reserved for diagnostics.
+
+Editors can call `route` before launching an agent, subscribe to `poor/event` notifications during `run`, then call `inspect` or `replay` to render record evidence.
 
 ## Boundary
 

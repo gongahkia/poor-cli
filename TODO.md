@@ -31,8 +31,8 @@ The reframe, stated plainly:
 
 What this means for emphasis going forward:
 
-- [ ] Treat "offline-deterministic replay of a complete run" as the P0 demonstrable capability.
-- [ ] Treat "reproducible local-GPU benchmark whose evidence lives in the same store" as the P0 credibility anchor.
+- [x] Treat "offline-deterministic replay of a complete run" as the P0 demonstrable capability.
+- [x] Treat "reproducible local-GPU benchmark whose evidence lives in the same store" as the P0 credibility anchor.
 - [x] Treat the shim/router as P1 plumbing that feeds the store, explicitly demoted from "the product."
 - [x] `[breaking]` Rewrite README headline from "preflight router" to the verifiable-run-record sentence above.
 
@@ -72,7 +72,7 @@ Implications for our tasks:
 
 Implications for our tasks:
 
-- [ ] Position our benchmark as *local-first and reproducible-from-record*, not as a competitor to cloud-scale eval clusters.
+- [x] Position our benchmark as *local-first and reproducible-from-record*, not as a competitor to cloud-scale eval clusters.
 - [ ] Adopt the standard reproducibility controls as hard requirements in the benchmark manifest (digest-pinned containers, seed control, weight hash, harness version) — see §8.
 
 ### 2.4 One-line differentiation to defend
@@ -106,12 +106,12 @@ poor-cli runs diff <run_a> <run_b>         # behavioral diff between two records
 - [x] Make `replay --verify` the single most polished command in the tool (clear output, explicit "no network used" proof line, non-zero exit on mismatch).
 - [x] Add `poor-cli runs diff` as a first-class command (new; see §7).
 - [x] Keep capture quiet by default; keep verify loud and legible.
-- [ ] Default behavior table (unchanged intent, retained):
-  - [ ] low-risk explain/review -> pass through and record
-  - [ ] normal repo edit -> add graph/context if useful, then run chosen agent
-  - [ ] high-risk/security/delete/migration/payment -> ask before write-capable execution
-  - [ ] missing provider/config -> explain exactly what is missing
-  - [ ] interactive bare `claude`/`codex` -> pass through in v1
+- [x] Default behavior table (unchanged intent, retained):
+  - [x] low-risk explain/review -> pass through and record
+  - [x] normal repo edit -> add graph/context if useful, then run chosen agent
+  - [x] high-risk/security/delete/migration/payment -> ask before write-capable execution
+  - [x] missing provider/config -> explain exactly what is missing
+  - [x] interactive bare `claude`/`codex` -> pass through in v1
 
 ---
 
@@ -371,7 +371,7 @@ RPC / MCP / editor:
 
 - [x] Keep JSON-RPC stdio server (run/inspect/status/cancel/replay) as a secondary integration surface.
 - [x] Keep MCP client + stdio server (allowlisted safe tools). No HTTP MCP/auth server in v1.
-- [ ] Support: editor extension asks `poor-cli` to classify before running; headless run + structured event subscription; MCP clients inspect replay artifacts; tools query route decisions without invoking agents.
+- [x] Support: editor extension asks `poor-cli` to classify before running; headless run + structured event subscription; MCP clients inspect replay artifacts; tools query route decisions without invoking agents.
 - [x] Do not let RPC/MCP replace the CLI capture path for daily use.
 
 ---
@@ -413,7 +413,7 @@ Batch G — dogfood + acceptance (P2):
 
 - [ ] Dogfood `claude "inspect repo"` and `codex exec "inspect repo"` through the shim.
 - [ ] Verify replay artifacts for both.
-- [ ] Add docs showing install/doctor/uninstall and failure behavior.
+- [x] Add docs showing install/doctor/uninstall and failure behavior.
 
 ---
 
@@ -448,21 +448,21 @@ Lead with the moat, not the router, not the TUI.
 Feasibility docs (shim/router):
 
 - [x] Claude Code CLI reference incl. `claude -p` print mode: https://code.claude.com/docs/en/cli-reference
-- [ ] Claude Code hooks: https://code.claude.com/docs/en/hooks
+- [x] Claude Code hooks: https://code.claude.com/docs/en/hooks
 - [x] OpenAI Codex noninteractive mode: https://developers.openai.com/codex/noninteractive
-- [ ] Codex CLI command reference: https://developers.openai.com/codex/cli/reference
+- [x] Codex CLI command reference: https://developers.openai.com/codex/cli/reference
 
 Interpretation:
 
 - [x] Noninteractive `claude` and `codex exec` are reasonable v1 wrapper targets.
-- [ ] Hooks are useful later but do not replace a front-door router.
+- [x] Hooks are useful later but do not replace a front-door router.
 - [x] Bare interactive sessions pass through until a PTY proxy proves worth the complexity.
 
 Landscape sources (from the 2026-06 pivot research — re-verify before launch, §14 Batch F):
 
-- [ ] Claude Code Router (router prior art): claudelog.com / morphllm.com / dev.to writeups.
-- [ ] `agent-replay` (clay-good): github.com/clay-good/agent-replay (closest substrate competitor).
-- [ ] `cagent` session recording (VCR cassettes, secret-stripping): docker.com blog.
-- [ ] Agent VCR (MCP record/replay/diff): medium writeup.
-- [ ] Reproducibility discipline (digest pinning, seed/weight-hash manifests): Spheron benchmarking guide.
-- [ ] Local-first replay-layer rationale (data-sovereignty regime): HuggingFace "beyond logs" writeup.
+- [x] Claude Code Router (router prior art): claudelog.com / morphllm.com / dev.to writeups.
+- [x] `agent-replay` (clay-good): github.com/clay-good/agent-replay (closest substrate competitor).
+- [x] `cagent` session recording (VCR cassettes, secret-stripping): docker.com blog.
+- [x] Agent VCR (MCP record/replay/diff): medium writeup.
+- [x] Reproducibility discipline (digest pinning, seed/weight-hash manifests): Spheron benchmarking guide.
+- [x] Local-first replay-layer rationale (data-sovereignty regime): HuggingFace "beyond logs" writeup.

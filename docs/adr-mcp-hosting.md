@@ -6,6 +6,7 @@ Status: accepted, 2026-06-15.
 
 Server policy:
 - Default exposed tools are read-oriented: `read_file`, `glob`, `grep`, graph tools, `web_search`, `web_fetch`, `review`, and `replay_emit`.
+- Repo-local replay artifacts are inspectable through `glob` and `read_file` under `.poor-cli/v6/runs/<run_id>/artifacts/`.
 - Mutating tools such as `write_file`, `edit`, and `shell` are not exposed unless explicitly configured.
 - Tool calls use the same `ToolDispatcher`, schemas, sandbox rules, replay store, and web policy as native runs.
 - Unknown tools, schema mismatch, and denied sandbox actions return MCP tool errors.

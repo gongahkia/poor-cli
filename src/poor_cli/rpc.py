@@ -6,10 +6,11 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from .config import explain_route, load_config
 from .models import Budget
 from .orchestrator import Orchestrator
 from .replay import replay_summary, replay_verify
-from .route_policy import should_use_graph_context
+from .route_policy import preflight_route, should_use_graph_context
 from .store import RunStore
 from .swarm import run_swarm_plan
 
@@ -50,6 +51,16 @@ class RpcServer:
             self._send({"jsonrpc": "2.0", "id": rid, "error": _err(-32603, f"{type(exc).__name__}: {exc}")})
 
     def _call(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
+        if method == "route":
+            task = str(params.get("task") or params.get("goal") or "").strip()
+            shim_args = [str(item) for item in params.get("shim_args", [])] if isinstance(params.get("shim_args"), list) else []
+            if not task and not shim_args:
+                raise ValueError("task is required")
+            route = explain_route(load_config(), task or " ".join(shim_args), role=str(params.get("role") or "executor"))
+            if agent := params.get("shim_agent"):
+                stdin = str(params.get("stdin_mode") or "tty")
+                route["preflight"] = preflight_route(str(agent), shim_args, stdin, Path.cwd(), prompt=task or None, route=route)
+            return route
         if method == "run":
             goal = str(params.get("goal") or "").strip()
             if not goal:
