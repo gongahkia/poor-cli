@@ -38,6 +38,7 @@ from .prompt_packs import add_prompt_parser, handle_prompt_command
 from .replay import replay_summary, replay_verify
 from .repo_graph import graph_dependency_report
 from .run_records import handle_runs_command
+from .shims import add_shims_parser, handle_shims_command
 from .store import RunStore, StoreError
 from .swarm import cleanup_swarm, run_swarm
 
@@ -56,10 +57,7 @@ def main(argv: list[str] | None = None) -> int:
     store = RunStore(Path(args.store_dir).expanduser() if args.store_dir else None)
     try:
         return _dispatch(args, store)
-    except (RuntimeError, StoreError) as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
-    except ConfigError as exc:
+    except (RuntimeError, StoreError, ConfigError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
     finally:
@@ -83,6 +81,8 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
         return _verify_run(args, store)
     if args.command == "runs":
         return handle_runs_command(args, store)
+    if args.command == "shims":
+        return handle_shims_command(args, store)
     if args.command == "provider":
         return _provider(args)
     if args.command == "route":
@@ -503,6 +503,8 @@ def _parser() -> argparse.ArgumentParser:
     runs_fork.add_argument("run_id")
     runs_fork.add_argument("--json", action="store_true")
 
+    add_shims_parser(sub)
+
     provider = sub.add_parser("provider")
     provider_sub = provider.add_subparsers(dest="provider_command")
     provider_add = provider_sub.add_parser("add")
@@ -552,8 +554,7 @@ def _parser() -> argparse.ArgumentParser:
 
     cleanup = sub.add_parser("cleanup")
     cleanup.add_argument("run_id")
-    cleanup_swarm_parser = sub.add_parser("cleanup-swarm")
-    cleanup_swarm_parser.add_argument("run_id")
+    sub.add_parser("cleanup-swarm").add_argument("run_id")
 
     replay = sub.add_parser("replay")
     replay.add_argument("run_id")
@@ -577,8 +578,7 @@ def _parser() -> argparse.ArgumentParser:
     rpc_serve = rpc_sub.add_parser("serve")
     rpc_serve.add_argument("--stdio", action="store_true")
 
-    tui = sub.add_parser("tui")
-    tui.add_argument("--run-id")
+    sub.add_parser("tui").add_argument("--run-id")
     return parser
 
 

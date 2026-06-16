@@ -1,0 +1,121 @@
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import sys
+from pathlib import Path
+from typing import Any
+
+from poor_cli.cli import main
+from poor_cli.replay import replay_verify
+from poor_cli.shims import resolve_real_binary
+from poor_cli.store import RunStore
+
+
+def test_shims_install_doctor_uninstall_temp_path(tmp_path: Path, monkeypatch: Any, capsys: Any) -> None:
+    shims, bin_dir = tmp_path / "shims", tmp_path / "bin"
+    _fake_binary(bin_dir, "claude")
+    _fake_binary(bin_dir, "codex")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(shims), str(bin_dir), os.environ.get("PATH", "")]))
+
+    assert main(["shims", "install", "--dir", str(shims)]) == 0
+    output = capsys.readouterr().out
+    assert "export PATH=" in output
+    assert (shims / "claude").exists()
+    assert (shims / "codex").exists()
+
+    assert main(["shims", "doctor", "--dir", str(shims)]) == 0
+    doctor = capsys.readouterr().out
+    assert "claude: shim=ok real=" in doctor
+    assert "codex: shim=ok real=" in doctor
+    assert resolve_real_binary("claude", shims, str(shims)) is None
+
+    assert main(["shims", "uninstall", "--dir", str(shims)]) == 0
+    assert not (shims / "claude").exists()
+
+
+def test_shims_install_refuses_unmanaged_file(tmp_path: Path, capsys: Any) -> None:
+    shims = tmp_path / "shims"
+    shims.mkdir()
+    (shims / "claude").write_text("#!/bin/sh\n", encoding="utf-8")
+
+    assert main(["shims", "install", "--dir", str(shims)]) == 1
+    assert "refusing to overwrite unmanaged shim" in capsys.readouterr().err
+
+
+def test_generated_shims_capture_claude_and_codex_records(tmp_path: Path, monkeypatch: Any) -> None:
+    shims, bin_dir = tmp_path / "shims", tmp_path / "bin"
+    _fake_binary(bin_dir, "claude")
+    _fake_binary(bin_dir, "codex")
+    assert main(["shims", "install", "--dir", str(shims)]) == 0
+
+    env = os.environ.copy()
+    env["PATH"] = os.pathsep.join([str(shims), str(bin_dir), str(Path(sys.executable).parent), env.get("PATH", "")])
+    env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
+    env["OPENAI_API_KEY"] = "sk-testsecret123456789"
+
+    claude = subprocess.run(["claude", "-p", "explain repo"], cwd=tmp_path, env=env, text=True, capture_output=True, check=False)
+    codex = subprocess.run(["codex", "exec", "review diff"], cwd=tmp_path, env=env, text=True, capture_output=True, check=False)
+    assert claude.returncode == 0, claude.stderr
+    assert codex.returncode == 0, codex.stderr
+    assert "fake-claude:-p explain repo" in claude.stdout
+    assert "fake-codex:exec review diff" in codex.stdout
+
+    store = RunStore(tmp_path / ".poor-cli" / "v6")
+    try:
+        runs = store.list_runs()
+        assert {run["user_goal"] for run in runs} == {"explain repo", "review diff"}
+        for run in runs:
+            assert store.list_artifacts(run["run_id"], "shim.capture")
+            assert store.list_artifacts(run["run_id"], "shim.result")
+            assert replay_verify(store, run["run_id"])["verified"] is True
+            capture = json.loads(store.artifact_payload(store.list_artifacts(run["run_id"], "shim.capture")[0]["artifact_id"]))
+            assert capture["redacted_env"].get("OPENAI_API_KEY") == "[redacted]"
+    finally:
+        store.close()
+
+    blobs = [path.read_bytes() for path in (tmp_path / ".poor-cli").rglob("*") if path.is_file()]
+    assert not any(b"sk-testsecret123456789" in blob for blob in blobs)
+
+
+def test_claude_print_stdin_capture_preserves_input(tmp_path: Path, monkeypatch: Any) -> None:
+    shims, bin_dir = tmp_path / "shims", tmp_path / "bin"
+    _fake_binary(bin_dir, "claude")
+    assert main(["shims", "install", "--dir", str(shims)]) == 0
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")]))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", _Stdin(b"piped prompt"))
+
+    assert main(["shims", "exec", "claude", "--", "-p"]) == 0
+    store = RunStore(tmp_path / ".poor-cli" / "v6")
+    try:
+        run = store.list_runs()[0]
+        assert run["user_goal"] == "piped prompt"
+        capture = json.loads(store.artifact_payload(store.list_artifacts(run["run_id"], "shim.capture")[0]["artifact_id"]))
+        assert capture["stdin"] == "piped prompt"
+    finally:
+        store.close()
+
+
+class _Stdin:
+    def __init__(self, data: bytes):
+        self.buffer = _BytesIn(data)
+
+    def isatty(self) -> bool:
+        return False
+
+
+class _BytesIn:
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def read(self) -> bytes:
+        return self._data
+
+
+def _fake_binary(root: Path, name: str) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / name
+    path.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf 'fake-{name}:%s\\n' \"$*\"\n", encoding="utf-8")
+    path.chmod(0o755)
