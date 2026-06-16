@@ -154,9 +154,7 @@ def render_provider_panel(store_dir: Path, repo_path: Path | None = None) -> str
     lines: list[str] = []
     for row in provider_rows(config):
         marker = "*" if row["active"] else " "
-        lines.append(
-            f"{marker} {row['id']:<12} {row['kind']:<8} model {row['model'] or '-'}"
-        )
+        lines.append(f"{marker} {row['id']:<12} {row['kind']:<8} model {row['model'] or '-'}")
         lines.append(f"  host {row['base_url'] or '-'}  tools {row['tools']}  web {row['web']}")
     route = config.get("routes", {}).get("executor") if isinstance(config.get("routes"), dict) else {}
     if isinstance(route, dict):

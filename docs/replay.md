@@ -58,3 +58,10 @@ poor-cli runs fork <run_id>
 ```
 
 Diff compares route decisions, context packets, plan/task shape, artifact hashes, and repo-delta artifacts. Changes in those sections are classified as `behavior-changing`. Fork creates a new recorded run with a `run.fork` artifact pointing at the source run, so the next edit/re-run can be compared back with `runs diff`.
+
+The regression loop is:
+
+1. fork the source run with `poor-cli runs fork <run_id>`;
+2. make the candidate edit and re-run the same goal;
+3. compare source vs candidate with `poor-cli runs diff <source> <candidate> --fail-on-change`;
+4. inspect changed route/context/plan/artifact/repo-delta sections before accepting the new behavior.

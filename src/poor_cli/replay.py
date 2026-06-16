@@ -113,15 +113,15 @@ def _no_network_guard() -> Iterator[list[str]]:
         attempts.append(f"connect_ex:{address!r}")
         raise ReplayError(f"network touched during replay verification: {address!r}")
 
-    socket.create_connection = block_create_connection
-    socket.socket.connect = block_connect
-    socket.socket.connect_ex = block_connect_ex
+    socket.create_connection = block_create_connection  # type: ignore[assignment]
+    socket.socket.connect = block_connect  # type: ignore[assignment, method-assign]
+    socket.socket.connect_ex = block_connect_ex  # type: ignore[assignment, method-assign]
     try:
         yield attempts
     finally:
         socket.create_connection = original_create_connection
-        socket.socket.connect = original_connect
-        socket.socket.connect_ex = original_connect_ex
+        socket.socket.connect = original_connect  # type: ignore[method-assign]
+        socket.socket.connect_ex = original_connect_ex  # type: ignore[method-assign]
 
 
 def _verify_event_mirror(store: RunStore, run_id: str, events: list[dict[str, Any]]) -> bytes:

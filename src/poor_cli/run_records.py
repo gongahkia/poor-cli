@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from .store import RunStore
@@ -31,12 +32,13 @@ def diff_runs(store: RunStore, run_a: str, run_b: str) -> dict[str, Any]:
 
 def fork_run(store: RunStore, source_run_id: str) -> dict[str, Any]:
     source = store.get_run(source_run_id)
+    budget = source.get("budget")
     run_id = store.create_run(
         user_goal=f"fork of {source_run_id}: {source['user_goal']}",
-        repo_path=_path(source["repo_path"]),
+        repo_path=Path(str(source["repo_path"])),
         git_commit_start=source.get("git_commit_start"),
         mode=str(source.get("mode") or "balanced"),
-        budget=source.get("budget") if isinstance(source.get("budget"), dict) else {},
+        budget=budget if isinstance(budget, dict) else {},
     )
     payload = {"schema_version": "poor-cli-run-fork-v1", "source_run_id": source_run_id, "fork_run_id": run_id}
     artifact = store.put_artifact(run_id=run_id, kind="run.fork", data=payload)
@@ -57,7 +59,11 @@ def handle_runs_command(args: Any, store: RunStore) -> int:
         return 1 if args.fail_on_change and payload["changed"] else 0
     if args.runs_command == "fork":
         payload = fork_run(store, args.run_id)
-        text = json.dumps(payload, indent=2, sort_keys=True) if args.json else f"forked: {payload['source_run_id']} -> {payload['fork_run_id']}"
+        text = (
+            json.dumps(payload, indent=2, sort_keys=True)
+            if args.json
+            else f"forked: {payload['source_run_id']} -> {payload['fork_run_id']}"
+        )
         print(text)
         return 0
     for run in store.list_runs(failed_only=args.failed, prompt_prefix=args.prefix):
@@ -99,9 +105,3 @@ def _artifacts(artifacts: list[dict[str, Any]], kinds: set[str] | None) -> list[
         for artifact in artifacts
         if kinds is None or artifact["kind"] in kinds
     ]
-
-
-def _path(value: Any):
-    from pathlib import Path
-
-    return Path(str(value))

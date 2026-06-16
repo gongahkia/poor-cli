@@ -82,7 +82,7 @@ def _dispatch(args: argparse.Namespace, store: RunStore) -> int:
     if args.command == "verify-run":
         return _verify_run(args, store)
     if args.command == "runs":
-        return _runs(args, store)
+        return handle_runs_command(args, store)
     if args.command == "provider":
         return _provider(args)
     if args.command == "route":
@@ -198,10 +198,6 @@ def _run_swarm(args: argparse.Namespace, store: RunStore) -> int:
     print(f"run_id: {result['run_id']}")
     print(f"workers: {result['workers']} conflicts: {len(result['conflicts'])}")
     return int(result["exit_code"])
-
-
-def _runs(args: argparse.Namespace, store: RunStore) -> int:
-    return handle_runs_command(args, store)
 
 
 def _review_run(args: argparse.Namespace, store: RunStore) -> int:

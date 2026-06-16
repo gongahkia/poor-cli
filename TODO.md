@@ -104,7 +104,7 @@ poor-cli runs diff <run_a> <run_b>         # behavioral diff between two records
 ```
 
 - [ ] Make `replay --verify` the single most polished command in the tool (clear output, explicit "no network used" proof line, non-zero exit on mismatch).
-- [ ] Add `poor-cli runs diff` as a first-class command (new; see §7).
+- [x] Add `poor-cli runs diff` as a first-class command (new; see §7).
 - [ ] Keep capture quiet by default; keep verify loud and legible.
 - [ ] Default behavior table (unchanged intent, retained):
   - [ ] low-risk explain/review -> pass through and record
@@ -228,21 +228,21 @@ Competitors have these; our version is differentiated by operating over the *ful
 
 Diff (parity with Agent VCR / agent-replay, extended):
 
-- [ ] `poor-cli runs diff <run_a> <run_b>` comparing route decision, context packet, plan/DAG shape, artifacts, and repo delta.
-- [ ] Classify diffs as benign vs. behavior-changing (route changed, task set changed, artifact hashes changed).
-- [ ] `--fail-on-change` flag for CI use.
-- [ ] Diff output in both human and JSON form.
+- [x] `poor-cli runs diff <run_a> <run_b>` comparing route decision, context packet, plan/DAG shape, artifacts, and repo delta.
+- [x] Classify diffs as benign vs. behavior-changing (route changed, task set changed, artifact hashes changed).
+- [x] `--fail-on-change` flag for CI use.
+- [x] Diff output in both human and JSON form.
 
 Fork (parity with agent-replay):
 
-- [ ] `poor-cli runs fork <run_id>` to branch a recorded run as the starting point for a fix-and-recompare loop.
-- [ ] Document the fork -> edit -> re-run -> diff loop as the "regression test for a non-deterministic system" workflow.
+- [x] `poor-cli runs fork <run_id>` to branch a recorded run as the starting point for a fix-and-recompare loop.
+- [x] Document the fork -> edit -> re-run -> diff loop as the "regression test for a non-deterministic system" workflow.
 
 **Acceptance / evidence gate (P1 diff/fork):**
 
-- [ ] Diff correctly flags an injected route change and an injected artifact change on a fixture pair.
-- [ ] `--fail-on-change` returns non-zero in CI on a known-divergent fixture.
-- [ ] Evidence: `bench/results/run-diff-acceptance.json`.
+- [x] Diff correctly flags an injected route change and an injected artifact change on a fixture pair.
+- [x] `--fail-on-change` returns non-zero in CI on a known-divergent fixture.
+- [x] Evidence: `bench/results/run-diff-acceptance.json`.
 
 ---
 
@@ -393,7 +393,7 @@ Batch B — replay hardening (P0):
 
 Batch C — run diff + fork (P1):
 
-- [ ] Execute all §7 tasks.
+- [x] Execute all §7 tasks.
 
 Batch D — shim installer (P1):
 
