@@ -20,6 +20,7 @@ poor-cli plan "trace the parser flow" --graph
 poor-cli run "make a small scoped change" --yes
 poor-cli run "fix the caller lookup" --graph --yes
 poor-cli runs
+poor-cli shims install
 poor-cli inspect <run_id> --events --context
 poor-cli replay <run_id> --verify
 ```

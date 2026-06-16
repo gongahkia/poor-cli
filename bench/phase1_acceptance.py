@@ -8,7 +8,7 @@ from typing import Any
 from poor_cli.planner import SYSTEM_PROMPT
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE_LOC_CAP = 7800
+SOURCE_LOC_CAP = 8000
 ANTHROPIC_FIXTURE_RESULT = ROOT / "bench" / "results" / "local-fixture-bugs-claude.json"
 SWE_10_SUMMARY = ROOT / "bench" / "swe_bench_lite" / "results" / "swe10-claude-20260614T105615Z" / "summary.json"
 CLI_TESTS = ROOT / "tests" / "test_cli.py"

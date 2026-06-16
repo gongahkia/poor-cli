@@ -1,0 +1,11 @@
+{
+  "accepted": true,
+  "checks": {
+    "claude_capture": true,
+    "codex_capture": true,
+    "help_commands": true,
+    "install_ok": true,
+    "secret_clean": true
+  },
+  "schema_version": "poor-cli-shim-capture-acceptance-v1"
+}

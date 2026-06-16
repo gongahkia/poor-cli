@@ -53,7 +53,7 @@ def _install(root: Path) -> int:
         path = root / name
         if path.exists() and not _managed(path):
             raise RuntimeError(f"refusing to overwrite unmanaged shim: {path}")
-        path.write_text(f"#!/bin/sh\n{MANAGED}\nexec poor-cli shims exec {name} -- \"$@\"\n", encoding="utf-8")
+        path.write_text(f'#!/bin/sh\n{MANAGED}\nexec poor-cli shims exec {name} -- "$@"\n', encoding="utf-8")
         path.chmod(0o755)
         print(f"installed {path}")
     print(f'add to PATH: export PATH="{root}:$PATH"')
@@ -90,6 +90,10 @@ def _exec(agent: str, argv: list[str], root: Path, store: RunStore) -> int:
     prompt = _captured_prompt(agent, argv)
     if prompt is None:
         return subprocess.run([str(real), *argv], check=False).returncode
+    if _claude_prompt_arg(agent, argv):
+        run_id = _record_start(store, agent, argv, prompt, real, b"")
+        result = subprocess.run([str(real), *argv], check=False)
+        return _finish(store, run_id, agent, result.returncode)
     stdin = sys.stdin.buffer.read() if not sys.stdin.isatty() else b""
     run_id = _record_start(store, agent, argv, prompt or _text(stdin).strip(), real, stdin)
     result = subprocess.run([str(real), *argv], input=stdin or None, capture_output=True, check=False)
@@ -100,10 +104,7 @@ def _exec(agent: str, argv: list[str], root: Path, store: RunStore) -> int:
         kind="shim.result",
         data={"returncode": result.returncode, "stdout": _text(result.stdout), "stderr": _text(result.stderr)},
     )
-    store.append_event(run_id, "shim.completed", {"returncode": result.returncode})
-    status = "completed" if result.returncode == 0 else "failed"
-    store.set_run_status(run_id, status, f"{agent} exited {result.returncode}")
-    return result.returncode
+    return _finish(store, run_id, agent, result.returncode)
 
 
 def resolve_real_binary(name: str, root: Path, path_env: str | None = None) -> Path | None:
@@ -144,6 +145,16 @@ def _captured_prompt(agent: str, argv: list[str]) -> str | None:
         pos = _positionals(argv)
         return pos[-1] if pos else ""
     return " ".join(argv) if len(argv) == 1 and not argv[0].startswith("-") else None
+
+
+def _claude_prompt_arg(agent: str, argv: list[str]) -> bool:
+    return agent == "claude" and len(argv) == 1 and not argv[0].startswith("-")
+
+
+def _finish(store: RunStore, run_id: str, agent: str, returncode: int) -> int:
+    store.append_event(run_id, "shim.completed", {"returncode": returncode})
+    store.set_run_status(run_id, "completed" if returncode == 0 else "failed", f"{agent} exited {returncode}")
+    return returncode
 
 
 def _positionals(argv: list[str]) -> list[str]:

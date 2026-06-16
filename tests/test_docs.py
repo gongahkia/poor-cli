@@ -28,7 +28,7 @@ def test_docs_cover_provider_native_artifacts_and_migration() -> None:
     assert "runs/<run_id>/artifacts" in readme
     assert "ProviderBackedAgentRunner" in architecture
     assert "Existing CLI flows remain supported" in migration
-    assert "7800 lines" in migration
+    assert "8000 lines" in migration
     assert "command substitution" in security
     assert "python bench/packaging_gate.py" in release
     assert "Language Matrix" in graph

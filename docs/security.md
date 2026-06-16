@@ -20,6 +20,8 @@ Low-risk commands such as `rg`, `sed`, `python -m pytest`, `git diff`, and `git 
 
 Provider config stores env-var references such as `auth = { env = "OPENAI_API_KEY" }`. Plaintext secrets in config are rejected.
 
+Shim capture stores only redacted presence for known secret env vars such as `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `Authorization`, and `X-Api-Key`. The run store also redacts common API-key, token, password, bearer, authorization, and `sk-...` patterns before event or artifact bytes are written.
+
 ## Web Tools
 
 `web_search` is disabled until `tools.web.mode` is configured. `web_fetch` accepts only HTTP(S), blocks URL credentials, localhost, private/link-local/reserved IPs, denied domains, and redirects into blocked targets. Fetches record `web.fetch`, `web.cache`, and `web.citation` artifacts for replay and source auditing.

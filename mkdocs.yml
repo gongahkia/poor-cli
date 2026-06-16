@@ -10,6 +10,7 @@ nav:
   - Providers: providers.md
   - Kimi: kimi.md
   - Prompt Packs: prompt-packs.md
+  - Shims: shims.md
   - Examples: examples.md
   - Native Runner ADR: adr-native-provider-runner.md
   - Replay: replay.md

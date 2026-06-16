@@ -33,7 +33,7 @@ What this means for emphasis going forward:
 
 - [ ] Treat "offline-deterministic replay of a complete run" as the P0 demonstrable capability.
 - [ ] Treat "reproducible local-GPU benchmark whose evidence lives in the same store" as the P0 credibility anchor.
-- [ ] Treat the shim/router as P1 plumbing that feeds the store, explicitly demoted from "the product."
+- [x] Treat the shim/router as P1 plumbing that feeds the store, explicitly demoted from "the product."
 - [x] `[breaking]` Rewrite README headline from "preflight router" to the verifiable-run-record sentence above.
 
 ---
@@ -51,7 +51,7 @@ Implications for our tasks:
 
 - [x] `[breaking]` Stop describing the router as the differentiator anywhere user-facing.
 - [x] Note in README that per-task routing is table stakes, and cite CCR as prior art rather than pretending to invent it.
-- [ ] Recognize the mechanism gap: a **PATH shim** only sees the *invocation*; a **base-URL proxy** (CCR's approach) sees the *request stream*. For anything beyond launch-time decisions we either accept the shim's limits or adopt a proxy — decide explicitly (see §5 and Open Questions §16).
+- [x] Recognize the mechanism gap: a **PATH shim** only sees the *invocation*; a **base-URL proxy** (CCR's approach) sees the *request stream*. For anything beyond launch-time decisions we either accept the shim's limits or adopt a proxy — decide explicitly (see §5 and Open Questions §16).
 
 ### 2.2 Local replay of agent runs is also occupied — differentiate on the vertical, not the verb
 
@@ -63,7 +63,7 @@ Implications for our tasks:
 
 - [x] Do not claim "first local replay CLI." It is not.
 - [x] Differentiate explicitly on the combination competitors lack: **route decision + context packet + plan/DAG + agent I/O + reproducible local-GPU benchmark evidence, all in one content-addressed store, all offline-verifiable.** Make this combination legible in the README and demo.
-- [ ] Adopt the proven good ideas from competitors where we lack them: secret-stripping on capture (cagent), recording-to-recording diff (Agent VCR), fork-a-run-to-test-a-fix (agent-replay). Tracked as concrete tasks in §6 and §7.
+- [x] Adopt the proven good ideas from competitors where we lack them: secret-stripping on capture (cagent), recording-to-recording diff (Agent VCR), fork-a-run-to-test-a-fix (agent-replay). Tracked as concrete tasks in §6 and §7.
 
 ### 2.3 Reproducible benchmark infra exists, but is cloud/Ray-shaped — local-first is the wedge
 
@@ -127,7 +127,7 @@ P2  Offline screencast                      (the demo reveal)
 P3  Secondary surfaces (TUI demote, RPC/MCP, editor)
 ```
 
-- [ ] Do not start P1 shim work before the P0 replay gate passes. Capturing more runs into a store you cannot fully verify offline is wasted motion.
+- [x] Do not start P1 shim work before the P0 replay gate passes. Capturing more runs into a store you cannot fully verify offline is wasted motion.
 
 ---
 
@@ -137,47 +137,47 @@ Reframed: this is **how runs are captured**, demoted from headline. Kept opt-in,
 
 Commands to add (absent from current help/source — confirmed greenfield):
 
-- [ ] `poor-cli shims install`
-- [ ] `poor-cli shims doctor`
-- [ ] `poor-cli shims uninstall`
+- [x] `poor-cli shims install`
+- [x] `poor-cli shims doctor`
+- [x] `poor-cli shims uninstall`
 
 Installer behavior:
 
-- [ ] Generate `claude` and `codex` wrapper scripts under `~/.poor-cli/shims/`.
-- [ ] Never overwrite the real `claude`/`codex` binary.
-- [ ] Resolve the next real binary outside the shim dir; detect and refuse recursion.
-- [ ] Print exact `PATH` instructions; do **not** silently edit shell rc files in v1 (see Open Q §16).
-- [ ] Pass through unsupported/interactive invocations unchanged.
-- [ ] Persist shim events into the normal run store when a run is captured.
-- [ ] Add tests using a temporary `PATH` and fake `claude`/`codex` binaries.
+- [x] Generate `claude` and `codex` wrapper scripts under `~/.poor-cli/shims/`.
+- [x] Never overwrite the real `claude`/`codex` binary.
+- [x] Resolve the next real binary outside the shim dir; detect and refuse recursion.
+- [x] Print exact `PATH` instructions; do **not** silently edit shell rc files in v1 (see Open Q §16).
+- [x] Pass through unsupported/interactive invocations unchanged.
+- [x] Persist shim events into the normal run store when a run is captured.
+- [x] Add tests using a temporary `PATH` and fake `claude`/`codex` binaries.
 
 Supported v1 capture:
 
-- [ ] `claude -p "prompt"` and equivalent print/noninteractive forms.
-- [ ] `claude "prompt"` when the installed CLI supports prompt-as-arg on that host.
-- [ ] `codex exec "prompt"`.
-- [ ] `echo "prompt" | claude -p` only if stdin capture does not break agent behavior.
+- [x] `claude -p "prompt"` and equivalent print/noninteractive forms.
+- [x] `claude "prompt"` when the installed CLI supports prompt-as-arg on that host.
+- [x] `codex exec "prompt"`.
+- [x] `echo "prompt" | claude -p` only if stdin capture does not break agent behavior.
 
 Out of scope for v1 (record the reason in docs):
 
-- [ ] No full PTY proxy for bare interactive `claude`/`codex`.
-- [ ] No terminal-UI replacement.
-- [ ] No default interception on package install.
+- [x] No full PTY proxy for bare interactive `claude`/`codex`.
+- [x] No terminal-UI replacement.
+- [x] No default interception on package install.
 
 Mechanism decision (do not skip — it is load-bearing per §2.1):
 
-- [ ] Decide and document: PATH-shim (invocation-only, simple) vs. base-URL proxy (request-stream, CCR-style, richer capture). Default to PATH-shim for v1; record the trade-off and the migration trigger that would justify a proxy.
+- [x] Decide and document: PATH-shim (invocation-only, simple) vs. base-URL proxy (request-stream, CCR-style, richer capture). Default to PATH-shim for v1; record the trade-off and the migration trigger that would justify a proxy.
 
 Secret hygiene (adopt from cagent, §2.2):
 
-- [ ] On capture, strip known secret-bearing env/headers (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `Authorization`, `X-Api-Key`, etc.) before anything reaches the store.
-- [ ] Add a test that asserts no known secret pattern appears in any captured artifact.
+- [x] On capture, strip known secret-bearing env/headers (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `Authorization`, `X-Api-Key`, etc.) before anything reaches the store.
+- [x] Add a test that asserts no known secret pattern appears in any captured artifact.
 
 **Acceptance / evidence gate (P1 shim):**
 
-- [ ] `poor-cli shims install|doctor|uninstall` exist in `--help` and pass tests on a temp-PATH fake-binary fixture.
-- [ ] A captured `claude -p` run and a captured `codex exec` run both produce verifiable records (P0 gate passes on them).
-- [ ] Secret-scan test green. Evidence: `bench/results/shim-capture-acceptance.json`.
+- [x] `poor-cli shims install|doctor|uninstall` exist in `--help` and pass tests on a temp-PATH fake-binary fixture.
+- [x] A captured `claude -p` run and a captured `codex exec` run both produce verifiable records (P0 gate passes on them).
+- [x] Secret-scan test green. Evidence: `bench/results/shim-capture-acceptance.json`.
 
 ---
 
@@ -335,11 +335,11 @@ The wrapper must not feel like malware, and claims must stay evidence-gated.
 
 Safety rules:
 
-- [ ] Interception is opt-in; install path explicit; uninstall explicit and tested.
-- [ ] Real binary path visible via `shims doctor`.
-- [ ] Unsupported/interactive invocations pass through.
-- [ ] Secrets never copied into config/artifacts (cross-ref §5, §6).
-- [ ] Prompts/artifacts local by default.
+- [x] Interception is opt-in; install path explicit; uninstall explicit and tested.
+- [x] Real binary path visible via `shims doctor`.
+- [x] Unsupported/interactive invocations pass through.
+- [x] Secrets never copied into config/artifacts (cross-ref §5, §6).
+- [x] Prompts/artifacts local by default.
 - [ ] High-risk write tasks require confirmation unless config explicitly disables.
 - [ ] Offline mode fails before network-backed calls (already fail-closed — keep it).
 - [ ] Risk labels triggering visible confirmation by default: auth, payment, migration, delete, security, secret, SQL/data mutation, concurrency/race-sensitive edits, generated destructive shell commands.
@@ -352,7 +352,7 @@ Claims gate (enforced by release gate, §14):
 
 Checked-in evidence index (keep current):
 
-- [ ] `bench/results/phase1-acceptance.json` (replay baseline/fixtures).
+- [x] `bench/results/phase1-acceptance.json` (replay baseline/fixtures).
 - [ ] `bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/summary.json` (Claude baseline).
 - [ ] `bench/swe_bench_lite/results/swe10-graph-20260615T020703Z/summary.json` (graph mode).
 - [ ] `bench/results/phase3-*.json` (readiness/closeout).
@@ -397,7 +397,7 @@ Batch C — run diff + fork (P1):
 
 Batch D — shim installer (P1):
 
-- [ ] Execute §5 installer + capture + secret-hygiene tasks.
+- [x] Execute §5 installer + capture + secret-hygiene tasks.
 
 Batch E — route-only preflight + noninteractive wrapper execution (P1):
 
@@ -432,9 +432,9 @@ Lead with the moat, not the router, not the TUI.
 
 ## 16. Open Questions (Keep Open Until Implementation Forces A Decision)
 
-- [ ] Should `shims install` modify shell rc files or only print PATH instructions? (Default: print only.)
+- [x] Should `shims install` modify shell rc files or only print PATH instructions? (Default: print only.)
 - [ ] Show route decisions as a compact one-line prefix on all captured runs, or only on interventions?
-- [ ] Should prompt capture support stdin in v1?
+- [x] Should prompt capture support stdin in v1?
 - [ ] Should shim artifacts live in `.poor-cli/v6` or a separate per-user global store when run outside a repo?
 - [ ] Is a PTY proxy worth attempting after noninteractive shims prove useful?
 - [ ] Should the short command be `poor`, `poor-cli`, or no explicit command once shims are installed?
@@ -447,16 +447,16 @@ Lead with the moat, not the router, not the TUI.
 
 Feasibility docs (shim/router):
 
-- [ ] Claude Code CLI reference incl. `claude -p` print mode: https://code.claude.com/docs/en/cli-reference
+- [x] Claude Code CLI reference incl. `claude -p` print mode: https://code.claude.com/docs/en/cli-reference
 - [ ] Claude Code hooks: https://code.claude.com/docs/en/hooks
-- [ ] OpenAI Codex noninteractive mode: https://developers.openai.com/codex/noninteractive
+- [x] OpenAI Codex noninteractive mode: https://developers.openai.com/codex/noninteractive
 - [ ] Codex CLI command reference: https://developers.openai.com/codex/cli/reference
 
 Interpretation:
 
-- [ ] Noninteractive `claude` and `codex exec` are reasonable v1 wrapper targets.
+- [x] Noninteractive `claude` and `codex exec` are reasonable v1 wrapper targets.
 - [ ] Hooks are useful later but do not replace a front-door router.
-- [ ] Bare interactive sessions pass through until a PTY proxy proves worth the complexity.
+- [x] Bare interactive sessions pass through until a PTY proxy proves worth the complexity.
 
 Landscape sources (from the 2026-06 pivot research — re-verify before launch, §14 Batch F):
 
