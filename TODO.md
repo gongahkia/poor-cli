@@ -314,7 +314,7 @@ Routing stays useful as capture-time enrichment, not as the pitch. Keep it pract
 - [x] Add a route preflight function: inputs = command name, args, stdin mode, cwd, env; outputs = labels, selected route, intervention reason, pass-through command.
 - [x] Extend `poor-cli route explain` to cover shim-style inputs.
 - [x] Always record the route decision as an artifact (it is part of the verifiable record — this is the point).
-- [ ] Visible-interruption policy: interrupt only on material intent change (cross-provider reroute, write-capable high-risk, budget exceed, offline blocks a network agent, missing provider). Otherwise stay quiet.
+- [x] Visible-interruption policy: interrupt only on material intent change (cross-provider reroute, write-capable high-risk, budget exceed, offline blocks a network agent, missing provider). Otherwise stay quiet.
 - [x] Note limitation honestly: classifier is heuristic, not learned, and is not pluggable today. Do not imply ML where there is none.
 
 ---
@@ -340,9 +340,9 @@ Safety rules:
 - [x] Unsupported/interactive invocations pass through.
 - [x] Secrets never copied into config/artifacts (cross-ref §5, §6).
 - [x] Prompts/artifacts local by default.
-- [ ] High-risk write tasks require confirmation unless config explicitly disables.
-- [ ] Offline mode fails before network-backed calls (already fail-closed — keep it).
-- [ ] Risk labels triggering visible confirmation by default: auth, payment, migration, delete, security, secret, SQL/data mutation, concurrency/race-sensitive edits, generated destructive shell commands.
+- [x] High-risk write tasks require confirmation unless config explicitly disables.
+- [x] Offline mode fails before network-backed calls (already fail-closed — keep it).
+- [x] Risk labels triggering visible confirmation by default: auth, payment, migration, delete, security, secret, SQL/data mutation, concurrency/race-sensitive edits, generated destructive shell commands.
 
 Claims gate (enforced by release gate, §14):
 

@@ -42,6 +42,7 @@ def empty_config() -> dict[str, Any]:
         "budgets": {},
         "tools": {},
         "concurrency": {},
+        "shims": {},
     }
 
 
@@ -162,7 +163,7 @@ def export_config(config: dict[str, Any], profile_id: str | None = None) -> dict
     validate_config(config)
     exported = empty_config()
     if profile_id is None:
-        for key in ("active_provider", "providers", "models", "routes", "budgets", "tools", "concurrency"):
+        for key in ("active_provider", "providers", "models", "routes", "budgets", "tools", "concurrency", "shims"):
             exported[key] = deepcopy(config.get(key, exported.get(key)))
         return exported
     providers = config.get("providers", {})
@@ -358,7 +359,7 @@ def to_toml(config: dict[str, Any]) -> str:
     lines = [f"version = {VERSION}"]
     if config.get("active_provider"):
         lines.append(f"active_provider = {_toml_value(config['active_provider'])}")
-    for section in ("providers", "models", "routes", "budgets", "tools", "concurrency"):
+    for section in ("providers", "models", "routes", "budgets", "tools", "concurrency", "shims"):
         value = config.get(section)
         if isinstance(value, dict):
             _write_section(lines, section, value)

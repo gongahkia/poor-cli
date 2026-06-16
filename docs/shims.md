@@ -34,6 +34,13 @@ poor-cli route explain --shim-agent claude --shim-arg -p --shim-arg "review patc
 
 Classifier labels and route names are heuristic. They are recorded for audit/replay and policy decisions; they are not learned model predictions.
 
+Visible interruption is intentionally narrow. The shim asks for TTY confirmation on high-risk write tasks and interrupts non-TTY high-risk runs before invoking the real agent. It also interrupts route fallback, missing required provider/config, or offline mode blocking a network-backed route. High-risk prompts can be allowed explicitly per repo:
+
+```toml
+[shims]
+allow_high_risk = true
+```
+
 ## Mechanism Decision
 
 v1 uses a PATH shim because it is explicit, reversible, and does not require changing Claude/Codex API endpoint settings. The trade-off is that it sees process invocation, argv, stdin for supported noninteractive forms, stdout/stderr, and exit status; it does not see the full HTTP request stream or every tool event inside an opaque upstream CLI.

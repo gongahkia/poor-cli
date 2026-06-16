@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .config import ConfigError, explain_route, load_config
+from .config import ConfigError, empty_config, explain_route, load_config
 from .route_policy import preflight_route
 from .store import RunStore
 
@@ -91,13 +91,16 @@ def _exec(agent: str, argv: list[str], root: Path, store: RunStore) -> int:
     prompt = _captured_prompt(agent, argv)
     if prompt is None:
         return subprocess.run([str(real), *argv], check=False).returncode
-    if _claude_prompt_arg(agent, argv):
-        run_id = _record_start(store, agent, argv, prompt, real, b"", "tty")
-        result = subprocess.run([str(real), *argv], check=False)
-        return _finish(store, run_id, agent, result.returncode)
-    stdin = sys.stdin.buffer.read() if not sys.stdin.isatty() else b""
-    stdin_mode = "pipe" if stdin else "tty"
-    run_id = _record_start(store, agent, argv, prompt or _text(stdin).strip(), real, stdin, stdin_mode)
+    try:
+        if _claude_prompt_arg(agent, argv):
+            run_id = _record_start(store, agent, argv, prompt, real, b"", "tty")
+            result = subprocess.run([str(real), *argv], check=False)
+            return _finish(store, run_id, agent, result.returncode)
+        stdin = sys.stdin.buffer.read() if not sys.stdin.isatty() else b""
+        stdin_mode = "pipe" if stdin else "tty"
+        run_id = _record_start(store, agent, argv, prompt or _text(stdin).strip(), real, stdin, stdin_mode)
+    except ShimInterrupted:
+        return 2
     result = subprocess.run([str(real), *argv], input=stdin or None, capture_output=True, check=False)
     sys.stdout.buffer.write(result.stdout)
     sys.stderr.buffer.write(result.stderr)
@@ -123,7 +126,8 @@ def resolve_real_binary(name: str, root: Path, path_env: str | None = None) -> P
 
 def _record_start(store: RunStore, agent: str, argv: list[str], prompt: str, real: Path, stdin: bytes, stdin_mode: str) -> str:
     run_id = store.create_run(user_goal=prompt, repo_path=Path.cwd(), git_commit_start=_git_head(), mode="shim", budget={})
-    route = _route(prompt)
+    config = _config()
+    route = _route(config, prompt)
     if route:
         store.append_event(run_id, "route.selected", route)
         route_artifact = store.put_artifact(run_id=run_id, kind="route.decision", data=route)
@@ -131,6 +135,8 @@ def _record_start(store: RunStore, agent: str, argv: list[str], prompt: str, rea
     preflight = preflight_route(agent, argv, stdin_mode, Path.cwd(), os.environ, prompt=prompt, route=route)
     artifact = store.put_artifact(run_id=run_id, kind="route.preflight", data=preflight)
     store.append_event(run_id, "route.preflight.selected", {**preflight, "artifact_id": artifact.artifact_id})
+    if _interrupted(store, run_id, preflight, config):
+        raise ShimInterrupted(run_id)
     payload = {
         "agent": agent,
         "argv": argv,
@@ -143,6 +149,12 @@ def _record_start(store: RunStore, agent: str, argv: list[str], prompt: str, rea
     artifact = store.put_artifact(run_id=run_id, kind="shim.capture", data=payload)
     store.append_event(run_id, "shim.invoked", {**payload, "artifact_id": artifact.artifact_id})
     return run_id
+
+
+class ShimInterrupted(RuntimeError):
+    def __init__(self, run_id: str):
+        self.run_id = run_id
+        super().__init__(run_id)
 
 
 def _captured_prompt(agent: str, argv: list[str]) -> str | None:
@@ -191,11 +203,49 @@ def _git_head() -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def _route(prompt: str) -> dict[str, Any] | None:
+def _config() -> dict[str, Any]:
     try:
-        return explain_route(load_config(), prompt, role="executor")
+        return load_config()
     except ConfigError:
-        return None
+        return empty_config()
+
+
+def _route(config: dict[str, Any], prompt: str) -> dict[str, Any]:
+    return explain_route(config, prompt, role="executor")
+
+
+def _interrupted(store: RunStore, run_id: str, preflight: dict[str, Any], config: dict[str, Any]) -> bool:
+    reason = str(preflight.get("intervention_reason") or "")
+    if not reason:
+        return False
+    if reason == "high-risk write task requires confirmation":
+        if _allow_high_risk(config):
+            return False
+        if _high_risk_confirmed():
+            store.append_event(run_id, "shim.confirmed", {"reason": reason, "selected_route": preflight.get("selected_route")})
+            return False
+    store.append_event(run_id, "shim.interrupted", {"reason": reason, "selected_route": preflight.get("selected_route")})
+    store.set_run_status(run_id, "awaiting_confirmation", reason)
+    print(f"poor-cli shim interrupted: {reason}", file=sys.stderr)
+    if reason == "high-risk write task requires confirmation":
+        print("set [shims] allow_high_risk = true to disable this guard for this repo", file=sys.stderr)
+    return True
+
+
+def _allow_high_risk(config: dict[str, Any]) -> bool:
+    shims = config.get("shims")
+    return bool(shims.get("allow_high_risk")) if isinstance(shims, dict) else False
+
+
+def _high_risk_confirmed() -> bool:
+    if not sys.stdin.isatty():
+        return False
+    print("poor-cli shim confirmation required: high-risk write task", file=sys.stderr)
+    try:
+        answer = input("continue? [y/N] ")
+    except EOFError:
+        return False
+    return answer.strip().lower() in {"y", "yes"}
 
 
 def _text(data: bytes) -> str:

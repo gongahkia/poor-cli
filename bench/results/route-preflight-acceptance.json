@@ -1,6 +1,7 @@
 {
   "accepted": true,
   "checks": {
+    "high_risk_interrupts": true,
     "pass_through_command": true,
     "preflight_labels": true,
     "preflight_selected_route": true,

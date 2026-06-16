@@ -104,12 +104,76 @@ def test_claude_print_stdin_capture_preserves_input(tmp_path: Path, monkeypatch:
         store.close()
 
 
+def test_shim_high_risk_interrupts_before_agent(tmp_path: Path, monkeypatch: Any, capsys: Any) -> None:
+    bin_dir = tmp_path / "bin"
+    _fake_binary(bin_dir, "claude")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")]))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", _Stdin(b""))
+
+    assert main(["--store-dir", str(tmp_path / "store"), "shims", "exec", "claude", "--", "-p", "migrate auth schema"]) == 2
+    captured = capsys.readouterr()
+    assert "poor-cli shim interrupted: high-risk write task requires confirmation" in captured.err
+    assert "fake-claude" not in captured.out
+    store = RunStore(tmp_path / "store")
+    try:
+        run = store.list_runs()[0]
+        assert run["status"] == "awaiting_confirmation"
+        assert not store.list_artifacts(run["run_id"], "shim.result")
+        assert any(event["type"] == "shim.interrupted" for event in store.list_events(run["run_id"]))
+    finally:
+        store.close()
+
+
+def test_shim_high_risk_can_be_allowed_by_repo_config(tmp_path: Path, monkeypatch: Any, capsys: Any) -> None:
+    bin_dir = tmp_path / "bin"
+    _fake_binary(bin_dir, "claude")
+    config = tmp_path / ".poor-cli" / "config.toml"
+    config.parent.mkdir()
+    config.write_text("version = 1\n[shims]\nallow_high_risk = true\n", encoding="utf-8")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")]))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", _Stdin(b""))
+
+    assert main(["--store-dir", str(tmp_path / "store"), "shims", "exec", "claude", "--", "-p", "migrate auth schema"]) == 0
+    assert "fake-claude:-p migrate auth schema" in capsys.readouterr().out
+
+
+def test_shim_high_risk_can_be_confirmed_on_tty(tmp_path: Path, monkeypatch: Any, capsys: Any) -> None:
+    bin_dir = tmp_path / "bin"
+    _fake_binary(bin_dir, "claude")
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")]))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "stdin", _TtyStdin())
+    monkeypatch.setattr("builtins.input", lambda _: "yes")
+
+    assert main(["--store-dir", str(tmp_path / "store"), "shims", "exec", "claude", "--", "-p", "migrate auth schema"]) == 0
+    captured = capsys.readouterr()
+    assert "poor-cli shim confirmation required: high-risk write task" in captured.err
+    assert "fake-claude:-p migrate auth schema" in captured.out
+    store = RunStore(tmp_path / "store")
+    try:
+        run = store.list_runs()[0]
+        assert run["status"] == "completed"
+        assert any(event["type"] == "shim.confirmed" for event in store.list_events(run["run_id"]))
+    finally:
+        store.close()
+
+
 class _Stdin:
     def __init__(self, data: bytes):
         self.buffer = _BytesIn(data)
 
     def isatty(self) -> bool:
         return False
+
+
+class _TtyStdin:
+    def isatty(self) -> bool:
+        return True
 
 
 class _BytesIn:

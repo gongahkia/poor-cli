@@ -27,7 +27,39 @@ def acceptance_payload() -> dict[str, Any]:
         env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
         store_dir = root / "store"
         run = subprocess.run(
-            [sys.executable, "-m", "poor_cli", "--store-dir", str(store_dir), "shims", "exec", "codex", "--", "exec", "review diff"],
+            [
+                sys.executable,
+                "-m",
+                "poor_cli",
+                "--store-dir",
+                str(store_dir),
+                "shims",
+                "exec",
+                "codex",
+                "--",
+                "exec",
+                "fix tests in src/parser.py",
+            ],
+            cwd=root,
+            env=env,
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        risky = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "poor_cli",
+                "--store-dir",
+                str(store_dir),
+                "shims",
+                "exec",
+                "codex",
+                "--",
+                "exec",
+                "migrate auth schema",
+            ],
             cwd=root,
             env=env,
             text=True,
@@ -58,8 +90,9 @@ def acceptance_payload() -> dict[str, Any]:
         store = RunStore(store_dir)
         try:
             rows = store.list_runs()
-            run_id = rows[0]["run_id"] if rows else ""
+            run_id = next((row["run_id"] for row in rows if row["user_goal"] == "fix tests in src/parser.py"), "")
             preflight_artifacts = store.list_artifacts(run_id, "route.preflight") if run_id else []
+            interrupted = any(row["status"] == "awaiting_confirmation" and row["user_goal"] == "migrate auth schema" for row in rows)
             verified = bool(run_id) and replay_verify(store, run_id)["verified"] is True
         finally:
             store.close()
@@ -69,6 +102,7 @@ def acceptance_payload() -> dict[str, Any]:
         "preflight_selected_route": preflight["selected_route"] == "graph-enriched",
         "pass_through_command": preflight["pass_through_command"] == ["codex", "exec", "fix tests in src/parser.py"],
         "shim_records_preflight_artifact": run.returncode == 0 and bool(preflight_artifacts) and verified,
+        "high_risk_interrupts": risky.returncode == 2 and interrupted,
         "route_explain_cli": explained.get("preflight", {}).get("command") == "codex",
     }
     return {"schema_version": "poor-cli-route-preflight-acceptance-v1", "accepted": all(checks.values()), "checks": checks}

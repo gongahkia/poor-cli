@@ -78,7 +78,7 @@ def preflight_route(
             str(cwd),
             labels,
             selected,
-            _intervention(labels, route or {}, env),
+            _intervention(labels, route or {}, env, selected),
             [command, *args],
             route or {},
         )
@@ -174,16 +174,23 @@ def _selected_route(labels: list[str], route: dict[str, Any], command: str) -> s
     return "pass-through"
 
 
-def _intervention(labels: list[str], route: dict[str, Any], env: Mapping[str, str]) -> str:
-    if route.get("fallbacks"):
+def _intervention(labels: list[str], route: dict[str, Any], env: Mapping[str, str], selected: str) -> str:
+    if set(labels) & {"security-risk", "data-risk", "migration-risk"}:
+        return "high-risk write task requires confirmation"
+    if _configured_fallback(route):
         return "route fallback"
     if env.get("POOR_CLI_OFFLINE") and route.get("provider_kind") not in {"ollama", "vllm", "sglang"}:
         return "offline blocks network agent"
-    if not route.get("profile"):
+    if not route.get("profile") and selected != "pass-through" and route.get("reason") != "fallback to first configured profile":
         return "missing provider/config"
-    if set(labels) & {"security-risk", "data-risk", "migration-risk"}:
-        return "high-risk write task requires confirmation"
     return ""
+
+
+def _configured_fallback(route: dict[str, Any]) -> bool:
+    fallbacks = route.get("fallbacks")
+    if not isinstance(fallbacks, list):
+        return False
+    return any(isinstance(item, dict) and bool(item.get("profile")) for item in fallbacks)
 
 
 def _prompt_from_invocation(command: str, args: list[str], stdin_mode: str) -> str:

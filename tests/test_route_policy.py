@@ -61,6 +61,20 @@ def test_route_preflight_records_intervention_reasons(tmp_path: Path) -> None:
     assert offline["intervention_reason"] == "offline blocks network agent"
 
 
+def test_route_preflight_does_not_interrupt_empty_default_fallback(tmp_path: Path) -> None:
+    route = {
+        "profile": "",
+        "provider_kind": "",
+        "reason": "fallback to first configured profile",
+        "fallbacks": [{"profile": "", "reason": "missing profile"}],
+    }
+
+    preflight = preflight_route("claude", ["-p", "explain repo"], "tty", tmp_path, {}, route=route)
+
+    assert preflight["selected_route"] == "pass-through"
+    assert preflight["intervention_reason"] == ""
+
+
 def test_route_preflight_retains_route_decision_vocabulary(tmp_path: Path) -> None:
     route = {"profile": "openai", "model": "gpt-5.5", "provider_kind": "openai", "fallbacks": []}
     cases = [
