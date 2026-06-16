@@ -347,15 +347,15 @@ Safety rules:
 Claims gate (enforced by release gate, §14):
 
 - [ ] Allowed only with evidence: "records replayable artifacts" (replay gate green), "supports graph-aware context" (graph tests green), "supports local provider routes" (adapter + target-host gates green), "measured on task set X" (linked to checked-in benchmark files).
-- [ ] Disallowed without evidence: competitive-superiority claims, "best"/"SOTA" claims, model-only capability inference, implying Linux/CUDA Phase 3 done before target-host evidence exists.
+- [x] Disallowed without evidence: competitive-superiority claims, "best"/"SOTA" claims, model-only capability inference, implying Linux/CUDA Phase 3 done before target-host evidence exists.
 - [x] Add a release-gate check that scans README/docs for disallowed claim patterns and fails if evidence files are absent.
 
 Checked-in evidence index (keep current):
 
 - [x] `bench/results/phase1-acceptance.json` (replay baseline/fixtures).
-- [ ] `bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/summary.json` (Claude baseline).
-- [ ] `bench/swe_bench_lite/results/swe10-graph-20260615T020703Z/summary.json` (graph mode).
-- [ ] `bench/results/phase3-*.json` (readiness/closeout).
+- [x] `bench/swe_bench_lite/results/swe10-claude-20260614T105615Z/summary.json` (Claude baseline).
+- [x] `bench/swe_bench_lite/results/swe10-graph-20260615T020703Z/summary.json` (graph mode).
+- [x] `bench/results/phase3-*.json` (readiness/closeout snapshots; still failing target-hardware gates).
 
 ---
 
