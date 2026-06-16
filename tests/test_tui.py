@@ -60,6 +60,28 @@ def test_tui_panels_render_provider_graph_and_artifacts(tmp_path: Path, monkeypa
     assert "artifacts" in artifacts
 
 
+def test_tui_opens_artifacts_and_diffs_runs(tmp_path: Path) -> None:
+    store_dir = tmp_path / "store"
+    store = RunStore(store_dir)
+    run_a = store.create_run(user_goal="a", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    run_b = store.create_run(user_goal="b", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    artifact_dir = store_dir / "runs" / run_b / "artifacts"
+    artifact_dir.mkdir(parents=True)
+    (artifact_dir / "PLAN.md").write_text("# plan\n", encoding="utf-8")
+    store.put_artifact(run_id=run_a, kind="artifact.worker.patch", data="diff a\n", media_type="text/x-diff")
+    store.put_artifact(run_id=run_b, kind="artifact.worker.patch", data="diff b\n", media_type="text/x-diff")
+    store.close()
+
+    opened = handle_tui_command(store_dir, "open PLAN.md", current_run_id=run_b)
+    diffed = handle_tui_command(store_dir, f"diff {run_a} {run_b}")
+
+    assert opened.run_id == run_b
+    assert "# plan" in opened.message
+    assert diffed.run_id == run_b
+    assert "changed=True" in diffed.message
+    assert "artifacts behavior-changing" in diffed.message
+
+
 def test_tui_route_switcher_uses_validated_config(tmp_path: Path, monkeypatch) -> None:
     config = empty_config()
     profile = provider_preset("openai", profile_id="openai", model="gpt-5.5")

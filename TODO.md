@@ -363,7 +363,7 @@ Checked-in evidence index (keep current):
 
 TUI — demote to inspector/debugger:
 
-- [ ] Keep TUI for: inspect a failed/surprising run; view route decision/DAG/artifacts/review/verifier; open `PLAN.md`/`RESULT.md`/`PATCH.diff`/`REVIEW.json`/`VERIFY.json`; compare recent runs; inspect budget/provider status.
+- [x] Keep TUI for: inspect a failed/surprising run; view route decision/DAG/artifacts/review/verifier; open `PLAN.md`/`RESULT.md`/`PATCH.diff`/`REVIEW.json`/`VERIFY.json`; compare recent runs; inspect budget/provider status.
 - [x] `[breaking]` Remove TUI-first framing from all launch/demo docs. Launch leads with capture + verify, never "open the TUI."
 - [x] Keep the existing dry/yes/replay/route-set capabilities, but document the TUI as debug/audit, not daily driver.
 

@@ -51,7 +51,7 @@ poor-cli tui --run-id <run_id>
 
 `poor-cli run` records the plan first. Without `--yes` or `--dry-run`, it requires confirmation before invoking write-capable agents.
 
-The TUI is a debug/audit surface for surprising runs, route state, artifacts, replay, and quick dry-run commands. Daily capture stays on the normal `claude`/`codex` shim and CLI replay path.
+The TUI is a debug/audit surface for surprising runs, route state, artifacts, replay, `open PLAN.md`, `diff recent`, and quick dry-run commands. Daily capture stays on the normal `claude`/`codex` shim and CLI replay path.
 
 ## Planner
 
