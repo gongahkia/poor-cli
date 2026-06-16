@@ -382,9 +382,10 @@ def _replay(args: argparse.Namespace, store: RunStore) -> int:
     if args.verify:
         verification = state["verification"]
         print(
-            f"verified: events={verification['event_count']} artifacts={verification['artifact_count']} "
+            f"verified: ok no network used events={verification['event_count']} artifacts={verification['artifact_count']} "
             f"bytes={verification['artifact_bytes']} trace={verification['trace_sha256']}"
         )
+        print(json.dumps(verification, sort_keys=True))
     return 0
 
 

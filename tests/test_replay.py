@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import socket
 from pathlib import Path
 
 import pytest
 
+import poor_cli.replay as replay_module
 from poor_cli.models import TaskSpec, make_id
 from poor_cli.replay import ReplayError, replay_summary, replay_verify
 from poor_cli.store import RunStore
@@ -60,8 +62,44 @@ def test_replay_verify_checks_event_mirror_and_cas(tmp_path: Path) -> None:
 
     assert first == second
     assert first["verified"] is True
+    assert first["schema_version"] == "poor-cli-replay-verify-v1"
+    assert first["network"] == {"asserted": True, "attempts": 0}
+    assert "does_not_rerun" in first["deterministic_scope"]
     assert first["event_count"] == 1
     assert first["artifact_count"] == 1
+    store.close()
+
+
+def test_replay_verify_accepts_legacy_record_schema(tmp_path: Path) -> None:
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    store.conn.execute("UPDATE runs SET schema_version = ? WHERE run_id = ?", ("poor-cli-record-v0", run_id))
+    store.conn.commit()
+    store.append_event(run_id, "run.created", {"ok": True})
+
+    verification = replay_verify(store, run_id)
+
+    assert verification["verified"] is True
+    assert verification["record_schema_version"] == "poor-cli-record-v0"
+    store.close()
+
+
+def test_replay_verify_fails_on_network_attempt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    store.append_event(run_id, "run.created", {"ok": True})
+    original = replay_module._verify_event_mirror
+
+    def touches_network(*args: object, **kwargs: object) -> bytes:
+        with socket.socket() as sock:
+            sock.connect(("203.0.113.1", 9))
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(replay_module, "_verify_event_mirror", touches_network)
+
+    with pytest.raises(ReplayError, match="network touched"):
+        replay_verify(store, run_id)
+
     store.close()
 
 

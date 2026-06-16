@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import socket
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from .store import RunStore
+
+REPLAY_VERIFY_SCHEMA_VERSION = "poor-cli-replay-verify-v1"
 
 
 class ReplayError(RuntimeError):
@@ -58,27 +63,65 @@ def _event_window(events: list[dict[str, Any]], from_event: str | None) -> list[
 
 
 def replay_verify(store: RunStore, run_id: str) -> dict[str, object]:
-    store.get_run(run_id)
-    events = store.list_events(run_id)
-    artifacts = store.list_artifacts(run_id)
-    event_bytes = _verify_event_mirror(store, run_id, events)
-    trace = hashlib.sha256()
-    trace.update(b"events\x00")
-    trace.update(event_bytes)
-    artifact_bytes = 0
-    for artifact in artifacts:
-        payload = store.artifact_payload(str(artifact["artifact_id"]))
-        _verify_run_blob(store, run_id, str(artifact["sha256"]), payload)
-        artifact_bytes += len(payload)
-        trace.update(f"artifact\x00{artifact['artifact_id']}\x00{artifact['sha256']}\x00".encode())
-        trace.update(payload)
+    run = store.get_run(run_id)
+    with _no_network_guard() as network_attempts:
+        events = store.list_events(run_id)
+        artifacts = store.list_artifacts(run_id)
+        event_bytes = _verify_event_mirror(store, run_id, events)
+        trace = hashlib.sha256()
+        trace.update(b"events\x00")
+        trace.update(event_bytes)
+        artifact_bytes = 0
+        for artifact in artifacts:
+            payload = store.artifact_payload(str(artifact["artifact_id"]))
+            _verify_run_blob(store, run_id, str(artifact["sha256"]), payload)
+            artifact_bytes += len(payload)
+            trace.update(f"artifact\x00{artifact['artifact_id']}\x00{artifact['sha256']}\x00".encode())
+            trace.update(payload)
     return {
+        "schema_version": REPLAY_VERIFY_SCHEMA_VERSION,
         "verified": True,
+        "record_schema_version": run.get("schema_version", "poor-cli-record-v0"),
         "event_count": len(events),
         "artifact_count": len(artifacts),
         "artifact_bytes": artifact_bytes,
         "trace_sha256": trace.hexdigest(),
+        "network": {"asserted": True, "attempts": len(network_attempts)},
+        "deterministic_scope": {
+            "reconstructs": "run metadata, event order, task state, artifact hashes, per-run CAS mirror",
+            "does_not_rerun": "planner, providers, shell agents, tools, validation commands",
+        },
     }
+
+
+@contextmanager
+def _no_network_guard() -> Iterator[list[str]]:
+    attempts: list[str] = []
+    original_create_connection = socket.create_connection
+    original_connect = socket.socket.connect
+    original_connect_ex = socket.socket.connect_ex
+
+    def block_create_connection(address: object, *args: object, **kwargs: object) -> object:
+        attempts.append(f"create_connection:{address!r}")
+        raise ReplayError(f"network touched during replay verification: {address!r}")
+
+    def block_connect(sock: socket.socket, address: object) -> None:
+        attempts.append(f"connect:{address!r}")
+        raise ReplayError(f"network touched during replay verification: {address!r}")
+
+    def block_connect_ex(sock: socket.socket, address: object) -> int:
+        attempts.append(f"connect_ex:{address!r}")
+        raise ReplayError(f"network touched during replay verification: {address!r}")
+
+    socket.create_connection = block_create_connection
+    socket.socket.connect = block_connect
+    socket.socket.connect_ex = block_connect_ex
+    try:
+        yield attempts
+    finally:
+        socket.create_connection = original_create_connection
+        socket.socket.connect = original_connect
+        socket.socket.connect_ex = original_connect_ex
 
 
 def _verify_event_mirror(store: RunStore, run_id: str, events: list[dict[str, Any]]) -> bytes:

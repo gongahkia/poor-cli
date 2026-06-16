@@ -200,13 +200,13 @@ The store must answer (retained from prior direction):
 
 Hardening tasks:
 
-- [ ] Make `replay --verify` emit an explicit machine-checkable verdict (JSON) plus a human line, and exit non-zero on any mismatch.
-- [ ] Add an explicit "network was not touched" assertion to verify (e.g., run under the existing `--offline` guard and fail if any socket attempt occurs).
-- [ ] Document precisely what is and is not deterministic. Shell agents are not re-run deterministically — state this in docs and in verify output, do not paper over it.
+- [x] Make `replay --verify` emit an explicit machine-checkable verdict (JSON) plus a human line, and exit non-zero on any mismatch.
+- [x] Add an explicit "network was not touched" assertion to verify (e.g., run under the existing `--offline` guard and fail if any socket attempt occurs).
+- [x] Document precisely what is and is not deterministic. Shell agents are not re-run deterministically — state this in docs and in verify output, do not paper over it.
 - [ ] Resolve the two `ResourceWarning`s in scheduler tests (open-but-unclosed resources); they undermine the "rigorous" claim.
-- [ ] Define a stable, versioned on-disk record schema (the `goal -> route -> context -> plan/tasks -> agent I/O -> artifacts -> verify` shape) and write it down as a spec file in `docs/`.
-- [ ] Add a schema-version field to records and a migration note policy, so old records remain replayable after format changes.
-- [ ] Add a "verify a record produced by an older schema version" test.
+- [x] Define a stable, versioned on-disk record schema (the `goal -> route -> context -> plan/tasks -> agent I/O -> artifacts -> verify` shape) and write it down as a spec file in `docs/`.
+- [x] Add a schema-version field to records and a migration note policy, so old records remain replayable after format changes.
+- [x] Add a "verify a record produced by an older schema version" test.
 
 Secret hygiene at rest:
 
@@ -217,7 +217,7 @@ Secret hygiene at rest:
 
 - [ ] `replay --verify` is deterministic, offline, non-zero-on-mismatch, and emits JSON verdict.
 - [ ] Scheduler `ResourceWarning`s eliminated; full suite green (currently 208 passed / 1 skipped / 83% cov — keep at/above this).
-- [ ] Record schema spec committed under `docs/` and referenced from README.
+- [x] Record schema spec committed under `docs/` and referenced from README.
 - [ ] Evidence: refreshed `bench/results/phase1-acceptance.json` plus a new `bench/results/replay-verify-acceptance.json`.
 
 ---

@@ -7,7 +7,7 @@
 - `RunStore` persists runs, tasks, agents, events, and artifact references in SQLite.
 - `CAS` stores durable payloads by SHA-256 under `.poor-cli/v6/cas/`.
 - Each run mirrors replay-critical state under `.poor-cli/v6/runs/<run_id>/`, including `cas/<sha256>` payloads.
-- `meta.json` stores the latest run metadata; `events.jsonl` stores the append-only event stream.
+- `meta.json` stores the latest run metadata, including record schema version; `events.jsonl` stores the append-only event stream.
 - Every important transition emits an append-only event.
 - Agent inputs, planner prompts/responses, context packets, and agent results are stored as artifacts.
 - Deterministic human-facing artifacts are mirrored under `.poor-cli/v6/runs/<run_id>/artifacts/`.
@@ -19,7 +19,7 @@
 - `poor-cli run-swarm` creates detached worker worktrees, collects patch artifacts, and writes a collect-only merge plan.
 - `poor-cli rpc serve --stdio` exposes JSONL JSON-RPC methods for run, inspect, status, cancel, and replay.
 - Provider calls update `budget/LEDGER.json` with token estimates, provider-reported usage/cost where available, warning thresholds, and hard budget-stop events.
-- `poor-cli replay --verify` checks the per-run event mirror and CAS artifact hashes, then emits a stable trace digest.
+- `poor-cli replay --verify` checks the per-run event mirror and CAS artifact hashes under a socket guard, then emits a stable trace digest and JSON verdict.
 - `poor-cli --offline` sets `POOR_CLI_OFFLINE=1`; provider adapters, provider cache misses, and non-local delegated agents fail before live network calls.
 - Hook entry points use the `poor_cli.hooks` group and receive lifecycle callbacks for turns, model calls, tool calls, and run completion.
 - Tool entry points use the `poor_cli.tools` group and merge with built-ins at dispatcher startup.

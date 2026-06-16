@@ -64,6 +64,8 @@ Run state lives in `.poor-cli/v6/`:
 - `cas/`: content-addressed artifacts for prompts, plans, context packets, and agent results
 - `runs/<run_id>/artifacts/`: deterministic `PLAN.md`, worker `RESULT.md`, `PATCH.diff`, review, and verifier artifacts
 
+The on-disk record schema is documented in [`docs/record-schema.md`](docs/record-schema.md).
+
 ## Differentiation
 
 Per-task routing and local replay are existing categories, not novel claims. [Claude Code Router](https://github.com/musistudio/claude-code-router) demonstrates the router/proxy front door; [agent-replay](https://github.com/clay-good/agent-replay), [cagent session recording](https://www.docker.com/blog/deterministic-ai-testing-with-session-recording-in-cagent/), and [Agent VCR](https://github.com/Jarvis2021/agent-vcr) demonstrate local replay, cassettes, and recording diffs.

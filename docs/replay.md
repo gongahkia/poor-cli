@@ -21,6 +21,10 @@ poor-cli replay <run_id> --verify
 
 Verification checks event mirror integrity and CAS hashes, then emits a stable replay trace digest.
 
+Text output includes a human verdict and a JSON verdict. The JSON uses `poor-cli-replay-verify-v1` and includes a `network` assertion. Verification installs a temporary socket guard and fails if replay verification touches network.
+
+Replay verification checks the record; it does not re-run planners, providers, shell agents, tools, or validation commands. See [Record Schema](record-schema.md) for the deterministic boundary and migration policy.
+
 ## Offline
 
 ```sh

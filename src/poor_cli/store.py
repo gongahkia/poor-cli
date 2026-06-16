@@ -10,6 +10,9 @@ from typing import Any
 
 from .models import AgentInfo, Artifact, Event, TaskSpec, make_id, to_jsonable, utc_now
 
+RECORD_SCHEMA_VERSION = "poor-cli-record-v1"
+LEGACY_RECORD_SCHEMA_VERSION = "poor-cli-record-v0"
+
 
 class StoreError(RuntimeError):
     pass
@@ -64,6 +67,7 @@ class RunStore:
             """
             CREATE TABLE IF NOT EXISTS runs (
               run_id TEXT PRIMARY KEY,
+              schema_version TEXT NOT NULL DEFAULT 'poor-cli-record-v1',
               created_at TEXT NOT NULL,
               repo_path TEXT NOT NULL,
               git_commit_start TEXT,
@@ -135,6 +139,7 @@ class RunStore:
             );
             """
         )
+        self._ensure_column("runs", "schema_version", f"TEXT NOT NULL DEFAULT '{LEGACY_RECORD_SCHEMA_VERSION}'")
         self._ensure_column("tasks", "validation_json", "TEXT NOT NULL DEFAULT '[]'")
         self._ensure_column("tasks", "metadata_json", "TEXT NOT NULL DEFAULT '{}'")
         self.conn.commit()
@@ -152,10 +157,10 @@ class RunStore:
         created_at = utc_now()
         self.conn.execute(
             """
-            INSERT INTO runs(run_id, created_at, repo_path, git_commit_start, user_goal, mode, budget_json, status)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO runs(run_id, schema_version, created_at, repo_path, git_commit_start, user_goal, mode, budget_json, status)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (run_id, created_at, str(repo_path), git_commit_start, user_goal, mode, self._json(budget), "created"),
+            (run_id, RECORD_SCHEMA_VERSION, created_at, str(repo_path), git_commit_start, user_goal, mode, self._json(budget), "created"),
         )
         self.conn.commit()
         self._run_dir(run_id).mkdir(parents=True, exist_ok=True)

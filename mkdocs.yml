@@ -13,6 +13,7 @@ nav:
   - Examples: examples.md
   - Native Runner ADR: adr-native-provider-runner.md
   - Replay: replay.md
+  - Record Schema: record-schema.md
   - Graph Tools: graph.md
   - Worktree Swarm: swarm.md
   - JSONL RPC: rpc.md

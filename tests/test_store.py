@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from poor_cli.models import TaskSpec
-from poor_cli.store import RunStore
+from poor_cli.store import RECORD_SCHEMA_VERSION, RunStore
 
 
 def test_store_events_and_cas_round_trip(tmp_path: Path) -> None:
@@ -18,6 +18,7 @@ def test_store_events_and_cas_round_trip(tmp_path: Path) -> None:
     assert store.artifact_payload(artifact.artifact_id) == b'{"value":1}'
     assert (tmp_path / "store" / "runs" / run_id / "cas" / artifact.sha256).read_bytes() == b'{"value":1}'
     assert store.get_run(run_id)["status"] == "created"
+    assert store.get_run(run_id)["schema_version"] == RECORD_SCHEMA_VERSION
     store.close()
 
 
@@ -32,6 +33,7 @@ def test_store_writes_run_meta_and_events_jsonl(tmp_path: Path) -> None:
     events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
 
     assert meta["run_id"] == run_id
+    assert meta["schema_version"] == RECORD_SCHEMA_VERSION
     assert meta["status"] == "completed"
     assert meta["final_summary"] == "done"
     assert events[0]["type"] == "run.created"
