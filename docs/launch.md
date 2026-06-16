@@ -38,7 +38,7 @@ Phase 3:
 
 ## Publication Checklist
 
-- README points at `WORKON-PIVOT-ASAP.md`.
+- README points at `IDEA.md`.
 - MkDocs builds with `mkdocs build --strict`.
 - `BENCHMARKS.md` links checked-in result rows.
 - Phase 1 acceptance snapshot is green.

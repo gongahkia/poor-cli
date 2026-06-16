@@ -8,7 +8,7 @@ It sits above local coding agents such as Claude Code, Codex, and shell-based to
 
 `6.0.0a1` is an alpha rewrite. The v5 codebase is preserved under `legacy/`.
 
-Current roadmap: [`WORKON-PIVOT-ASAP.md`](WORKON-PIVOT-ASAP.md).
+Current product direction: [`IDEA.md`](IDEA.md).
 
 ## Install
 

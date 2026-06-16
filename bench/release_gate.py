@@ -17,11 +17,11 @@ CUTS = {
 
 def audit(root: Path) -> dict[str, Any]:
     checks = {
-        "roadmap_no_unchecked_release_rows": _roadmap_release_done(root),
+        "idea_doc": _idea_doc_ready(root),
         "examples_doc": (root / "docs" / "examples.md").exists(),
         "prompt_packs_doc": (root / "docs" / "prompt-packs.md").exists(),
         "dogfood_gate": _json_accepted(root / "bench" / "results" / "dogfood-report.json"),
-        "claims_gate": _command_ok(root, ["python", "bench/claims_gate.py", "README.md", "docs/benchmarks.md"]),
+        "claims_gate": _command_ok(root, ["python", "bench/claims_gate.py", "README.md", "docs/benchmarks.md", "IDEA.md"]),
     }
     return {
         "schema_version": "poor-cli-release-gate-v1",
@@ -31,9 +31,19 @@ def audit(root: Path) -> dict[str, Any]:
     }
 
 
-def _roadmap_release_done(root: Path) -> bool:
-    text = (root / "WORKON-PIVOT-ASAP.md").read_text(encoding="utf-8")
-    return all(f"- [x] P22-00{index}" in text for index in range(1, 6))
+def _idea_doc_ready(root: Path) -> bool:
+    path = root / "IDEA.md"
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8").lower()
+    required = (
+        "near-invisible preflight router",
+        "opt-in path shims",
+        "replay substrate",
+        "tui role",
+        "what from workon still matters",
+    )
+    return all(item in text for item in required)
 
 
 def _command_ok(root: Path, command: list[str]) -> bool:
