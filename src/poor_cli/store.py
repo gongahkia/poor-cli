@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import asdict
@@ -12,6 +13,12 @@ from .models import AgentInfo, Artifact, Event, TaskSpec, make_id, to_jsonable, 
 
 RECORD_SCHEMA_VERSION = "poor-cli-record-v1"
 LEGACY_RECORD_SCHEMA_VERSION = "poor-cli-record-v0"
+SECRET_KEY_NAMES = {"api_key", "apikey", "token", "secret", "password", "bearer", "authorization", "x_api_key"}
+SECRET_TEXT_PATTERNS = (
+    re.compile(r"(?i)\b((?:anthropic|openai|moonshot|openrouter)_api_key\s*=\s*)\S+"),
+    re.compile(r"(?i)\b((?:authorization|x-api-key)\s*[:=]\s*)(?:bearer\s+)?[^\s,;}]+"),
+    re.compile(r"\bsk-[A-Za-z0-9][A-Za-z0-9_-]{8,}"),
+)
 
 
 class StoreError(RuntimeError):
@@ -394,12 +401,36 @@ class RunStore:
 
     def _artifact_bytes(self, data: bytes | str | dict[str, Any] | list[Any]) -> bytes:
         if isinstance(data, bytes):
-            return data
+            try:
+                return _redact_text(data.decode()).encode()
+            except UnicodeDecodeError:
+                return data
         if isinstance(data, str):
-            return data.encode()
+            return _redact_text(data).encode()
         return self._json(data).encode()
 
     def _json(self, value: Any) -> str:
         if hasattr(value, "__dataclass_fields__"):
             value = asdict(value)
-        return json.dumps(to_jsonable(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return json.dumps(_redact_secrets(to_jsonable(value)), ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _redact_secrets(value: Any) -> Any:
+    if isinstance(value, dict):
+        out = {}
+        for key, item in value.items():
+            normalized = str(key).lower().replace("-", "_")
+            secret_key = normalized in SECRET_KEY_NAMES or normalized.endswith(("_api_key", "_token", "_secret", "_password"))
+            out[key] = "[redacted]" if secret_key else _redact_secrets(item)
+        return out
+    if isinstance(value, list):
+        return [_redact_secrets(item) for item in value]
+    if isinstance(value, str):
+        return _redact_text(value)
+    return value
+
+
+def _redact_text(text: str) -> str:
+    for pattern in SECRET_TEXT_PATTERNS[:2]:
+        text = pattern.sub(r"\1[redacted]", text)
+    return SECRET_TEXT_PATTERNS[2].sub("[redacted]", text)

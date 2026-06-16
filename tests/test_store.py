@@ -96,3 +96,21 @@ def test_store_preserves_task_metadata_and_validation(tmp_path: Path) -> None:
     assert row["validation"] == ["check file"]
     assert row["metadata"] == {"command": "printf ok"}
     store.close()
+
+
+def test_store_redacts_planted_secrets_at_rest(tmp_path: Path) -> None:
+    secret = "sk-testsecret123456789"
+    store = RunStore(tmp_path / "store")
+    run_id = store.create_run(user_goal="goal", repo_path=tmp_path, git_commit_start="abc", mode="balanced", budget={})
+    store.append_event(run_id, "secret.event", {"Authorization": f"Bearer {secret}", "input_tokens": 12})
+    store.put_artifact(
+        run_id=run_id,
+        kind="secret.fixture",
+        data={"OPENAI_API_KEY": secret, "text": f"Authorization: Bearer {secret}", "input_tokens": 12},
+    )
+    store.close()
+
+    blobs = [path.read_bytes() for path in (tmp_path / "store").rglob("*") if path.is_file()]
+    assert not any(secret.encode() in blob for blob in blobs)
+    assert any(b"[redacted]" in blob for blob in blobs)
+    assert any(b'"input_tokens":12' in blob for blob in blobs)
