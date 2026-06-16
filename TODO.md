@@ -73,7 +73,7 @@ Implications for our tasks:
 Implications for our tasks:
 
 - [x] Position our benchmark as *local-first and reproducible-from-record*, not as a competitor to cloud-scale eval clusters.
-- [ ] Adopt the standard reproducibility controls as hard requirements in the benchmark manifest (digest-pinned containers, seed control, weight hash, harness version) — see §8.
+- [x] Adopt the standard reproducibility controls as hard requirements in the benchmark manifest (digest-pinned containers, seed control, weight hash, harness version) — see §8.
 
 ### 2.4 One-line differentiation to defend
 
@@ -252,17 +252,17 @@ This is the hardest evidence and the strongest interview/YC artifact: an offline
 
 Reproducibility controls (hard requirements, from §2.3 findings):
 
-- [ ] Pin all eval/sandbox Docker images by `sha256` digest, never by tag.
-- [ ] Set and record `PYTHONHASHSEED`, `temperature=0`, `top_p=1.0` (or document why a task needs otherwise).
-- [ ] Record served-model identity in the manifest: source model, served model, quantization, dtype, context length.
-- [ ] Record model weight hash (md5/sha256 of checkpoint files) in `run_manifest.json`.
-- [ ] Pin benchmark harness/library versions; record them in the manifest.
+- [x] Pin all eval/sandbox Docker images by `sha256` digest, never by tag.
+- [x] Set and record `PYTHONHASHSEED`, `temperature=0`, `top_p=1.0` (or document why a task needs otherwise).
+- [x] Record served-model identity in the manifest: source model, served model, quantization, dtype, context length.
+- [x] Record model weight hash (md5/sha256 of checkpoint files) in `run_manifest.json`.
+- [x] Pin benchmark harness/library versions; record them in the manifest.
 
 Benchmark definition (retained, made explicit):
 
-- [ ] Pinned SWE-bench Lite 10-task manifest, local agent, graph mode, Qwen2.5-Coder-32B-class model, official Docker eval, replay verification per task.
-- [ ] Pass threshold: at least 50% of the checked-in Anthropic baseline. Current shown target rate 0.45 — record honestly, do not round up.
-- [ ] For low-VRAM hosts, quantized 32B-class evidence is acceptable **only** when the manifest records source/served/quant/dtype/context. Smaller models do not satisfy the Phase 3 target gate. `[claims-gated]`
+- [x] Pinned SWE-bench Lite 10-task manifest, local agent, graph mode, Qwen2.5-Coder-32B-class model, official Docker eval, replay verification per task.
+- [x] Pass threshold: at least 50% of the checked-in Anthropic baseline. Current shown target rate 0.45 — record honestly, do not round up.
+- [x] For low-VRAM hosts, quantized 32B-class evidence is acceptable **only** when the manifest records source/served/quant/dtype/context. Smaller models do not satisfy the Phase 3 target gate. `[claims-gated]`
 
 Target-hardware readiness (the active blocker — no Linux/CUDA access on current Mac):
 

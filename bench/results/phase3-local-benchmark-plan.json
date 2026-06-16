@@ -31,9 +31,25 @@
       "requires_environment_artifact": true,
       "requires_full_replay_verification": true,
       "requires_graph_mode": true,
+      "requires_official_docker_eval": true,
       "requires_predictions_artifact": true,
+      "requires_run_manifest": true,
       "requires_task_results_artifact": true,
-      "task_count": 10
+      "run_manifest_required": [
+        "docker image sha256 digest",
+        "PYTHONHASHSEED",
+        "temperature",
+        "top_p",
+        "source model",
+        "served model",
+        "quantization",
+        "dtype",
+        "context length",
+        "model weight hash",
+        "harness/library versions"
+      ],
+      "task_count": 10,
+      "task_manifest": "tests/fixtures/swe-lite-10/manifest.json"
     }
   }
 }

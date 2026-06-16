@@ -59,6 +59,7 @@ def _write_phase3_local_artifacts(
     local_max_model_len: str = "",
     local_tensor_parallel_size: str = "",
     local_gpu_memory_utilization: str = "",
+    write_manifest: bool = True,
 ) -> None:
     local_metadata = {
         "local_model_source": local_model_source,
@@ -106,6 +107,30 @@ def _write_phase3_local_artifacts(
         )
     (run_dir / "task_results.jsonl").write_text("\n".join(task_lines) + "\n", encoding="utf-8")
     (run_dir / "predictions.jsonl").write_text("\n".join(prediction_lines) + "\n", encoding="utf-8")
+    if write_manifest:
+        source = local_model_source or model
+        quantization = local_quantization or "none"
+        dtype = local_dtype or "bfloat16"
+        context = local_max_model_len or "32768"
+        manifest = {
+            "schema_version": "poor-cli-phase3-run-manifest-v1",
+            "docker_images": {
+                "swebench_eval": "swebench/swe-bench@sha256:" + ("a" * 64),
+                "sandbox_base": "swebench/swe-eval@sha256:" + ("b" * 64),
+            },
+            "runtime": {"PYTHONHASHSEED": "0"},
+            "generation": {"temperature": 0, "top_p": 1.0},
+            "model": {
+                "source": source,
+                "served": model,
+                "quantization": quantization,
+                "dtype": dtype,
+                "context_length": context,
+                "weight_hash": "sha256:" + ("c" * 64),
+            },
+            "harness_versions": {"swebench": "4.1.0", "datasets": "4.8.4", "poor_cli": "6.0.0a1"},
+        }
+        (run_dir / "run_manifest.json").write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
 
 
 def test_v6_baseline_task_fixture_schema() -> None:
@@ -1155,12 +1180,16 @@ def test_phase3_local_benchmark_plan_schema() -> None:
     assert payload["target"]["agent"] == "local"
     assert payload["target"]["providers"] == ["ollama", "sglang", "vllm"]
     assert payload["target"]["model_markers"] == ["qwen2.5-coder", "32b"]
+    assert payload["target"]["task_manifest"] == "tests/fixtures/swe-lite-10/manifest.json"
     assert "Qwen/Qwen2.5-Coder-32B-Instruct-AWQ" in payload["target"]["quantized_model_examples"]
     assert payload["target"]["minimum_of_anthropic_pass_rate"] == 0.5
     assert payload["target"]["requires_graph_mode"] is True
+    assert payload["target"]["requires_official_docker_eval"] is True
     assert payload["target"]["requires_environment_artifact"] is True
     assert payload["target"]["requires_task_results_artifact"] is True
     assert payload["target"]["requires_predictions_artifact"] is True
+    assert payload["target"]["requires_run_manifest"] is True
+    assert "model weight hash" in payload["target"]["run_manifest_required"]
     assert "--graph --agent local" in payload["commands"]["generate"]
     assert "phase3_local_benchmark.py --summary" in payload["commands"]["verify"]
     assert "setup_quantized" in payload["commands"]
@@ -1207,6 +1236,7 @@ def test_phase3_local_benchmark_accepts_target_summary(tmp_path: Path) -> None:
     assert payload["target_rate"] == 0.45
     assert payload["artifacts"]["task_results_count"] == 10
     assert payload["artifacts"]["predictions_count"] == 10
+    assert payload["manifest"]["errors"] == []
     assert payload["errors"] == []
 
 
@@ -1284,8 +1314,68 @@ def test_phase3_local_benchmark_rejects_summary_without_run_artifacts(tmp_path: 
 
     assert payload["accepted"] is False
     assert "environment.json is required" in payload["errors"]
+    assert "run_manifest.json is required" in payload["errors"]
     assert "task_results.jsonl count must match task_count" in payload["errors"]
     assert "predictions.jsonl count must match task_count" in payload["errors"]
+
+
+def test_phase3_local_benchmark_rejects_unpinned_manifest(tmp_path: Path) -> None:
+    summary = tmp_path / "summary.json"
+    summary.write_text(
+        json.dumps(
+            {
+                "provider": "vllm",
+                "model": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                "agent": "local",
+                "local_base_url": "http://localhost:8000",
+                "graph_mode": True,
+                "task_count": 10,
+                "replay_verified_count": 10,
+                "official_evaluation": {
+                    "exit_code": 0,
+                    "results": {
+                        "completed_instances": 10,
+                        "error_instances": 0,
+                        "total_instances": 10,
+                        "resolved_instances": 5,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    _write_phase3_local_artifacts(tmp_path)
+    (tmp_path / "run_manifest.json").write_text(
+        json.dumps(
+            {
+                "docker_images": {"swebench_eval": "swebench/swe-bench:latest"},
+                "runtime": {},
+                "generation": {"temperature": 0.2, "top_p": 0.9},
+                "model": {
+                    "source": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                    "served": "Qwen/Qwen2.5-Coder-32B-Instruct",
+                    "quantization": "none",
+                    "dtype": "bfloat16",
+                    "context_length": "32768",
+                    "weight_hash": "sha256:not-a-hash",
+                },
+                "harness_versions": {"swebench": ""},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = validate_local_summary(summary)
+
+    assert payload["accepted"] is False
+    assert "docker image swebench_eval must be pinned by sha256 digest" in payload["errors"]
+    assert "run_manifest PYTHONHASHSEED is required" in payload["errors"]
+    assert "run_manifest temperature must be 0" in payload["errors"]
+    assert "run_manifest top_p must be 1.0" in payload["errors"]
+    assert "run_manifest model.weight_hash must be md5:<hex> or sha256:<hex>" in payload["errors"]
+    assert "run_manifest harness_versions.swebench is required" in payload["errors"]
+    assert "run_manifest harness_versions.datasets is required" in payload["errors"]
+    assert "run_manifest harness_versions.poor_cli is required" in payload["errors"]
 
 
 def test_phase3_local_benchmark_rejects_missing_graph_or_low_pass(tmp_path: Path) -> None:

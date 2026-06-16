@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 ANTHROPIC_SUMMARY = ROOT / "bench" / "swe_bench_lite" / "results" / "swe10-claude-20260614T105615Z" / "summary.json"
 ALLOWED_PROVIDERS = {"ollama", "sglang", "vllm"}
 TARGET_MODEL_MARKERS = ("qwen2.5-coder", "32b")
+HEX64 = set("0123456789abcdef")
 
 
 def benchmark_plan_payload() -> dict[str, Any]:
@@ -24,13 +25,29 @@ def benchmark_plan_payload() -> dict[str, Any]:
                 "Qwen/Qwen2.5-Coder-32B-Instruct-GPTQ-Int4",
             ],
             "model_markers": list(TARGET_MODEL_MARKERS),
+            "task_manifest": "tests/fixtures/swe-lite-10/manifest.json",
             "task_count": 10,
             "minimum_of_anthropic_pass_rate": 0.5,
             "requires_graph_mode": True,
+            "requires_official_docker_eval": True,
             "requires_full_replay_verification": True,
             "requires_environment_artifact": True,
             "requires_task_results_artifact": True,
             "requires_predictions_artifact": True,
+            "requires_run_manifest": True,
+            "run_manifest_required": [
+                "docker image sha256 digest",
+                "PYTHONHASHSEED",
+                "temperature",
+                "top_p",
+                "source model",
+                "served model",
+                "quantization",
+                "dtype",
+                "context length",
+                "model weight hash",
+                "harness/library versions",
+            ],
         },
         "commands": {
             "setup": ("scripts/setup-linux-cuda.sh --yes --engine vllm --model Qwen/Qwen2.5-Coder-32B-Instruct"),
@@ -74,8 +91,10 @@ def validate_local_summary(summary_path: Path, *, anthropic_summary: Path = ANTH
     error_count = int(results.get("error_instances") or len(results.get("error_ids") or []))
     pass_rate = resolved / total if total else 0.0
     artifacts = _artifact_validation(summary_path, summary, task_count)
+    manifest = _manifest_validation(summary_path, summary)
     errors = _summary_errors(summary, target, task_count, replay_verified, official, total, completed, error_count, pass_rate)
     errors.extend(artifacts["errors"])
+    errors.extend(manifest["errors"])
     return {
         "accepted": not errors,
         "evidence": _display_path(summary_path),
@@ -97,6 +116,7 @@ def validate_local_summary(summary_path: Path, *, anthropic_summary: Path = ANTH
         "target_rate": target["target_rate"],
         "local_base_url": summary.get("local_base_url", ""),
         "artifacts": artifacts,
+        "manifest": manifest,
     }
 
 
@@ -203,6 +223,69 @@ def _artifact_validation(summary_path: Path, summary: dict[str, Any], task_count
     }
 
 
+def _manifest_validation(summary_path: Path, summary: dict[str, Any]) -> dict[str, Any]:
+    path = summary_path.parent / "run_manifest.json"
+    manifest = _read_json(path)
+    errors: list[str] = []
+    if not manifest:
+        errors.append("run_manifest.json is required")
+        return {"path": _display_path(path), "errors": errors}
+    docker_images = manifest.get("docker_images")
+    if not isinstance(docker_images, dict) or not docker_images:
+        errors.append("run_manifest docker_images is required")
+    else:
+        for name, image in docker_images.items():
+            if not _pinned_image(str(image)):
+                errors.append(f"docker image {name} must be pinned by sha256 digest")
+    runtime = manifest.get("runtime") if isinstance(manifest.get("runtime"), dict) else {}
+    if str(runtime.get("PYTHONHASHSEED") or "") == "":
+        errors.append("run_manifest PYTHONHASHSEED is required")
+    generation = manifest.get("generation") if isinstance(manifest.get("generation"), dict) else {}
+    if _number(generation.get("temperature"), 1) != 0:
+        errors.append("run_manifest temperature must be 0")
+    if _number(generation.get("top_p"), 0) != 1.0:
+        errors.append("run_manifest top_p must be 1.0")
+    model = manifest.get("model") if isinstance(manifest.get("model"), dict) else {}
+    _extend_model_manifest_errors(errors, model, summary)
+    if not _hash_value(str(model.get("weight_hash") or "")):
+        errors.append("run_manifest model.weight_hash must be md5:<hex> or sha256:<hex>")
+    versions = manifest.get("harness_versions") if isinstance(manifest.get("harness_versions"), dict) else {}
+    for key in ("swebench", "datasets", "poor_cli"):
+        if not str(versions.get(key) or "").strip():
+            errors.append(f"run_manifest harness_versions.{key} is required")
+    return {"path": _display_path(path), "errors": sorted(set(errors))}
+
+
+def _extend_model_manifest_errors(errors: list[str], model: dict[str, Any], summary: dict[str, Any]) -> None:
+    source = str(model.get("source") or "")
+    served = str(model.get("served") or "")
+    quantization = str(model.get("quantization") or "")
+    dtype = str(model.get("dtype") or "")
+    context = str(model.get("context_length") or "")
+    if not source:
+        errors.append("run_manifest model.source is required")
+    if not served:
+        errors.append("run_manifest model.served is required")
+    if not quantization:
+        errors.append("run_manifest model.quantization is required")
+    if not dtype:
+        errors.append("run_manifest model.dtype is required")
+    if not context or context == "0":
+        errors.append("run_manifest model.context_length is required")
+    if source and not all(marker in source.lower() for marker in TARGET_MODEL_MARKERS):
+        errors.append("run_manifest model.source is not qwen2.5-coder-32b")
+    if served and served != str(summary.get("model") or ""):
+        errors.append("run_manifest model.served does not match summary model")
+    if summary.get("local_model_source") and source != summary.get("local_model_source"):
+        errors.append("run_manifest model.source does not match summary local_model_source")
+    if summary.get("local_quantization") and quantization != summary.get("local_quantization"):
+        errors.append("run_manifest model.quantization does not match summary local_quantization")
+    if summary.get("local_dtype") and dtype != summary.get("local_dtype"):
+        errors.append("run_manifest model.dtype does not match summary local_dtype")
+    if summary.get("local_max_model_len") and context != str(summary.get("local_max_model_len")):
+        errors.append("run_manifest model.context_length does not match summary local_max_model_len")
+
+
 def _extend_mismatch_errors(errors: list[str], label: str, record: dict[str, Any], summary: dict[str, Any]) -> None:
     for key in ("provider", "model", "agent", "graph_mode"):
         if record.get(key) != summary.get(key):
@@ -228,6 +311,30 @@ def _target_model_markers_present(summary: dict[str, Any]) -> bool:
 
 def _is_local_endpoint(value: str) -> bool:
     return value.startswith(("http://localhost", "http://127.0.0.1", "http://[::1]"))
+
+
+def _pinned_image(value: str) -> bool:
+    if "@sha256:" not in value:
+        return False
+    digest = value.rsplit("@sha256:", 1)[-1].lower()
+    return len(digest) == 64 and set(digest) <= HEX64
+
+
+def _hash_value(value: str) -> bool:
+    if value.startswith("sha256:"):
+        digest = value.removeprefix("sha256:").lower()
+        return len(digest) == 64 and set(digest) <= HEX64
+    if value.startswith("md5:"):
+        digest = value.removeprefix("md5:").lower()
+        return len(digest) == 32 and set(digest) <= HEX64
+    return False
+
+
+def _number(value: Any, default: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
 
 
 def _read_json(path: Path) -> dict[str, Any]:
