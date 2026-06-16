@@ -40,11 +40,11 @@ What this means for emphasis going forward:
 
 ## 2. Competitive Landscape & Differentiation
 
-This section exists so the project can be defended honestly in interviews and a YC application. Do not claim novelty that the landscape contradicts. The findings below are as of 2026-06; re-verify before any public launch (see §14, Batch F).
+This section exists so the project can be defended honestly in interviews and a YC application. Do not claim novelty that the landscape contradicts. The findings below were web-rechecked on 2026-06-16; re-verify before any later public launch (see §14, Batch F).
 
 ### 2.1 The router front-door is a solved, crowded category — do not headline it
 
-- **Claude Code Router (`@musistudio/claude-code-router`)** — ~26k+ stars, MIT. A local proxy that sets `ANTHROPIC_BASE_URL` to itself, intercepts Claude Code requests, and routes per task type to OpenRouter/DeepSeek/Ollama/Gemini/etc. This is the most-validated version of "near-invisible router for coding agents" and occupies the exact v1 the old `IDEA.md` described.
+- **Claude Code Router (`@musistudio/claude-code-router`)** — large public MIT project. A local proxy that intercepts Claude Code requests and routes per task type to OpenRouter/DeepSeek/Ollama/Gemini/etc. This is the most-validated version of "near-invisible router for coding agents" and occupies the exact v1 the old `IDEA.md` described.
 - **`claude_n_codex_api_proxy`**, **agentgateway**, **Bifrost** — HTTP-level interception/governance for Claude Code / Codex traffic, including prompt-guard and audit logging.
 
 Implications for our tasks:
@@ -55,7 +55,7 @@ Implications for our tasks:
 
 ### 2.2 Local replay of agent runs is also occupied — differentiate on the vertical, not the verb
 
-- **`agent-replay` (clay-good/agent-replay)** — 100% local, SQLite-powered CLI for time-travel debugging: replay traces, diff behavioral changes, fork runs, run evals + guard/kill-switch policies. This is the closest existing project to our substrate and shares stack and several features.
+- **Agent Replay (`agentreplay/agentreplay`)** — local-first desktop evals/observability/memory for coding agents, with offline-capable local storage and Claude Code/Cursor/Windsurf/Cline integrations. This is the closest existing product neighbor to our substrate, even though our wedge is a CLI/verifiable-record store rather than a desktop memory surface.
 - **`cagent` (Docker)** — VCR-pattern record/replay with YAML "cassettes" that strip secrets (`Authorization`, `X-Api-Key`) and commit to version control, across OpenAI/Anthropic/Google/Mistral/xAI.
 - **Agent VCR** — record/replay/**diff** specifically for MCP JSON-RPC, classifying breaking changes between two recordings.
 
@@ -77,9 +77,9 @@ Implications for our tasks:
 
 ### 2.4 One-line differentiation to defend
 
-> Other tools route (CCR) or replay (agent-replay, cagent) or benchmark (cloud harnesses). `poor-cli` makes the route decision and the benchmark evidence the *same replayable record* as the run, verifiable offline on local hardware.
+> Other tools route (CCR) or replay/observe (Agent Replay, cagent, Agent VCR) or benchmark (cloud harnesses). `poor-cli` makes the route decision and the benchmark evidence the *same replayable record* as the run, verifiable offline on local hardware.
 
-- [ ] Keep this sentence current as competitors move. It is the interview answer to "how is this different from X?"
+- [x] Keep this sentence current as competitors move. Rechecked 2026-06-16 against CCR, Agent Replay, cagent, and Agent VCR; re-run before any later public launch.
 
 ---
 
@@ -407,7 +407,7 @@ Batch E — route-only preflight + noninteractive wrapper execution (P1):
 Batch F — benchmark + screencast (P2):
 
 - [ ] Execute §8 (requires target hardware) and §9.
-- [ ] Re-verify §2 competitive findings are still current before any public launch.
+- [x] Re-verify §2 competitive findings are still current before any public launch. Done for current branch on 2026-06-16; re-run if launch date moves.
 
 Batch G — dogfood + acceptance (P2):
 
@@ -433,13 +433,13 @@ Lead with the moat, not the router, not the TUI.
 ## 16. Open Questions (Keep Open Until Implementation Forces A Decision)
 
 - [x] Should `shims install` modify shell rc files or only print PATH instructions? (Default: print only.)
-- [ ] Show route decisions as a compact one-line prefix on all captured runs, or only on interventions?
+- [x] Show route decisions as a compact one-line prefix on all captured runs, or only on interventions? Decision: only interventions print; every route decision is still recorded as artifacts/events.
 - [x] Should prompt capture support stdin in v1?
-- [ ] Should shim artifacts live in `.poor-cli/v6` or a separate per-user global store when run outside a repo?
-- [ ] Is a PTY proxy worth attempting after noninteractive shims prove useful?
-- [ ] Should the short command be `poor`, `poor-cli`, or no explicit command once shims are installed?
-- [ ] **New:** PATH-shim vs. base-URL proxy as the long-term capture mechanism (§2.1, §5). What concrete capture need would justify the proxy's added complexity and the "feels like malware" risk?
-- [ ] **New:** Do we adopt cagent-style committable cassettes as an export format for sharing reproducible runs, or keep records internal to the store?
+- [x] Should shim artifacts live in `.poor-cli/v6` or a separate per-user global store when run outside a repo? Decision: cwd-local `.poor-cli/v6` by default; use `--store-dir` for explicit global storage.
+- [x] Is a PTY proxy worth attempting after noninteractive shims prove useful? Decision: no v1 PTY proxy; revisit only if unsupported interactive sessions become the dominant capture gap.
+- [x] Should the short command be `poor`, `poor-cli`, or no explicit command once shims are installed? Decision: keep `poor-cli`; no `poor` alias in v1.
+- [x] **New:** PATH-shim vs. base-URL proxy as the long-term capture mechanism (§2.1, §5). Decision: PATH shim remains v1; a proxy is justified only if interactive request-stream capture or mid-session routing becomes required.
+- [x] **New:** Do we adopt cagent-style committable cassettes as an export format for sharing reproducible runs, or keep records internal to the store? Decision: keep records internal in v1; add cassette export only after sharing replay records becomes a real workflow.
 
 ---
 
@@ -458,11 +458,11 @@ Interpretation:
 - [x] Hooks are useful later but do not replace a front-door router.
 - [x] Bare interactive sessions pass through until a PTY proxy proves worth the complexity.
 
-Landscape sources (from the 2026-06 pivot research — re-verify before launch, §14 Batch F):
+Landscape sources (web-rechecked 2026-06-16 — re-verify before launch, §14 Batch F):
 
-- [x] Claude Code Router (router prior art): claudelog.com / morphllm.com / dev.to writeups.
-- [x] `agent-replay` (clay-good): github.com/clay-good/agent-replay (closest substrate competitor).
-- [x] `cagent` session recording (VCR cassettes, secret-stripping): docker.com blog.
-- [x] Agent VCR (MCP record/replay/diff): medium writeup.
+- [x] Claude Code Router (router prior art): https://github.com/musistudio/claude-code-router
+- [x] Agent Replay (local-first desktop evals/observability/memory): https://github.com/agentreplay/agentreplay
+- [x] `cagent` session recording (VCR cassettes, secret-stripping): https://www.docker.com/blog/deterministic-ai-testing-with-session-recording-in-cagent/
+- [x] Agent VCR (MCP record/replay/diff): https://github.com/Jarvis2021/agent-vcr
 - [x] Reproducibility discipline (digest pinning, seed/weight-hash manifests): Spheron benchmarking guide.
 - [x] Local-first replay-layer rationale (data-sovereignty regime): HuggingFace "beyond logs" writeup.
