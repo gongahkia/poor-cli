@@ -51,6 +51,16 @@ allow_high_risk = true
 | Missing provider or config | Stop and print the missing requirement |
 | Interactive bare `claude` or `codex` | Pass through in v1 |
 
+## Live Dogfood
+
+The live dogfood harness installs temporary PATH shims, runs the real `claude "inspect repo"` and `codex exec "inspect repo"` commands, then verifies the captured records offline:
+
+```sh
+uv run --locked python bench/shim_live_dogfood.py --confirm-live-agents --output bench/results/shim-live-dogfood.json
+```
+
+The confirmation flag is required because this invokes user-authenticated agents and may spend provider budget. Without it, the harness only reports the planned commands and detected binaries.
+
 ## Mechanism Decision
 
 v1 uses a PATH shim because it is explicit, reversible, and does not require changing Claude/Codex API endpoint settings. The trade-off is that it sees process invocation, argv, stdin for supported noninteractive forms, stdout/stderr, and exit status; it does not see the full HTTP request stream or every tool event inside an opaque upstream CLI.

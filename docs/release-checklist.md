@@ -8,6 +8,7 @@
 - Run `python bench/loc_gate.py`.
 - Run `python bench/packaging_gate.py`.
 - Run `python bench/dogfood_report.py`.
+- Run `python bench/shim_live_dogfood.py --confirm-live-agents --output bench/results/shim-live-dogfood.json` before claiming live Claude/Codex shim dogfood.
 - Run `python bench/release_gate.py`.
 - Confirm live-provider tests are skipped unless `POOR_CLI_LIVE_PROVIDER_TESTS=1`.
 - Review security docs and shell sandbox changes.

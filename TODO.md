@@ -411,6 +411,7 @@ Batch F — benchmark + screencast (P2):
 
 Batch G — dogfood + acceptance (P2):
 
+- [x] Add guarded live dogfood harness for `claude "inspect repo"` and `codex exec "inspect repo"` so evidence collection is repeatable.
 - [ ] Dogfood `claude "inspect repo"` and `codex exec "inspect repo"` through the shim.
 - [ ] Verify replay artifacts for both.
 - [x] Add docs showing install/doctor/uninstall and failure behavior.

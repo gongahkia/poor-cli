@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from bench.shim_live_dogfood import dogfood_payload
 from poor_cli.cli import main
 from poor_cli.replay import replay_verify
 from poor_cli.shims import resolve_real_binary
@@ -83,6 +84,32 @@ def test_generated_shims_capture_claude_and_codex_records(tmp_path: Path, monkey
 
     blobs = [path.read_bytes() for path in (tmp_path / ".poor-cli").rglob("*") if path.is_file()]
     assert not any(b"sk-testsecret123456789" in blob for blob in blobs)
+
+
+def test_live_shim_dogfood_harness_uses_path_shims(tmp_path: Path, monkeypatch: Any) -> None:
+    bin_dir = tmp_path / "bin"
+    _fake_binary(bin_dir, "claude")
+    _fake_binary(bin_dir, "codex")
+    _poor_cli_binary(bin_dir)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), os.environ.get("PATH", "")]))
+    monkeypatch.setenv("PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src"))
+    monkeypatch.chdir(tmp_path)
+
+    payload = dogfood_payload(confirm_live_agents=True, timeout_seconds=10)
+
+    assert payload["accepted"] is True
+    assert payload["checks"]["claude_ok"] is True
+    assert payload["checks"]["codex_ok"] is True
+    assert {run["agent"] for run in payload["runs"]} == {"claude", "codex"}
+
+
+def test_live_shim_dogfood_requires_confirmation(tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    payload = dogfood_payload(confirm_live_agents=False)
+
+    assert payload["accepted"] is False
+    assert payload["blocked_by"] == "--confirm-live-agents"
 
 
 def test_claude_print_stdin_capture_preserves_input(tmp_path: Path, monkeypatch: Any) -> None:
@@ -188,4 +215,11 @@ def _fake_binary(root: Path, name: str) -> None:
     root.mkdir(parents=True, exist_ok=True)
     path = root / name
     path.write_text(f"#!/bin/sh\ncat >/dev/null\nprintf 'fake-{name}:%s\\n' \"$*\"\n", encoding="utf-8")
+    path.chmod(0o755)
+
+
+def _poor_cli_binary(root: Path) -> None:
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "poor-cli"
+    path.write_text(f'#!/bin/sh\nexec {sys.executable} -m poor_cli "$@"\n', encoding="utf-8")
     path.chmod(0o755)
