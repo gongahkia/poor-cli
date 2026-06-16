@@ -61,7 +61,10 @@ class RpcServer:
             if params.get("swarm"):
                 return self._start_swarm(goal, budget, params)
             store = RunStore(self.root)
-            run_id, _ = Orchestrator(store).plan(goal, budget, graph_mode=bool(params.get("graph")))
+            try:
+                run_id, _ = Orchestrator(store).plan(goal, budget, graph_mode=bool(params.get("graph")))
+            finally:
+                store.close()
             cancel = threading.Event()
             self.active[run_id] = cancel
             thread = threading.Thread(target=self._run, args=(run_id, budget, params, cancel), daemon=True)
@@ -118,8 +121,12 @@ class RpcServer:
 
     def _start_swarm(self, goal: str, budget: Budget, params: dict[str, Any]) -> dict[str, Any]:
         store = RunStore(self.root)
+        try:
+            run_id, plan = Orchestrator(store).plan(goal, budget, graph_mode=bool(params.get("graph")))
+        except Exception:
+            store.close()
+            raise
         cancel = threading.Event()
-        run_id, plan = Orchestrator(store).plan(goal, budget, graph_mode=bool(params.get("graph")))
         self.active[run_id] = cancel
 
         def target() -> None:
