@@ -58,6 +58,21 @@ Required replay-critical artifact fields:
 - `created_at`
 - `path`
 
+## Answerability Matrix
+
+| Question | Evidence |
+| --- | --- |
+| What did the user ask? | `runs.user_goal`, `run.created.payload.goal`, `poor-cli inspect <run_id> --json` |
+| What did the router classify? | `route.decision`, `route.selected`, `route.policy.selected`, and shim `route.preflight` artifacts/events |
+| Which backend was chosen and why? | Route decision provider/model/profile fields, task agent assignment, fallback fields, and `agents.detected` |
+| What context did the agent receive? | `context.packet`, `graph.context`, `agent.input`, and `handoff.packet` artifacts |
+| What plan/tasks were created? | `PLAN.md`, `PLAN.json`, task rows, and task lifecycle events |
+| Which tasks ran/skipped/failed/cancelled? | Task rows plus `task.*`, `agent.completed`, `agent.failed`, and `run.*` events |
+| What artifacts were produced? | Artifact rows, global CAS, per-run CAS mirrors, and `runs/<run_id>/artifacts/` |
+| What changed in the repo? | Worker patch/changed-file artifacts and `PATCH.diff` when a run produces a repo delta; the live worktree `git diff` remains the final filesystem delta |
+| Can the run be replayed without API/network? | `poor-cli replay <run_id> --verify` and its `network_assertion.attempts == 0` JSON verdict |
+| Which claims are backed by checked-in evidence? | `bench/results/*.json`, `bench/claims_gate.py`, `bench/release_gate.py`, and docs that cite those checked-in evidence files |
+
 ## Verification Semantics
 
 `poor-cli replay <run_id> --verify` must:

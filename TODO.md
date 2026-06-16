@@ -187,16 +187,16 @@ Replay already works (SQLite + CAS, reconstructs state from events, verifies mir
 
 The store must answer (retained from prior direction):
 
-- [ ] What did the user ask?
-- [ ] What did the router classify?
-- [ ] Which backend was chosen and why?
-- [ ] What context did the agent receive?
-- [ ] What plan/tasks were created?
-- [ ] Which tasks ran/skipped/failed/cancelled?
-- [ ] What artifacts were produced?
-- [ ] What changed in the repo (final `git diff` is the filesystem delta; the store is the why/how/evidence)?
-- [ ] Can the run be replayed without API/network?
-- [ ] Which claims are backed by checked-in evidence?
+- [x] What did the user ask?
+- [x] What did the router classify?
+- [x] Which backend was chosen and why?
+- [x] What context did the agent receive?
+- [x] What plan/tasks were created?
+- [x] Which tasks ran/skipped/failed/cancelled?
+- [x] What artifacts were produced?
+- [x] What changed in the repo (final `git diff` is the filesystem delta; the store is the why/how/evidence)?
+- [x] Can the run be replayed without API/network?
+- [x] Which claims are backed by checked-in evidence?
 
 Hardening tasks:
 
