@@ -103,9 +103,9 @@ poor-cli replay <run_id> --verify          # offline, no network, re-checks even
 poor-cli runs diff <run_a> <run_b>         # behavioral diff between two records
 ```
 
-- [ ] Make `replay --verify` the single most polished command in the tool (clear output, explicit "no network used" proof line, non-zero exit on mismatch).
+- [x] Make `replay --verify` the single most polished command in the tool (clear output, explicit "no network used" proof line, non-zero exit on mismatch).
 - [x] Add `poor-cli runs diff` as a first-class command (new; see §7).
-- [ ] Keep capture quiet by default; keep verify loud and legible.
+- [x] Keep capture quiet by default; keep verify loud and legible.
 - [ ] Default behavior table (unchanged intent, retained):
   - [ ] low-risk explain/review -> pass through and record
   - [ ] normal repo edit -> add graph/context if useful, then run chosen agent

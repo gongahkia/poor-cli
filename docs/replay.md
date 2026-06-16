@@ -19,7 +19,14 @@ Run state lives under `.poor-cli/v6/`:
 poor-cli replay <run_id> --verify
 ```
 
-Verification checks event mirror integrity and CAS hashes, then emits a stable replay trace digest.
+Verification checks event mirror integrity and CAS hashes, then emits a stable replay trace digest:
+
+```text
+verify: PASS
+network: no network used (socket attempts=0)
+record: schema=poor-cli-record-v1 events=5 artifacts=4 bytes=1664
+trace: sha256:<digest>
+```
 
 Text output includes a human verdict and a JSON verdict. The JSON uses `poor-cli-replay-verify-v1` and includes a `network` assertion. Verification installs a temporary socket guard and fails if replay verification touches network.
 

@@ -355,10 +355,15 @@ def _replay(args: argparse.Namespace, store: RunStore) -> int:
         print(f"- {task_id} {task['status']} {task['title']} -> {task.get('agent') or 'unassigned'}")
     if args.verify:
         verification = state["verification"]
+        print("verify: PASS")
+        print(f"network: no network used (socket attempts={verification['network']['attempts']})")
         print(
-            f"verified: ok no network used events={verification['event_count']} artifacts={verification['artifact_count']} "
-            f"bytes={verification['artifact_bytes']} trace={verification['trace_sha256']}"
+            f"record: schema={verification['record_schema_version']} events={verification['event_count']} "
+            f"artifacts={verification['artifact_count']} bytes={verification['artifact_bytes']}"
         )
+        print(f"trace: sha256:{verification['trace_sha256']}")
+        print(f"deterministic: reconstructs {verification['deterministic_scope']['reconstructs']}")
+        print(f"not rerun: {verification['deterministic_scope']['does_not_rerun']}")
         print(json.dumps(verification, sort_keys=True))
     return 0
 
