@@ -36,6 +36,7 @@ from .prompt_packs import add_prompt_parser, handle_prompt_command
 from .replay import replay_summary, replay_verify
 from .repo_graph import graph_dependency_report
 from .route_cli import add_route_parser, handle_route_command
+from .route_policy import should_use_graph_context
 from .run_records import handle_runs_command
 from .shims import add_shims_parser, handle_shims_command
 from .store import RunStore, StoreError
@@ -132,7 +133,8 @@ def _agents(args: argparse.Namespace) -> int:
 
 def _plan(args: argparse.Namespace, store: RunStore) -> int:
     budget = _budget(args)
-    run_id, plan = Orchestrator(store, hooks=load_hooks()).plan(" ".join(args.goal), budget, graph_mode=args.graph)
+    goal = " ".join(args.goal)
+    run_id, plan = Orchestrator(store, hooks=load_hooks()).plan(goal, budget, graph_mode=_graph_mode(args, goal))
     if args.json:
         print(json.dumps({"run_id": run_id, "plan": to_jsonable(plan)}, indent=2, sort_keys=True))
         return 0
@@ -150,7 +152,8 @@ def _plan(args: argparse.Namespace, store: RunStore) -> int:
 def _run(args: argparse.Namespace, store: RunStore) -> int:
     budget = _budget(args)
     orchestrator = Orchestrator(store, hooks=load_hooks())
-    run_id, plan = orchestrator.plan(" ".join(args.goal), budget, graph_mode=args.graph)
+    goal = " ".join(args.goal)
+    run_id, plan = orchestrator.plan(goal, budget, graph_mode=_graph_mode(args, goal))
     print(f"run_id: {run_id}")
     for index, task in enumerate(plan.tasks, 1):
         print(f"{index}. {task.title} -> {task.suggested_agent or 'auto'}")
@@ -179,12 +182,13 @@ def _run(args: argparse.Namespace, store: RunStore) -> int:
 
 def _run_swarm(args: argparse.Namespace, store: RunStore) -> int:
     cancel = threading.Event()
+    goal = " ".join(args.goal)
     try:
         result = run_swarm(
             store,
-            " ".join(args.goal),
+            goal,
             _budget(args),
-            graph_mode=args.graph,
+            graph_mode=_graph_mode(args, goal),
             selected_agents=_selected(args),
             allow_dirty=args.allow_dirty,
             allow_overlap=args.allow_overlap,
@@ -421,6 +425,10 @@ def _selected(args: argparse.Namespace) -> set[str] | None:
     if not args.agents:
         return None
     return {item.strip() for item in args.agents.split(",") if item.strip()}
+
+
+def _graph_mode(args: argparse.Namespace, goal: str) -> bool:
+    return bool(args.graph or should_use_graph_context(goal))
 
 
 def _parser() -> argparse.ArgumentParser:

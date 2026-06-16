@@ -12,6 +12,9 @@ from .models import Budget, Plan, TaskSpec
 PATH_RE = re.compile(r"[\w./-]+\.[A-Za-z0-9]+")
 RISK_WORDS = {"auth", "payment", "migration", "concurrency", "delete", "security", "secret", "sql", "race"}
 UI_WORDS = {"ui", "ux", "design", "swiftui", "css", "frontend", "view", "layout", "screen"}
+GRAPH_HINT_WORDS = {"symbol", "import", "caller", "call-path", "function", "class", "method", "graph", "subgraph", "definition"}
+GRAPH_EDIT_WORDS = {"fix", "edit", "change", "update", "refactor", "trace", "debug", "test", "failing"}
+GRAPH_CODE_WORDS = {"parse", "parser", "module", "flow", "test", "tests", "dependency", "call", "caller", "symbol"}
 PREFLIGHT_VALUE_FLAGS = {
     "--output-format",
     "--input-format",
@@ -54,6 +57,18 @@ def classify_goal_text(task: str, *, role: str = "executor") -> dict[str, Any]:
     labels = _labels(task, "medium")
     policy = "design-review" if "design" in labels else "direct-executor"
     return asdict(RouteDecision(role, policy, labels, "focused", 1, len(_paths(task)), 0))
+
+
+def should_use_graph_context(text: str) -> bool:
+    low = text.lower()
+    if not low.strip():
+        return False
+    if _paths(low) or any(word in low for word in GRAPH_HINT_WORDS):
+        return True
+    if re.search(r"\b[A-Za-z_][A-Za-z0-9_]*_[A-Za-z0-9_]*\b|\b[A-Z][A-Za-z0-9]+[A-Z][A-Za-z0-9]*\b", text):
+        return True
+    words = set(re.findall(r"[a-z0-9_-]+", low))
+    return bool(words & GRAPH_EDIT_WORDS and words & GRAPH_CODE_WORDS)
 
 
 def preflight_route(
@@ -140,7 +155,7 @@ def _preflight_labels(text: str, command: str, args: list[str], stdin_mode: str,
         labels.add("migration-risk")
     if any(word in low for word in UI_WORDS):
         labels.add("design-ui")
-    if _paths(low) or any(word in low for word in ("symbol", "caller", "import", "function", "class", "graph")):
+    if should_use_graph_context(" ".join([text, command, " ".join(args)])):
         labels.add("needs-graph")
     if any(word in low for word in ("web", "latest", "current", "research", "http://", "https://")):
         labels.add("needs-web")

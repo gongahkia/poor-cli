@@ -9,6 +9,7 @@ from typing import Any
 from .models import Budget
 from .orchestrator import Orchestrator
 from .replay import replay_summary, replay_verify
+from .route_policy import should_use_graph_context
 from .store import RunStore
 from .swarm import run_swarm_plan
 
@@ -62,7 +63,7 @@ class RpcServer:
                 return self._start_swarm(goal, budget, params)
             store = RunStore(self.root)
             try:
-                run_id, _ = Orchestrator(store).plan(goal, budget, graph_mode=bool(params.get("graph")))
+                run_id, _ = Orchestrator(store).plan(goal, budget, graph_mode=_graph_mode(params, goal))
             finally:
                 store.close()
             cancel = threading.Event()
@@ -122,7 +123,7 @@ class RpcServer:
     def _start_swarm(self, goal: str, budget: Budget, params: dict[str, Any]) -> dict[str, Any]:
         store = RunStore(self.root)
         try:
-            run_id, plan = Orchestrator(store).plan(goal, budget, graph_mode=bool(params.get("graph")))
+            run_id, plan = Orchestrator(store).plan(goal, budget, graph_mode=_graph_mode(params, goal))
         except Exception:
             store.close()
             raise
@@ -172,3 +173,7 @@ def _selected(params: dict[str, Any]) -> set[str] | None:
     if isinstance(raw, list):
         return {str(item).strip() for item in raw if str(item).strip()}
     return {item.strip() for item in str(raw).split(",") if item.strip()}
+
+
+def _graph_mode(params: dict[str, Any], goal: str) -> bool:
+    return bool(params["graph"]) if "graph" in params else should_use_graph_context(goal)

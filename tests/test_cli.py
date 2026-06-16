@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+import poor_cli.repo_graph as repo_graph
 from poor_cli.cli import main
 from poor_cli.config import add_provider, empty_config, provider_preset, save_repo_config
 from poor_cli.lanes import LaneError, review_run
@@ -230,7 +231,7 @@ def test_cli_runs_fork_records_source_run(tmp_path: Path, capsys) -> None:
         run_store.close()
 
 
-def test_cli_plan_graph_stores_graph_prompt_bias(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_cli_plan_auto_graph_stores_graph_prompt_bias(tmp_path: Path, monkeypatch, capsys) -> None:
     planner = tmp_path / "planner.py"
     planner.write_text(
         "import json, sys\n"
@@ -244,7 +245,7 @@ def test_cli_plan_graph_stores_graph_prompt_bias(tmp_path: Path, monkeypatch, ca
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
 
-    assert main(["--store-dir", str(store), "plan", "trace parser flow", "--graph", "--json"]) == 0
+    assert main(["--store-dir", str(store), "plan", "trace parser flow", "--json"]) == 0
     run_id = json.loads(capsys.readouterr().out)["run_id"]
     run_store = RunStore(store)
     try:
@@ -263,7 +264,7 @@ def test_cli_plan_graph_stores_graph_prompt_bias(tmp_path: Path, monkeypatch, ca
         run_store.close()
 
 
-def test_cli_run_graph_stores_graph_agent_prompt(tmp_path: Path, monkeypatch, capsys) -> None:
+def test_cli_run_auto_graph_stores_graph_agent_prompt(tmp_path: Path, monkeypatch, capsys) -> None:
     source = tmp_path / "src" / "parser.py"
     source.parent.mkdir()
     source.write_text("def parse_flow(value):\n    return value\n", encoding="utf-8")
@@ -280,7 +281,7 @@ def test_cli_run_graph_stores_graph_agent_prompt(tmp_path: Path, monkeypatch, ca
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
 
-    assert main(["--store-dir", str(store), "run", "trace parse flow", "--graph", "--yes"]) == 0
+    assert main(["--store-dir", str(store), "run", "trace parse_flow", "--yes"]) == 0
     run_id = next(line.split(":", 1)[1].strip() for line in capsys.readouterr().out.splitlines() if line.startswith("run_id:"))
     run_store = RunStore(store)
     try:
@@ -294,6 +295,61 @@ def test_cli_run_graph_stores_graph_agent_prompt(tmp_path: Path, monkeypatch, ca
         assert "symbol parse_flow" in agent_input["prompt"]
         assert "find_symbol" in agent_input["prompt"]
         assert "subgraph" in agent_input["prompt"]
+    finally:
+        run_store.close()
+
+
+def test_cli_plan_plain_review_skips_auto_graph(tmp_path: Path, monkeypatch, capsys) -> None:
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Review','objective':'review patch','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{}}))\n",
+        encoding="utf-8",
+    )
+    store = tmp_path / "store"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    assert main(["--store-dir", str(store), "plan", "review patch", "--json"]) == 0
+    run_id = json.loads(capsys.readouterr().out)["run_id"]
+    run_store = RunStore(store)
+    try:
+        assert not run_store.list_artifacts(run_id, "graph.context")
+        assert [event["payload"]["graph_mode"] for event in run_store.list_events(run_id) if event["type"] == "plan.created"] == [False]
+    finally:
+        run_store.close()
+
+
+def test_cli_plan_auto_graph_records_fallback_artifact(tmp_path: Path, monkeypatch, capsys) -> None:
+    (tmp_path / "parser.py").write_text("def parse_flow(value):\n    return value\n", encoding="utf-8")
+    planner = tmp_path / "planner.py"
+    planner.write_text(
+        "import json, sys\n"
+        "sys.stdin.read()\n"
+        "print(json.dumps({'problem_summary':'s','architecture_assessment':'a','assumptions':[],"
+        "'risks':[],'tasks':[{'title':'Trace','objective':'trace parser','suggested_agent':'generic'}],"
+        "'validation_strategy':[],'routing_strategy':'generic','estimated_cost':{}}))\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("POOR_CLI_PLANNER_COMMAND", f"{sys.executable} {planner}")
+
+    def fail_parse(_root: Path, _path: Path):
+        raise repo_graph.RepoGraphError("parser missing")
+
+    monkeypatch.setattr(repo_graph, "_parse_python", fail_parse)
+
+    assert main(["--store-dir", str(tmp_path / "store"), "plan", "trace parser flow", "--json"]) == 0
+    run_id = json.loads(capsys.readouterr().out)["run_id"]
+    run_store = RunStore(tmp_path / "store")
+    try:
+        assert run_store.list_artifacts(run_id, "graph.context")
+        fallback = json.loads(run_store.artifact_payload(run_store.list_artifacts(run_id, "graph.fallback")[0]["artifact_id"]))
+        assert fallback["fallback"] == "grep"
+        assert fallback["reason"] == "parser missing"
     finally:
         run_store.close()
 

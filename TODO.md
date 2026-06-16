@@ -321,11 +321,11 @@ Routing stays useful as capture-time enrichment, not as the pitch. Keep it pract
 
 ## 11. Graph Context (Retained, Hidden Behind Routing)
 
-- [ ] Auto-prefer symbolic graph context when the prompt names symbols/files/imports/call-paths/multi-file behavior (stop requiring manual `--graph`).
-- [ ] Fall back to grep when tree-sitter support is missing; record a graph-fallback artifact.
-- [ ] Skip graph context for plain prose/review tasks.
-- [ ] Keep substrate: `find_symbol`, `definition_of`, `imports_of`, `callers_of`, `subgraph`, graph-vs-grep benchmark discipline, graph-aware replay artifacts.
-- [ ] Ensure graph context is captured into the record (so "what context did the agent receive?" is answerable on replay).
+- [x] Auto-prefer symbolic graph context when the prompt names symbols/files/imports/call-paths/multi-file behavior (stop requiring manual `--graph`).
+- [x] Fall back to grep when tree-sitter support is missing; record a graph-fallback artifact.
+- [x] Skip graph context for plain prose/review tasks.
+- [x] Keep substrate: `find_symbol`, `definition_of`, `imports_of`, `callers_of`, `subgraph`, graph-vs-grep benchmark discipline, graph-aware replay artifacts.
+- [x] Ensure graph context is captured into the record (so "what context did the agent receive?" is answerable on replay).
 
 ---
 

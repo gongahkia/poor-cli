@@ -48,6 +48,8 @@ def test_route_preflight_labels_and_selects_shim_route(tmp_path: Path) -> None:
     assert preflight["selected_route"] == "graph-enriched"
     assert {"small-edit", "test-fix", "needs-graph", "multi-file-edit"} <= set(preflight["labels"])
     assert preflight["pass_through_command"] == ["codex", "exec", "fix failing tests in src/parser.py and tests/test_parser.py"]
+    parser_preflight = preflight_route("codex", ["exec", "fix failing parser test"], "tty", tmp_path, {}, route=route)
+    assert parser_preflight["selected_route"] == "graph-enriched"
 
 
 def test_route_preflight_records_intervention_reasons(tmp_path: Path) -> None:

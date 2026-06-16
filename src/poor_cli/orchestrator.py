@@ -57,6 +57,17 @@ class Orchestrator:
                     "warning": str(graph_context.get("warning") or ""),
                 },
             )
+            if not graph_context.get("available"):
+                fallback = self.store.put_artifact(
+                    run_id=run_id,
+                    kind="graph.fallback",
+                    data={
+                        "fallback": "grep",
+                        "reason": str(graph_context.get("warning") or ""),
+                        "context_artifact_id": graph_art.artifact_id,
+                    },
+                )
+                self.store.append_event(run_id, "graph.context.fallback", {"artifact_id": fallback.artifact_id, "fallback": "grep"})
         if graph_mode:
             for task in plan.tasks:
                 task.metadata["graph_mode"] = True
