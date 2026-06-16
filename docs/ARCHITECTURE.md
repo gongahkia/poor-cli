@@ -54,6 +54,7 @@
 - `poor-cli mcp`: list or call external stdio MCP server tools.
 - Graph tools: `find_symbol`, `definition_of`, `imports_of`, `callers_of`, and `subgraph`.
 - `poor-cli plan --graph` and `poor-cli run --graph` bias planner prompts toward symbolic-first graph navigation and persist graph-context evidence.
+- `poor-cli tui`: local debug/audit inspector for surprising runs; not the primary capture path.
 
 ## Boundaries
 

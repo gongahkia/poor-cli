@@ -364,15 +364,15 @@ Checked-in evidence index (keep current):
 TUI — demote to inspector/debugger:
 
 - [ ] Keep TUI for: inspect a failed/surprising run; view route decision/DAG/artifacts/review/verifier; open `PLAN.md`/`RESULT.md`/`PATCH.diff`/`REVIEW.json`/`VERIFY.json`; compare recent runs; inspect budget/provider status.
-- [ ] `[breaking]` Remove TUI-first framing from all launch/demo docs. Launch leads with capture + verify, never "open the TUI."
-- [ ] Keep the existing dry/yes/replay/route-set capabilities, but document the TUI as debug/audit, not daily driver.
+- [x] `[breaking]` Remove TUI-first framing from all launch/demo docs. Launch leads with capture + verify, never "open the TUI."
+- [x] Keep the existing dry/yes/replay/route-set capabilities, but document the TUI as debug/audit, not daily driver.
 
 RPC / MCP / editor:
 
-- [ ] Keep JSON-RPC stdio server (run/inspect/status/cancel/replay) as a secondary integration surface.
-- [ ] Keep MCP client + stdio server (allowlisted safe tools). No HTTP MCP/auth server in v1.
+- [x] Keep JSON-RPC stdio server (run/inspect/status/cancel/replay) as a secondary integration surface.
+- [x] Keep MCP client + stdio server (allowlisted safe tools). No HTTP MCP/auth server in v1.
 - [ ] Support: editor extension asks `poor-cli` to classify before running; headless run + structured event subscription; MCP clients inspect replay artifacts; tools query route decisions without invoking agents.
-- [ ] Do not let RPC/MCP replace the CLI capture path for daily use.
+- [x] Do not let RPC/MCP replace the CLI capture path for daily use.
 
 ---
 

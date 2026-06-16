@@ -2,6 +2,8 @@
 
 `poor-cli rpc serve --stdio` exposes a local JSON-RPC 2.0 server over JSON Lines.
 
+RPC is a secondary integration surface for editors and headless automation. It can classify/run/inspect/replay records, but it is not intended to replace the shim/CLI capture path for daily use.
+
 ## Methods
 
 - `run`: plans synchronously, starts execution in the background, and returns `{run_id, status}`.

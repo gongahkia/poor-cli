@@ -27,6 +27,7 @@ Phase 1:
 - Show `poor-cli run` solving a fixture bug.
 - Show `poor-cli inspect <run_id> --events --context`.
 - Show `poor-cli --offline replay <run_id> --verify` with no provider credentials.
+- Do not lead with the TUI; use it only after replay if a run needs visual debugging.
 
 Phase 2:
 
