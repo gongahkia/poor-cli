@@ -125,9 +125,9 @@ canvas { display: block; position: fixed; top: 0; left: var(--planner-w); }
   align-self: flex-start; background: var(--btn-bg); border: 1px solid var(--border-mid);
   color: var(--fg-dim); border-radius: 4px; padding: 4px 8px; cursor: pointer; font-size: 10px;
 }
-.validation-card.info { border-left: 2px solid #2563eb; }
-.validation-card.warning { border-left: 2px solid #f59e0b; }
-.validation-card.serious, .validation-card.blocked { border-left: 2px solid #ef4444; }
+.validation-card.info { border-left: 2px solid var(--fg-muted); }
+.validation-card.warning { border-left: 2px solid #9DABAD; }
+.validation-card.serious, .validation-card.blocked { border-left: 2px solid #D92D20; }
 .validation-card strong, .scenario-row strong, .product-card strong { color: var(--fg); }
 .validation-card p { margin: 0; }
 .si-badge {
@@ -182,7 +182,7 @@ canvas { display: block; position: fixed; top: 0; left: var(--planner-w); }
 }
 .minimap-item { border-color: rgba(229,229,229,0.38); background: rgba(229,229,229,0.20); }
 .minimap-item.wall { background: rgba(107,114,128,0.65); border-color: rgba(156,163,175,0.72); }
-.minimap-item.door, .minimap-item.opening { background: rgba(37,99,235,0.45); border-color: #60a5fa; }
+.minimap-item.door, .minimap-item.opening { background: rgba(255,255,255,0.22); border-color: #FFFFFF; }
 #catalog-results { display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
 .catalog-card {
   display: flex; flex-direction: column; gap: 3px; padding: 6px;
@@ -196,7 +196,7 @@ canvas { display: block; position: fixed; top: 0; left: var(--planner-w); }
 }
 .catalog-card button:hover { background: var(--btn-hover); color: var(--fg); }
 .catalog-card.catalog-note {
-  border-left: 2px solid #f59e0b; background: rgba(120,53,15,0.22);
+  border-left: 2px solid #9DABAD; background: rgba(157,171,173,0.10);
 }
 #toolbar {
   position: fixed; top: 56px; left: calc(var(--planner-w) + 12px); z-index: 40;
@@ -374,7 +374,7 @@ kbd {
 }
 .chat-confirm-card {
   align-self: stretch; max-width: 100%; background: var(--chat-err-bg); color: var(--chat-err-fg);
-  border: 1px solid var(--border-mid); border-left: 2px solid #ef4444; border-radius: 8px;
+  border: 1px solid var(--border-mid); border-left: 2px solid #D92D20; border-radius: 8px;
   padding: 10px; display: flex; flex-direction: column; gap: 8px;
 }
 .chat-confirm-card p { margin: 0; line-height: 1.4; }
@@ -409,7 +409,7 @@ kbd {
 }
 .chat-plan-warning {
   color: var(--fg-dim); background: var(--input-bg); border: 1px solid var(--border);
-  border-left: 2px solid #a78bfa; border-radius: 4px; padding: 6px; font-size: 10px; line-height: 1.35;
+  border-left: 2px solid #9DABAD; border-radius: 4px; padding: 6px; font-size: 10px; line-height: 1.35;
 }
 .chat-plan-metrics {
   display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px;
@@ -708,10 +708,16 @@ button, label, select, input[type="text"], input[type="search"], input[type="pas
   border-right-color: var(--border); font-size: 13px;
 }
 #chat-header {
+  flex-direction: column; align-items: flex-start; gap: 10px;
   padding: 16px; border-bottom-color: var(--border);
   color: var(--fg); font-family: var(--font-display); font-weight: 500; font-size: 18px; line-height: 24px;
 }
-#chat-header > div { gap: 6px !important; max-width: 330px; }
+#chat-header > div {
+  gap: 6px !important; width: 100%; max-width: none; justify-content: flex-start;
+}
+#chat-model { flex: 1 1 138px; min-width: 128px; }
+#chat-planner-mode, #chat-standards-profile { flex: 1 1 132px; max-width: none; }
+#chat-clear-btn, #chat-settings-btn { flex: 0 0 auto; }
 #chat-planner-mode, #chat-standards-profile, #chat-model,
 #chat-provider, .chat-key-row select, .chat-key-row input[type="password"],
 #room-capture-input, #catalog-query, #room-openings, #floorplan-panel-input,
