@@ -1,2 +1,0 @@
-run_id: run_a239c924b6f34b9d
-1. Resolve astropy__astropy-12907 -> claude

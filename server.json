@@ -1,0 +1,36 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.gongahkia/haus",
+  "title": "Haus",
+  "description": "MCP-native AI floor-plan workbench for uploaded apartment layouts.",
+  "websiteUrl": "https://github.com/gongahkia/haus#readme",
+  "repository": {
+    "url": "https://github.com/gongahkia/haus",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "haus",
+      "version": "0.1.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "source": "mcp-manifest.json",
+      "distribution_note": "Publish after the PyPI package is released and README ownership verification is live."
+    }
+  }
+}

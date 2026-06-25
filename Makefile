@@ -1,34 +1,70 @@
-.PHONY: install test lint cli agents plan run clean help
+VENV := .venv/bin
+CORPUS := corpus
+OUT := out
+DEBUG := out/debug
+PORT := 8080
 
-PYTHON := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/python,python3)
-PIP := $(if $(VIRTUAL_ENV),$(VIRTUAL_ENV)/bin/pip,pip)
+.PHONY: setup test lint e2e vectorize build view mcp clean all help
 
-install: ## install v6 package in dev mode
-	$(PIP) install -e ".[dev]"
+help:
+	@echo "haus — floor plan vectorization + 3D editor"
+	@echo ""
+	@echo "  make setup      install deps into .venv"
+	@echo "  make build      image → vector + GLB for all corpus images"
+	@echo "  make view       launch 3D editor in browser (port $(PORT))"
+	@echo "  make mcp        start MCP server for AI-assisted editing"
+	@echo "  make all        lint + test + build"
+	@echo ""
+	@echo "  make vectorize  vectorize only (no GLB)"
+	@echo "  make test       run tests"
+	@echo "  make lint       run ruff linter"
+	@echo "  make e2e        run optional Playwright frontend tests"
+	@echo "  make clean      remove out/"
+	@echo ""
+	@echo "typical workflow:"
+	@echo "  make setup && make build && make view"
+	@echo ""
+	@echo "AI chat (set one or more):"
+	@echo "  ANTHROPIC_API_KEY=... make view"
+	@echo "  OPENAI_API_KEY=...    make view"
+	@echo "  GEMINI_API_KEY=...    make view"
 
-test: ## run focused v6 tests
-	$(PYTHON) -m pytest tests/
+setup:
+	uv venv --python 3.11
+	uv pip install -e ".[dev]"
 
-lint: ## run ruff checks
-	$(PYTHON) -m ruff check src/poor_cli tests
+test:
+	$(VENV)/pytest tests/ -v
 
-cli: ## show CLI help
-	$(PYTHON) -m poor_cli --help
+lint:
+	$(VENV)/ruff check src tests
 
-agents: ## list detected agents
-	$(PYTHON) -m poor_cli agents
+e2e:
+	$(VENV)/pytest tests/test_frontend_e2e.py -v
 
-plan: ## run planner, e.g. make plan GOAL="..."
-	$(PYTHON) -m poor_cli plan "$(GOAL)"
+vectorize: $(wildcard $(CORPUS)/cleaned/*.jpg)
+	@mkdir -p $(OUT)
+	@for img in $(CORPUS)/cleaned/*.jpg; do \
+		name=$$(basename "$$img" .jpg); \
+		echo "--- vectorize $$name ---"; \
+		$(VENV)/haus vectorize --image "$$img" --out $(OUT)/$$name --debug-dir $(OUT)/$$name/debug; \
+	done
 
-run: ## run orchestrator, e.g. make run GOAL="..." ARGS="--yes"
-	$(PYTHON) -m poor_cli run "$(GOAL)" $(ARGS)
+build: $(wildcard $(CORPUS)/cleaned/*.jpg)
+	@mkdir -p $(OUT)
+	@for img in $(CORPUS)/cleaned/*.jpg; do \
+		name=$$(basename "$$img" .jpg); \
+		echo "--- build $$name ---"; \
+		$(VENV)/haus build --image "$$img" --out $(OUT)/$$name --debug-dir $(OUT)/$$name/debug; \
+	done
 
-clean: ## remove local build/runtime artifacts
-	rm -rf build dist *.egg-info .pytest_cache .ruff_cache .poor-cli/v6
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+view:
+	$(VENV)/haus view --port $(PORT)
 
-help: ## show this help
-	@grep -E '^[a-zA-Z_-]+:.*##' $(MAKEFILE_LIST) | awk -F ':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
+mcp:
+	$(VENV)/haus mcp
 
-.DEFAULT_GOAL := help
+clean:
+	rm -rf $(OUT) output/playwright viewer/mcp-layout.json
+
+all: lint test build

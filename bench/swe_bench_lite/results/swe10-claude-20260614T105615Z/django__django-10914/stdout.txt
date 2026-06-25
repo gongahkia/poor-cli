@@ -1,2 +1,0 @@
-run_id: run_b150ab2e86ab458c
-1. Resolve django__django-10914 -> claude

@@ -1,0 +1,131 @@
+{
+  "name": "haus",
+  "title": "Haus",
+  "version": "0.1.0",
+  "mcp_name": "io.github.gongahkia/haus",
+  "repository": "https://github.com/gongahkia/haus",
+  "homepage": "https://github.com/gongahkia/haus#readme",
+  "license": "MIT",
+  "language": "Python",
+  "runtime": {
+    "name": "uvx",
+    "requires_python": ">=3.10"
+  },
+  "transport": {
+    "type": "stdio",
+    "command": "uvx --from git+https://github.com/gongahkia/haus haus mcp"
+  },
+  "listing": {
+    "short_description": "MCP-native AI floor-plan workbench for uploaded apartment layouts.",
+    "long_description": "Haus is an open-source floor-plan editor and local AI planning workbench. Users can upload floor-plan images, calibrate scale, vectorize walls into editable 3D geometry, ask agents to furnish rooms, run spatial checks, and export JSON, SVG, or GLB layouts.",
+    "category": "Design tools",
+    "tags": [
+      "mcp",
+      "floor-plan",
+      "interior-design",
+      "apartment",
+      "threejs",
+      "layout",
+      "space-planning"
+    ],
+    "use_cases": [
+      "Upload and vectorize apartment floor plans for editable layout planning.",
+      "Let an AI agent furnish a room or whole apartment through MCP tools.",
+      "Check furniture placement, room tags, sightlines, and walkway clearance."
+    ]
+  },
+  "install": {
+    "view_command": "uvx --from git+https://github.com/gongahkia/haus haus view",
+    "mcp_command": "uvx --from git+https://github.com/gongahkia/haus haus mcp --layout ~/.haus/viewer/mcp-layout.json",
+    "pypi_future_mcp_command": "uvx haus mcp"
+  },
+  "client_config": {
+    "claude_desktop": {
+      "mcpServers": {
+        "haus": {
+          "command": "uvx",
+          "args": [
+            "--from",
+            "git+https://github.com/gongahkia/haus",
+            "haus",
+            "mcp",
+            "--layout",
+            "/Users/YOUR_USER/.haus/viewer/mcp-layout.json"
+          ]
+        }
+      }
+    }
+  },
+  "capabilities": {
+    "tools": [
+      "design_room",
+      "design_flat",
+      "list_furniture_catalog",
+      "search_ikea_catalog",
+      "get_ikea_catalog_item",
+      "add_catalog_furniture",
+      "refresh_ikea_catalog",
+      "list_objects",
+      "get_object_details",
+      "get_layout_summary",
+      "get_layout_json",
+      "add_furniture",
+      "add_wall",
+      "move_object",
+      "rotate_object",
+      "resize_object",
+      "set_color",
+      "set_visibility",
+      "duplicate_object",
+      "swap_furniture",
+      "remove_object",
+      "remove_objects_by_type",
+      "clear_layout",
+      "batch_move",
+      "align_objects",
+      "distribute_objects",
+      "snap_to_grid",
+      "measure_distance",
+      "find_nearest",
+      "check_overlap",
+      "find_objects_in_area",
+      "check_sightline",
+      "suggest_furniture_placement",
+      "auto_place_furniture",
+      "suggest_placement_json",
+      "simulate_layout_options",
+      "apply_simulated_option",
+      "rename_object",
+      "find_by_name",
+      "tag_room",
+      "list_rooms",
+      "compute_room_area",
+      "list_room_templates",
+      "apply_room_template",
+      "score_doorway_accessibility",
+      "score_walkway",
+      "score_layout",
+      "get_semantic_layout_json",
+      "bim_readiness_report"
+    ],
+    "resources": [],
+    "prompts": []
+  },
+  "submission_status": [
+    {
+      "target": "mcp.so",
+      "status": "ready_for_manual_submission",
+      "path": "https://mcp.so/submit"
+    },
+    {
+      "target": "PulseMCP",
+      "status": "ready_for_manual_submission",
+      "path": "https://www.pulsemcp.com/submit"
+    },
+    {
+      "target": "Official MCP Registry",
+      "status": "blocked_until_pypi_release_and_package_verification",
+      "path": "https://modelcontextprotocol.io/registry"
+    }
+  ]
+}

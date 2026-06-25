@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>haus — Select Model</title>
+<style>
+:root {
+  --bg: #0f0f0f; --surface: #1f1f1f; --input-bg: #121212;
+  --fg: #eeeeee; --fg-dim: #e5e5e5; --fg-muted: #b3b3b3; --fg-faint: #747474;
+  --primary: #7c3aed; --primary-60: #a78bfa; --primary-80: #8b5cf6; --chip-bg: #2b2140;
+  --border: rgba(229,229,229,0.10); --border-mid: rgba(229,229,229,0.22);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: var(--bg); color: var(--fg); min-height: 100vh; letter-spacing: 0; }
+header {
+  padding: 46px 40px 24px; border-bottom: 1px solid var(--border);
+}
+header h1 { font-size: 38px; line-height: 46px; font-weight: 600; letter-spacing: 0; }
+header p { font-size: 16px; line-height: 24px; color: var(--fg-muted); margin-top: 6px; max-width: 680px; }
+.toolbar {
+  padding: 16px 40px; display: flex; gap: 12px; align-items: center;
+  border-bottom: 1px solid var(--border);
+}
+.toolbar label, .toolbar button {
+  min-height: 36px; padding: 8px 14px; background: var(--surface); border: 1px solid var(--border-mid);
+  border-radius: 4px; cursor: pointer; font-size: 12px; line-height: 18px; color: var(--fg-dim);
+}
+.toolbar label:hover, .toolbar button:hover { background: var(--chip-bg); color: var(--fg); }
+.toolbar input[type="file"] { display: none; }
+#grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 20px; padding: 24px 40px;
+}
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  overflow: hidden; cursor: pointer; transition: border-color 0.15s, transform 0.15s;
+}
+.card:hover { border-color: var(--primary-60); transform: translateY(-2px); }
+.card img {
+  width: 100%; height: 180px; object-fit: contain; background: var(--input-bg);
+  border-bottom: 1px solid var(--border);
+}
+.card .no-thumb {
+  width: 100%; height: 180px; display: flex; align-items: center;
+  justify-content: center; background: var(--input-bg); border-bottom: 1px solid var(--border);
+  color: var(--fg-faint); font-size: 13px;
+}
+.card-body { padding: 14px 16px; }
+.card-body h3 { font-size: 16px; line-height: 24px; font-weight: 600; margin-bottom: 6px; }
+.card-body .meta { font-size: 12px; color: var(--fg-muted); line-height: 1.6; }
+.card-body .meta span { color: var(--primary-60); }
+#empty {
+  padding: 60px 40px; text-align: center; color: var(--fg-faint); font-size: 14px;
+  display: none;
+}
+#empty code {
+  background: var(--input-bg); border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; font-size: 13px;
+}
+.or-divider { color: var(--fg-faint); font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>haus</h1>
+  <p>Open the editor, upload a floor plan image, or load an existing GLB model.</p>
+</header>
+<div class="toolbar">
+  <label>Load GLB from disk <input type="file" id="glb-upload" accept=".glb"></label>
+  <span class="or-divider">|</span>
+  <button id="open-empty">Open editor</button>
+</div>
+<div id="grid"></div>
+<div id="empty">
+  <p>No sample models found.</p>
+  <p style="margin-top:8px;">Open the editor and upload a PNG/JPG floor plan.</p>
+</div>
+<script>
+const grid = document.getElementById('grid');
+const empty = document.getElementById('empty');
+
+fetch('./manifest.json')
+  .then(r => r.json())
+  .then(models => {
+    if (!models.length) { empty.style.display = ''; return; }
+    for (const m of models) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.addEventListener('click', () => {
+        window.location.href = 'editor.html?glb=' + encodeURIComponent(m.glb);
+      });
+      let thumbHtml;
+      if (m.thumb) {
+        thumbHtml = `<img src="${m.thumb}" alt="${m.name}">`;
+      } else {
+        thumbHtml = `<div class="no-thumb">No preview</div>`;
+      }
+      let metaHtml = '';
+      if (m.walls !== undefined) metaHtml += `<span>${m.walls}</span> walls `;
+      if (m.columns !== undefined) metaHtml += `<span>${m.columns}</span> columns `;
+      if (m.openings !== undefined) metaHtml += `<span>${m.openings}</span> openings `;
+      if (m.scale) metaHtml += `<br>scale: <span>${m.scale}</span> m/px`;
+      if (m.source) metaHtml += `<br>source: ${m.source}`;
+      card.innerHTML = `${thumbHtml}<div class="card-body"><h3>${m.name}</h3><div class="meta">${metaHtml}</div></div>`;
+      grid.appendChild(card);
+    }
+  })
+  .catch(() => { empty.style.display = ''; });
+
+document.getElementById('glb-upload').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  window.location.href = 'editor.html?glb=' + encodeURIComponent(url);
+});
+
+document.getElementById('open-empty').addEventListener('click', () => {
+  window.location.href = 'editor.html';
+});
+</script>
+</body>
+</html>

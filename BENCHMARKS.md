@@ -1,241 +1,55 @@
-# poor-cli v6 benchmarks
+# Provider Benchmark
 
-Status: local generic, live Anthropic fixture, 1-task SWE-bench Lite smoke, and fixed 10-task SWE-bench Lite results exist.
+This benchmark captures one fixed-prompt run of the `Haus` MCP workflow across the free/API routes that were usable from this checkout on June 3, 2026.
 
-## Task format
+Candidate routes were selected from [mnfst/awesome-free-llm-apis](https://github.com/mnfst/awesome-free-llm-apis), which lists OpenAI-compatible free inference options including [GitHub Models](https://models.github.ai/inference), [Kilo Code](https://api.kilo.ai/api/gateway), and [LLM7.io](https://api.llm7.io/v1). For this run, GitHub Models and LLM7 completed the tool-driven layout workflow reliably enough to compare.
 
-Canonical fixture: `bench/fixtures/v6_baseline_tasks.json`.
+## Fixed Prompt
 
-Each task has:
-- `id`: stable benchmark id.
-- `source`: where the task came from.
-- `issue`: GitHub issue number when applicable.
-- `phase`: pivot phase.
-- `title`: short task label.
-- `prompt`: instruction passed to each mode.
-- `success_criteria`: deterministic checks a reviewer can apply.
-
-The fixture-level `modes` are:
-- `claude-only`
-- `codex-only`
-- `poor-cli`
-
-The fixture-level `metrics` are:
-- `completed`
-- `tests_passed`
-- `interventions`
-- `cost_usd`
-- `duration_seconds`
-- `replay_useful`
-- `run_id`
-
-## Baseline plan
-
-Initial comparison:
-1. Run each fixture prompt with Claude-only.
-2. Run each fixture prompt with Codex-only.
-3. Run each fixture prompt through `poor-cli run`.
-4. Record the same metrics for every mode.
-5. For `poor-cli`, attach the replay `run_id` and verify `poor-cli replay <run_id>` offline.
-
-The local fixture bug harness is reproducible without external credentials:
-
-```sh
-python3 bench/local_fixture_bugs.py --agent generic --compact --output bench/results/local-fixture-bugs-generic.json
+```text
+Benchmark prompt: design a minimalist 4-room family flat for a Singapore HDB/BTO layout. Start by inspecting the current layout. Then use tools to add real furniture, not just prose. Place a living area with sofa, coffee table, and TV console; a dining area; at least two bedrooms with beds and wardrobes; a study/work corner; and basic kitchen fixtures. Keep a clear circulation path through the flat where possible. Tag furniture into rooms. Run at least one spatial validation tool such as check_sightline or score_walkway before your final answer.
 ```
 
-It copies `tests/fixtures/bug-{1,2,3}`, runs each through `poor-cli run --yes`, validates with `python -m pytest -q`, then verifies `poor-cli --offline replay <run_id> --verify`.
+## Methodology
 
-Live calibration remains explicit:
+- Base layout: `corpus/library/2.json`, a 4-room yellow BTO floor plan from the included corpus.
+- Each route received the same system instruction, prompt, base layout, and primitive tool set: `get_layout_summary`, `list_objects`, `list_furniture_catalog`, `add_furniture`, `tag_room`, `check_sightline`, and `score_walkway`.
+- The harness executed real tool calls against the same local MCP layout functions. It did not allow the high-level `design_flat` shortcut.
+- Tool use was forced until at least 8 furniture objects were placed. GitHub Models Mistral used provider-specific `tool_choice: "any"` because it rejected OpenAI's `tool_choice: "required"` value.
+- Each finished layout was imported into the same browser viewer and captured in the same top-down 1600x1000 view.
+- No direct `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `GEMINI_API_KEY` was present locally, so there is no direct Claude, OpenAI platform, or Gemini platform run here. DeepSeek via GitHub Models responded to plain chat but rejected tool use, and Kilo/OpenRouter-style free routing was inconsistent under this tool-heavy prompt.
 
-```sh
-python3 bench/local_fixture_bugs.py --agent claude --budget-usd 1.0 --confirm-cost --compact --output bench/results/local-fixture-bugs-claude.json
-python3 bench/local_fixture_bugs.py --agent codex --output bench/results/local-fixture-bugs-codex.json
-```
+## Results
 
-Additional external-model results must be checked in as explicit rows with commands, commit SHA, model/tool versions, and replay IDs.
+| Route | Requested model | Reported model(s) | Furniture | Tool calls | Room tags | Validation result | Screenshot |
+|---|---|---|---:|---:|---|---|---|
+| GitHub Models / OpenAI GPT-4o mini | `openai/gpt-4o-mini` | `gpt-4o-mini-2024-07-18` | 14 | 24 | Bedroom 1, Bedroom 2, Dining Room, Kitchen, Living Room, Study | `check_sightline` reported the living-to-dining sightline blocked by 6 objects. | [PNG](./asset/benchmarks/github-models-gpt-4o-mini.png) |
+| GitHub Models / Mistral Small | `mistral-ai/mistral-small-2503` | `mistral-small-2503` | 13 | 24 | Bathroom, Bedroom 2, Dining Room, Kitchen, Living Room, Master Bedroom, Study | `score_walkway` found a 0.01m narrowest gap and a 0.024 walkway score. | [PNG](./asset/benchmarks/github-models-mistral-small.png) |
+| LLM7 free gateway | `mistral-small-3.1-24b` | `mistral-small-3.2`, `qwen3-235b` | 17 | 25 | Kitchen, Living and Dining, Master Bedroom, Second Bedroom, Study | `check_sightline` reported the sofa-to-TV sightline blocked by 7 objects. | [PNG](./asset/benchmarks/llm7-free-gateway.png) |
 
-Checked-in local fixture result:
+## Captured Outputs
 
-| result file | mode | agent | completed | tests passed | replay verified |
-| --- | --- | --- | ---: | ---: | ---: |
-| `bench/results/local-fixture-bugs-generic.json` | `poor-cli` | `generic` | 3/3 | 3/3 | 3/3 |
-| `bench/results/local-fixture-bugs-claude.json` | `poor-cli` | `claude` | 3/3 | 3/3 | 3/3 |
+### GitHub Models / OpenAI GPT-4o mini
 
-Phase 1 readiness probe:
+![GitHub Models GPT-4o mini benchmark output](./asset/benchmarks/github-models-gpt-4o-mini.png)
 
-```sh
-uv run --locked --extra bench python bench/phase1_readiness.py --output bench/results/phase1-readiness.json
-```
+### GitHub Models / Mistral Small
 
-Checked-in snapshot: `bench/results/phase1-readiness.json`.
+![GitHub Models Mistral Small benchmark output](./asset/benchmarks/github-models-mistral-small.png)
 
-Current snapshot status: all readiness prerequisites pass.
+### LLM7 free gateway
 
-Phase 1 acceptance audit:
+![LLM7 free gateway benchmark output](./asset/benchmarks/llm7-free-gateway.png)
 
-```sh
-uv run --locked python bench/phase1_acceptance.py --output bench/results/phase1-acceptance.json
-```
+## Observations
 
-Checked-in snapshot: `bench/results/phase1-acceptance.json`.
+- GitHub Models / OpenAI GPT-4o mini produced the most evenly structured room tagging, but its own validation found a blocked sightline through the flat.
+- GitHub Models / Mistral Small completed the same primitive workflow after the `tool_choice` adapter change, but it crowded the circulation path enough for `score_walkway` to flag a near-zero passable gap.
+- LLM7 produced the largest furnishing set and completed the prompt without registration, but its gateway reported different backend model IDs across the run, so attribution should be treated as gateway-level rather than model-level.
 
-Current acceptance status: all Phase 1 acceptance checks pass from checked-in evidence.
+## Caveats
 
-Phase 3 acceptance audit:
-
-```sh
-uv run --locked python bench/phase3_acceptance.py --output bench/results/phase3-acceptance.json
-```
-
-Checked-in snapshot: `bench/results/phase3-acceptance.json`.
-
-Current accepted Phase 3 sub-checks: offline graph replay and offline network guards. Current remaining Phase 3 acceptance gaps: Linux/CUDA readiness, local SWE-bench target row, and local-GPU screencast evidence.
-
-Phase 3 demo evidence plan:
-
-```sh
-uv run --locked python bench/phase3_demo.py --output bench/results/phase3-demo-plan.json
-```
-
-Checked-in plan: `bench/results/phase3-demo-plan.json`.
-
-Phase 3 demo evidence template:
-
-```sh
-uv run --locked python bench/phase3_demo.py --write-template bench/results/phase3-demo.json --run-id <run_id> --video-path bench/results/phase3-demo.mp4 --duration-seconds 60 --internet-disabled --local-gpu --graph-tools-visible --offline-replay-verified
-uv run --locked python bench/phase3_demo.py --evidence bench/results/phase3-demo.json
-```
-
-Phase 3 target-host closeout:
-
-```sh
-scripts/phase3-closeout-linux-cuda.sh --yes --start-server --run-id swe10-local-YYYYMMDDTHHMMSSZ \
-  --write-demo-evidence --demo-video-path bench/results/phase3-demo.mp4 --demo-duration-seconds 60 \
-  --demo-internet-disabled --demo-local-gpu --demo-graph-tools-visible --demo-offline-replay-verified
-uv run --locked python bench/phase3_closeout.py --output bench/results/phase3-closeout.json
-```
-
-Checked-in snapshot: `bench/results/phase3-closeout.json`.
-
-Pivot remaining-work audit:
-
-```sh
-uv run --locked python bench/pivot_remaining.py --output bench/results/pivot-remaining.json
-```
-
-Checked-in snapshot: `bench/results/pivot-remaining.json`.
-
-Current remaining evidence gaps: target Linux/CUDA Phase 3 readiness and local-mode SWE-bench row.
-
-Phase 3 local benchmark plan:
-
-```sh
-uv run --locked python bench/phase3_local_benchmark.py --output bench/results/phase3-local-benchmark-plan.json
-```
-
-Checked-in plan: `bench/results/phase3-local-benchmark-plan.json`.
-
-## Phase 3 readiness
-
-No-cost local-first readiness probe:
-
-```sh
-uv run --locked python bench/phase3_readiness.py --output bench/results/phase3-readiness.json
-```
-
-Checked-in snapshot: `bench/results/phase3-readiness.json`.
-
-Current snapshot status: setup script, provider adapters, local-agent routing, and non-selected Ollama binary handling are ready; this macOS host is not a Linux/CUDA host and does not have the selected vLLM dependency installed in the active project env or setup-created local CUDA venv.
-
-## Graph vs grep
-
-Synthetic graph-mode benchmark:
-
-```sh
-uv run --locked python bench/graph_vs_grep.py --output bench/results/graph-vs-grep-synthetic.json
-```
-
-The fixture generator creates a 50,000-LOC Python repo and runs the same symbol-tracing task in two modes:
-- grep mode scans import/function/call lines.
-- graph mode uses `definition_of` plus `callers_of`.
-
-Checked-in synthetic result:
-
-| result file | LOC | grep tokens | graph tokens | reduction | correctness |
-| --- | ---: | ---: | ---: | ---: | --- |
-| `bench/results/graph-vs-grep-synthetic.json` | 50,000 | 19,246 | 49 | 99.7% | equal/pass |
-
-This is a deterministic scaffold for Phase 2 measurement. The fixed 10-task SWE-bench graph-mode row is checked in below.
-
-## SWE-bench Lite 10
-
-Fixed seed set: `tests/fixtures/swe-lite-10/manifest.json`.
-
-Source: `SWE-bench/SWE-bench_Lite`, `default/test`, offset `0`, length `10`. This pins IDs and base commits.
-
-Install benchmark dependencies:
-
-```sh
-python3 -m pip install -e ".[bench]"
-```
-
-Runner:
-
-```sh
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --confirm-cost --budget-usd 2.0
-```
-
-The runner loads the pinned manifest against the official `princeton-nlp/SWE-bench_Lite` dataset, runs each task through v6 `poor-cli run --yes`, writes `predictions.jsonl`, and verifies `poor-cli --offline replay <run_id> --verify` before optional official SWE-bench Docker evaluation.
-Pass `--graph` to generate the Phase 2 graph-mode row with `poor-cli run --graph --yes` and graph-biased planner payloads.
-
-Smoke without official Docker evaluation:
-
-```sh
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --limit 1 --no-evaluate --confirm-cost --budget-usd 1.0 --timeout-seconds 1200
-```
-
-Graph-mode generation command:
-
-```sh
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --no-evaluate --confirm-cost --budget-usd 1.0 --timeout-seconds 1200 --run-id swe10-graph-YYYYMMDDTHHMMSSZ
-```
-
-Local-mode generation command:
-
-```sh
-set -a; source .poor-cli/local-cuda.env; set +a
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --graph --agent local --provider "$POOR_CLI_PROVIDER" --model "$POOR_CLI_MODEL" --local-base-url "$POOR_CLI_LOCAL_BASE_URL" --no-evaluate --confirm-cost --timeout-seconds 1200 --run-id swe10-local-YYYYMMDDTHHMMSSZ
-```
-
-Local-mode result verifier:
-
-```sh
-uv run --locked python bench/phase3_local_benchmark.py --summary bench/swe_bench_lite/results/swe10-local-YYYYMMDDTHHMMSSZ/summary.json
-```
-
-Evaluate an existing run without regenerating model patches:
-
-```sh
-uv run --locked --extra bench python bench/swe_bench_lite/run.py --evaluate-existing-run smoke-claude-20260614T035359Z --confirm-cost --eval-max-workers 1 --eval-namespace none
-```
-
-Use `--eval-namespace none` when the default remote SWE-bench image namespace has no prebuilt image for the selected task; this builds locally instead of pulling `swebench/...`.
-
-The runner uses an isolated empty Docker config under `.poor-cli/bench/swe_bench_lite/docker-config/` by default so missing local credential helpers do not break public image builds. Pass `--no-eval-isolated-docker-config` only when evaluation needs private registry credentials.
-
-Checked-in smoke:
-
-| run dir | task | run completed | replay verified | patch bytes | official eval |
-| --- | --- | ---: | ---: | ---: | --- |
-| `bench/swe_bench_lite/results/smoke-claude-20260614T035359Z` | `astropy__astropy-12907` | 1/1 | 1/1 | 506 | 1/1 resolved |
-
-Checked-in 10-task run:
-
-| run dir | tasks | run completed | replay verified | official eval |
-| --- | ---: | ---: | ---: | --- |
-| `bench/swe_bench_lite/results/swe10-claude-20260614T105615Z` | 10 | 7/10 | 10/10 | 9/10 resolved |
-| `bench/swe_bench_lite/results/swe10-graph-20260615T020703Z` | 10 | 9/10 | 10/10 | 8/10 resolved |
-
-Grep-mode official Docker eval completed 10/10 submitted instances with 0 errors. Unresolved: `astropy__astropy-14182`.
-Graph-mode official Docker eval completed 10/10 submitted instances with 0 errors. Unresolved: `astropy__astropy-14182`, `django__django-11019`.
+- This is a workflow reliability comparison of free/API routes that were available during this run, not a statistically significant model leaderboard.
+- Free gateways can rate-limit, silently route between backend models, or change model availability without notice.
+- The screenshots compare top-down geometry only. They do not capture subjective design quality, material choices, or full 3D user experience.
+- Direct Claude, OpenAI platform, and Gemini platform comparisons still require their corresponding provider keys.

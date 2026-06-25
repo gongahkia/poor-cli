@@ -1,0 +1,12 @@
+{
+  "fixture": "bto_2room_orange.jpg",
+  "description": "Compact apartment floor plan fixture for upload and vectorization regression checks.",
+  "known_scale_m_per_px": 0.018,
+  "scale_source": "fixture metadata, not inferred from the image",
+  "expected_wall_count": 12,
+  "expected_room_count_min": 2,
+  "review_notes": [
+    "Keep this file paired with the referenced image so upload tests have a stable expected scale.",
+    "Update expected_wall_count only when the fixture image or vectorization contract intentionally changes."
+  ]
+}

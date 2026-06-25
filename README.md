@@ -1,96 +1,170 @@
-# poor-cli
+[![](https://img.shields.io/badge/haus_0.1.0-passing-green)](https://github.com/gongahkia/haus/releases/tag/0.1.0)
+![](https://github.com/gongahkia/haus/actions/workflows/ci.yml/badge.svg)
+<!-- mcp-name: io.github.gongahkia/haus -->
 
-`poor-cli` v6 is a verifiable run-record for coding agents.
+# `Haus`
 
-It captures what an agent was asked, what context and route it got, what it did, and what changed into a content-addressed store that can be replayed offline.
+Concept planning and spatial validation workbench for uploaded apartment layouts.
 
-## Status
+`Haus` turns a floor plan into actionable layout options, checks, and client-ready exports. Upload or trace a plan, calibrate scale, compare scenarios, run renovation/accessibility/furniture-fit checks, and export local JSON, SVG, PNG, HTML, or GLB artifacts. It runs locally and exposes an MCP server so agents can work against real layout objects instead of static images.
 
-`6.0.0a1` is an alpha rewrite. The v5 codebase is preserved under `legacy/`.
+<div align="center">
+  <a href="./asset/demo/hero.mp4">
+    <img src="./asset/demo/hero.gif" alt="Demo: use Haus to draft, validate, and export apartment planning scenarios." width="720">
+  </a>
+  <br>
+  <sub>Sample prompt: <code>draft three renovation options and show validation warnings before export</code>.</sub>
+</div>
 
-Current product direction and task list: [`TODO.md`](TODO.md).
+## Try It
 
-## Install
+One-command launch:
 
-```sh
-python3 -m pip install -e ".[dev]"
-poor-cli --version
+```console
+$ uvx --from git+https://github.com/gongahkia/haus haus view
 ```
 
-## Commands
+In the editor:
 
-```sh
-poor-cli agents
-poor-cli doctor
-poor-cli plan "inspect this repo and propose a task graph"
-poor-cli plan "trace the parser flow" --graph
-poor-cli run "make a small scoped change" --yes
-poor-cli run "fix the caller lookup" --graph --yes
-poor-cli run-swarm "split independent fixes" --parallel 2
-poor-cli runs
-poor-cli runs diff <run_a> <run_b> --fail-on-change
-poor-cli runs fork <run_id>
-poor-cli shims install
-poor-cli shims doctor
-poor-cli shims uninstall
-poor-cli inspect <run_id> --events --context
-poor-cli inspect <run_id> --artifacts --cost
-poor-cli review-run <run_id>
-poor-cli verify-run <run_id>
-poor-cli replay <run_id> --verify
-poor-cli provider add openai --model gpt-5.5
-poor-cli provider list
-poor-cli route explain "fix the parser"
-poor-cli cleanup <run_id>
-poor-cli cleanup-swarm <run_id>
-poor-cli mcp list
-poor-cli mcp call server:tool --args '{"text":"hello"}'
-poor-cli rpc serve --stdio
-poor-cli tui --run-id <run_id>
+1. Click **Upload Plan** or use **Tools -> Upload Floor Plan**.
+2. Optionally enter a known pixel length and real-world length for calibration.
+3. Review extracted walls/openings.
+4. Pick Renovation, Accessibility, Furniture Fit, Designer, or Blank Project.
+5. Ask the planner to draft, revise, validate, apply, compare, or export a scenario.
+
+Example prompts:
+
+```text
+Draft three renovation concepts with conservative, balanced, and ambitious options.
+Run an accessibility review for a walker user and show blocked routes.
+Check whether this sofa fits in the living room and through the entry path.
+Create a client-ready pre-sales summary for this floor plan.
 ```
 
-`poor-cli run` records the plan first. Without `--yes` or `--dry-run`, it requires confirmation before invoking write-capable agents.
+To connect an MCP client to the same live layout:
 
-The TUI is a debug/audit surface for surprising runs, route state, artifacts, replay, `open PLAN.md`, `diff recent`, and quick dry-run commands. Daily capture stays on the normal `claude`/`codex` shim and CLI replay path.
-
-## Planner
-
-Planning is LLM-backed. By default `poor-cli` uses `claude` if installed, then `codex`. For tests or custom planners, set:
-
-```sh
-export POOR_CLI_PLANNER_COMMAND="python path/to/planner.py"
+```console
+$ uvx --from git+https://github.com/gongahkia/haus haus mcp --layout ~/.haus/viewer/mcp-layout.json
 ```
 
-The command receives the planner prompt on stdin and must print JSON with a `tasks` array.
+`uvx haus view` and `pipx install haus` are the intended short forms after a PyPI release; until then, use the GitHub `uvx --from` command above.
 
-## Storage
+## Four Customer Journeys
 
-Run state lives in `.poor-cli/v6/`:
+| Journey | Use it for | Try this prompt | Demo |
+|---|---|---|---|
+| Renovation | Compare conservative, balanced, and ambitious concept options before changing walls, openings, or services. | `Draft three renovation options and flag what needs professional verification.` | [screenshot](./asset/demo/journeys/renovation.png), [sample report](./asset/demo/reports/renovation-concept-pack.md) |
+| Accessibility | Find blocked routes, narrow openings, turning risks, trip hazards, and practical quick wins. | `Run a wheelchair accessibility review and separate quick wins from renovation work.` | [screenshot](./asset/demo/journeys/accessibility.png), [sample report](./asset/demo/reports/accessibility-review.md) |
+| Furniture Fit | Check product dimensions, clearance, delivery assumptions, substitutes, and shopping-list export before buying. | `Check if this sofa fits, suggest smaller substitutes, and export a shopping list.` | [screenshot](./asset/demo/journeys/furniture-fit.png), [sample report](./asset/demo/reports/furniture-fit-report.md) |
+| Designer | Turn intake notes into a client-safe pre-sales brief, branded report, call script, and presentation view. | `Create a client pre-sales pack from this design brief and selected scenario.` | [screenshot](./asset/demo/journeys/designer.png), [sample report](./asset/demo/reports/designer-pre-sales-pack.md) |
 
-- `runs.sqlite3`: runs, tasks, events, agents, artifact refs
-- `cas/`: content-addressed artifacts for prompts, plans, context packets, and agent results
-- `runs/<run_id>/artifacts/`: deterministic `PLAN.md`, worker `RESULT.md`, `PATCH.diff`, review, and verifier artifacts
+## What It Does
 
-The on-disk record schema is documented in [`docs/record-schema.md`](docs/record-schema.md).
+* **Journey-first planning:** choose Renovation, Accessibility, Furniture Fit, Designer, or Blank Project and keep that context in project metadata and chat.
+* **Measured layout editing:** calibration and confidence metadata keep furniture, walls, checks, and exports in meters.
+* **Scenario validation:** compare layout versions, assumptions, unknowns, warnings, and room-by-room validation results before applying a plan.
+* **Useful fallbacks:** if extraction is weak, load the image as a reference overlay and open manual tracing tools immediately.
+* **Local-first exports:** save JSON, SVG, GLB, screenshots, shopping lists, and standalone HTML/print reports.
 
-## Differentiation
+## Launch Assets
 
-Per-task routing and local replay are existing categories, not novel claims. [Claude Code Router](https://github.com/musistudio/claude-code-router) demonstrates the router/proxy front door; [agent-replay](https://github.com/clay-good/agent-replay), [cagent session recording](https://www.docker.com/blog/deterministic-ai-testing-with-session-recording-in-cagent/), and [Agent VCR](https://github.com/Jarvis2021/agent-vcr) demonstrate local replay, cassettes, and recording diffs.
+* Demo screenshots live in [`asset/demo/journeys`](./asset/demo/journeys).
+* Sample journey reports live in [`asset/demo/reports`](./asset/demo/reports).
+* Clean `uvx` smoke tests are documented in [`docs/launch/smoke-tests.md`](./docs/launch/smoke-tests.md), with scripts for Linux and macOS under [`scripts/`](./scripts).
+* MCP registry copy is in [`docs/launch/mcp-registry-copy.md`](./docs/launch/mcp-registry-copy.md).
 
-`poor-cli` is scoped around the vertical record: route decision, context packet, plan/DAG, agent I/O, artifacts, and benchmark evidence in one content-addressed store that can be checked offline.
+## Source Checkout
+
+```console
+$ git clone https://github.com/gongahkia/haus && cd haus
+$ make setup
+```
+
+Common commands:
+
+```console
+$ make view       # launch local editor
+$ make build      # process floor plan images in corpus/
+$ make vectorize  # vectorize only
+$ make mcp        # start standalone MCP server
+$ make test       # run pytest suite
+$ make lint       # run ruff
+$ make all        # lint + test + build
+```
+
+Direct CLI usage:
+
+```console
+$ haus build --image ./my-floor-plan.png --out ./out/my-plan --scale-override 0.01
+$ haus view
+```
+
+## Product Boundaries
+
+`Haus` is a concept planning and spatial validation workbench. It is not BIM authoring software, code certification, medical advice, occupational therapy assessment, contractor-ready documentation, a permit package generator, or a substitute for professional site verification. Scale inferred from images is approximate unless calibrated by the user.
+
+Accessibility output is planning guidance only, not ADA certification, medical advice, or an occupational therapy assessment. Renovation wall and plumbing suggestions are concept-only until verified by a qualified professional on site.
+
+Bundled sample layouts are examples only. The product does not depend on a comprehensive BTO/HDB corpus.
+
+Extraction accuracy depends on image quality, scale confirmation, and visible plan symbols. Product dimensions and prices can become stale and should be checked against retailer pages or physical measurements before purchase. Web search and external LLM providers are optional; the local deterministic planner remains available when those are disabled.
+
+## MCP Tool Surface
+
+The MCP surface is meant to support practical floor-plan workflows, not generic scene editing claims. Agents can inspect real layout objects, draft journey-specific options, validate geometry, and export client-readable artifacts.
+
+| Category | Tools |
+|---|---|
+| **High-level design** | `design_room`, `design_flat` |
+| **Catalog** | `list_furniture_catalog`, `search_ikea_catalog`, `get_ikea_catalog_item`, `add_catalog_furniture`, `refresh_ikea_catalog` |
+| **Layout queries** | `list_objects`, `get_object_details`, `get_layout_summary`, `get_layout_json` |
+| **Spatial** | `measure_distance`, `find_nearest`, `check_overlap`, `find_objects_in_area` |
+| **Add/modify** | `add_furniture`, `add_wall`, `move_object`, `rotate_object`, `resize_object`, `set_color`, `set_visibility` |
+| **Batch** | `batch_move`, `align_objects`, `distribute_objects`, `snap_to_grid` |
+| **Duplicate/remove** | `duplicate_object`, `swap_furniture`, `remove_object`, `remove_objects_by_type`, `clear_layout` |
+| **Rooms** | `rename_object`, `find_by_name`, `tag_room`, `list_rooms`, `compute_room_area` |
+| **Validation** | `check_sightline`, `score_doorway_accessibility`, `score_walkway`, `score_layout` |
+| **Simulation/templates** | `suggest_furniture_placement`, `auto_place_furniture`, `simulate_layout_options`, `apply_simulated_option`, `list_room_templates`, `apply_room_template` |
+| **Export semantics** | `get_semantic_layout_json`, `bim_readiness_report` |
+
+## Roadmap
+
+Help prioritize the next workflow by opening a [journey feedback issue](./.github/ISSUE_TEMPLATE/journey_feedback.md):
+
+* Homeowner renovation: stronger before/after visuals, contractor question packs, and service-zone constraints.
+* Accessibility: richer room-specific checklists, caregiver routes, and OT handoff summaries.
+* Furniture fit: deeper catalog provenance, delivery-path checks, and product comparison exports.
+* Designer: stronger mood-board assets, branded proposal polish, and client-review handoff bundles.
+
+Future expansion gates are tracked in [`docs/future-evaluations.md`](./docs/future-evaluations.md).
+
+## Stack
+
+* Frontend: JavaScript, Three.js
+* Backend: Python, Starlette, Uvicorn, FastMCP
+* Preprocessing: OpenCV, NumPy, Pillow
+* 3D: Trimesh, Shapely
+* Tests: pytest, ruff, pyright, optional Playwright e2e
+* Package manager: uv
 
 ## Providers
 
-Provider profiles are stored in config using secret references, not plaintext keys. Built-in presets cover OpenAI, OpenAI-compatible endpoints, OpenRouter, Kimi, Ollama, vLLM, and SGLang.
+The planner supports these LLM providers when configured in the editor settings or env:
 
-Local or configured providers can run through the native provider-backed tool loop. Shell runners for Codex, Claude, and generic commands remain supported.
+| Provider | Env var | Default model | Install extra |
+|---|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` | `uv pip install -e ".[anthropic]"` |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o` | `uv pip install -e ".[openai]"` |
+| Google Gemini | `GEMINI_API_KEY` | `gemini-2.0-flash` | `uv pip install -e ".[gemini]"` |
 
-## Gates
+## Credits
 
-The v6 gate set is tests, ruff, strict mypy, docs build, replay determinism, packaging, and the source LOC cap.
+The original idea for `Haus` was conceived by [Zane](https://github.com/injaneity) and iterated on by [Wei Sin](https://github.com/weisintai) for the OpenAI Codex Hackathon 2026. This repo now focuses on a general uploaded-floor-plan workbench.
 
-## Goal
+## Reference
 
-The first milestone is not a full multi-agent framework. It is a small runtime that answers:
+The name `Haus` roughly translates to "House" in German.
 
-> What happened, why did it happen, what did the agent see, and can I replay the orchestration state?
+<div align="center">
+  <img src="./asset/logo/haus.png">
+</div>

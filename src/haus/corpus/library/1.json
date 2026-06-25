@@ -1,0 +1,394 @@
+{
+  "version": 1,
+  "metadata": {
+    "name": "2-room orange BTO",
+    "source": "corpus/cleaned/1.jpg",
+    "image_shape_hw": [
+      420,
+      340
+    ],
+    "scale_m_per_px": 0.009375,
+    "wall_count": 21,
+    "column_count": 0,
+    "opening_count": 1
+  },
+  "rooms": [
+    {
+      "id": "living",
+      "label": "Living",
+      "kind": "living",
+      "bounds": {"x_min": -0.35, "z_min": 0.25, "x_max": 2.25, "z_max": 2.2}
+    },
+    {
+      "id": "kitchen",
+      "label": "Kitchen",
+      "kind": "kitchen",
+      "bounds": {"x_min": 2.15, "z_min": 0.25, "x_max": 4.0, "z_max": 1.7}
+    },
+    {
+      "id": "bedroom",
+      "label": "Bedroom",
+      "kind": "bedroom",
+      "bounds": {"x_min": 1.6, "z_min": 1.6, "x_max": 4.05, "z_max": 3.35}
+    }
+  ],
+  "items": [
+    {
+      "type": "wall",
+      "pos": [
+        1.0219,
+        1.3,
+        0.0844
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        1.3687,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_0"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.025,
+        1.3,
+        0.3281
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        0.9375,
+        2.6,
+        0.044
+      ],
+      "color": 11842740,
+      "name": "wall_1"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.0297,
+        1.3,
+        0.4781
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        0.9469,
+        2.6,
+        0.044
+      ],
+      "color": 11842740,
+      "name": "wall_2"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.7422,
+        1.3,
+        1.1719
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        0.8344,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_3"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        1.0219,
+        1.3,
+        1.3594
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        1.3687,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_4"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.9719,
+        1.3,
+        1.6781
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        0.375,
+        2.6,
+        0.044
+      ],
+      "color": 11842740,
+      "name": "wall_5"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.7422,
+        1.3,
+        1.8375
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        0.8344,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_6"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        0.9422,
+        1.3,
+        2.1844
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        1.5281,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_7"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.3578,
+        1.3,
+        3.1219
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        1.6031,
+        2.6,
+        0.1
+      ],
+      "color": 9211040,
+      "name": "wall_8"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        0.9422,
+        1.3,
+        3.5063
+      ],
+      "rot": -0.0,
+      "visible": true,
+      "geo": [
+        1.5281,
+        2.6,
+        0.1
+      ],
+      "color": 9211040,
+      "name": "wall_9"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        0.4875,
+        1.3,
+        0.7031
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        1.4062,
+        2.6,
+        0.044
+      ],
+      "color": 11842740,
+      "name": "wall_10"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        1.6219,
+        1.3,
+        0.2953
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        0.5906,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_11"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.3906,
+        1.3,
+        1.1391
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        1.6031,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_12"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.7937,
+        1.3,
+        1.2562
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        0.3,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_13"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        3.0656,
+        1.3,
+        2.2172
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        2.2219,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_14"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        1.6875,
+        1.3,
+        1.4953
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        0.5531,
+        2.6,
+        0.044
+      ],
+      "color": 11842740,
+      "name": "wall_15"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        0.6,
+        1.3,
+        1.7906
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        0.975,
+        2.6,
+        0.044
+      ],
+      "color": 11842740,
+      "name": "wall_16"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.5688,
+        1.3,
+        1.8
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        0.2812,
+        2.6,
+        0.044
+      ],
+      "color": 11842740,
+      "name": "wall_17"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        2.6531,
+        1.3,
+        1.8
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        0.2812,
+        2.6,
+        0.044
+      ],
+      "color": 11842740,
+      "name": "wall_18"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        0.2437,
+        1.3,
+        2.9297
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        1.6219,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_19"
+    },
+    {
+      "type": "wall",
+      "pos": [
+        1.6219,
+        1.3,
+        3.2062
+      ],
+      "rot": -1.570796,
+      "visible": true,
+      "geo": [
+        1.0125,
+        2.6,
+        0.15
+      ],
+      "color": 5263440,
+      "name": "wall_20"
+    }
+  ]
+}

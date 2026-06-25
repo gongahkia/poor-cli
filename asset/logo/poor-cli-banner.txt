@@ -1,3 +1,0 @@
-  {o,o}    poor-cli
-  /)__)    cost-controlled BYOK coding
-  -"-"-    CLI harness + local/cloud providers
