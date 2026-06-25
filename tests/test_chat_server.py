@@ -81,6 +81,19 @@ def test_chat_status_reports_reference_capabilities(chat_client: TestClient) -> 
     assert "image/png" in capabilities["image_mime_types"]
 
 
+def test_chat_models_reports_provider_metadata(chat_client: TestClient) -> None:
+    res = chat_client.get("/api/chat/models")
+    assert res.status_code == 200
+    body = res.json()
+
+    assert "ollama" in body["supported_providers"]
+    assert body["default_models"]["openai"] == chat_server._DEFAULT_MODELS["openai"]
+    providers = {item["id"]: item for item in body["providers"]}
+    assert providers["ollama"]["requires_api_key"] is False
+    assert "streaming" in providers["openai"]["capabilities"]
+    assert providers["openai"]["models"]
+
+
 def test_room_capture_route_returns_layout(chat_client: TestClient) -> None:
     res = chat_client.post(
         "/api/room-capture/layout",
@@ -321,6 +334,58 @@ def test_chat_routes_provider_with_model_override(
     assert res.status_code == 200
     assert res.json()["model"] == "gpt-test-model"
     assert captured["model"] == "gpt-test-model"
+
+
+def test_chat_routes_local_ollama_without_api_key(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_provider(
+        api_key: str,
+        messages: list[dict[str, object]],
+        model: str,
+        dispatch,
+    ) -> tuple[str, list[dict[str, object]]]:
+        assert api_key == "local"
+        return "local ok", messages
+
+    monkeypatch.setitem(chat_server._CHAT_FNS, "ollama", fake_provider)
+
+    res = chat_client.post("/api/chat", json={"message": "hello", "provider": "ollama"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["response"] == "local ok"
+    assert body["provider"] == "ollama"
+
+
+def test_chat_stream_returns_sse_events(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_stream(api_key: str, messages: list[dict[str, object]], model: str, dispatch):
+        yield chat_server.ChatChunk("text", {"delta": "hel"})
+        yield chat_server.ChatChunk(
+            "done",
+            {
+                "response": "hel",
+                "history": messages + [{"role": "assistant", "content": [{"type": "text", "text": "hel"}]}],
+            },
+        )
+
+    monkeypatch.setitem(chat_server._STREAM_FNS, "openai", fake_stream)
+
+    with chat_client.stream(
+        "POST",
+        "/api/chat/stream",
+        json={"message": "hello", "provider": "openai", "api_key": "test-key"},
+    ) as res:
+        body = res.read().decode("utf-8")
+
+    assert res.status_code == 200
+    assert "event: meta" in body
+    assert 'data: {"delta":"hel"}' in body
+    assert "event: done" in body
+    assert '"provider":"openai"' in body
 
 
 def test_chat_rejects_invalid_json_body(chat_client: TestClient) -> None:

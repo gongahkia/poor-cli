@@ -255,15 +255,98 @@ def stream_chat(
     tools_spec: list[dict[str, Any]],
     max_tool_steps: int,
 ) -> Iterator[ChatChunk]:
-    text, updated = chat(
-        api_key,
-        messages,
-        model,
-        dispatch,
-        system=system,
-        tools_spec=tools_spec,
-        max_tool_steps=max_tool_steps,
-    )
-    if text:
-        yield ChatChunk("text", {"delta": text})
-    yield ChatChunk("done", {"response": text, "history": updated})
+    openai = load_provider_module("openai", "OpenAI")
+    client = openai.OpenAI(api_key=api_key)
+    if not hasattr(client, "responses"):
+        text, updated = _chat_completions(
+            client,
+            messages,
+            model,
+            dispatch,
+            system=system,
+            tools_spec=tools_spec,
+            max_tool_steps=max_tool_steps,
+        )
+        if text:
+            yield ChatChunk("text", {"delta": text})
+        yield ChatChunk("done", {"response": text, "history": updated})
+        return
+
+    tools = _responses_tools(tools_spec)
+    response_input = _to_response_input(messages)
+    for _ in range(max_tool_steps):
+        calls: list[Any] = []
+        output_items: list[Any] = []
+        text_parts: list[str] = []
+        try:
+            stream = client.responses.create(
+                model=model,
+                instructions=system,
+                input=response_input,
+                tools=cast(Any, tools),
+                max_output_tokens=1024,
+                stream=True,
+            )
+            for event in stream:
+                event_type = str(getattr(event, "type", ""))
+                if event_type == "response.output_text.delta":
+                    delta = str(getattr(event, "delta", ""))
+                    if delta:
+                        text_parts.append(delta)
+                        yield ChatChunk("text", {"delta": delta})
+                elif event_type in {"response.output_item.done", "response.function_call_arguments.done"}:
+                    item = getattr(event, "item", None)
+                    if item is not None:
+                        output_items.append(item)
+                        if getattr(item, "type", "") == "function_call":
+                            calls.append(item)
+                elif event_type == "response.completed":
+                    response = getattr(event, "response", None)
+                    if response is not None:
+                        output_items = list(getattr(response, "output", []) or output_items)
+                        calls = _response_function_calls(response)
+                        if not text_parts:
+                            text = _extract_response_text(response)
+                            if text:
+                                text_parts.append(text)
+                                yield ChatChunk("text", {"delta": text})
+        except TypeError:
+            text, updated = chat(
+                api_key,
+                messages,
+                model,
+                dispatch,
+                system=system,
+                tools_spec=tools_spec,
+                max_tool_steps=max_tool_steps,
+            )
+            if text:
+                yield ChatChunk("text", {"delta": text})
+            yield ChatChunk("done", {"response": text, "history": updated})
+            return
+
+        if not calls:
+            text = "".join(text_parts)
+            messages.append({"role": "assistant", "content": [{"type": "text", "text": text}]})
+            yield ChatChunk("done", {"response": text, "history": messages})
+            return
+
+        assistant_content: list[dict[str, Any]] = []
+        text = "".join(text_parts)
+        if text:
+            assistant_content.append({"type": "text", "text": text})
+        response_input.extend(output_items)
+        tool_results: list[dict[str, Any]] = []
+        for call in calls:
+            args = safe_json_args(getattr(call, "arguments", "{}"))
+            call_id = str(getattr(call, "call_id", getattr(call, "id", "")))
+            name = str(getattr(call, "name", ""))
+            result = dispatch(name, args)
+            yield ChatChunk("tool_result", {"tool": name, "args": args, "result": result})
+            response_input.append({"type": "function_call_output", "call_id": call_id, "output": result})
+            assistant_content.append({"type": "tool_use", "id": call_id, "name": name, "input": args})
+            tool_results.append({"type": "tool_result", "tool_use_id": call_id, "content": result})
+        messages.append({"role": "assistant", "content": assistant_content})
+        messages.append({"role": "user", "content": tool_results})
+
+    raise RuntimeError("Too many tool iterations")

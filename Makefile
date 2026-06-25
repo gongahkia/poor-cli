@@ -28,6 +28,7 @@ help:
 	@echo "  ANTHROPIC_API_KEY=... make view"
 	@echo "  OPENAI_API_KEY=...    make view"
 	@echo "  GEMINI_API_KEY=...    make view"
+	@echo "  OLLAMA_BASE_URL=...   make view"
 
 setup:
 	uv venv --python 3.11

@@ -28,7 +28,8 @@ dev = ["pytest>=8", "ruff>=0.4", "pyright>=1.1"]
 e2e = ["playwright>=1.44"]
 anthropic = ["anthropic>=0.40"]
 openai = ["openai>=1.30"]
-gemini = ["google-generativeai>=0.5"]
+gemini = ["google-genai>=1.0"]
+ollama = []
 
 [tool.setuptools]
 package-dir = {"" = "src"}

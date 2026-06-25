@@ -17,7 +17,7 @@ import re
 import socket
 import time
 import uuid
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable, Iterator
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, cast
@@ -28,7 +28,7 @@ from urllib.request import Request as UrlRequest, urlopen
 from starlette.applications import Starlette
 from starlette.datastructures import UploadFile
 from starlette.requests import Request
-from starlette.responses import JSONResponse, PlainTextResponse
+from starlette.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 import uvicorn
@@ -37,6 +37,12 @@ from . import mcp_server as _mcp_server
 from . import geometry
 from .agent_loop import RoomPlan, plan_flat, plan_room
 from .catalog import catalog_item_to_layout_item, catalog_search_meta, get_catalog_item, search_ikea_catalog
+from .llm import DEFAULT_MODELS, ENV_KEYS, provider_status, providers_with_env_keys, resolve_model, supported_provider_ids
+from .llm.providers import anthropic as anthropic_provider
+from .llm.providers import gemini as gemini_provider
+from .llm.providers import ollama as ollama_provider
+from .llm.providers import openai as openai_provider
+from .llm.types import ChatChunk
 from .logging_utils import configure_logging, new_request_id
 from .pipeline import run_vectorize
 from .types import VectorizeConfig
@@ -2144,14 +2150,7 @@ def _dispatch(
 
 
 def _provider_available() -> list[str]:
-    providers: list[str] = []
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        providers.append("anthropic")
-    if os.environ.get("OPENAI_API_KEY"):
-        providers.append("openai")
-    if os.environ.get("GEMINI_API_KEY"):
-        providers.append("gemini")
-    return providers
+    return providers_with_env_keys()
 
 
 def _load_provider_module(module_name: str, provider_name: str) -> Any:
@@ -2543,26 +2542,105 @@ def _chat_gemini(
     raise RuntimeError("Too many tool iterations")
 
 
-_DEFAULT_MODELS = {
-    "anthropic": "claude-sonnet-4-20250514",
-    "openai": "gpt-4o",
-    "gemini": "gemini-2.0-flash",
-}
+def _run_anthropic(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return anthropic_provider.chat(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
+def _run_openai(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return openai_provider.chat(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
+def _run_gemini(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return gemini_provider.chat(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
+def _run_ollama(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return ollama_provider.chat(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
+_DEFAULT_MODELS = DEFAULT_MODELS
 
 _CHAT_FNS: dict[
     str,
     Callable[[str, list[dict[str, Any]], str, Callable[[str, dict[str, Any]], str]], tuple[str, list[dict[str, Any]]]],
 ] = {
-    "anthropic": _chat_anthropic,
-    "openai": _chat_openai,
-    "gemini": _chat_gemini,
+    "anthropic": _run_anthropic,
+    "openai": _run_openai,
+    "gemini": _run_gemini,
+    "ollama": _run_ollama,
 }
 
-_ENV_KEYS = {
-    "anthropic": "ANTHROPIC_API_KEY",
-    "openai": "OPENAI_API_KEY",
-    "gemini": "GEMINI_API_KEY",
+_STREAM_FNS: dict[
+    str,
+    Callable[[str, list[dict[str, Any]], str, Callable[[str, dict[str, Any]], str]], Iterator[ChatChunk]],
+] = {
+    "anthropic": lambda api_key, messages, model, dispatch: anthropic_provider.stream_chat(
+        api_key, messages, model, dispatch, system=_SYSTEM, tools_spec=_TOOLS_SPEC, max_tool_steps=_MAX_TOOL_STEPS
+    ),
+    "openai": lambda api_key, messages, model, dispatch: openai_provider.stream_chat(
+        api_key, messages, model, dispatch, system=_SYSTEM, tools_spec=_TOOLS_SPEC, max_tool_steps=_MAX_TOOL_STEPS
+    ),
+    "gemini": lambda api_key, messages, model, dispatch: gemini_provider.stream_chat(
+        api_key, messages, model, dispatch, system=_SYSTEM, tools_spec=_TOOLS_SPEC, max_tool_steps=_MAX_TOOL_STEPS
+    ),
+    "ollama": lambda api_key, messages, model, dispatch: ollama_provider.stream_chat(
+        api_key, messages, model, dispatch, system=_SYSTEM, tools_spec=_TOOLS_SPEC, max_tool_steps=_MAX_TOOL_STEPS
+    ),
 }
+
+_ENV_KEYS = ENV_KEYS
 
 
 def _sanitize_history(raw: Any) -> list[dict[str, Any]]:
@@ -2588,15 +2666,17 @@ def _sanitize_history(raw: Any) -> list[dict[str, Any]]:
 
 
 async def _chat_status(request: Request) -> JSONResponse:
-    providers = _provider_available()
+    status = provider_status()
+    providers = status["providers_with_env_keys"]
     configured_search = _configured_search_providers() if _web_search_enabled() else []
     available_search = _available_search_providers()
     return JSONResponse(
         {
             "available": True,
             "providers_with_env_keys": providers,
-            "supported_providers": list(_CHAT_FNS.keys()),
+            "supported_providers": supported_provider_ids(),
             "default_models": _DEFAULT_MODELS,
+            "providers": status["providers"],
             "search_providers_configured": configured_search,
             "search_providers_available": available_search,
             "search_fallback_provider": "duckduckgo" if "duckduckgo" in configured_search else "",
@@ -2613,6 +2693,7 @@ async def _chat_status(request: Request) -> JSONResponse:
                 "default_planner_mode": "auto",
                 "destructive_confirmation": True,
                 "strict_tool_validation": True,
+                "provider_native_streaming": True,
                 "standards_profiles": list(_mcp_server.STANDARD_PROFILES.keys()),
                 "max_image_attachments": _MAX_CHAT_ATTACHMENTS,
                 "max_image_attachment_mb": _MAX_ATTACHMENT_BYTES // (1024 * 1024),
@@ -2622,12 +2703,18 @@ async def _chat_status(request: Request) -> JSONResponse:
     )
 
 
+async def _chat_models(request: Request) -> JSONResponse:
+    del request
+    return JSONResponse(provider_status())
+
+
 def _design_chat_payload(
     *,
     user_msg: str,
     history: list[dict[str, Any]],
     attachments: list[dict[str, str]],
     request_id: str,
+    conversation_id: str = "",
     provider: str,
     api_key: str,
     model: str,
@@ -2685,6 +2772,7 @@ def _design_chat_payload(
             "pending_plan": plan,
             "references": references,
             "request_id": request_id,
+            "conversation_id": conversation_id,
         }
     )
 
@@ -2696,6 +2784,7 @@ def _revision_chat_payload(
     history: list[dict[str, Any]],
     user_msg: str,
     request_id: str,
+    conversation_id: str = "",
     web_search_disabled: bool = False,
 ) -> JSONResponse:
     start = time.perf_counter()
@@ -2727,6 +2816,7 @@ def _revision_chat_payload(
             "pending_plan": plan,
             "references": plan.get("web_references", []),
             "request_id": request_id,
+            "conversation_id": conversation_id,
         }
     )
 
@@ -2743,6 +2833,7 @@ async def _chat(request: Request) -> JSONResponse:
     history = _sanitize_history(body.get("history", []))
     provider = str(body.get("provider", "")).strip().lower()
     model_override = str(body.get("model", "")).strip()
+    conversation_id = str(body.get("conversation_id") or body.get("conversationId") or uuid.uuid4()).strip()
     client_key = str(body.get("api_key", "")).strip()
     planner_mode_requested = str(body.get("planner_mode") or body.get("plannerMode") or "auto")
     standards_profile = str(body.get("standards_profile") or body.get("standardsProfile") or _DEFAULT_STANDARDS_PROFILE)
@@ -2758,8 +2849,12 @@ async def _chat(request: Request) -> JSONResponse:
     revision_request = _parse_revision_request(user_msg)
     concept_request = _is_concept_request(user_msg, attachments)
 
-    concept_api_key = client_key or os.environ.get(_ENV_KEYS.get(provider, ""), "") if provider in _CHAT_FNS else ""
-    concept_model = model_override or (_DEFAULT_MODELS[provider] if provider in _CHAT_FNS else "deterministic")
+    try:
+        concept_model, _ = resolve_model(provider, model_override) if provider in _CHAT_FNS else ("deterministic", False)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc), "request_id": request_id, "conversation_id": conversation_id}, 400)
+    env_key = _ENV_KEYS.get(provider, "") if provider in _CHAT_FNS else ""
+    concept_api_key = client_key or (os.environ.get(env_key, "") if env_key else ("local" if provider == "ollama" else ""))
     resolved_planner_mode, planner_fallback_reason = _resolve_planner_mode(
         planner_mode_requested,
         provider,
@@ -2774,6 +2869,7 @@ async def _chat(request: Request) -> JSONResponse:
             history=history,
             user_msg=user_msg,
             request_id=request_id,
+            conversation_id=conversation_id,
             web_search_disabled=web_search_disabled,
         )
 
@@ -2783,6 +2879,7 @@ async def _chat(request: Request) -> JSONResponse:
             history=history,
             attachments=attachments,
             request_id=request_id,
+            conversation_id=conversation_id,
             provider=provider,
             api_key=concept_api_key,
             model=concept_model,
@@ -2796,23 +2893,29 @@ async def _chat(request: Request) -> JSONResponse:
         return JSONResponse(
             {
                 "error": f"Provider '{provider}' not supported.",
-                "supported": list(_CHAT_FNS.keys()),
+                "supported": supported_provider_ids(),
                 "request_id": request_id,
+                "conversation_id": conversation_id,
             },
             400,
         )
 
-    api_key = client_key or os.environ.get(_ENV_KEYS[provider], "")
+    env_key = _ENV_KEYS[provider]
+    api_key = client_key or (os.environ.get(env_key, "") if env_key else ("local" if provider == "ollama" else ""))
     if not api_key:
         return JSONResponse(
             {
                 "error": f"No API key for {provider}. Add one in chat settings.",
                 "request_id": request_id,
+                "conversation_id": conversation_id,
             },
             400,
         )
 
-    model = model_override or _DEFAULT_MODELS[provider]
+    try:
+        model, custom_model = resolve_model(provider, model_override)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc), "request_id": request_id, "conversation_id": conversation_id}, 400)
     tool_log: list[dict[str, Any]] = []
     messages = history + [{"role": "user", "content": _build_user_content(user_msg, attachments)}]
 
@@ -2829,13 +2932,170 @@ async def _chat(request: Request) -> JSONResponse:
                 "history": _redact_history_for_client(updated_history),
                 "provider": provider,
                 "model": model,
+                "custom_model": custom_model,
+                "conversation_id": conversation_id,
                 "actions": tool_log,
                 "request_id": request_id,
             }
         )
     except Exception as exc:
         log.exception("[%s] chat error", request_id)
-        return JSONResponse({"error": str(exc), "request_id": request_id}, 500)
+        return JSONResponse({"error": str(exc), "request_id": request_id, "conversation_id": conversation_id}, 500)
+
+
+def _json_response_body(response: JSONResponse) -> dict[str, Any]:
+    try:
+        body = json.loads(bytes(response.body).decode("utf-8"))
+    except Exception:
+        return {"error": "Could not decode response body."}
+    return body if isinstance(body, dict) else {"response": body}
+
+
+async def _chat_stream(request: Request) -> StreamingResponse:
+    request_id = new_request_id("chat-stream")
+
+    try:
+        body = await request.json()
+    except Exception:
+        async def bad_json() -> AsyncIterator[str]:
+            yield ChatChunk("error", {"error": "Invalid JSON body.", "request_id": request_id}).sse_event()
+
+        return StreamingResponse(bad_json(), media_type="text/event-stream")
+
+    user_msg = str(body.get("message", "")).strip()
+    history = _sanitize_history(body.get("history", []))
+    provider = str(body.get("provider", "")).strip().lower()
+    model_override = str(body.get("model", "")).strip()
+    conversation_id = str(body.get("conversation_id") or body.get("conversationId") or uuid.uuid4()).strip()
+    client_key = str(body.get("api_key", "")).strip()
+    planner_mode_requested = str(body.get("planner_mode") or body.get("plannerMode") or "auto")
+    standards_profile = str(body.get("standards_profile") or body.get("standardsProfile") or _DEFAULT_STANDARDS_PROFILE)
+    raw_web_search_disabled = body.get("web_search_disabled", body.get("disable_web_search", False))
+    web_search_disabled = raw_web_search_disabled is True or str(raw_web_search_disabled).lower() in {"1", "true", "yes", "on"}
+    attachments, attachment_error = _normalize_attachments(body.get("attachments", []))
+
+    async def events() -> AsyncIterator[str]:
+        if not user_msg:
+            yield ChatChunk("error", {"error": "Message must not be empty.", "request_id": request_id, "conversation_id": conversation_id}).sse_event()
+            return
+        if attachment_error:
+            yield ChatChunk("error", {"error": attachment_error, "request_id": request_id, "conversation_id": conversation_id}).sse_event()
+            return
+
+        revision_request = _parse_revision_request(user_msg)
+        concept_request = _is_concept_request(user_msg, attachments)
+        env_key = _ENV_KEYS.get(provider, "") if provider in _CHAT_FNS else ""
+        api_key = client_key or (os.environ.get(env_key, "") if env_key else ("local" if provider == "ollama" else ""))
+        try:
+            model, custom_model = resolve_model(provider, model_override) if provider in _CHAT_FNS else ("deterministic", False)
+        except ValueError as exc:
+            yield ChatChunk("error", {"error": str(exc), "request_id": request_id, "conversation_id": conversation_id}).sse_event()
+            return
+
+        if revision_request is not None:
+            plan_id, revision = revision_request
+            payload = _json_response_body(
+                _revision_chat_payload(
+                    plan_id=plan_id,
+                    revision=revision,
+                    history=history,
+                    user_msg=user_msg,
+                    request_id=request_id,
+                    conversation_id=conversation_id,
+                    web_search_disabled=web_search_disabled,
+                )
+            )
+            if payload.get("error"):
+                yield ChatChunk("error", payload).sse_event()
+                return
+            yield ChatChunk("meta", {k: v for k, v in payload.items() if k not in {"response", "history"}}).sse_event()
+            yield ChatChunk("text", {"delta": str(payload.get("response", ""))}).sse_event()
+            yield ChatChunk("done", payload).sse_event()
+            return
+
+        if concept_request:
+            resolved_planner_mode, fallback_reason = _resolve_planner_mode(planner_mode_requested, provider, api_key)
+            payload = _json_response_body(
+                _design_chat_payload(
+                    user_msg=user_msg,
+                    history=history,
+                    attachments=attachments,
+                    request_id=request_id,
+                    conversation_id=conversation_id,
+                    provider=provider,
+                    api_key=api_key,
+                    model=model,
+                    planner_mode=resolved_planner_mode,
+                    standards_profile=standards_profile,
+                    fallback_reason=fallback_reason,
+                    web_search_disabled=web_search_disabled,
+                )
+            )
+            yield ChatChunk("meta", {k: v for k, v in payload.items() if k not in {"response", "history"}}).sse_event()
+            yield ChatChunk("text", {"delta": str(payload.get("response", ""))}).sse_event()
+            yield ChatChunk("done", payload).sse_event()
+            return
+
+        if provider not in _STREAM_FNS:
+            yield ChatChunk("error", {"error": f"Provider '{provider}' not supported.", "supported": supported_provider_ids(), "request_id": request_id, "conversation_id": conversation_id}).sse_event()
+            return
+        if not api_key:
+            yield ChatChunk("error", {"error": f"No API key for {provider}. Add one in chat settings.", "request_id": request_id, "conversation_id": conversation_id}).sse_event()
+            return
+
+        tool_log: list[dict[str, Any]] = []
+        messages = history + [{"role": "user", "content": _build_user_content(user_msg, attachments)}]
+
+        def dispatch(name: str, args: dict[str, Any]) -> str:
+            return _dispatch(name, args, request_id=request_id, tool_log=tool_log, web_search_disabled=web_search_disabled)
+
+        yield ChatChunk(
+            "meta",
+            {
+                "request_id": request_id,
+                "conversation_id": conversation_id,
+                "provider": provider,
+                "model": model,
+                "custom_model": custom_model,
+            },
+        ).sse_event()
+        try:
+            final: dict[str, Any] = {}
+            for chunk in _STREAM_FNS[provider](api_key, messages, model, dispatch):
+                if chunk.type == "done":
+                    final = dict(chunk.data)
+                    final["history"] = _redact_history_for_client(final.get("history", messages))
+                    final.update(
+                        {
+                            "request_id": request_id,
+                            "conversation_id": conversation_id,
+                            "provider": provider,
+                            "model": model,
+                            "custom_model": custom_model,
+                            "actions": tool_log,
+                        }
+                    )
+                    yield ChatChunk("done", final).sse_event()
+                else:
+                    yield chunk.sse_event()
+            if not final:
+                yield ChatChunk(
+                    "done",
+                    {
+                        "response": "",
+                        "history": _redact_history_for_client(messages),
+                        "request_id": request_id,
+                        "conversation_id": conversation_id,
+                        "provider": provider,
+                        "model": model,
+                        "actions": tool_log,
+                    },
+                ).sse_event()
+        except Exception as exc:
+            log.exception("[%s] stream chat error", request_id)
+            yield ChatChunk("error", {"error": str(exc), "request_id": request_id, "conversation_id": conversation_id}).sse_event()
+
+    return StreamingResponse(events(), media_type="text/event-stream")
 
 
 async def _design_plan_apply(request: Request) -> JSONResponse:
@@ -3146,6 +3406,8 @@ def create_app(root_dir: str) -> Starlette:
     return Starlette(
         routes=[
             Route("/api/chat/status", _chat_status, methods=["GET"]),
+            Route("/api/chat/models", _chat_models, methods=["GET"]),
+            Route("/api/chat/stream", _chat_stream, methods=["POST"]),
             Route("/api/chat", _chat, methods=["POST"]),
             Route("/api/design-plans/{plan_id}/apply", _design_plan_apply, methods=["POST"]),
             Route("/api/design-plans/{plan_id}/revise", _design_plan_revise, methods=["POST"]),

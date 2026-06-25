@@ -27,6 +27,7 @@ let providerWarningEl;
 
 let history = [];
 let serverStatus = null;
+let modelCatalog = null;
 let sending = false;
 let pendingAttachments = [];
 let sessionKeys = {};
@@ -38,10 +39,12 @@ const PLANNER_MODE_STORAGE = 'haus_chat_planner_mode';
 const PROFILE_STORAGE = 'haus_chat_standards_profile';
 const HISTORY_STORAGE = 'haus_chat_history';
 const TRANSCRIPT_STORAGE = 'haus_chat_transcript';
+const CONVERSATION_STORAGE = 'haus_chat_conversation_id';
 const DISABLE_WEB_SEARCH_STORAGE = 'haus_chat_disable_web_search';
 const DISABLE_KEY_STORAGE = 'haus_chat_disable_key_storage';
 const DEFAULT_MAX_ATTACHMENTS = 3;
 const DEFAULT_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+let conversationId = localStorage.getItem(CONVERSATION_STORAGE) || newConversationId();
 
 export function initChat() {
   fn.toggleChat = toggleChat;
@@ -130,6 +133,7 @@ export function initChat() {
   keyForgetBtn.addEventListener('click', forgetKey);
 
   history = loadJson(historyStorageKey(), loadJson(HISTORY_STORAGE, []));
+  localStorage.setItem(CONVERSATION_STORAGE, conversationId);
   renderTranscript();
 
   const storedModel = localStorage.getItem(MODEL_STORAGE);
@@ -239,6 +243,7 @@ async function fetchStatus() {
     const res = await fetch('/api/chat/status');
     if (!res.ok) throw new Error(`status ${res.status}`);
     serverStatus = await res.json();
+    await fetchModels();
     refreshProviders();
     refreshPlannerControls();
   } catch (err) {
@@ -247,11 +252,23 @@ async function fetchStatus() {
   }
 }
 
+async function fetchModels() {
+  try {
+    const res = await fetch('/api/chat/models');
+    if (!res.ok) throw new Error(`models ${res.status}`);
+    modelCatalog = await res.json();
+    serverStatus = { ...(serverStatus || {}), ...modelCatalog };
+  } catch (err) {
+    console.warn('chat model catalog unavailable', err);
+    modelCatalog = serverStatus || null;
+  }
+}
+
 function refreshProviders() {
   const keys = getKeys();
   const providersFromServer = Array.isArray(serverStatus?.supported_providers)
     ? serverStatus.supported_providers
-    : ['anthropic', 'openai', 'gemini'];
+    : ['anthropic', 'openai', 'gemini', 'ollama'];
   const envProviders = new Set(Array.isArray(serverStatus?.providers_with_env_keys)
     ? serverStatus.providers_with_env_keys
     : []);
@@ -279,12 +296,19 @@ function refreshProviders() {
 }
 
 function providerLabel(provider) {
-  return { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini' }[provider] || provider;
+  const spec = providerSpec(provider);
+  return spec?.label || { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini', ollama: 'Ollama' }[provider] || provider;
+}
+
+function providerSpec(provider) {
+  const providers = Array.isArray(serverStatus?.providers) ? serverStatus.providers : [];
+  return providers.find((item) => item.id === provider) || null;
 }
 
 function refreshProviderStatus(keys = getKeys(), envProviders = new Set(Array.isArray(serverStatus?.providers_with_env_keys) ? serverStatus.providers_with_env_keys : [])) {
   const provider = providerSel.value;
-  if (!provider || keys[provider] || envProviders.has(provider)) setStatus('');
+  const spec = providerSpec(provider);
+  if (!provider || keys[provider] || envProviders.has(provider) || spec?.requires_api_key === false) setStatus('');
   else setStatus('Deterministic planner available. Add a provider key for LLM-reviewed plans.', false);
   refreshProviderWarning();
 }
@@ -403,6 +427,9 @@ function hydrateModelPlaceholder() {
   const defaults = serverStatus?.default_models || {};
   const model = defaults[provider] || 'provider default model';
   modelInput.placeholder = `Auto (${model})`;
+  const spec = providerSpec(provider);
+  const known = Array.isArray(spec?.models) ? spec.models.map((item) => item.id).join(', ') : '';
+  modelInput.title = known ? `Optional model override. Known: ${known}` : 'Optional model override';
 }
 
 function openChat() {
@@ -417,11 +444,18 @@ function toggleChat() {
 
 function providerHasCredential(provider, keys) {
   if (!provider) return false;
+  const spec = providerSpec(provider);
+  if (spec?.requires_api_key === false) return true;
   if (keys[provider]) return true;
   const envProviders = Array.isArray(serverStatus?.providers_with_env_keys)
     ? serverStatus.providers_with_env_keys
     : [];
   return envProviders.includes(provider);
+}
+
+function newConversationId() {
+  if (crypto?.randomUUID) return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function setStatus(text, isError = false) {
@@ -539,6 +573,7 @@ function appendMessage(role, text) {
   div.textContent = text;
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
+  return div;
 }
 
 function appendTool(action) {
@@ -969,6 +1004,8 @@ function renderTranscript() {
 
 function clearConversation() {
   history = [];
+  conversationId = newConversationId();
+  localStorage.setItem(CONVERSATION_STORAGE, conversationId);
   saveHistory(history);
   saveJson(transcriptStorageKey(), []);
   saveJson(TRANSCRIPT_STORAGE, []);
@@ -996,6 +1033,91 @@ function appendRecoveryMessage(errorText) {
   if (!recovery) return;
   appendMessage('assistant', recovery);
   persistTranscript('assistant', recovery);
+}
+
+function parseSseBlock(block) {
+  const lines = block.split('\n');
+  let event = 'message';
+  let data = '';
+  for (const line of lines) {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    else if (line.startsWith('data:')) data += line.slice(5).trim();
+  }
+  if (!data) return null;
+  try {
+    return { event, data: JSON.parse(data) };
+  } catch {
+    return { event, data: { delta: data } };
+  }
+}
+
+async function sendStream(payload, loading) {
+  const res = await fetch('/api/chat/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok || !res.body) throw new Error(`Stream failed with HTTP ${res.status}`);
+
+  loading.remove();
+  const assistantEl = appendMessage('assistant', '');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  let responseText = '';
+  let doneData = null;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const blocks = buffer.split('\n\n');
+    buffer = blocks.pop() || '';
+    for (const block of blocks) {
+      const parsed = parseSseBlock(block);
+      if (!parsed) continue;
+      if (parsed.event === 'text') {
+        responseText += parsed.data.delta || '';
+        assistantEl.textContent = responseText;
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      } else if (parsed.event === 'error') {
+        assistantEl.remove();
+        throw new Error(parsed.data.error || 'Stream failed');
+      } else if (parsed.event === 'done') {
+        doneData = parsed.data;
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    const parsed = parseSseBlock(buffer.trim());
+    if (parsed?.event === 'done') doneData = parsed.data;
+  }
+  if (!responseText && doneData?.response) {
+    responseText = doneData.response;
+    assistantEl.textContent = responseText;
+  }
+  persistTranscript('assistant', responseText);
+  return doneData || { response: responseText };
+}
+
+async function sendJson(payload, loading) {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = { error: `Invalid JSON response (HTTP ${res.status})` };
+  }
+  loading.remove();
+  if (!res.ok || data.error) throw new Error(data.error || `Request failed with HTTP ${res.status}`);
+  appendMessage('assistant', data.response || '');
+  persistTranscript('assistant', data.response || '');
+  return data;
 }
 
 async function send() {
@@ -1034,41 +1156,23 @@ async function send() {
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
   try {
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: text,
-        history,
-        provider,
-        model,
-        api_key: apiKey,
-        planner_mode: plannerMode,
-        standards_profile: standardsProfile,
-        web_search_disabled: webSearchDisabled,
-        privacy: fn.getPrivacySettings ? fn.getPrivacySettings() : { disable_web_search: webSearchDisabled },
-        project_context: projectContext,
-        command_route: projectContext?.route || '',
-        attachments: attachmentsForSend,
-      }),
-    });
-
-    let data = null;
-    try {
-      data = await res.json();
-    } catch {
-      data = { error: `Invalid JSON response (HTTP ${res.status})` };
-    }
-
-    loading.remove();
-
-    if (!res.ok || data.error) {
-      const errText = data.error || `Request failed with HTTP ${res.status}`;
-      appendMessage('error', errText);
-      persistTranscript('error', errText);
-      appendRecoveryMessage(errText);
-      return;
-    }
+    const payload = {
+      message: text,
+      history,
+      provider,
+      model,
+      api_key: apiKey,
+      conversation_id: conversationId,
+      planner_mode: plannerMode,
+      standards_profile: standardsProfile,
+      web_search_disabled: webSearchDisabled,
+      privacy: fn.getPrivacySettings ? fn.getPrivacySettings() : { disable_web_search: webSearchDisabled },
+      project_context: projectContext,
+      command_route: projectContext?.route || '',
+      attachments: attachmentsForSend,
+    };
+    const canStream = Boolean(serverStatus?.capabilities?.provider_native_streaming) && Boolean(window.ReadableStream);
+    const data = canStream ? await sendStream(payload, loading) : await sendJson(payload, loading);
 
     if (Array.isArray(data.actions) && data.actions.length > 0) {
       for (const action of data.actions) {
@@ -1076,10 +1180,6 @@ async function send() {
         persistTranscript('tool', `${action.tool} -> ${action.result}`);
       }
     }
-
-    const responseText = data.response || '';
-    appendMessage('assistant', responseText);
-    persistTranscript('assistant', responseText);
 
     if (data.pending_plan) {
       appendPlanCard(data.pending_plan);
@@ -1090,7 +1190,7 @@ async function send() {
 
     if (data.request_id) setStatus(`Last request: ${data.request_id}`, false);
   } catch (err) {
-    loading.remove();
+    if (loading.isConnected) loading.remove();
     const textErr = `Request failed: ${err.message}`;
     appendMessage('error', textErr);
     persistTranscript('error', textErr);

@@ -1471,7 +1471,14 @@ def import_product_from_url(url: str, *, timeout_seconds: int = 6) -> dict[str, 
     dims = parse_product_dimensions(re.sub(r"<[^>]+>", " ", body))
     if not dims:
         raise ValueError("Could not extract width, depth, and height from product page.")
-    return product_dimension(name=name, source_url=url, source_confidence="fetched", **dims)
+    return product_dimension(
+        name=name,
+        width_m=dims["width_m"],
+        depth_m=dims["depth_m"],
+        height_m=dims["height_m"],
+        source_url=url,
+        source_confidence="fetched",
+    )
 
 
 def load_product_cache(path: Path) -> list[dict[str, Any]]:

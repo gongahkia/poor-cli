@@ -149,13 +149,16 @@ Future expansion gates are tracked in [`docs/future-evaluations.md`](./docs/futu
 
 ## Providers
 
-The planner supports these LLM providers when configured in the editor settings or env:
+The planner supports these LLM providers through the first-class chat registry. Hosted providers need a key in the editor settings or env; Ollama uses a local server.
 
-| Provider | Env var | Default model | Install extra |
+| Provider | Env/config | Default model | Install extra |
 |---|---|---|---|
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` | `uv pip install -e ".[anthropic]"` |
-| OpenAI | `OPENAI_API_KEY` | `gpt-4o` | `uv pip install -e ".[openai]"` |
-| Google Gemini | `GEMINI_API_KEY` | `gemini-2.0-flash` | `uv pip install -e ".[gemini]"` |
+| OpenAI | `OPENAI_API_KEY` | `gpt-5.5` | `uv pip install -e ".[openai]"` |
+| Google Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash` | `uv pip install -e ".[gemini]"` |
+| Ollama/local | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | `llama3.1` | `brew install ollama` |
+
+The editor reads `/api/chat/models` for provider metadata, known model IDs, and capability flags. `/api/chat/stream` emits normalized SSE events for streaming-capable chat clients.
 
 ## Credits
 
