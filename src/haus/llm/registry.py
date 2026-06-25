@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
+import shutil
 from typing import Any
 
 from .types import ModelSpec, ProviderSpec
@@ -67,6 +69,51 @@ _PROVIDERS: dict[str, ProviderSpec] = {
         requires_api_key=False,
         base_url_env="OLLAMA_BASE_URL",
         allow_custom_models=True,
+        command_name="ollama",
+    ),
+    "codex": ProviderSpec(
+        id="codex",
+        label="Codex runtime",
+        env_var="",
+        default_model=os.environ.get("HAUS_CODEX_MODEL", "default"),
+        optional_extra="",
+        install_hint="codex login, or HAUS_CODEX_OSS=1 HAUS_CODEX_LOCAL_PROVIDER=ollama",
+        capabilities=("chat", "local_runtime", "text_only"),
+        models=(ModelSpec(os.environ.get("HAUS_CODEX_MODEL", "default"), "Codex configured default", ("chat", "local_runtime", "text_only"), True),),
+        requires_api_key=False,
+        allow_custom_models=True,
+        command_name="codex",
+        command_env="HAUS_CODEX_CMD",
+    ),
+    "claude-code": ProviderSpec(
+        id="claude-code",
+        label="Claude Code runtime",
+        env_var="",
+        default_model=os.environ.get("HAUS_CLAUDE_CODE_MODEL", "default"),
+        optional_extra="",
+        install_hint="claude auth login",
+        capabilities=("chat", "local_runtime", "text_only"),
+        models=(
+            ModelSpec(os.environ.get("HAUS_CLAUDE_CODE_MODEL", "default"), "Claude Code configured default", ("chat", "local_runtime", "text_only"), True),
+        ),
+        requires_api_key=False,
+        allow_custom_models=True,
+        command_name="claude",
+        command_env="HAUS_CLAUDE_CODE_CMD",
+    ),
+    "opencode": ProviderSpec(
+        id="opencode",
+        label="opencode runtime",
+        env_var="",
+        default_model=os.environ.get("HAUS_OPENCODE_MODEL", "default"),
+        optional_extra="",
+        install_hint="opencode providers auth, or configure a local model in opencode",
+        capabilities=("chat", "local_runtime", "text_only"),
+        models=(ModelSpec(os.environ.get("HAUS_OPENCODE_MODEL", "default"), "opencode configured default", ("chat", "local_runtime", "text_only"), True),),
+        requires_api_key=False,
+        allow_custom_models=True,
+        command_name="opencode",
+        command_env="HAUS_OPENCODE_CMD",
     ),
 }
 
@@ -88,6 +135,16 @@ def providers_with_env_keys() -> list[str]:
         if spec.requires_api_key and spec.env_var and os.environ.get(spec.env_var):
             out.append(provider)
     return out
+
+
+def _command_available(spec: ProviderSpec) -> bool | None:
+    command = os.environ.get(spec.command_env, "").strip() if spec.command_env else ""
+    if command:
+        parts = shlex.split(command)
+        return bool(parts and shutil.which(parts[0]))
+    if spec.command_name:
+        return shutil.which(spec.command_name) is not None
+    return None
 
 
 def validate_model_id(model: str) -> bool:
@@ -121,6 +178,9 @@ def provider_status() -> dict[str, Any]:
                 "has_env_key": spec.id in env_ready,
                 "base_url_env": spec.base_url_env,
                 "base_url": os.environ.get(spec.base_url_env, "http://localhost:11434") if spec.base_url_env else "",
+                "command_name": spec.command_name,
+                "command_env": spec.command_env,
+                "command_available": _command_available(spec),
                 "capabilities": list(spec.capabilities),
                 "models": [
                     {

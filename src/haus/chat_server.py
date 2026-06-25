@@ -37,9 +37,10 @@ from . import mcp_server as _mcp_server
 from . import geometry
 from .agent_loop import RoomPlan, plan_flat, plan_room
 from .catalog import catalog_item_to_layout_item, catalog_search_meta, get_catalog_item, search_ikea_catalog
-from .llm import DEFAULT_MODELS, ENV_KEYS, provider_status, providers_with_env_keys, resolve_model, supported_provider_ids
+from .llm import DEFAULT_MODELS, ENV_KEYS, provider_specs, provider_status, providers_with_env_keys, resolve_model, supported_provider_ids
 from .llm.providers import anthropic as anthropic_provider
 from .llm.providers import gemini as gemini_provider
+from .llm.providers import local_cli as local_cli_provider
 from .llm.providers import ollama as ollama_provider
 from .llm.providers import openai as openai_provider
 from .llm.types import ChatChunk
@@ -2610,6 +2611,57 @@ def _run_ollama(
     )
 
 
+def _run_codex(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return local_cli_provider.chat_codex(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
+def _run_claude_code(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return local_cli_provider.chat_claude_code(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
+def _run_opencode(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return local_cli_provider.chat_opencode(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
 _DEFAULT_MODELS = DEFAULT_MODELS
 
 _CHAT_FNS: dict[
@@ -2620,6 +2672,9 @@ _CHAT_FNS: dict[
     "openai": _run_openai,
     "gemini": _run_gemini,
     "ollama": _run_ollama,
+    "codex": _run_codex,
+    "claude-code": _run_claude_code,
+    "opencode": _run_opencode,
 }
 
 _STREAM_FNS: dict[
@@ -2641,6 +2696,19 @@ _STREAM_FNS: dict[
 }
 
 _ENV_KEYS = ENV_KEYS
+_PROVIDER_SPECS = provider_specs()
+
+
+def _resolve_provider_token(provider: str, client_key: str) -> str:
+    if provider not in _CHAT_FNS:
+        return ""
+    env_key = _ENV_KEYS.get(provider, "")
+    if client_key:
+        return client_key
+    if env_key:
+        return os.environ.get(env_key, "")
+    spec = _PROVIDER_SPECS.get(provider)
+    return "local" if spec and not spec.requires_api_key else ""
 
 
 def _sanitize_history(raw: Any) -> list[dict[str, Any]]:
@@ -2853,8 +2921,7 @@ async def _chat(request: Request) -> JSONResponse:
         concept_model, _ = resolve_model(provider, model_override) if provider in _CHAT_FNS else ("deterministic", False)
     except ValueError as exc:
         return JSONResponse({"error": str(exc), "request_id": request_id, "conversation_id": conversation_id}, 400)
-    env_key = _ENV_KEYS.get(provider, "") if provider in _CHAT_FNS else ""
-    concept_api_key = client_key or (os.environ.get(env_key, "") if env_key else ("local" if provider == "ollama" else ""))
+    concept_api_key = _resolve_provider_token(provider, client_key)
     resolved_planner_mode, planner_fallback_reason = _resolve_planner_mode(
         planner_mode_requested,
         provider,
@@ -2900,8 +2967,7 @@ async def _chat(request: Request) -> JSONResponse:
             400,
         )
 
-    env_key = _ENV_KEYS[provider]
-    api_key = client_key or (os.environ.get(env_key, "") if env_key else ("local" if provider == "ollama" else ""))
+    api_key = _resolve_provider_token(provider, client_key)
     if not api_key:
         return JSONResponse(
             {
@@ -2984,8 +3050,7 @@ async def _chat_stream(request: Request) -> StreamingResponse:
 
         revision_request = _parse_revision_request(user_msg)
         concept_request = _is_concept_request(user_msg, attachments)
-        env_key = _ENV_KEYS.get(provider, "") if provider in _CHAT_FNS else ""
-        api_key = client_key or (os.environ.get(env_key, "") if env_key else ("local" if provider == "ollama" else ""))
+        api_key = _resolve_provider_token(provider, client_key)
         try:
             model, custom_model = resolve_model(provider, model_override) if provider in _CHAT_FNS else ("deterministic", False)
         except ValueError as exc:
@@ -3036,7 +3101,7 @@ async def _chat_stream(request: Request) -> StreamingResponse:
             yield ChatChunk("done", payload).sse_event()
             return
 
-        if provider not in _STREAM_FNS:
+        if provider not in _CHAT_FNS:
             yield ChatChunk("error", {"error": f"Provider '{provider}' not supported.", "supported": supported_provider_ids(), "request_id": request_id, "conversation_id": conversation_id}).sse_event()
             return
         if not api_key:
@@ -3060,6 +3125,23 @@ async def _chat_stream(request: Request) -> StreamingResponse:
             },
         ).sse_event()
         try:
+            if provider not in _STREAM_FNS:
+                text, updated_history = _CHAT_FNS[provider](api_key, messages, model, dispatch)
+                final = {
+                    "response": text,
+                    "history": _redact_history_for_client(updated_history),
+                    "request_id": request_id,
+                    "conversation_id": conversation_id,
+                    "provider": provider,
+                    "model": model,
+                    "custom_model": custom_model,
+                    "actions": tool_log,
+                }
+                if text:
+                    yield ChatChunk("text", {"delta": text}).sse_event()
+                yield ChatChunk("done", final).sse_event()
+                return
+
             final: dict[str, Any] = {}
             for chunk in _STREAM_FNS[provider](api_key, messages, model, dispatch):
                 if chunk.type == "done":

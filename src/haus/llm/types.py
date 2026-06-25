@@ -32,6 +32,8 @@ class ProviderSpec:
     requires_api_key: bool = True
     base_url_env: str = ""
     allow_custom_models: bool = True
+    command_name: str = ""
+    command_env: str = ""
 
 
 @dataclass(frozen=True)
