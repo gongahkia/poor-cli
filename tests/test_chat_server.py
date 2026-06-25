@@ -87,9 +87,15 @@ def test_chat_models_reports_provider_metadata(chat_client: TestClient) -> None:
     body = res.json()
 
     assert "ollama" in body["supported_providers"]
+    assert "codex" in body["supported_providers"]
+    assert "claude-code" in body["supported_providers"]
+    assert "opencode" in body["supported_providers"]
     assert body["default_models"]["openai"] == chat_server._DEFAULT_MODELS["openai"]
     providers = {item["id"]: item for item in body["providers"]}
     assert providers["ollama"]["requires_api_key"] is False
+    assert providers["codex"]["requires_api_key"] is False
+    assert providers["codex"]["command_name"] == "codex"
+    assert "text_only" in providers["claude-code"]["capabilities"]
     assert "streaming" in providers["openai"]["capabilities"]
     assert providers["openai"]["models"]
 
@@ -356,6 +362,33 @@ def test_chat_routes_local_ollama_without_api_key(
     body = res.json()
     assert body["response"] == "local ok"
     assert body["provider"] == "ollama"
+
+
+def test_chat_routes_local_runtime_without_api_key(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_provider(
+        api_key: str,
+        messages: list[dict[str, object]],
+        model: str,
+        dispatch,
+    ) -> tuple[str, list[dict[str, object]]]:
+        captured["api_key"] = api_key
+        captured["model"] = model
+        return "runtime ok", messages + [{"role": "assistant", "content": [{"type": "text", "text": "runtime ok"}]}]
+
+    monkeypatch.setitem(chat_server._CHAT_FNS, "codex", fake_provider)
+
+    res = chat_client.post("/api/chat", json={"message": "hello", "provider": "codex"})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["response"] == "runtime ok"
+    assert body["provider"] == "codex"
+    assert captured["api_key"] == "local"
+    assert captured["model"] == chat_server._DEFAULT_MODELS["codex"]
 
 
 def test_chat_stream_returns_sse_events(

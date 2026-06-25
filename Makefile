@@ -29,6 +29,7 @@ help:
 	@echo "  OPENAI_API_KEY=...    make view"
 	@echo "  GEMINI_API_KEY=...    make view"
 	@echo "  OLLAMA_BASE_URL=...   make view"
+	@echo "  HAUS_CODEX_OSS=1 HAUS_CODEX_LOCAL_PROVIDER=ollama make view"
 
 setup:
 	uv venv --python 3.11

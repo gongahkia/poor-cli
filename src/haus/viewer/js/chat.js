@@ -44,6 +44,7 @@ const DISABLE_WEB_SEARCH_STORAGE = 'haus_chat_disable_web_search';
 const DISABLE_KEY_STORAGE = 'haus_chat_disable_key_storage';
 const DEFAULT_MAX_ATTACHMENTS = 3;
 const DEFAULT_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const FALLBACK_PROVIDERS = ['ollama', 'codex', 'claude-code', 'opencode', 'anthropic', 'openai', 'gemini'];
 let conversationId = localStorage.getItem(CONVERSATION_STORAGE) || newConversationId();
 
 export function initChat() {
@@ -191,10 +192,14 @@ function loadKeyField() {
   const keys = getKeys();
   const storedKeys = keyStorageDisabled() ? {} : loadJson(KEYS_STORAGE, {});
   const provider = providerSel.value;
+  const requiresKey = providerRequiresApiKey(provider);
   keyInput.value = keys[provider] || '';
+  keyInput.disabled = !requiresKey;
+  keyInput.placeholder = requiresKey ? 'sk-...' : 'No API key required';
   keyPersistEl.checked = Boolean(storedKeys[provider]) && !keyStorageDisabled();
-  keyPersistEl.disabled = keyStorageDisabled();
-  if (storedKeys[provider]) keyStatusEl.textContent = 'Key loaded from browser storage';
+  keyPersistEl.disabled = keyStorageDisabled() || !requiresKey;
+  if (!requiresKey) keyStatusEl.textContent = localProviderStatusText(provider);
+  else if (storedKeys[provider]) keyStatusEl.textContent = 'Key loaded from browser storage';
   else if (sessionKeys[provider]) keyStatusEl.textContent = 'Key available for this tab only';
   else if (keyStorageDisabled()) keyStatusEl.textContent = 'Browser key storage disabled';
   else keyStatusEl.textContent = '';
@@ -203,6 +208,11 @@ function loadKeyField() {
 function saveKey() {
   const storedKeys = keyStorageDisabled() ? {} : loadJson(KEYS_STORAGE, {});
   const provider = providerSel.value;
+  if (!providerRequiresApiKey(provider)) {
+    keyInput.value = '';
+    keyStatusEl.textContent = localProviderStatusText(provider);
+    return;
+  }
   const value = keyInput.value.trim();
 
   delete storedKeys[provider];
@@ -268,7 +278,7 @@ function refreshProviders() {
   const keys = getKeys();
   const providersFromServer = Array.isArray(serverStatus?.supported_providers)
     ? serverStatus.supported_providers
-    : ['anthropic', 'openai', 'gemini', 'ollama'];
+    : FALLBACK_PROVIDERS;
   const envProviders = new Set(Array.isArray(serverStatus?.providers_with_env_keys)
     ? serverStatus.providers_with_env_keys
     : []);
@@ -286,7 +296,7 @@ function refreshProviders() {
   if (storedProvider && providersFromServer.includes(storedProvider)) {
     providerSel.value = storedProvider;
   } else if (providersFromServer.length > 0) {
-    providerSel.value = providersFromServer[0];
+    providerSel.value = preferredProvider(providersFromServer, keys, envProviders);
     localStorage.setItem(PROVIDER_STORAGE, providerSel.value);
   }
 
@@ -297,7 +307,15 @@ function refreshProviders() {
 
 function providerLabel(provider) {
   const spec = providerSpec(provider);
-  return spec?.label || { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini', ollama: 'Ollama' }[provider] || provider;
+  return spec?.label || {
+    anthropic: 'Anthropic',
+    openai: 'OpenAI',
+    gemini: 'Gemini',
+    ollama: 'Ollama',
+    codex: 'Codex runtime',
+    'claude-code': 'Claude Code runtime',
+    opencode: 'opencode runtime',
+  }[provider] || provider;
 }
 
 function providerSpec(provider) {
@@ -308,7 +326,10 @@ function providerSpec(provider) {
 function refreshProviderStatus(keys = getKeys(), envProviders = new Set(Array.isArray(serverStatus?.providers_with_env_keys) ? serverStatus.providers_with_env_keys : [])) {
   const provider = providerSel.value;
   const spec = providerSpec(provider);
-  if (!provider || keys[provider] || envProviders.has(provider) || spec?.requires_api_key === false) setStatus('');
+  if (!provider) setStatus('');
+  else if (spec?.requires_api_key === false && spec.command_available === false) setStatus(`${providerLabel(provider)} command not found. ${spec.install_hint || 'Install or configure the runtime command.'}`, true);
+  else if (spec?.requires_api_key === false) setStatus(`${providerLabel(provider)} selected. No API key required.`, false);
+  else if (keys[provider] || envProviders.has(provider)) setStatus('');
   else setStatus('Deterministic planner available. Add a provider key for LLM-reviewed plans.', false);
   refreshProviderWarning();
 }
@@ -316,15 +337,44 @@ function refreshProviderStatus(keys = getKeys(), envProviders = new Set(Array.is
 function refreshProviderWarning() {
   if (!providerWarningEl) return;
   const provider = providerSel?.value || '';
+  const spec = providerSpec(provider);
   const keys = getKeys();
   const hasCredential = providerHasCredential(provider, keys);
-  const externalMode = hasCredential && (plannerModeSel?.value || 'auto') !== 'deterministic';
-  providerWarningEl.style.display = externalMode ? '' : 'none';
-  if (externalMode) {
+  const activeMode = hasCredential && (plannerModeSel?.value || 'auto') !== 'deterministic';
+  providerWarningEl.style.display = activeMode ? '' : 'none';
+  if (activeMode && spec?.requires_api_key === false) {
+    providerWarningEl.textContent = spec.capabilities?.includes('text_only')
+      ? 'Local runtime receives chat text and layout context only. Haus edit tools stay disabled for this provider.'
+      : 'Local provider receives chat text, layout details, and attached image references on this machine.';
+  } else if (activeMode) {
     providerWarningEl.textContent = disableWebSearchEl?.checked
       ? 'External LLM provider may receive chat text, layout details, and attached image references. Web search is disabled for this request.'
       : 'External LLM provider may receive chat text, layout details, attached image references, and live reference context for this request.';
   }
+}
+
+function providerRequiresApiKey(provider) {
+  const spec = providerSpec(provider);
+  return spec?.requires_api_key !== false;
+}
+
+function localProviderStatusText(provider) {
+  const spec = providerSpec(provider);
+  if (spec?.command_available === false) return `${providerLabel(provider)} command not found.`;
+  if (spec?.capabilities?.includes('text_only')) return 'No browser key needed. Text-only local runtime.';
+  return 'No browser key needed. Local provider.';
+}
+
+function preferredProvider(providers, keys, envProviders) {
+  const keyed = providers.find((provider) => keys[provider] || envProviders.has(provider));
+  if (keyed) return keyed;
+  const localReady = providers.find((provider) => {
+    const spec = providerSpec(provider);
+    return spec?.requires_api_key === false && spec.command_available !== false;
+  });
+  if (localReady) return localReady;
+  const localAny = providers.find((provider) => providerSpec(provider)?.requires_api_key === false);
+  return localAny || providers[0];
 }
 
 function promptPresets(journey) {
@@ -445,7 +495,7 @@ function toggleChat() {
 function providerHasCredential(provider, keys) {
   if (!provider) return false;
   const spec = providerSpec(provider);
-  if (spec?.requires_api_key === false) return true;
+  if (spec?.requires_api_key === false) return spec.command_available !== false;
   if (keys[provider]) return true;
   const envProviders = Array.isArray(serverStatus?.providers_with_env_keys)
     ? serverStatus.providers_with_env_keys
@@ -1171,7 +1221,10 @@ async function send() {
       command_route: projectContext?.route || '',
       attachments: attachmentsForSend,
     };
-    const canStream = Boolean(serverStatus?.capabilities?.provider_native_streaming) && Boolean(window.ReadableStream);
+    const providerCaps = providerSpec(provider)?.capabilities || [];
+    const canStream = Boolean(serverStatus?.capabilities?.provider_native_streaming)
+      && Boolean(window.ReadableStream)
+      && providerCaps.includes('streaming');
     const data = canStream ? await sendStream(payload, loading) : await sendJson(payload, loading);
 
     if (Array.isArray(data.actions) && data.actions.length > 0) {

@@ -156,7 +156,7 @@ Future expansion gates are tracked in [`docs/future-evaluations.md`](./docs/futu
 
 ## Providers
 
-The planner supports these LLM providers through the first-class chat registry. Hosted providers need a key in the editor settings or env; Ollama uses a local server.
+The planner supports these LLM providers through the first-class chat registry. Hosted providers need a key in the editor settings or env; local runtimes use the user's installed/authenticated CLI or local model server.
 
 | Provider | Env/config | Default model | Install extra |
 |---|---|---|---|
@@ -164,6 +164,11 @@ The planner supports these LLM providers through the first-class chat registry. 
 | OpenAI | `OPENAI_API_KEY` | `gpt-5.5` | `uv pip install -e ".[openai]"` |
 | Google Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash` | `uv pip install -e ".[gemini]"` |
 | Ollama/local | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | `llama3.1` | `brew install ollama` |
+| Codex runtime | `HAUS_CODEX_MODEL`, `HAUS_CODEX_OSS=1`, `HAUS_CODEX_LOCAL_PROVIDER=ollama`, `HAUS_CODEX_CMD` | `default` | `codex login`, or local OSS provider config |
+| Claude Code runtime | `HAUS_CLAUDE_CODE_MODEL`, `HAUS_CLAUDE_CODE_CMD` | `default` | `claude auth login` |
+| opencode runtime | `HAUS_OPENCODE_MODEL`, `HAUS_OPENCODE_CMD` | `default` | `opencode providers auth` or local provider config |
+
+Codex, Claude Code, and opencode are text-only chat adapters in Haus: they can reason over the supplied chat/layout context, but Haus does not expose edit tools to those CLIs.
 
 The editor reads `/api/chat/models` for provider metadata, known model IDs, and capability flags. `/api/chat/stream` emits normalized SSE events for streaming-capable chat clients.
 

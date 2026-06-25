@@ -130,11 +130,12 @@ def _opencode_cmd(model: str) -> list[str]:
     return cmd
 
 
-def _run(cmd: list[str], prompt: str) -> str:
+def _run(cmd: list[str], prompt: str, *, prompt_as_arg: bool = False) -> str:
+    run_cmd = [*cmd, prompt] if prompt_as_arg else cmd
     try:
         proc = subprocess.run(
-            cmd,
-            input=prompt,
+            run_cmd,
+            input=None if prompt_as_arg else prompt,
             text=True,
             capture_output=True,
             timeout=_timeout_seconds(),
@@ -158,8 +159,9 @@ def _chat_with_cmd(
     model: str,
     *,
     system: str,
+    prompt_as_arg: bool = False,
 ) -> tuple[str, list[dict[str, Any]]]:
-    text = _run(cmd, _prompt(system, messages))
+    text = _run(cmd, _prompt(system, messages), prompt_as_arg=prompt_as_arg)
     updated = messages + [{"role": "assistant", "content": [{"type": "text", "text": text}]}]
     return text, updated
 
@@ -189,7 +191,7 @@ def chat_claude_code(
     max_tool_steps: int,
 ) -> tuple[str, list[dict[str, Any]]]:
     del api_key, dispatch, tools_spec, max_tool_steps
-    return _chat_with_cmd(_claude_cmd(model), messages, model, system=system)
+    return _chat_with_cmd(_claude_cmd(model), messages, model, system=system, prompt_as_arg=True)
 
 
 def chat_opencode(
@@ -203,7 +205,7 @@ def chat_opencode(
     max_tool_steps: int,
 ) -> tuple[str, list[dict[str, Any]]]:
     del api_key, dispatch, tools_spec, max_tool_steps
-    return _chat_with_cmd(_opencode_cmd(model), messages, model, system=system)
+    return _chat_with_cmd(_opencode_cmd(model), messages, model, system=system, prompt_as_arg=True)
 
 
 def stream_from_chat(
