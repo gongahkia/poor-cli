@@ -1,0 +1,25 @@
+{
+  "schema": "haus.constraint_pack.v1",
+  "id": "kitchen_basic",
+  "label": "Kitchen work-zone planning",
+  "scope": ["kitchen", "appliances", "service_zone", "circulation"],
+  "region": "global",
+  "source_basis": "planning_target",
+  "disclaimer": "Concept planning only; not plumbing, gas, electrical, ventilation, or contractor verification.",
+  "targets": {
+    "min_walkway_m": 0.9,
+    "clearance_m": 0.9,
+    "doorway_min_m": 0.75,
+    "kitchen_work_clearance_m": 0.9,
+    "delivery_opening_min_m": 0.8
+  },
+  "checks": [
+    {"id": "kitchen_work_clearance", "severity": "serious", "target": "kitchen_work_clearance_m", "message": "Kitchen work aisle is below target."},
+    {"id": "missing_kitchen_core", "severity": "warning", "target": "sink_fridge_counter", "message": "Kitchen core fixture/appliance set is incomplete."}
+  ],
+  "questions": [
+    "Which appliance positions are constrained by services?",
+    "Where are fridge door swing and cabinet pullout zones?",
+    "What cooking workflow matters most?"
+  ]
+}

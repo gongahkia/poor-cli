@@ -125,7 +125,14 @@ The MCP surface is meant to support practical floor-plan workflows, not generic 
 | **Rooms** | `rename_object`, `find_by_name`, `tag_room`, `list_rooms`, `compute_room_area` |
 | **Validation** | `check_sightline`, `score_doorway_accessibility`, `score_walkway`, `score_layout` |
 | **Simulation/templates** | `suggest_furniture_placement`, `auto_place_furniture`, `simulate_layout_options`, `apply_simulated_option`, `list_room_templates`, `apply_room_template` |
+| **Agent contracts** | `list_constraint_packs`, `get_constraint_pack`, `get_layout_graph_json`, `reason_about_layout`, `get_schema_catalog_json`, `get_multimodal_intake_contract`, `create_scenario_transaction`, `apply_scenario_transaction`, `revert_scenario_transaction`, `run_agent_eval_suite` |
 | **Export semantics** | `get_semantic_layout_json`, `bim_readiness_report` |
+
+Agents should treat `get_layout_graph_json` as the canonical reasoning input. It exposes rooms, openings, objects, adjacency, zones, routes, constraint targets, findings, and evidence IDs. Any edit should be emitted as a scenario transaction before it is applied, so the user can inspect the before/after diff and safety confirmation reasons.
+
+MCP resources expose the same contracts without a tool call: `haus://layout/current`, `haus://layout/graph`, `haus://schema/catalog`, `haus://schema/semantic_layout.v1`, `haus://intake/multimodal.v1`, and `haus://scenarios/{scenario_id}/diff`. Prompt templates include `architect_space`, `validate_plan`, `prepare_contractor_questions`, and `furniture_fit_review`.
+
+Constraint packs live as versioned JSON under `src/haus/corpus/constraints/`; bundled packs cover compact HDB/BTO planning, furniture fit/delivery, accessibility, kitchens, bathrooms, rental rooms, and agent guardrails. The bundled eval suite `agent_layout_reasoning.v1` checks golden layout prompts for expected findings, invalid geometry, missing validation, bad scale assumptions, and hallucinated edits.
 
 ## Roadmap
 

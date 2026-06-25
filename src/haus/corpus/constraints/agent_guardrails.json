@@ -1,0 +1,25 @@
+{
+  "schema": "haus.constraint_pack.v1",
+  "id": "agent_guardrails",
+  "label": "Agent edit guardrails",
+  "scope": ["agent", "scenario", "audit", "safety"],
+  "region": "global",
+  "source_basis": "product_policy",
+  "disclaimer": "Agents must produce reversible scenario patches and cite assumptions before applying edits.",
+  "targets": {
+    "max_unverified_wall_change_count": 0,
+    "requires_transaction": true,
+    "requires_before_after_diff": true,
+    "requires_user_confirmation_for_structural_changes": true
+  },
+  "checks": [
+    {"id": "missing_transaction", "severity": "blocked", "target": "requires_transaction", "message": "Layout edits must be represented as reversible scenario transactions."},
+    {"id": "structural_unknown", "severity": "blocked", "target": "requires_user_confirmation_for_structural_changes", "message": "Unknown structural elements cannot be modified without explicit confirmation."},
+    {"id": "missing_assumption", "severity": "warning", "target": "requires_before_after_diff", "message": "Assumptions and before/after diffs must accompany generated changes."}
+  ],
+  "questions": [
+    "Should this be analysis-only, a draft scenario, or an applied edit?",
+    "Which objects, walls, fixtures, and rooms are locked?",
+    "What source evidence supports the proposed spatial change?"
+  ]
+}

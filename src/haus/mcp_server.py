@@ -25,7 +25,23 @@ from .catalog import (
     search_ikea_catalog as _search_ikea_catalog,
 )
 from . import geometry
+from .constraints import (
+    get_constraint_pack as _get_constraint_pack,
+    list_constraint_packs as _list_constraint_packs,
+)
 from .logging_utils import configure_logging
+from .semantic_ir import (
+    SEMANTIC_SCHEMA_ID,
+    apply_scenario_patch,
+    build_layout_graph,
+    build_semantic_layout,
+    multimodal_intake_contract,
+    reasoning_report,
+    revert_scenario_patch,
+    run_agent_eval_suite as _run_agent_eval_suite,
+    scenario_transaction,
+    schema_catalog,
+)
 from .workbench import (
     accessibility_report,
     check_product_fit,
@@ -460,6 +476,114 @@ def _write_project(project: dict[str, Any]) -> Path:
 
 def _json_result(payload: dict[str, Any]) -> str:
     return json.dumps(payload, indent=2, sort_keys=True)
+
+
+def _parse_json_object(raw: str, label: str) -> tuple[dict[str, Any] | None, str | None]:
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return None, f"Invalid {label} JSON: {exc}"
+    if not isinstance(payload, dict):
+        return None, f"{label} JSON must be an object."
+    return payload, None
+
+
+def _find_scenario_by_id(scenario_id: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    for path in sorted(_projects_root().glob("*.haus-project.json")):
+        try:
+            project = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(project, dict):
+            continue
+        for scenario in project.get("scenarios", []):
+            if isinstance(scenario, dict) and scenario.get("id") == scenario_id:
+                project["layout"] = migrate_layout(project.get("layout", {}))
+                return project, scenario
+    return None, None
+
+
+@mcp.resource("haus://layout/current", name="Current Haus layout", mime_type="application/json")
+def haus_current_layout_resource() -> str:
+    return _json_result(_load_layout())
+
+
+@mcp.resource("haus://layout/graph", name="Current Haus layout graph", mime_type="application/json")
+def haus_layout_graph_resource() -> str:
+    return _json_result(build_layout_graph(_load_layout()))
+
+
+@mcp.resource("haus://schema/semantic_layout.v1", name="Haus semantic schema", mime_type="application/json")
+def haus_semantic_schema_resource() -> str:
+    return _json_result(schema_catalog()["schemas"][SEMANTIC_SCHEMA_ID])
+
+
+@mcp.resource("haus://schema/catalog", name="Haus schema catalog", mime_type="application/json")
+def haus_schema_catalog_resource() -> str:
+    return _json_result(schema_catalog())
+
+
+@mcp.resource("haus://intake/multimodal.v1", name="Haus multimodal intake contract", mime_type="application/json")
+def haus_multimodal_intake_resource() -> str:
+    return _json_result(multimodal_intake_contract())
+
+
+@mcp.resource("haus://scenarios/{scenario_id}/diff", name="Haus scenario diff", mime_type="application/json")
+def haus_scenario_diff_resource(scenario_id: str) -> str:
+    project, scenario = _find_scenario_by_id(scenario_id)
+    if project is None or scenario is None:
+        return _json_result({"ok": False, "error": f"Scenario '{scenario_id}' was not found."})
+    parent_id = scenario.get("parent_scenario_id")
+    parent = next(
+        (
+            item
+            for item in project.get("scenarios", [])
+            if isinstance(item, dict) and item.get("id") == parent_id
+        ),
+        None,
+    )
+    before = parent.get("layout", project.get("layout", {})) if isinstance(parent, dict) else project.get("layout", {})
+    txn = scenario_transaction(before, scenario.get("layout", {}), scenario_id=scenario_id, intent=str(scenario.get("name", "")), actor="resource")
+    return _json_result({"ok": True, "project_id": project.get("id"), "transaction": txn})
+
+
+@mcp.prompt(name="architect_space")
+def architect_space_prompt(goal: str, constraint_packs: str = "compact_hdb,furniture_fit,agent_guardrails") -> str:
+    return (
+        "Use haus as the source of truth for space reasoning. "
+        f"Goal: {goal}. Constraint packs: {constraint_packs}. "
+        "First read haus://layout/graph and haus://schema/catalog. "
+        "Return assumptions, findings, a draft scenario transaction for edits, and validation after the edit. "
+        "Do not apply structural, service-zone, or room-boundary changes without explicit user confirmation."
+    )
+
+
+@mcp.prompt(name="validate_plan")
+def validate_plan_prompt(focus: str = "fit, circulation, accessibility, and renovation risk") -> str:
+    return (
+        "Validate the current Haus layout graph against the requested focus: "
+        f"{focus}. Use constraint packs as explicit inputs. "
+        "Report blocker/serious/warning/info findings with evidence ids and next actions. "
+        "Do not claim code compliance or contractor readiness."
+    )
+
+
+@mcp.prompt(name="prepare_contractor_questions")
+def contractor_questions_prompt(scope: str = "renovation") -> str:
+    return (
+        f"Prepare contractor/site-verification questions for {scope}. "
+        "Use graph findings, locked elements, structural unknowns, service zones, openings, and dimensions. "
+        "Separate unknowns, assumptions, must-verify measurements, and quote blockers."
+    )
+
+
+@mcp.prompt(name="furniture_fit_review")
+def furniture_fit_review_prompt(product: str = "") -> str:
+    return (
+        f"Review furniture fit for: {product or 'selected product'}. "
+        "Use current layout graph, door/opening widths, route constraints, product dimensions, and scenario diffs. "
+        "Flag package-vs-assembled dimension uncertainty and delivery-route unknowns."
+    )
 
 
 def _item_label(item: dict[str, Any]) -> str:
@@ -1296,6 +1420,117 @@ def list_furniture_catalog() -> str:
     for name, spec in FURNITURE_CATALOG.items():
         lines.append(f"  {name}: {spec['w']}m x {spec['d']}m (height {spec['h']}m)")
     return "Available furniture types:\n" + "\n".join(lines)
+
+
+@mcp.tool()
+def list_constraint_packs() -> str:
+    """List available Haus constraint packs for agent reasoning."""
+    return _json_result({"ok": True, "constraint_packs": _list_constraint_packs()})
+
+
+@mcp.tool()
+def get_constraint_pack(pack_id: str) -> str:
+    """Return one Haus constraint pack as structured JSON."""
+    try:
+        pack = _get_constraint_pack(pack_id)
+    except (KeyError, ValueError) as exc:
+        return _json_result({"ok": False, "error": str(exc)})
+    return _json_result({"ok": True, "constraint_pack": pack})
+
+
+@mcp.tool()
+def get_layout_graph_json(constraint_pack_ids: list[str] | None = None) -> str:
+    """Return graph-native Haus layout JSON for agents."""
+    return _json_result(build_layout_graph(_load_layout(), constraint_pack_ids))
+
+
+@mcp.tool()
+def reason_about_layout(constraint_pack_ids: list[str] | None = None) -> str:
+    """Return structured graph findings and next actions for the current layout."""
+    return _json_result(reasoning_report(_load_layout(), constraint_pack_ids))
+
+
+@mcp.tool()
+def get_schema_catalog_json() -> str:
+    """Return Haus agent-facing JSON schema catalog."""
+    return _json_result(schema_catalog())
+
+
+@mcp.tool()
+def get_multimodal_intake_contract() -> str:
+    """Return accepted input and evidence contracts for multimodal spatial intake."""
+    return _json_result(multimodal_intake_contract())
+
+
+@mcp.tool()
+def create_scenario_transaction(
+    proposed_layout_json: str,
+    scenario_id: str = "",
+    intent: str = "",
+    project_id: str = "",
+) -> str:
+    """Create a reversible scenario transaction from the active/project layout to proposed_layout_json."""
+    proposed, err = _parse_json_object(proposed_layout_json, "proposed layout")
+    if err:
+        return _json_result({"ok": False, "error": err})
+    project = _read_project(project_id) if project_id else None
+    before = project.get("layout", {}) if project else _load_layout()
+    txn = scenario_transaction(before, proposed or {}, scenario_id=scenario_id, intent=intent, actor="mcp")
+    return _json_result({"ok": True, "project_id": project_id or None, "transaction": txn})
+
+
+@mcp.tool()
+def apply_scenario_transaction(transaction_json: str, project_id: str = "") -> str:
+    """Apply a scenario transaction to the active layout or a saved project."""
+    transaction, err = _parse_json_object(transaction_json, "transaction")
+    if err:
+        return _json_result({"ok": False, "error": err})
+    if transaction is None:
+        return _json_result({"ok": False, "error": "Transaction JSON must be an object."})
+    project = _read_project(project_id) if project_id else None
+    base = project.get("layout", {}) if project else _load_layout()
+    updated = apply_scenario_patch(base, transaction)
+    save_err = None
+    path = None
+    if project:
+        project["layout"] = updated
+        project.setdefault("layout_versions", []).append({"status": "applied", "created_at": time.time(), "transaction_id": transaction.get("id")})
+        path = str(_write_project(project))
+    else:
+        save_err = _save_layout(updated)
+    return _json_result({"ok": save_err is None, "error": save_err, "project_id": project_id or None, "path": path, "layout": updated})
+
+
+@mcp.tool()
+def revert_scenario_transaction(transaction_json: str, project_id: str = "") -> str:
+    """Revert a scenario transaction on the active layout or a saved project."""
+    transaction, err = _parse_json_object(transaction_json, "transaction")
+    if err:
+        return _json_result({"ok": False, "error": err})
+    if transaction is None:
+        return _json_result({"ok": False, "error": "Transaction JSON must be an object."})
+    project = _read_project(project_id) if project_id else None
+    base = project.get("layout", {}) if project else _load_layout()
+    updated = revert_scenario_patch(base, transaction)
+    save_err = None
+    path = None
+    if project:
+        project["layout"] = updated
+        project.setdefault("layout_versions", []).append({"status": "revised", "created_at": time.time(), "transaction_id": transaction.get("id")})
+        path = str(_write_project(project))
+    else:
+        save_err = _save_layout(updated)
+    return _json_result({"ok": save_err is None, "error": save_err, "project_id": project_id or None, "path": path, "layout": updated})
+
+
+@mcp.tool()
+def run_agent_eval_suite(suite_id: str = "agent_layout_reasoning.v1") -> str:
+    """Run bundled agent-reasoning golden evals."""
+    try:
+        report = _run_agent_eval_suite(suite_id)
+    except (KeyError, ValueError) as exc:
+        return _json_result({"ok": False, "error": str(exc)})
+    return _json_result({"ok": report["failed"] == 0, "report": report})
 
 
 @mcp.tool()
@@ -3043,72 +3278,7 @@ def _semantic_kind(item: dict[str, Any]) -> str:
 
 
 def _semantic_layout() -> dict[str, Any]:
-    data = _load_layout()
-    rooms = []
-    for zone in _layout_room_zones(data):
-        rooms.append(
-            {
-                "id": zone.room_id,
-                "label": zone.label,
-                "kind": zone.kind,
-                "source": zone.source,
-                "bounds": {
-                    "x_min": round(zone.bounds[0], 3),
-                    "z_min": round(zone.bounds[1], 3),
-                    "x_max": round(zone.bounds[2], 3),
-                    "z_max": round(zone.bounds[3], 3),
-                },
-                "polygon": [{"x": round(x, 3), "z": round(z, 3)} for x, z in zone.polygon or ()],
-                "openings": list(zone.openings),
-                "area_m2": round(_zone_area(zone), 3),
-            }
-        )
-
-    objects = []
-    for i, item in enumerate(data["items"]):
-        objects.append(
-            {
-                "index": i,
-                "semantic_kind": _semantic_kind(item),
-                "type": item.get("type"),
-                "furniture_type": item.get("furnitureType"),
-                "name": item.get("name"),
-                "room": item.get("room"),
-                "position_m": {"x": item["pos"][0], "y": item["pos"][1], "z": item["pos"][2]},
-                "rotation_y_rad": item.get("rot", 0.0),
-                "dimensions_m": {"width": item["geo"][0], "height": item["geo"][1], "depth": item["geo"][2]},
-            }
-        )
-
-    assessment = _layout_quality_assessment("compact_hdb")
-    return {
-        "schema": "haus.semantic_layout.v1",
-        "units": "meters",
-        "rooms": rooms,
-        "objects": objects,
-        "circulation_profiles": {
-            name: {
-                "label": spec["label"],
-                "min_walkway_m": spec["min_walkway_m"],
-                "clearance_m": spec["clearance_m"],
-                "notes": spec["notes"],
-            }
-            for name, spec in STANDARD_PROFILES.items()
-        },
-        "bim_readiness": {
-            "status": "ready_for_mapping" if rooms and objects else "incomplete",
-            "not_ifc": True,
-            "missing": [
-                "true wall/opening topology",
-                "door swings",
-                "window metadata",
-                "MEP/plumbing/electrical systems",
-                "code-compliance certification",
-            ],
-            "quality_status": assessment["status"],
-            "quality_warnings": assessment["warnings"],
-        },
-    }
+    return build_semantic_layout(_load_layout())
 
 
 @mcp.tool()
@@ -3122,20 +3292,21 @@ def bim_readiness_report() -> str:
     """Report how ready the current layout is for BIM/IFC-style mapping."""
     semantic = _semantic_layout()
     readiness = semantic["bim_readiness"]
+    findings = semantic.get("reasoning", {}).get("findings", [])
+    quality_status = "needs_revision" if findings else "ready"
     lines = [
         "BIM readiness report",
         f"Status: {readiness['status']}",
         "This is not an IFC export or compliance certificate.",
         f"Rooms: {len(semantic['rooms'])}",
         f"Objects: {len(semantic['objects'])}",
-        f"Quality status: {readiness['quality_status']}",
+        f"Quality status: {quality_status}",
         "Missing for full BIM:",
     ]
     lines.extend(f"  - {item}" for item in readiness["missing"])
-    warnings = readiness["quality_warnings"]
-    if warnings:
+    if findings:
         lines.append("Quality warnings:")
-        lines.extend(f"  - {item}" for item in warnings)
+        lines.extend(f"  - {item['message']}" for item in findings[:8])
     return "\n".join(lines)
 
 

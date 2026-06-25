@@ -246,6 +246,39 @@ def test_suggest_placement_json_returns_structured(isolated_layout: Path) -> Non
     assert "accessibility_component" in bd
 
 
+def test_agent_contract_tools_return_graph_transaction_and_eval(isolated_layout: Path) -> None:
+    layout = {
+        "version": 1,
+        "metadata": {"calibration": {"confidence": "estimated", "user_confirmed": False}},
+        "rooms": [{"id": "living", "label": "Living", "kind": "living", "bounds": {"x_min": 0, "z_min": 0, "x_max": 3, "z_max": 3}}],
+        "items": [
+            _obj(item_type="furniture", furniture_type="sofa_3", x=1.0, z=1.0, w=2.1, h=0.8, d=0.9),
+        ],
+    }
+    layout["items"][0]["id"] = "sofa"
+    assert mcp_server._save_layout(layout) is None
+
+    packs = json.loads(mcp_server.list_constraint_packs())
+    assert packs["ok"] is True
+    assert any(pack["id"] == "compact_hdb" for pack in packs["constraint_packs"])
+
+    graph = json.loads(mcp_server.get_layout_graph_json(["compact_hdb"]))
+    assert graph["schema"] == "haus.layout_graph.v1"
+    assert graph["rooms"][0]["id"] == "living"
+
+    proposed = json.loads(json.dumps(layout))
+    proposed["items"][0]["pos"][0] = 1.5
+    txn_payload = json.loads(mcp_server.create_scenario_transaction(json.dumps(proposed), intent="move sofa"))
+    assert txn_payload["ok"] is True
+    assert txn_payload["transaction"]["diff"]["change_counts"]["replace"] == 1
+
+    contract = json.loads(mcp_server.get_multimodal_intake_contract())
+    assert contract["schema"] == "haus.multimodal_intake.v1"
+
+    eval_payload = json.loads(mcp_server.run_agent_eval_suite())
+    assert eval_payload["ok"] is True
+
+
 def test_design_room_adds_tagged_furniture_with_trace(isolated_layout: Path) -> None:
     assert mcp_server._save_layout({"version": 1, "items": []}) is None
 

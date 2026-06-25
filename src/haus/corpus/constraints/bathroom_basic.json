@@ -1,0 +1,25 @@
+{
+  "schema": "haus.constraint_pack.v1",
+  "id": "bathroom_basic",
+  "label": "Bathroom planning",
+  "scope": ["bathroom", "fixtures", "wet_zone", "circulation"],
+  "region": "global",
+  "source_basis": "planning_target",
+  "disclaimer": "Concept planning target; not plumbing, waterproofing, code, or contractor verification.",
+  "targets": {
+    "min_walkway_m": 0.8,
+    "clearance_m": 0.75,
+    "doorway_min_m": 0.75,
+    "bathroom_fixture_clearance_m": 0.75,
+    "turning_circle_m": 1.2
+  },
+  "checks": [
+    {"id": "fixture_clearance", "severity": "serious", "target": "bathroom_fixture_clearance_m", "message": "Bathroom fixture approach clearance is tight."},
+    {"id": "door_swing_conflict", "severity": "warning", "target": "doorway_min_m", "message": "Door swing may block compact bathroom use."}
+  ],
+  "questions": [
+    "Where are floor traps, risers, and waterproofing boundaries?",
+    "Can the door become sliding or outswing?",
+    "Which fixtures are fixed by plumbing?"
+  ]
+}

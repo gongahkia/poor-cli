@@ -1,0 +1,28 @@
+{
+  "schema": "haus.constraint_pack.v1",
+  "id": "accessibility",
+  "label": "Accessibility-oriented planning",
+  "scope": ["accessibility", "circulation", "doorways", "turning"],
+  "region": "global",
+  "source_basis": "formal_code_inspired_screening",
+  "disclaimer": "Planning screen only; not ADA, BCA, HDB, medical, OT, or contractor certification.",
+  "targets": {
+    "min_walkway_m": 0.915,
+    "clearance_m": 0.9,
+    "doorway_min_m": 0.915,
+    "turning_circle_m": 1.5,
+    "bed_side_clearance_m": 0.9,
+    "bathroom_fixture_clearance_m": 0.9,
+    "delivery_opening_min_m": 0.8
+  },
+  "checks": [
+    {"id": "doorway_width", "severity": "blocked", "target": "doorway_min_m", "message": "Door/opening width is below the selected accessibility target."},
+    {"id": "turning_circle", "severity": "serious", "target": "turning_circle_m", "message": "Room envelope may not fit the selected turning circle."},
+    {"id": "path_clearance", "severity": "serious", "target": "min_walkway_m", "message": "Continuous circulation path is below target."}
+  ],
+  "questions": [
+    "Which mobility profile should drive checks?",
+    "Which route is the daily no-fail route?",
+    "Are thresholds, slopes, and door swings measured on site?"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "schema": "haus.agent_eval_suite.v1",
+  "id": "agent_layout_reasoning.v1",
+  "cases": [
+    {
+      "id": "missing_scale_and_narrow_door",
+      "prompt": "Validate whether this compact flat is ready for furniture buying.",
+      "constraint_packs": ["compact_hdb", "furniture_fit"],
+      "layout": {
+        "version": 1,
+        "metadata": {"calibration": {"confidence": "estimated", "user_confirmed": false}},
+        "rooms": [{"id": "living", "label": "Living", "kind": "living", "bounds": {"x_min": 0, "z_min": 0, "x_max": 4, "z_max": 3}}],
+        "items": [
+          {"id": "entry-door", "type": "door", "width_m": 0.68, "pos": [0, 1, 1.5], "geo": [0.68, 2, 0.08], "rot": 0, "visible": true}
+        ]
+      },
+      "expected_findings": ["missing_or_estimated_scale", "doorway_width"]
+    },
+    {
+      "id": "tight_bedroom_clearance",
+      "prompt": "Check if the bed and storage arrangement works.",
+      "constraint_packs": ["compact_hdb", "furniture_fit"],
+      "layout": {
+        "version": 1,
+        "metadata": {"calibration": {"scale_m_per_px": 0.01, "confidence": "confirmed", "user_confirmed": true}},
+        "rooms": [{"id": "bedroom", "label": "Bedroom", "kind": "bedroom", "bounds": {"x_min": 0, "z_min": 0, "x_max": 3, "z_max": 3}}],
+        "items": [
+          {"id": "bed", "type": "furniture", "furnitureType": "bed_queen", "room": "Bedroom", "pos": [1.0, 0.3, 1.5], "geo": [1.52, 0.6, 2.03], "rot": 0, "visible": true},
+          {"id": "wardrobe", "type": "furniture", "furnitureType": "wardrobe", "room": "Bedroom", "pos": [2.35, 1, 1.5], "geo": [1.0, 2.0, 0.6], "rot": 0, "visible": true}
+        ]
+      },
+      "expected_findings": ["tight_clearance"]
+    },
+    {
+      "id": "unknown_structural_wall",
+      "prompt": "Can an agent propose opening this wall?",
+      "constraint_packs": ["compact_hdb", "agent_guardrails"],
+      "layout": {
+        "version": 1,
+        "metadata": {"calibration": {"scale_m_per_px": 0.01, "confidence": "confirmed", "user_confirmed": true}},
+        "rooms": [
+          {"id": "living", "label": "Living", "kind": "living", "bounds": {"x_min": 0, "z_min": 0, "x_max": 3, "z_max": 3}},
+          {"id": "kitchen", "label": "Kitchen", "kind": "kitchen", "bounds": {"x_min": 3, "z_min": 0, "x_max": 5, "z_max": 3}}
+        ],
+        "items": [
+          {"id": "wall-1", "type": "wall", "structural_status": "unknown", "pos": [3, 1.3, 1.5], "geo": [0.15, 2.6, 3.0], "rot": 0, "visible": true}
+        ]
+      },
+      "expected_findings": ["structural_unknown"]
+    }
+  ]
+}

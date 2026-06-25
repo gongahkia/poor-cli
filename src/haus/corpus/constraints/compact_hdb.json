@@ -1,0 +1,29 @@
+{
+  "schema": "haus.constraint_pack.v1",
+  "id": "compact_hdb",
+  "label": "Compact HDB/BTO planning",
+  "scope": ["small_apartment", "hdb", "bto", "circulation", "renovation"],
+  "region": "SG",
+  "source_basis": "planning_target",
+  "disclaimer": "Planning heuristic for compact Singapore flats; not HDB approval, code compliance, or contractor verification.",
+  "targets": {
+    "min_walkway_m": 0.75,
+    "clearance_m": 0.45,
+    "doorway_min_m": 0.75,
+    "turning_circle_m": 1.2,
+    "bed_side_clearance_m": 0.6,
+    "kitchen_work_clearance_m": 0.9,
+    "bathroom_fixture_clearance_m": 0.75,
+    "delivery_opening_min_m": 0.75
+  },
+  "checks": [
+    {"id": "tight_clearance", "severity": "warning", "target": "clearance_m", "message": "Furniture clearance is below compact planning target."},
+    {"id": "missing_or_estimated_scale", "severity": "warning", "target": "scale", "message": "Scale must be confirmed before buying or renovating."},
+    {"id": "structural_unknown", "severity": "serious", "target": "wall_structural_status", "message": "Wall status is unknown."}
+  ],
+  "questions": [
+    "Is the floor plan from HDB, a resale listing, a scan, or manual trace?",
+    "Which walls and service zones are confirmed fixed?",
+    "What is the target household and storage load?"
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "schema": "haus.constraint_pack.v1",
+  "id": "furniture_fit",
+  "label": "Furniture fit and delivery",
+  "scope": ["furniture", "delivery", "product_dimensions", "clearance"],
+  "region": "global",
+  "source_basis": "planning_target",
+  "disclaimer": "Product fit depends on retailer dimensions, packaging, lift, corridor, stairs, and site verification.",
+  "targets": {
+    "clearance_m": 0.6,
+    "delivery_opening_min_m": 0.8,
+    "bed_side_clearance_m": 0.6,
+    "desk_chair_clearance_m": 0.75,
+    "dining_pullout_clearance_m": 0.9
+  },
+  "checks": [
+    {"id": "delivery_opening", "severity": "warning", "target": "delivery_opening_min_m", "message": "Delivery route opening is narrower than target."},
+    {"id": "unverified_product_dimensions", "severity": "warning", "target": "product_dimensions", "message": "Product dimensions are estimated or missing."},
+    {"id": "chair_pullout", "severity": "warning", "target": "desk_chair_clearance_m", "message": "Chair pullout clearance may be insufficient."}
+  ],
+  "questions": [
+    "Are dimensions product, package, or assembled dimensions?",
+    "What is the narrowest lift, corridor, entry, and room doorway?",
+    "Which furniture must be assembled in-room?"
+  ]
+}

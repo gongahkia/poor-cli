@@ -1,0 +1,26 @@
+{
+  "schema": "haus.constraint_pack.v1",
+  "id": "rental_room",
+  "label": "Rental room planning",
+  "scope": ["rental", "bedroom", "single_room", "furniture"],
+  "region": "global",
+  "source_basis": "planning_target",
+  "disclaimer": "Planning heuristic for reversible furniture and storage; not tenancy or renovation advice.",
+  "targets": {
+    "min_walkway_m": 0.65,
+    "clearance_m": 0.4,
+    "doorway_min_m": 0.7,
+    "bed_side_clearance_m": 0.45,
+    "desk_chair_clearance_m": 0.65,
+    "delivery_opening_min_m": 0.7
+  },
+  "checks": [
+    {"id": "bed_access", "severity": "warning", "target": "bed_side_clearance_m", "message": "Bed side or foot access is tight."},
+    {"id": "desk_chair_clearance", "severity": "warning", "target": "desk_chair_clearance_m", "message": "Desk chair pullout may be tight."}
+  ],
+  "questions": [
+    "What items are tenant-owned and must fit?",
+    "Which walls can receive freestanding storage?",
+    "What must remain reversible?"
+  ]
+}
