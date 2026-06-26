@@ -138,6 +138,12 @@
   $: modelPlaceholder = status?.default_models?.[selectedProvider] || 'provider default';
   $: localProvider = providerSpec?.requires_api_key === false;
   $: canUseProvider = Boolean(selectedProvider && (localProvider || apiKeys[selectedProvider] || status?.providers_with_env_keys?.includes(selectedProvider)));
+  $: modelOptions = providerSpec?.models || [];
+  $: selectedModelSpec = modelOptions.find((model) => model.id === settings.model);
+  $: modelSelectValue = settings.model && modelOptions.length && !selectedModelSpec ? '__custom__' : settings.model || '';
+  $: allowCustomModel = providerSpec?.allow_custom_models !== false;
+  $: showCustomModelInput = allowCustomModel && (!modelOptions.length || modelSelectValue === '__custom__');
+  $: browserRuntimeProvider = Boolean(providerSpec?.capabilities?.includes('browser_runtime'));
   $: plannerModes = Array.isArray(status?.capabilities?.planner_modes) ? status.capabilities.planner_modes as string[] : ['auto', 'deterministic', 'llm_reviewed', 'llm_structured'];
   $: standardsProfiles = Array.isArray(status?.capabilities?.standards_profiles) ? status.capabilities.standards_profiles as string[] : ['apartment_compact'];
   $: chatLoadingText = statusLine || 'Planning with tools...';
@@ -157,6 +163,24 @@
 
   function persistSettings() {
     writeSettings(settings);
+  }
+
+  function selectProvider(value: string) {
+    settings = { ...settings, provider: value, model: '' };
+    webllmCacheModel = '';
+    persistSettings();
+  }
+
+  function selectModel(value: string) {
+    settings = { ...settings, model: value === '__custom__' ? '' : value };
+    webllmCacheModel = '';
+    persistSettings();
+  }
+
+  function setCustomModel(value: string) {
+    settings = { ...settings, model: value.trim() };
+    webllmCacheModel = '';
+    persistSettings();
   }
 
   async function saveCurrent(next: ProjectRecord = project) {
@@ -428,6 +452,7 @@
   async function getWebllmEngine(model: string) {
     if (!navigator.gpu) throw new Error('WebLLM requires a WebGPU-capable browser.');
     if (webllmEngine && webllmModel === model) return webllmEngine;
+    if (webllmEngine) await unloadWebllmEngine();
     statusLine = `Loading WebLLM ${model}...`;
     const webllm = await import('@mlc-ai/web-llm');
     webllmEngine = await webllm.CreateMLCEngine(model, {
@@ -484,6 +509,20 @@
     webllmEngine = null;
     webllmModel = '';
     statusLine = 'WebLLM engine unloaded.';
+  }
+
+  async function loadCurrentWebllmModel() {
+    webllmCacheBusy = true;
+    try {
+      const model = currentWebllmModel();
+      await getWebllmEngine(model);
+      statusLine = `Loaded WebLLM ${model}.`;
+    } catch (error) {
+      errorLine = `WebLLM load failed: ${(error as Error).message}`;
+    } finally {
+      webllmCacheBusy = false;
+      await refreshWebllmCache();
+    }
   }
 
   async function deleteCurrentWebllmCache() {
@@ -667,12 +706,23 @@
     </header>
 
     <div class="provider-grid">
-      <select bind:value={settings.provider} on:change={persistSettings} id="chat-provider">
+      <select value={settings.provider} on:change={(event) => selectProvider((event.currentTarget as HTMLSelectElement).value)} id="chat-provider">
         {#each providerSpecs as provider}
           <option value={provider.id}>{provider.label}</option>
         {/each}
       </select>
-      <input bind:value={settings.model} on:change={persistSettings} id="chat-model" placeholder={`Auto (${modelPlaceholder})`} />
+      <select value={modelSelectValue} on:change={(event) => selectModel((event.currentTarget as HTMLSelectElement).value)} id="chat-model-select">
+        <option value="">Auto ({modelPlaceholder})</option>
+        {#each modelOptions as model}
+          <option value={model.id} title={model.notes || model.id}>{model.label}</option>
+        {/each}
+        {#if allowCustomModel}
+          <option value="__custom__">Custom model...</option>
+        {/if}
+      </select>
+      {#if showCustomModelInput}
+        <input value={settings.model} on:change={(event) => setCustomModel((event.currentTarget as HTMLInputElement).value)} id="chat-model" class="custom-model-input" placeholder="custom model id" />
+      {/if}
       <select bind:value={settings.plannerMode} on:change={persistSettings} id="chat-planner-mode">
         {#each plannerModes as plannerMode}
           <option value={plannerMode}>{plannerMode.replace('_', ' ')}</option>
@@ -801,18 +851,21 @@
       <label class="toggle-row">Shadows<input type="checkbox" bind:checked={settings.shadows} on:change={persistSettings} /></label>
     </section>
 
+    {#if browserRuntimeProvider}
     <section>
       <h3>WebLLM Cache</h3>
       <p>{webllmCacheStatus}</p>
       <p>{webllmStorageStatus}</p>
       <p>{webllmCacheScopes}</p>
       <div class="button-grid">
+        <button type="button" on:click={loadCurrentWebllmModel} disabled={webllmCacheBusy}><Bot size={16} />Load</button>
         <button type="button" on:click={refreshWebllmCache} disabled={webllmCacheBusy}>{#if webllmCacheBusy}<Loader2 size={16} />{:else}<Search size={16} />{/if}Refresh</button>
         <button type="button" on:click={unloadWebllmEngine} disabled={webllmCacheBusy || !webllmEngine}><Eraser size={16} />Unload</button>
       </div>
       <button type="button" class="danger-btn" on:click={deleteCurrentWebllmCache} disabled={webllmCacheBusy}><Trash2 size={16} />Delete Current Cache</button>
       <button type="button" class="danger-btn" on:click={deleteAllWebllmCache} disabled={webllmCacheBusy}><Trash2 size={16} />Delete All WebLLM</button>
     </section>
+    {/if}
 
     <section>
       <h3>Project</h3>

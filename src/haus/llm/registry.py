@@ -9,6 +9,25 @@ from typing import Any
 from .types import ModelSpec, ProviderSpec
 
 _MODEL_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/+-]{0,127}$")
+_WEBLLM_DEFAULT_MODEL = os.environ.get("HAUS_WEBLLM_MODEL", "Llama-3.1-8B-Instruct-q4f32_1-MLC")
+_WEBLLM_MODELS = (
+    ModelSpec("SmolLM2-360M-Instruct-q4f32_1-MLC", "SmolLM2 360M", ("chat", "browser_runtime", "webgpu"), notes="~580MB VRAM; smallest practical chat option."),
+    ModelSpec("TinyLlama-1.1B-Chat-v1.0-q4f32_1-MLC", "TinyLlama 1.1B", ("chat", "browser_runtime", "webgpu"), notes="~840MB VRAM; low-resource browser model."),
+    ModelSpec("Llama-3.2-1B-Instruct-q4f16_1-MLC", "Llama 3.2 1B", ("chat", "browser_runtime", "webgpu"), notes="~879MB VRAM; low-resource instruction model."),
+    ModelSpec("Qwen2.5-1.5B-Instruct-q4f16_1-MLC", "Qwen2.5 1.5B", ("chat", "browser_runtime", "webgpu"), notes="~1.6GB VRAM; low-resource instruction model."),
+    ModelSpec("SmolLM2-1.7B-Instruct-q4f32_1-MLC", "SmolLM2 1.7B", ("chat", "browser_runtime", "webgpu"), notes="~2.7GB VRAM; stronger small model."),
+    ModelSpec("Llama-3.2-3B-Instruct-q4f16_1-MLC", "Llama 3.2 3B", ("chat", "browser_runtime", "webgpu"), notes="~2.3GB VRAM; balanced browser model."),
+    ModelSpec("Hermes-3-Llama-3.2-3B-q4f16_1-MLC", "Hermes 3 Llama 3.2 3B", ("chat", "browser_runtime", "webgpu"), notes="~2.3GB VRAM; tool-oriented prompt following."),
+    ModelSpec("Phi-3.5-mini-instruct-q4f16_1-MLC", "Phi 3.5 mini", ("chat", "browser_runtime", "webgpu"), notes="~3.7GB VRAM; compact reasoning model."),
+    ModelSpec("Hermes-2-Pro-Llama-3-8B-q4f32_1-MLC", "Hermes 2 Pro Llama 3 8B", ("chat", "tools", "browser_runtime", "webgpu"), notes="~6.1GB VRAM; WebLLM native tool-call model."),
+    ModelSpec("Hermes-3-Llama-3.1-8B-q4f32_1-MLC", "Hermes 3 Llama 3.1 8B", ("chat", "tools", "browser_runtime", "webgpu"), notes="~5.8GB VRAM; WebLLM native tool-call model."),
+    ModelSpec("Llama-3.1-8B-Instruct-q4f32_1-MLC", "Llama 3.1 8B", ("chat", "browser_runtime", "webgpu"), _WEBLLM_DEFAULT_MODEL == "Llama-3.1-8B-Instruct-q4f32_1-MLC", notes="~6.1GB VRAM; default JSON-tool fallback model."),
+)
+if _WEBLLM_DEFAULT_MODEL not in {model.id for model in _WEBLLM_MODELS}:
+    _WEBLLM_MODELS = (
+        ModelSpec(_WEBLLM_DEFAULT_MODEL, "WebLLM configured default", ("chat", "browser_runtime", "webgpu"), True),
+        *_WEBLLM_MODELS,
+    )
 
 
 _PROVIDERS: dict[str, ProviderSpec] = {
@@ -160,11 +179,11 @@ _PROVIDERS: dict[str, ProviderSpec] = {
         id="webllm",
         label="WebLLM",
         env_var="",
-        default_model=os.environ.get("HAUS_WEBLLM_MODEL", "Llama-3.1-8B-Instruct-q4f32_1-MLC"),
+        default_model=_WEBLLM_DEFAULT_MODEL,
         optional_extra="",
         install_hint="Use a WebGPU-capable browser; the model downloads into browser cache on first use.",
         capabilities=("chat", "tools", "browser_runtime", "webgpu"),
-        models=(ModelSpec(os.environ.get("HAUS_WEBLLM_MODEL", "Llama-3.1-8B-Instruct-q4f32_1-MLC"), "WebLLM configured default", ("chat", "tools", "browser_runtime", "webgpu"), True),),
+        models=_WEBLLM_MODELS,
         requires_api_key=False,
         allow_custom_models=True,
     ),
@@ -235,6 +254,7 @@ def provider_status() -> dict[str, Any]:
                 "command_name": spec.command_name,
                 "command_env": spec.command_env,
                 "command_available": _command_available(spec),
+                "allow_custom_models": spec.allow_custom_models,
                 "capabilities": list(spec.capabilities),
                 "models": [
                     {

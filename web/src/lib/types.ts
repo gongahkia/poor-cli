@@ -63,8 +63,9 @@ export type ProviderSpec = {
   requires_api_key: boolean;
   command_available: boolean | null;
   capabilities: string[];
-  models?: Array<{ id: string; label: string; default?: boolean; capabilities?: string[] }>;
+  models?: Array<{ id: string; label: string; default?: boolean; capabilities?: string[]; notes?: string }>;
   install_hint?: string;
+  allow_custom_models?: boolean;
 };
 
 export type ChatStatus = {
