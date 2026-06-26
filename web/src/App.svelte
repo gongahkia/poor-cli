@@ -96,6 +96,7 @@
   let mode: Mode = 'select';
   let actionsOpen = false;
   let toolsOpen = false;
+  let customModelEntry = false;
   let chatText = '';
   let chatHistory: ChatHistoryMessage[] = [];
   let sending = false;
@@ -140,9 +141,9 @@
   $: canUseProvider = Boolean(selectedProvider && (localProvider || apiKeys[selectedProvider] || status?.providers_with_env_keys?.includes(selectedProvider)));
   $: modelOptions = providerSpec?.models || [];
   $: selectedModelSpec = modelOptions.find((model) => model.id === settings.model);
-  $: modelSelectValue = settings.model && modelOptions.length && !selectedModelSpec ? '__custom__' : settings.model || '';
+  $: modelSelectValue = customModelEntry || Boolean(settings.model && modelOptions.length && !selectedModelSpec) ? '__custom__' : settings.model || '';
   $: allowCustomModel = providerSpec?.allow_custom_models !== false;
-  $: showCustomModelInput = allowCustomModel && (!modelOptions.length || modelSelectValue === '__custom__');
+  $: showCustomModelInput = allowCustomModel && (!modelOptions.length || customModelEntry || Boolean(settings.model && modelOptions.length && !selectedModelSpec));
   $: browserRuntimeProvider = Boolean(providerSpec?.capabilities?.includes('browser_runtime'));
   $: plannerModes = Array.isArray(status?.capabilities?.planner_modes) ? status.capabilities.planner_modes as string[] : ['auto', 'deterministic', 'llm_reviewed', 'llm_structured'];
   $: standardsProfiles = Array.isArray(status?.capabilities?.standards_profiles) ? status.capabilities.standards_profiles as string[] : ['apartment_compact'];
@@ -167,17 +168,20 @@
 
   function selectProvider(value: string) {
     settings = { ...settings, provider: value, model: '' };
+    customModelEntry = false;
     webllmCacheModel = '';
     persistSettings();
   }
 
   function selectModel(value: string) {
+    customModelEntry = value === '__custom__';
     settings = { ...settings, model: value === '__custom__' ? '' : value };
     webllmCacheModel = '';
     persistSettings();
   }
 
   function setCustomModel(value: string) {
+    customModelEntry = true;
     settings = { ...settings, model: value.trim() };
     webllmCacheModel = '';
     persistSettings();
