@@ -339,6 +339,8 @@ def _catalog_root() -> Path:
 
 def _load_tinyfish_env() -> None:
     global _DOTENV_LOADED
+    if os.environ.get("HAUS_DISABLE_DOTENV"):
+        return
     if _DOTENV_LOADED:
         return
     _DOTENV_LOADED = True
@@ -526,6 +528,7 @@ def _to_m(value: float, unit: str) -> float:
 
 
 def _tinyfish_json(url: str, *, method: str = "GET", payload: dict[str, Any] | None = None) -> Any:
+    _load_tinyfish_env()
     api_key = os.environ.get("TINYFISH_API_KEY")
     if not api_key:
         raise ValueError("TINYFISH_API_KEY is not set.")
@@ -711,6 +714,7 @@ def search_furniture_catalog(
     source_ids = _normalize_sources(sources)
 
     live_items: list[dict[str, Any]] = []
+    _load_tinyfish_env()
     if refresh or os.environ.get("TINYFISH_API_KEY"):
         per_source_limit = max(3, min(limit, (limit + len(source_ids) - 1) // len(source_ids) if source_ids else limit))
         for source in source_ids:
@@ -753,6 +757,7 @@ def search_ikea_catalog(
     clean_region = (region or _DEFAULT_REGION).lower()
 
     live_items: list[dict[str, Any]] = []
+    _load_tinyfish_env()
     if refresh or os.environ.get("TINYFISH_API_KEY"):
         try:
             live_items = _search_tinyfish(clean_query, limit, clean_region)
@@ -819,6 +824,7 @@ def refresh_catalog_item(item_id: str) -> dict[str, Any] | None:
     if item is None:
         return None
     url = str(item.get("product_url") or "")
+    _load_tinyfish_env()
     if not url or not os.environ.get("TINYFISH_API_KEY"):
         return item
     try:
