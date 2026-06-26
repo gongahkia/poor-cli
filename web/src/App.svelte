@@ -14,7 +14,6 @@
     Maximize,
     Moon,
     MousePointer2,
-    PanelRight,
     Ruler,
     Save,
     Search,
@@ -125,6 +124,11 @@
   let webllmEngine: any = null;
   let webllmModel = '';
   let toolSpecs: ToolSpec[] = [];
+  let webllmCacheBusy = false;
+  let webllmCacheModel = '';
+  let webllmCacheStatus = 'Not checked.';
+  let webllmStorageStatus = 'Storage estimate unavailable.';
+  let webllmCacheScopes = '';
 
   $: layout = project.layout;
   $: selectedItem = layout.items.find((item) => item.id === selectedId);
@@ -136,6 +140,10 @@
   $: canUseProvider = Boolean(selectedProvider && (localProvider || apiKeys[selectedProvider] || status?.providers_with_env_keys?.includes(selectedProvider)));
   $: plannerModes = Array.isArray(status?.capabilities?.planner_modes) ? status.capabilities.planner_modes as string[] : ['auto', 'deterministic', 'llm_reviewed', 'llm_structured'];
   $: standardsProfiles = Array.isArray(status?.capabilities?.standards_profiles) ? status.capabilities.standards_profiles as string[] : ['apartment_compact'];
+  $: chatLoadingText = statusLine || 'Planning with tools...';
+  $: if (toolsOpen && selectedProvider === 'webllm' && currentWebllmModel() !== webllmCacheModel && !webllmCacheBusy) {
+    void refreshWebllmCache();
+  }
 
   onMount(async () => {
     project = await loadActiveProject();
@@ -431,6 +439,88 @@
     return webllmEngine;
   }
 
+  function currentWebllmModel() {
+    return String(settings.model || status?.default_models?.webllm || 'Llama-3.1-8B-Instruct-q4f32_1-MLC');
+  }
+
+  function formatBytes(value?: number) {
+    if (!Number.isFinite(value || NaN)) return 'unknown';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let size = Number(value);
+    let unit = 0;
+    while (size >= 1024 && unit < units.length - 1) {
+      size /= 1024;
+      unit += 1;
+    }
+    return `${size.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`;
+  }
+
+  async function refreshWebllmCache() {
+    webllmCacheBusy = true;
+    webllmCacheModel = currentWebllmModel();
+    try {
+      const estimate = await navigator.storage?.estimate?.();
+      webllmStorageStatus = estimate ? `Site storage: ${formatBytes(estimate.usage)} / ${formatBytes(estimate.quota)}` : 'Storage estimate unavailable.';
+      const cacheNames = 'caches' in window ? (await caches.keys()).filter((name) => name.startsWith('webllm/')) : [];
+      let entryCount = 0;
+      for (const name of cacheNames) {
+        const cache = await caches.open(name);
+        entryCount += (await cache.keys()).length;
+      }
+      webllmCacheScopes = cacheNames.length ? `${cacheNames.join(', ')} · ${entryCount} cached request${entryCount === 1 ? '' : 's'}` : 'No WebLLM CacheStorage scopes found.';
+      const webllm = await import('@mlc-ai/web-llm');
+      const cached = await webllm.hasModelInCache(webllmCacheModel);
+      webllmCacheStatus = `${webllmCacheModel}: ${cached ? 'cached' : 'not cached'}`;
+    } catch (error) {
+      webllmCacheStatus = `Cache check failed: ${(error as Error).message}`;
+    } finally {
+      webllmCacheBusy = false;
+    }
+  }
+
+  async function unloadWebllmEngine() {
+    if (!webllmEngine) return;
+    await webllmEngine.unload();
+    webllmEngine = null;
+    webllmModel = '';
+    statusLine = 'WebLLM engine unloaded.';
+  }
+
+  async function deleteCurrentWebllmCache() {
+    if (!confirm(`Delete cached WebLLM files for ${currentWebllmModel()}?`)) return;
+    webllmCacheBusy = true;
+    try {
+      const model = currentWebllmModel();
+      await unloadWebllmEngine();
+      const webllm = await import('@mlc-ai/web-llm');
+      await webllm.deleteModelAllInfoInCache(model);
+      statusLine = `Deleted WebLLM cache for ${model}.`;
+    } catch (error) {
+      errorLine = `WebLLM cache delete failed: ${(error as Error).message}`;
+    } finally {
+      webllmCacheBusy = false;
+      await refreshWebllmCache();
+    }
+  }
+
+  async function deleteAllWebllmCache() {
+    if (!confirm('Delete all cached WebLLM files for this site?')) return;
+    webllmCacheBusy = true;
+    try {
+      await unloadWebllmEngine();
+      if ('caches' in window) {
+        const names = (await caches.keys()).filter((name) => name.startsWith('webllm/'));
+        await Promise.all(names.map((name) => caches.delete(name)));
+      }
+      statusLine = 'Deleted all WebLLM CacheStorage files.';
+    } catch (error) {
+      errorLine = `WebLLM cache delete failed: ${(error as Error).message}`;
+    } finally {
+      webllmCacheBusy = false;
+      await refreshWebllmCache();
+    }
+  }
+
   function webllmMessages(payload: Record<string, unknown>): any[] {
     return [
       {
@@ -574,7 +664,6 @@
         <strong>Haus Planner</strong>
         <span>{project.title}</span>
       </div>
-      <button type="button" class="icon-btn" on:click={() => toolsOpen = !toolsOpen} title="Tools"><PanelRight size={18} /></button>
     </header>
 
     <div class="provider-grid">
@@ -611,7 +700,7 @@
         <div class={`chat-msg chat-${msg.role}`}>{msg.text}</div>
       {/each}
       {#if sending}
-        <div class="chat-msg chat-loading"><Loader2 size={14} />Planning with tools...</div>
+        <div class="chat-msg chat-loading"><Loader2 size={14} />{chatLoadingText}</div>
       {/if}
     </div>
 
@@ -710,6 +799,19 @@
       <h3>View</h3>
       <label class="toggle-row">Wireframe<input type="checkbox" bind:checked={settings.wireframe} on:change={persistSettings} /></label>
       <label class="toggle-row">Shadows<input type="checkbox" bind:checked={settings.shadows} on:change={persistSettings} /></label>
+    </section>
+
+    <section>
+      <h3>WebLLM Cache</h3>
+      <p>{webllmCacheStatus}</p>
+      <p>{webllmStorageStatus}</p>
+      <p>{webllmCacheScopes}</p>
+      <div class="button-grid">
+        <button type="button" on:click={refreshWebllmCache} disabled={webllmCacheBusy}>{#if webllmCacheBusy}<Loader2 size={16} />{:else}<Search size={16} />{/if}Refresh</button>
+        <button type="button" on:click={unloadWebllmEngine} disabled={webllmCacheBusy || !webllmEngine}><Eraser size={16} />Unload</button>
+      </div>
+      <button type="button" class="danger-btn" on:click={deleteCurrentWebllmCache} disabled={webllmCacheBusy}><Trash2 size={16} />Delete Current Cache</button>
+      <button type="button" class="danger-btn" on:click={deleteAllWebllmCache} disabled={webllmCacheBusy}><Trash2 size={16} />Delete All WebLLM</button>
     </section>
 
     <section>

@@ -65,7 +65,6 @@ input:focus, select:focus, textarea:focus { border-color: var(--border-strong); 
 .chat-header div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .chat-header strong { font-size: 20px; line-height: 1.1; }
 .chat-header span, .status-text, #sidebar p { color: var(--muted); font-size: 12px; margin: 0; }
-.icon-btn { width: 38px; padding: 0; }
 .provider-grid {
   display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 12px 16px 8px;
 }
@@ -154,6 +153,8 @@ input:focus, select:focus, textarea:focus { border-color: var(--border-strong); 
 .toggle-row input[type="range"] { width: 120px; min-height: 24px; accent-color: var(--fg); padding: 0; }
 .field input { width: 88px; text-align: right; }
 .button-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.danger-btn { color: var(--danger); border-color: rgba(255, 213, 209, 0.42); }
+.danger-btn:hover { background: var(--danger-bg); border-color: var(--danger); }
 .search-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
 .catalog-list { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; }
 .catalog-list article {
