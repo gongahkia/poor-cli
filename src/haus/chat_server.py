@@ -27,6 +27,7 @@ from urllib.request import Request as UrlRequest, urlopen
 
 from starlette.applications import Starlette
 from starlette.datastructures import UploadFile
+from starlette.middleware.cors import CORSMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse, StreamingResponse
 from starlette.routing import Mount, Route
@@ -2828,6 +2829,31 @@ async def _chat_status(request: Request) -> JSONResponse:
     )
 
 
+async def _health(request: Request) -> JSONResponse:
+    del request
+    status = provider_status()
+    return JSONResponse(
+        {
+            "ok": True,
+            "service": "haus-api",
+            "version": "0.1.0",
+            "static_app": True,
+            "persistence": "browser-indexeddb",
+            "providers": {
+                "supported": supported_provider_ids(),
+                "env_configured": status["providers_with_env_keys"],
+            },
+            "features": {
+                "chat": True,
+                "webllm": True,
+                "floorplan_vectorize": True,
+                "catalog": True,
+                "mcp_scratch_layout": True,
+            },
+        }
+    )
+
+
 async def _chat_models(request: Request) -> JSONResponse:
     del request
     return JSONResponse(provider_status())
@@ -3577,9 +3603,17 @@ async def _catalog_ikea_layout_item(request: Request) -> JSONResponse:
     return JSONResponse({"ok": True, "item": item, "layout_item": layout_item, "request_id": request_id})
 
 
+def _cors_origins() -> list[str]:
+    raw = os.environ.get("HAUS_CORS_ORIGINS", "").strip()
+    if not raw:
+        return ["http://127.0.0.1:5173", "http://localhost:5173"]
+    return [entry.strip() for entry in raw.split(",") if entry.strip()]
+
+
 def create_app(root_dir: str) -> Starlette:
-    return Starlette(
+    app = Starlette(
         routes=[
+            Route("/api/health", _health, methods=["GET"]),
             Route("/api/chat/status", _chat_status, methods=["GET"]),
             Route("/api/chat/models", _chat_models, methods=["GET"]),
             Route("/api/chat/tools", _chat_tools, methods=["GET"]),
@@ -3600,6 +3634,14 @@ def create_app(root_dir: str) -> Starlette:
             Mount("/", StaticFiles(directory=root_dir, html=True)),
         ]
     )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins(),
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+        allow_credentials=False,
+    )
+    return app
 
 
 def run_server(root_dir: str, port: int = 8080, layout_path: str | None = None) -> None:
@@ -3622,4 +3664,5 @@ def _reload_app() -> Starlette:
     layout_path = os.environ.get("_HAUS_LAYOUT_PATH")
     if layout_path:
         _mcp_server.LAYOUT_PATH = Path(layout_path)
-    return create_app(os.environ["_HAUS_ROOT"])
+    static_root = os.environ.get("_HAUS_ROOT") or str(Path(__file__).resolve().parent / "web")
+    return create_app(static_root)

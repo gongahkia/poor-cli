@@ -84,6 +84,8 @@ Common commands:
 
 ```console
 $ make view       # launch local editor
+$ make web-dev    # run the Svelte app on http://127.0.0.1:5173
+$ make api-dev    # run the API on http://127.0.0.1:8080 for split dev
 $ make build      # process floor plan images in corpus/
 $ make vectorize  # vectorize only
 $ make mcp        # start standalone MCP server
@@ -98,6 +100,8 @@ Direct CLI usage:
 $ haus build --image ./my-floor-plan.png --out ./out/my-plan --scale-override 0.01
 $ haus view
 ```
+
+`haus view` serves the built Svelte app at `/`. In a source checkout, run `make web-build` after frontend changes so `src/haus/web` contains the packaged static assets. For split local development, run `make api-dev` and `make web-dev`; set `VITE_HAUS_API_BASE_URL` when the API is not on `http://127.0.0.1:8080`.
 
 ## Product Boundaries
 
@@ -147,12 +151,25 @@ Future expansion gates are tracked in [`docs/future-evaluations.md`](./docs/futu
 
 ## Stack
 
-* Frontend: JavaScript, Three.js
+* Frontend: Svelte, Vite, TypeScript, Three.js
 * Backend: Python, Starlette, Uvicorn, FastMCP
 * Preprocessing: OpenCV, NumPy, Pillow
 * 3D: Trimesh, Shapely
-* Tests: pytest, ruff, pyright, optional Playwright e2e
-* Package manager: uv
+* Browser persistence: IndexedDB/localStorage, JSON or gzip project export/import
+* Tests: pytest, ruff, pyright, Vitest, svelte-check, optional Playwright e2e
+* Package managers: uv for Python, npm for the web app
+
+## Web Deployment
+
+The web app is a static Vite build and the API is a Python service.
+
+* Frontend: deploy `web/dist` to a static host such as Cloudflare Pages.
+* Backend: deploy the Python API container with `Dockerfile`.
+* Configure frontend with `VITE_HAUS_API_BASE_URL=https://your-api-host`.
+* Configure backend with `HAUS_CORS_ORIGINS=https://your-web-host,http://localhost:5173`.
+* Do not rely on server disk for user projects. Browser projects persist in IndexedDB and can be exported/imported as `.haus.json` or compressed `.haus.json.gz`.
+
+Hosted deployments support remote LLM providers and browser WebLLM. Local coding-agent CLIs are reported as unavailable unless the deployed container actually has those commands installed and authenticated.
 
 ## Providers
 

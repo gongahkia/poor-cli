@@ -11,3 +11,5 @@ corpus/*.png
 CLAUDE.md
 AGENTS.md
 .playwright-cli
+web/node_modules/
+web/dist/

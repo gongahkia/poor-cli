@@ -8,7 +8,7 @@ import haus.cli as cli
 import haus.mcp_server as mcp_server
 
 
-def test_resolve_view_environment_uses_packaged_assets(
+def test_resolve_view_environment_uses_packaged_web_assets(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -18,13 +18,12 @@ def test_resolve_view_environment_uses_packaged_assets(
 
     env = cli._resolve_view_environment()
 
-    assert env.serve_root == runtime_root
-    assert env.viewer_dir == runtime_root / "viewer"
+    assert env.static_dir == runtime_root / "web"
+    assert env.layout_path == runtime_root / "viewer" / "mcp-layout.json"
     assert not env.source_checkout
-    assert (env.viewer_dir / "editor.html").exists()
-    assert (env.viewer_dir / "js" / "main.js").exists()
+    assert (env.static_dir / "index.html").exists()
     assert (runtime_root / "corpus" / "library" / "1.json").exists()
-    assert json.loads((env.viewer_dir / "mcp-layout.json").read_text(encoding="utf-8")) == {
+    assert json.loads(env.layout_path.read_text(encoding="utf-8")) == {
         "version": 1,
         "items": [],
     }

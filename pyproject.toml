@@ -42,10 +42,8 @@ haus = [
   "corpus/constraints/*.json",
   "corpus/evals/*.json",
   "corpus/library/*.json",
-  "viewer/*.html",
-  "viewer/*.json",
-  "viewer/css/*.css",
-  "viewer/js/*.js",
+  "web/*.html",
+  "web/assets/*",
 ]
 
 [tool.pytest.ini_options]

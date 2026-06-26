@@ -83,6 +83,28 @@ def test_chat_status_reports_reference_capabilities(chat_client: TestClient) -> 
     assert "image/png" in capabilities["image_mime_types"]
 
 
+def test_health_route_reports_web_deploy_contract(chat_client: TestClient) -> None:
+    res = chat_client.get("/api/health")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["service"] == "haus-api"
+    assert body["persistence"] == "browser-indexeddb"
+    assert body["features"]["mcp_scratch_layout"] is True
+
+
+def test_cors_allows_vite_dev_origin(chat_client: TestClient) -> None:
+    res = chat_client.options(
+        "/api/health",
+        headers={
+            "Origin": "http://127.0.0.1:5173",
+            "Access-Control-Request-Method": "GET",
+        },
+    )
+    assert res.status_code == 200
+    assert res.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+
 def test_chat_models_reports_provider_metadata(chat_client: TestClient) -> None:
     res = chat_client.get("/api/chat/models")
     assert res.status_code == 200

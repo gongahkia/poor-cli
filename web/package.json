@@ -1,0 +1,32 @@
+{
+  "name": "@haus/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "test": "vitest run --environment jsdom"
+  },
+  "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.79",
+    "@sveltejs/vite-plugin-svelte": "^5.0.3",
+    "idb": "^8.0.2",
+    "@lucide/svelte": "^1.21.0",
+    "svelte": "^5.16.0",
+    "three": "^0.171.0",
+    "vite": "^6.0.7"
+  },
+  "devDependencies": {
+    "@testing-library/svelte": "^5.2.6",
+    "@tsconfig/svelte": "^5.0.4",
+    "@types/three": "^0.171.0",
+    "jsdom": "^25.0.1",
+    "playwright": "^1.49.1",
+    "svelte-check": "^4.1.1",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

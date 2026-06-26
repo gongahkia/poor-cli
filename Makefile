@@ -4,14 +4,17 @@ OUT := out
 DEBUG := out/debug
 PORT := 8080
 
-.PHONY: setup test lint e2e vectorize build view mcp clean all help
+.PHONY: setup test lint web-install web-build web-dev web-test api-dev e2e vectorize build view mcp clean all help
 
 help:
 	@echo "haus — floor plan vectorization + 3D editor"
 	@echo ""
 	@echo "  make setup      install deps into .venv"
 	@echo "  make build      image → vector + GLB for all corpus images"
-	@echo "  make view       launch 3D editor in browser (port $(PORT))"
+	@echo "  make web-build  build Svelte web app into package assets"
+	@echo "  make web-dev    run Vite dev server for the Svelte app"
+	@echo "  make api-dev    run Starlette API for split local development"
+	@echo "  make view       launch built web app in browser (port $(PORT))"
 	@echo "  make mcp        start MCP server for AI-assisted editing"
 	@echo "  make all        lint + test + build"
 	@echo ""
@@ -34,15 +37,37 @@ help:
 setup:
 	uv venv --python 3.11
 	uv pip install -e ".[dev]"
+	$(MAKE) web-install
 
 test:
 	$(VENV)/pytest tests/ -v
 
 lint:
 	$(VENV)/ruff check src tests
+	cd web && npm run check
 
 e2e:
 	$(VENV)/pytest tests/test_frontend_e2e.py -v
+
+web-install:
+	cd web && npm install
+
+web-build:
+	cd web && npm run build
+	rm -rf src/haus/web
+	mkdir -p src/haus/web
+	cp -R web/dist/. src/haus/web/
+
+web-dev:
+	cd web && npm run dev
+
+web-test:
+	cd web && npm run check && npm run test
+
+api-dev:
+	mkdir -p /tmp/haus-dev/viewer
+	test -f /tmp/haus-dev/viewer/mcp-layout.json || printf '{"version":1,"items":[]}\n' > /tmp/haus-dev/viewer/mcp-layout.json
+	_HAUS_ROOT=$(CURDIR)/src/haus/web _HAUS_LAYOUT_PATH=/tmp/haus-dev/viewer/mcp-layout.json $(VENV)/python -m uvicorn haus.chat_server:_reload_app --factory --host 127.0.0.1 --port $(PORT)
 
 vectorize: $(wildcard $(CORPUS)/cleaned/*.jpg)
 	@mkdir -p $(OUT)
@@ -67,6 +92,6 @@ mcp:
 	$(VENV)/haus mcp
 
 clean:
-	rm -rf $(OUT) output/playwright viewer/mcp-layout.json
+	rm -rf $(OUT) output/playwright viewer/mcp-layout.json web/dist
 
-all: lint test build
+all: web-build lint web-test test build

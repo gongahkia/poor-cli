@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
-import os
 import json
+import os
 import shutil
 import sys
 from importlib import resources
@@ -16,8 +16,8 @@ from .types import VectorizeConfig
 log = configure_logging("haus.cli")
 
 class ViewEnvironment(NamedTuple):
-    serve_root: Path
-    viewer_dir: Path
+    static_dir: Path
+    layout_path: Path
     out_dir: Path
     source_checkout: bool
 
@@ -33,8 +33,8 @@ def _runtime_root() -> Path:
     return (Path.home() / ".haus").resolve()
 
 
-def _ensure_empty_layout(viewer_dir: Path) -> None:
-    layout_path = viewer_dir / "mcp-layout.json"
+def _ensure_empty_layout(layout_path: Path) -> None:
+    layout_path.parent.mkdir(parents=True, exist_ok=True)
     if not layout_path.exists():
         layout_path.write_text(json.dumps({"version": 1, "items": []}, indent=2), encoding="utf-8")
 
@@ -57,8 +57,8 @@ def _copy_resource_tree(resource_path: str, destination: Path, skip_names: set[s
                 shutil.copy2(child, dest)
 
 
-def _copy_packaged_viewer(runtime_viewer: Path) -> None:
-    _copy_resource_tree("viewer", runtime_viewer, skip_names={"mcp-layout.json"})
+def _copy_packaged_web(runtime_web: Path) -> None:
+    _copy_resource_tree("web", runtime_web)
 
 
 def _copy_packaged_bto_library(runtime_root: Path) -> None:
@@ -66,31 +66,42 @@ def _copy_packaged_bto_library(runtime_root: Path) -> None:
 
 
 def _resolve_view_environment() -> ViewEnvironment:
-    """Resolve static files and writable state for `haus view`.
+    """Resolve static web files and writable scratch layout for `haus view`.
 
-    Source checkouts serve the repository root so generated `out/` assets keep
-    working. Installed packages copy bundled viewer assets into `~/.haus`, which
-    gives the MCP/chat sync loop a writable `viewer/mcp-layout.json`.
+    Source checkouts serve the Vite build when present. Installed packages copy
+    bundled web assets into `~/.haus`. Layout scratch state lives under the
+    runtime root so `haus view` no longer mutates tracked viewer files.
     """
     source_root = _source_project_root()
-    source_viewer = source_root / "viewer"
-    if source_viewer.exists():
-        _ensure_empty_layout(source_viewer)
+    runtime_root = _runtime_root()
+    layout_path = runtime_root / "viewer" / "mcp-layout.json"
+    _ensure_empty_layout(layout_path)
+
+    source_dist = source_root / "web" / "dist"
+    source_packaged_web = source_root / "src" / "haus" / "web"
+    if source_dist.exists() and (source_dist / "index.html").exists():
         return ViewEnvironment(
-            serve_root=source_root,
-            viewer_dir=source_viewer,
+            static_dir=source_dist,
+            layout_path=layout_path,
             out_dir=source_root / "out",
             source_checkout=True,
         )
+    if source_packaged_web.exists() and (source_packaged_web / "index.html").exists():
+        return ViewEnvironment(
+            static_dir=source_packaged_web,
+            layout_path=layout_path,
+            out_dir=source_root / "out",
+            source_checkout=True,
+        )
+    if source_root.joinpath("web", "package.json").exists():
+        raise FileNotFoundError("Built web app not found. Run `make web-build` before `haus view`.")
 
-    runtime_root = _runtime_root()
-    runtime_viewer = runtime_root / "viewer"
-    _copy_packaged_viewer(runtime_viewer)
+    runtime_web = runtime_root / "web"
+    _copy_packaged_web(runtime_web)
     _copy_packaged_bto_library(runtime_root)
-    _ensure_empty_layout(runtime_viewer)
     return ViewEnvironment(
-        serve_root=runtime_root,
-        viewer_dir=runtime_viewer,
+        static_dir=runtime_web,
+        layout_path=layout_path,
         out_dir=runtime_root / "out",
         source_checkout=False,
     )
@@ -215,26 +226,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "view":
             import webbrowser
             env = _resolve_view_environment()
-            project_root = env.serve_root
-            viewer_dir = env.viewer_dir
-            out_dir = env.out_dir
+            static_dir = env.static_dir
             port = args.port
             if args.glb:
                 if not args.glb.exists():
                     print(f"error: GLB file does not exist: {args.glb}", file=sys.stderr)
                     return 2
-                shutil.copy2(args.glb, viewer_dir / "model.glb")
-            else:
-                manifest = _build_manifest(out_dir, project_root)
-                (viewer_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+                shutil.copy2(args.glb, static_dir / "model.glb")
             from . import mcp_server
-            layout_path = viewer_dir / "mcp-layout.json"
+            layout_path = env.layout_path
             mcp_server.LAYOUT_PATH = layout_path
             from .chat_server import run_server as run_chat_server
-            open_url = f"http://localhost:{port}/viewer/editor.html"
+            open_url = f"http://localhost:{port}/"
             print(f"Starting server at http://localhost:{port}", file=sys.stderr)
             webbrowser.open(open_url)
-            run_chat_server(str(project_root), port, layout_path=str(layout_path))
+            run_chat_server(str(static_dir), port, layout_path=str(layout_path))
             return 0
         parser.error(f"Unsupported command: {args.command}")
     except Exception as e:
