@@ -350,6 +350,90 @@ def test_chat_sends_image_reference_attachment(browser_page, viewer_base_url: st
     assert "data:image/png;base64" not in stored_transcript
 
 
+def test_chat_sends_local_provider_without_api_key(browser_page, viewer_base_url: str) -> None:
+    local_status = {
+        "available": True,
+        "providers_with_env_keys": [],
+        "supported_providers": ["codex", "openai"],
+        "default_models": {"codex": "default", "openai": "gpt-4o"},
+        "providers": [
+            {
+                "id": "codex",
+                "label": "Codex runtime",
+                "requires_api_key": False,
+                "command_available": True,
+                "capabilities": ["chat", "local_runtime", "text_only"],
+                "models": [{"id": "default", "label": "Codex configured default", "default": True, "capabilities": ["chat"]}],
+            },
+            {
+                "id": "openai",
+                "label": "OpenAI",
+                "requires_api_key": True,
+                "command_available": None,
+                "capabilities": ["tools", "streaming"],
+                "models": [{"id": "gpt-4o", "label": "GPT-4o", "default": True, "capabilities": ["tools"]}],
+            },
+        ],
+        "capabilities": {
+            "provider_native_streaming": True,
+            "planner_modes": ["auto", "deterministic", "llm_reviewed", "llm_structured"],
+            "default_planner_mode": "auto",
+            "standards_profiles": ["apartment_compact"],
+        },
+    }
+    browser_page.route("**/api/chat/status", lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(local_status)))
+    browser_page.route("**/api/chat/models", lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(local_status)))
+    browser_page.route(
+        "**/viewer/mcp-layout.json*",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"version": 1, "items": [], "_stamp": 1})),
+    )
+    browser_page.route(
+        "**/api/sync-layout",
+        lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps({"ok": True})),
+    )
+
+    captured: dict[str, object] = {}
+
+    def chat_handler(route) -> None:
+        payload = json.loads(route.request.post_data or "{}")
+        captured["payload"] = payload
+        route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "response": "Local ok.",
+                    "history": [{"role": "assistant", "content": [{"type": "text", "text": "Local ok."}]}],
+                    "provider": "codex",
+                    "model": "default",
+                    "actions": [],
+                    "request_id": "chat-local-1",
+                }
+            ),
+        )
+
+    browser_page.route("**/api/chat", chat_handler)
+    browser_page.add_init_script(
+        """
+        localStorage.setItem("haus_chat_provider", "codex");
+        localStorage.removeItem("haus_api_keys");
+        localStorage.removeItem("haus_chat_history");
+        localStorage.removeItem("haus_chat_transcript");
+        """
+    )
+    browser_page.goto(f"{viewer_base_url}/viewer/editor.html")
+
+    browser_page.wait_for_selector("#chat-panel.open")
+    browser_page.fill("#chat-input", "test local")
+    browser_page.click("#chat-send")
+    browser_page.wait_for_selector(".chat-assistant", timeout=6000)
+
+    payload = captured["payload"]
+    assert isinstance(payload, dict)
+    assert payload["provider"] == "codex"
+    assert payload["api_key"] == ""
+
+
 def test_chat_allows_deterministic_planner_without_key(browser_page, viewer_base_url: str) -> None:
     _mock_editor_backend(browser_page)
     browser_page.route(

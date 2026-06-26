@@ -5,19 +5,19 @@
       "type": "furniture",
       "pos": [
         -2.0,
-        0.4,
+        0.375,
         -2.0
       ],
       "rot": 0.0,
       "visible": true,
       "geo": [
-        2.2,
-        0.8,
+        1.6,
+        0.75,
         0.9
       ],
-      "color": 6840930,
-      "furnitureType": "sofa_3",
-      "name": "Living sofa",
+      "color": 10385160,
+      "furnitureType": "dining_6",
+      "name": "Living dining table",
       "room": "Living",
       "id": "item-1",
       "confidence": "estimated",
@@ -33,20 +33,20 @@
     {
       "type": "furniture",
       "pos": [
-        -2.0,
-        0.2,
-        -3.0
+        -3.5,
+        0.5,
+        -2.0
       ],
-      "rot": 0.0,
+      "rot": 1.5707963267948966,
       "visible": true,
       "geo": [
+        0.8,
         1.0,
-        0.4,
-        0.5
+        0.3
       ],
-      "color": 9196588,
-      "furnitureType": "coffee",
-      "name": "Living coffee table",
+      "color": 7556926,
+      "furnitureType": "shoe_rack",
+      "name": "Living entry shoe rack",
       "room": "Living",
       "id": "item-2",
       "confidence": "estimated",
@@ -62,21 +62,21 @@
     {
       "type": "furniture",
       "pos": [
-        -2.75,
-        0.25,
-        -0.5
+        2.0,
+        0.375,
+        -2.0
       ],
       "rot": 0.0,
       "visible": true,
       "geo": [
-        1.5,
-        0.5,
-        0.4
+        1.6,
+        0.75,
+        0.9
       ],
-      "color": 6051928,
-      "furnitureType": "tv_console",
-      "name": "Living tv console",
-      "room": "Living",
+      "color": 10385160,
+      "furnitureType": "dining_6",
+      "name": "Dining dining table",
+      "room": "Dining",
       "id": "item-3",
       "confidence": "estimated",
       "movable": true,
@@ -91,22 +91,283 @@
     {
       "type": "furniture",
       "pos": [
-        -3.5,
-        0.2,
-        -3.25
+        0.5,
+        0.5,
+        -2.0
+      ],
+      "rot": 1.5707963267948966,
+      "visible": true,
+      "geo": [
+        0.8,
+        1.0,
+        0.3
+      ],
+      "color": 7556926,
+      "furnitureType": "shoe_rack",
+      "name": "Dining entry shoe rack",
+      "room": "Dining",
+      "id": "item-4",
+      "confidence": "estimated",
+      "movable": true,
+      "fixed": false,
+      "existing": true,
+      "proposed": false,
+      "removed": false,
+      "locked": false,
+      "source": "layout",
+      "scenario_status": "existing"
+    },
+    {
+      "type": "furniture",
+      "pos": [
+        0.5,
+        0.85,
+        0.0
       ],
       "rot": 0.0,
       "visible": true,
       "geo": [
+        0.7,
+        1.7,
+        0.7
+      ],
+      "color": 13947088,
+      "furnitureType": "fridge",
+      "name": "Kitchen fridge",
+      "room": "Kitchen",
+      "id": "item-5",
+      "confidence": "estimated",
+      "movable": true,
+      "fixed": false,
+      "existing": true,
+      "proposed": false,
+      "removed": false,
+      "locked": false,
+      "source": "layout",
+      "scenario_status": "existing"
+    },
+    {
+      "type": "furniture",
+      "pos": [
+        2.25,
+        0.45,
+        0.0
+      ],
+      "rot": 0.0,
+      "visible": true,
+      "geo": [
+        1.2,
+        0.9,
+        0.6
+      ],
+      "color": 9736079,
+      "furnitureType": "kitchen_counter",
+      "name": "Kitchen counter",
+      "room": "Kitchen",
+      "id": "item-6",
+      "confidence": "estimated",
+      "movable": true,
+      "fixed": false,
+      "existing": true,
+      "proposed": false,
+      "removed": false,
+      "locked": false,
+      "source": "layout",
+      "scenario_status": "existing"
+    },
+    {
+      "type": "furniture",
+      "pos": [
+        2.5,
+        0.425,
+        -0.75
+      ],
+      "rot": 0.0,
+      "visible": true,
+      "geo": [
+        0.8,
+        0.85,
+        0.6
+      ],
+      "color": 10854303,
+      "furnitureType": "sink",
+      "name": "Kitchen sink cabinet",
+      "room": "Kitchen",
+      "id": "item-7",
+      "confidence": "estimated",
+      "movable": true,
+      "fixed": false,
+      "existing": true,
+      "proposed": false,
+      "removed": false,
+      "locked": false,
+      "source": "layout",
+      "scenario_status": "existing"
+    },
+    {
+      "type": "furniture",
+      "pos": [
+        3.25,
+        0.425,
+        1.25
+      ],
+      "rot": 0.0,
+      "visible": true,
+      "geo": [
+        0.6,
+        0.85,
+        0.6
+      ],
+      "color": 14934497,
+      "furnitureType": "washer",
+      "name": "Kitchen washer",
+      "room": "Kitchen",
+      "id": "item-8",
+      "confidence": "estimated",
+      "movable": true,
+      "fixed": false,
+      "existing": true,
+      "proposed": false,
+      "removed": false,
+      "locked": false,
+      "source": "layout",
+      "scenario_status": "existing"
+    },
+    {
+      "type": "furniture",
+      "pos": [
+        -2.0,
+        0.375,
+        2.0
+      ],
+      "rot": 0.0,
+      "visible": true,
+      "geo": [
+        1.6,
+        0.75,
+        0.9
+      ],
+      "color": 10385160,
+      "furnitureType": "dining_6",
+      "name": "Master Bedroom dining table",
+      "room": "Master Bedroom",
+      "id": "item-9",
+      "confidence": "estimated",
+      "movable": true,
+      "fixed": false,
+      "existing": true,
+      "proposed": false,
+      "removed": false,
+      "locked": false,
+      "source": "layout",
+      "scenario_status": "existing"
+    },
+    {
+      "type": "furniture",
+      "pos": [
+        -3.5,
+        0.5,
+        2.0
+      ],
+      "rot": 1.5707963267948966,
+      "visible": true,
+      "geo": [
+        0.8,
         1.0,
-        0.4,
+        0.3
+      ],
+      "color": 7556926,
+      "furnitureType": "shoe_rack",
+      "name": "Master Bedroom entry shoe rack",
+      "room": "Master Bedroom",
+      "id": "item-10",
+      "confidence": "estimated",
+      "movable": true,
+      "fixed": false,
+      "existing": true,
+      "proposed": false,
+      "removed": false,
+      "locked": false,
+      "source": "layout",
+      "scenario_status": "existing"
+    },
+    {
+      "type": "furniture",
+      "pos": [
+        1.5,
+        0.375,
+        2.5
+      ],
+      "rot": 0.0,
+      "visible": true,
+      "geo": [
+        1.2,
+        0.75,
+        0.6
+      ],
+      "color": 14465933,
+      "furnitureType": "desk",
+      "name": "Study work desk",
+      "room": "Study",
+      "id": "item-11",
+      "confidence": "estimated",
+      "movable": true,
+      "fixed": false,
+      "existing": true,
+      "proposed": false,
+      "removed": false,
+      "locked": false,
+      "source": "layout",
+      "scenario_status": "existing"
+    },
+    {
+      "type": "furniture",
+      "pos": [
+        2.75,
+        0.225,
+        2.5
+      ],
+      "rot": 3.141592653589793,
+      "visible": true,
+      "geo": [
+        0.5,
+        0.45,
         0.5
       ],
-      "color": 8539947,
-      "furnitureType": "coffee",
-      "name": "Living coffee table",
-      "room": "Living",
-      "id": "item-4",
+      "color": 5130826,
+      "furnitureType": "chair",
+      "name": "Study office chair",
+      "room": "Study",
+      "id": "item-12",
+      "confidence": "estimated",
+      "movable": true,
+      "fixed": false,
+      "existing": true,
+      "proposed": false,
+      "removed": false,
+      "locked": false,
+      "source": "layout",
+      "scenario_status": "existing"
+    },
+    {
+      "type": "furniture",
+      "pos": [
+        1.25,
+        0.9,
+        1.25
+      ],
+      "rot": 0.0,
+      "visible": true,
+      "geo": [
+        0.8,
+        1.8,
+        0.3
+      ],
+      "color": 7623463,
+      "furnitureType": "bookshelf",
+      "name": "Study bookshelf",
+      "room": "Study",
+      "id": "item-13",
       "confidence": "estimated",
       "movable": true,
       "fixed": false,
@@ -139,9 +400,9 @@
   "exports": [],
   "layout_versions": [
     {
-      "id": "version-4700ad21",
+      "id": "version-71afc004",
       "status": "draft",
-      "created_at": "2026-06-25T09:16:00.920Z",
+      "created_at": "2026-06-25T09:14:46.710Z",
       "note": "Initial draft",
       "item_count": 0,
       "room_count": 0
@@ -149,7 +410,7 @@
   ],
   "scenarios": [
     {
-      "id": "scenario-e71802b3",
+      "id": "scenario-8546138a",
       "name": "Base",
       "journey": "blank",
       "status": "draft",
@@ -160,7 +421,7 @@
         "cost_complexity": 8,
         "confidence": 77
       },
-      "created_at": "2026-06-25T09:16:00.920Z",
+      "created_at": "2026-06-25T09:14:46.710Z",
       "applied_at": null,
       "parent_scenario_id": null,
       "warnings": []
@@ -173,73 +434,235 @@
       {
         "index": 0,
         "semantic_kind": "furniture",
-        "furniture_type": "sofa_3",
-        "name": "Living sofa",
+        "furniture_type": "dining_6",
+        "name": "Living dining table",
         "room": "Living",
         "position_m": {
           "x": -2,
-          "y": 0.4,
+          "y": 0.375,
           "z": -2
         },
         "rotation_y_rad": 0,
         "dimensions_m": {
-          "width": 2.2,
-          "height": 0.8,
+          "width": 1.6,
+          "height": 0.75,
           "depth": 0.9
         }
       },
       {
         "index": 1,
         "semantic_kind": "furniture",
-        "furniture_type": "coffee",
-        "name": "Living coffee table",
+        "furniture_type": "shoe_rack",
+        "name": "Living entry shoe rack",
         "room": "Living",
         "position_m": {
-          "x": -2,
-          "y": 0.2,
-          "z": -3
+          "x": -3.5,
+          "y": 0.5,
+          "z": -2
         },
-        "rotation_y_rad": 0,
+        "rotation_y_rad": 1.5707963267948966,
         "dimensions_m": {
-          "width": 1,
-          "height": 0.4,
-          "depth": 0.5
+          "width": 0.8,
+          "height": 1,
+          "depth": 0.3
         }
       },
       {
         "index": 2,
         "semantic_kind": "furniture",
-        "furniture_type": "tv_console",
-        "name": "Living tv console",
-        "room": "Living",
+        "furniture_type": "dining_6",
+        "name": "Dining dining table",
+        "room": "Dining",
         "position_m": {
-          "x": -2.75,
-          "y": 0.25,
-          "z": -0.5
+          "x": 2,
+          "y": 0.375,
+          "z": -2
         },
         "rotation_y_rad": 0,
         "dimensions_m": {
-          "width": 1.5,
-          "height": 0.5,
-          "depth": 0.4
+          "width": 1.6,
+          "height": 0.75,
+          "depth": 0.9
         }
       },
       {
         "index": 3,
         "semantic_kind": "furniture",
-        "furniture_type": "coffee",
-        "name": "Living coffee table",
-        "room": "Living",
+        "furniture_type": "shoe_rack",
+        "name": "Dining entry shoe rack",
+        "room": "Dining",
         "position_m": {
-          "x": -3.5,
-          "y": 0.2,
-          "z": -3.25
+          "x": 0.5,
+          "y": 0.5,
+          "z": -2
+        },
+        "rotation_y_rad": 1.5707963267948966,
+        "dimensions_m": {
+          "width": 0.8,
+          "height": 1,
+          "depth": 0.3
+        }
+      },
+      {
+        "index": 4,
+        "semantic_kind": "appliance",
+        "furniture_type": "fridge",
+        "name": "Kitchen fridge",
+        "room": "Kitchen",
+        "position_m": {
+          "x": 0.5,
+          "y": 0.85,
+          "z": 0
         },
         "rotation_y_rad": 0,
         "dimensions_m": {
-          "width": 1,
-          "height": 0.4,
+          "width": 0.7,
+          "height": 1.7,
+          "depth": 0.7
+        }
+      },
+      {
+        "index": 5,
+        "semantic_kind": "appliance",
+        "furniture_type": "kitchen_counter",
+        "name": "Kitchen counter",
+        "room": "Kitchen",
+        "position_m": {
+          "x": 2.25,
+          "y": 0.45,
+          "z": 0
+        },
+        "rotation_y_rad": 0,
+        "dimensions_m": {
+          "width": 1.2,
+          "height": 0.9,
+          "depth": 0.6
+        }
+      },
+      {
+        "index": 6,
+        "semantic_kind": "fixture",
+        "furniture_type": "sink",
+        "name": "Kitchen sink cabinet",
+        "room": "Kitchen",
+        "position_m": {
+          "x": 2.5,
+          "y": 0.425,
+          "z": -0.75
+        },
+        "rotation_y_rad": 0,
+        "dimensions_m": {
+          "width": 0.8,
+          "height": 0.85,
+          "depth": 0.6
+        }
+      },
+      {
+        "index": 7,
+        "semantic_kind": "appliance",
+        "furniture_type": "washer",
+        "name": "Kitchen washer",
+        "room": "Kitchen",
+        "position_m": {
+          "x": 3.25,
+          "y": 0.425,
+          "z": 1.25
+        },
+        "rotation_y_rad": 0,
+        "dimensions_m": {
+          "width": 0.6,
+          "height": 0.85,
+          "depth": 0.6
+        }
+      },
+      {
+        "index": 8,
+        "semantic_kind": "furniture",
+        "furniture_type": "dining_6",
+        "name": "Master Bedroom dining table",
+        "room": "Master Bedroom",
+        "position_m": {
+          "x": -2,
+          "y": 0.375,
+          "z": 2
+        },
+        "rotation_y_rad": 0,
+        "dimensions_m": {
+          "width": 1.6,
+          "height": 0.75,
+          "depth": 0.9
+        }
+      },
+      {
+        "index": 9,
+        "semantic_kind": "furniture",
+        "furniture_type": "shoe_rack",
+        "name": "Master Bedroom entry shoe rack",
+        "room": "Master Bedroom",
+        "position_m": {
+          "x": -3.5,
+          "y": 0.5,
+          "z": 2
+        },
+        "rotation_y_rad": 1.5707963267948966,
+        "dimensions_m": {
+          "width": 0.8,
+          "height": 1,
+          "depth": 0.3
+        }
+      },
+      {
+        "index": 10,
+        "semantic_kind": "furniture",
+        "furniture_type": "desk",
+        "name": "Study work desk",
+        "room": "Study",
+        "position_m": {
+          "x": 1.5,
+          "y": 0.375,
+          "z": 2.5
+        },
+        "rotation_y_rad": 0,
+        "dimensions_m": {
+          "width": 1.2,
+          "height": 0.75,
+          "depth": 0.6
+        }
+      },
+      {
+        "index": 11,
+        "semantic_kind": "furniture",
+        "furniture_type": "chair",
+        "name": "Study office chair",
+        "room": "Study",
+        "position_m": {
+          "x": 2.75,
+          "y": 0.225,
+          "z": 2.5
+        },
+        "rotation_y_rad": 3.141592653589793,
+        "dimensions_m": {
+          "width": 0.5,
+          "height": 0.45,
           "depth": 0.5
+        }
+      },
+      {
+        "index": 12,
+        "semantic_kind": "furniture",
+        "furniture_type": "bookshelf",
+        "name": "Study bookshelf",
+        "room": "Study",
+        "position_m": {
+          "x": 1.25,
+          "y": 0.9,
+          "z": 1.25
+        },
+        "rotation_y_rad": 0,
+        "dimensions_m": {
+          "width": 0.8,
+          "height": 1.8,
+          "depth": 0.3
         }
       }
     ],
@@ -248,6 +671,6 @@
       "This is not an IFC export or code-compliance certificate."
     ]
   },
-  "_stamp": 1782378981917,
+  "_stamp": 1782439788200,
   "rooms": []
 }

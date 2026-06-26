@@ -44,7 +44,11 @@ const DISABLE_WEB_SEARCH_STORAGE = 'haus_chat_disable_web_search';
 const DISABLE_KEY_STORAGE = 'haus_chat_disable_key_storage';
 const DEFAULT_MAX_ATTACHMENTS = 3;
 const DEFAULT_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const FALLBACK_PROVIDERS = ['ollama', 'codex', 'claude-code', 'opencode', 'anthropic', 'openai', 'gemini'];
+const LOCAL_PROVIDER_IDS = new Set(['ollama', 'codex', 'gemini-cli', 'claude-code', 'opencode', 'aider', 'openai-compatible-local', 'webllm']);
+const BROWSER_PROVIDER_IDS = new Set(['webllm']);
+const FALLBACK_PROVIDERS = ['ollama', 'codex', 'gemini-cli', 'claude-code', 'opencode', 'aider', 'openai-compatible-local', 'webllm', 'anthropic', 'openai', 'gemini'];
+let webllmEngine = null;
+let webllmModel = '';
 let conversationId = localStorage.getItem(CONVERSATION_STORAGE) || newConversationId();
 
 export function initChat() {
@@ -313,8 +317,12 @@ function providerLabel(provider) {
     gemini: 'Gemini',
     ollama: 'Ollama',
     codex: 'Codex runtime',
+    'gemini-cli': 'Gemini CLI runtime',
     'claude-code': 'Claude Code runtime',
     opencode: 'opencode runtime',
+    aider: 'Aider runtime',
+    'openai-compatible-local': 'OpenAI-compatible local',
+    webllm: 'WebLLM',
   }[provider] || provider;
 }
 
@@ -355,6 +363,7 @@ function refreshProviderWarning() {
 
 function providerRequiresApiKey(provider) {
   const spec = providerSpec(provider);
+  if (!spec && LOCAL_PROVIDER_IDS.has(provider)) return false;
   return spec?.requires_api_key !== false;
 }
 
@@ -495,6 +504,7 @@ function toggleChat() {
 function providerHasCredential(provider, keys) {
   if (!provider) return false;
   const spec = providerSpec(provider);
+  if (!spec && LOCAL_PROVIDER_IDS.has(provider)) return true;
   if (spec?.requires_api_key === false) return spec.command_available !== false;
   if (keys[provider]) return true;
   const envProviders = Array.isArray(serverStatus?.providers_with_env_keys)
@@ -1151,6 +1161,95 @@ async function sendStream(payload, loading) {
   return doneData || { response: responseText };
 }
 
+function webllmContentText(content) {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  const lines = [];
+  for (const block of content) {
+    if (!block || typeof block !== 'object') continue;
+    if (block.type === 'text') lines.push(block.text || '');
+    else if (block.type === 'tool_result') lines.push(`Tool result: ${block.content || ''}`);
+    else if (block.type === 'image') lines.push('[image attachment omitted by text-only WebLLM]');
+  }
+  return lines.filter(Boolean).join('\n');
+}
+
+function webllmMessages(payload) {
+  const projectContext = payload.project_context ? JSON.stringify(payload.project_context).slice(0, 8000) : '{}';
+  const system = [
+    'You are running as a text-only browser local runtime for Haus chat.',
+    'Do not claim to edit the Haus scene. If the user asks for an applied edit, describe the safe Haus action or deterministic planner step instead.',
+    '',
+    'Haus project context:',
+    projectContext,
+  ].join('\n');
+  const out = [{ role: 'system', content: system }];
+  for (const msg of (Array.isArray(payload.history) ? payload.history.slice(-16) : [])) {
+    const role = msg.role === 'assistant' ? 'assistant' : 'user';
+    const text = webllmContentText(msg.content);
+    if (text) out.push({ role, content: text });
+  }
+  let userText = payload.message || '';
+  if (Array.isArray(payload.attachments) && payload.attachments.length > 0) {
+    const names = payload.attachments.map((item) => item.name).filter(Boolean).join(', ');
+    userText += `\nAttached image references omitted by text-only WebLLM: ${names}`;
+  }
+  out.push({ role: 'user', content: userText });
+  return out;
+}
+
+async function getWebllmEngine(model, loading) {
+  if (!navigator.gpu) throw new Error('WebLLM requires a WebGPU-capable browser.');
+  if (webllmEngine && webllmModel === model) return webllmEngine;
+  loading.textContent = `Loading WebLLM ${model}...`;
+  const webllm = await import('@mlc-ai/web-llm');
+  webllmEngine = await webllm.CreateMLCEngine(model, {
+    initProgressCallback: (progress) => {
+      const text = progress?.text || progress?.progress ? `${progress.text || 'Loading WebLLM'} ${Math.round((progress.progress || 0) * 100)}%` : `Loading WebLLM ${model}...`;
+      loading.textContent = text;
+    },
+  });
+  webllmModel = model;
+  return webllmEngine;
+}
+
+async function sendWebllm(payload, loading) {
+  const model = payload.model || serverStatus?.default_models?.webllm || 'Llama-3.1-8B-Instruct-q4f32_1-MLC';
+  const engine = await getWebllmEngine(model, loading);
+  const messages = webllmMessages({ ...payload, model });
+  loading.remove();
+  const assistantEl = appendMessage('assistant', '');
+  let responseText = '';
+  const chunks = await engine.chat.completions.create({
+    messages,
+    temperature: 0.2,
+    stream: true,
+    stream_options: { include_usage: true },
+  });
+  for await (const chunk of chunks) {
+    const delta = chunk.choices?.[0]?.delta?.content || '';
+    if (!delta) continue;
+    responseText += delta;
+    assistantEl.textContent = responseText;
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  }
+  const updatedHistory = [
+    ...(Array.isArray(payload.history) ? payload.history : []),
+    { role: 'user', content: [{ type: 'text', text: payload.message || '' }] },
+    { role: 'assistant', content: [{ type: 'text', text: responseText }] },
+  ];
+  persistTranscript('assistant', responseText);
+  return {
+    response: responseText,
+    history: updatedHistory,
+    provider: 'webllm',
+    model,
+    custom_model: Boolean(payload.model),
+    actions: [],
+    request_id: 'webllm-browser',
+  };
+}
+
 async function sendJson(payload, loading) {
   const res = await fetch('/api/chat', {
     method: 'POST',
@@ -1225,7 +1324,9 @@ async function send() {
     const canStream = Boolean(serverStatus?.capabilities?.provider_native_streaming)
       && Boolean(window.ReadableStream)
       && providerCaps.includes('streaming');
-    const data = canStream ? await sendStream(payload, loading) : await sendJson(payload, loading);
+    const data = BROWSER_PROVIDER_IDS.has(provider)
+      ? await sendWebllm(payload, loading)
+      : canStream ? await sendStream(payload, loading) : await sendJson(payload, loading);
 
     if (Array.isArray(data.actions) && data.actions.length > 0) {
       for (const action of data.actions) {

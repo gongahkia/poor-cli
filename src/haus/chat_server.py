@@ -43,6 +43,7 @@ from .llm.providers import gemini as gemini_provider
 from .llm.providers import local_cli as local_cli_provider
 from .llm.providers import ollama as ollama_provider
 from .llm.providers import openai as openai_provider
+from .llm.providers import openai_compatible as openai_compatible_provider
 from .llm.types import ChatChunk
 from .logging_utils import configure_logging, new_request_id
 from .pipeline import run_vectorize
@@ -2628,6 +2629,23 @@ def _run_codex(
     )
 
 
+def _run_gemini_cli(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return local_cli_provider.chat_gemini_cli(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
 def _run_claude_code(
     api_key: str,
     messages: list[dict[str, Any]],
@@ -2662,6 +2680,40 @@ def _run_opencode(
     )
 
 
+def _run_aider(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return local_cli_provider.chat_aider(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
+def _run_openai_compatible_local(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+) -> tuple[str, list[dict[str, Any]]]:
+    return openai_compatible_provider.chat(
+        api_key,
+        messages,
+        model,
+        dispatch,
+        system=_SYSTEM,
+        tools_spec=_TOOLS_SPEC,
+        max_tool_steps=_MAX_TOOL_STEPS,
+    )
+
+
 _DEFAULT_MODELS = DEFAULT_MODELS
 
 _CHAT_FNS: dict[
@@ -2673,8 +2725,11 @@ _CHAT_FNS: dict[
     "gemini": _run_gemini,
     "ollama": _run_ollama,
     "codex": _run_codex,
+    "gemini-cli": _run_gemini_cli,
     "claude-code": _run_claude_code,
     "opencode": _run_opencode,
+    "aider": _run_aider,
+    "openai-compatible-local": _run_openai_compatible_local,
 }
 
 _STREAM_FNS: dict[
@@ -2706,7 +2761,9 @@ def _resolve_provider_token(provider: str, client_key: str) -> str:
     if client_key:
         return client_key
     if env_key:
-        return os.environ.get(env_key, "")
+        env_value = os.environ.get(env_key, "")
+        if env_value:
+            return env_value
     spec = _PROVIDER_SPECS.get(provider)
     return "local" if spec and not spec.requires_api_key else ""
 

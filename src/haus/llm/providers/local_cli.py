@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import shlex
 import subprocess
 from collections.abc import Callable, Iterator
@@ -77,6 +78,12 @@ def _model_arg(model: str, flag: str = "--model") -> list[str]:
     return [] if clean in _SENTINEL_MODELS else [flag, clean]
 
 
+def _append_missing(cmd: list[str], args: list[str]) -> None:
+    for arg in args:
+        if arg not in cmd:
+            cmd.append(arg)
+
+
 def _codex_cmd(model: str) -> list[str]:
     cmd = _split_cmd(
         "HAUS_CODEX_CMD",
@@ -105,6 +112,13 @@ def _codex_cmd(model: str) -> list[str]:
     return cmd
 
 
+def _gemini_cmd(model: str) -> list[str]:
+    cmd = _split_cmd("HAUS_GEMINI_CLI_CMD", ["gemini"])
+    cmd.extend(_model_arg(model, "-m"))
+    _append_missing(cmd, ["--output-format", "json"])
+    return cmd
+
+
 def _claude_cmd(model: str) -> list[str]:
     cmd = _split_cmd(
         "HAUS_CLAUDE_CODE_CMD",
@@ -130,6 +144,52 @@ def _opencode_cmd(model: str) -> list[str]:
     return cmd
 
 
+def _aider_cmd(model: str) -> list[str]:
+    cmd = _split_cmd("HAUS_AIDER_CMD", ["aider"])
+    cmd.extend(_model_arg(model))
+    _append_missing(cmd, ["--dry-run", "--no-auto-commits", "--no-dirty-commits", "--no-stream", "--no-pretty", "--yes-always"])
+    return cmd
+
+
+def _with_prompt_arg(cmd: list[str], prompt: str, flags: set[str]) -> list[str]:
+    out: list[str] = []
+    inserted = False
+    for arg in cmd:
+        if arg == "{prompt}":
+            out.append(prompt)
+            inserted = True
+            continue
+        out.append(arg)
+        if arg in flags:
+            inserted = True
+            out.append(prompt)
+    if inserted:
+        return out
+    flag = next(iter(flags))
+    return [*out, flag, prompt]
+
+
+def _extract_json_text(raw: str) -> str:
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+    def walk(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, list):
+            return "\n".join(part for item in value if (part := walk(item)))
+        if not isinstance(value, dict):
+            return ""
+        for key in ("text", "response", "output", "content", "message"):
+            if key in value and (part := walk(value[key])):
+                return part
+        return "\n".join(part for item in value.values() if (part := walk(item)))
+
+    return walk(parsed) or raw
+
+
 def _run(cmd: list[str], prompt: str, *, prompt_as_arg: bool = False) -> str:
     run_cmd = [*cmd, prompt] if prompt_as_arg else cmd
     try:
@@ -151,6 +211,14 @@ def _run(cmd: list[str], prompt: str, *, prompt_as_arg: bool = False) -> str:
         detail = stderr or stdout or f"exit {proc.returncode}"
         raise RuntimeError(f"Local runtime failed: {detail}")
     return stdout or stderr
+
+
+def _run_gemini(cmd: list[str], prompt: str) -> str:
+    return _extract_json_text(_run(_with_prompt_arg(cmd, prompt, {"-p", "--prompt"}), prompt, prompt_as_arg=False))
+
+
+def _run_aider(cmd: list[str], prompt: str) -> str:
+    return _run(_with_prompt_arg(cmd, prompt, {"--message", "--msg", "-m"}), prompt, prompt_as_arg=False)
 
 
 def _chat_with_cmd(
@@ -180,6 +248,22 @@ def chat_codex(
     return _chat_with_cmd(_codex_cmd(model), messages, model, system=system)
 
 
+def chat_gemini_cli(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+    *,
+    system: str,
+    tools_spec: list[dict[str, Any]],
+    max_tool_steps: int,
+) -> tuple[str, list[dict[str, Any]]]:
+    del api_key, dispatch, tools_spec, max_tool_steps
+    text = _run_gemini(_gemini_cmd(model), _prompt(system, messages))
+    updated = messages + [{"role": "assistant", "content": [{"type": "text", "text": text}]}]
+    return text, updated
+
+
 def chat_claude_code(
     api_key: str,
     messages: list[dict[str, Any]],
@@ -206,6 +290,22 @@ def chat_opencode(
 ) -> tuple[str, list[dict[str, Any]]]:
     del api_key, dispatch, tools_spec, max_tool_steps
     return _chat_with_cmd(_opencode_cmd(model), messages, model, system=system, prompt_as_arg=True)
+
+
+def chat_aider(
+    api_key: str,
+    messages: list[dict[str, Any]],
+    model: str,
+    dispatch: Callable[[str, dict[str, Any]], str],
+    *,
+    system: str,
+    tools_spec: list[dict[str, Any]],
+    max_tool_steps: int,
+) -> tuple[str, list[dict[str, Any]]]:
+    del api_key, dispatch, tools_spec, max_tool_steps
+    text = _run_aider(_aider_cmd(model), _prompt(system, messages))
+    updated = messages + [{"role": "assistant", "content": [{"type": "text", "text": text}]}]
+    return text, updated
 
 
 def stream_from_chat(

@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 
 import haus.chat_server as chat_server
 import haus.mcp_server as mcp_server
+from haus.llm.providers import openai_compatible
 
 
 @pytest.fixture()
@@ -88,13 +89,21 @@ def test_chat_models_reports_provider_metadata(chat_client: TestClient) -> None:
 
     assert "ollama" in body["supported_providers"]
     assert "codex" in body["supported_providers"]
+    assert "gemini-cli" in body["supported_providers"]
     assert "claude-code" in body["supported_providers"]
     assert "opencode" in body["supported_providers"]
+    assert "aider" in body["supported_providers"]
+    assert "openai-compatible-local" in body["supported_providers"]
+    assert "webllm" in body["supported_providers"]
     assert body["default_models"]["openai"] == chat_server._DEFAULT_MODELS["openai"]
     providers = {item["id"]: item for item in body["providers"]}
     assert providers["ollama"]["requires_api_key"] is False
     assert providers["codex"]["requires_api_key"] is False
     assert providers["codex"]["command_name"] == "codex"
+    assert providers["gemini-cli"]["command_name"] == "gemini"
+    assert providers["aider"]["command_name"] == "aider"
+    assert providers["openai-compatible-local"]["base_url"] == "http://localhost:1234/v1"
+    assert "browser_runtime" in providers["webllm"]["capabilities"]
     assert "text_only" in providers["claude-code"]["capabilities"]
     assert "streaming" in providers["openai"]["capabilities"]
     assert providers["openai"]["models"]
@@ -389,6 +398,64 @@ def test_chat_routes_local_runtime_without_api_key(
     assert body["provider"] == "codex"
     assert captured["api_key"] == "local"
     assert captured["model"] == chat_server._DEFAULT_MODELS["codex"]
+
+
+@pytest.mark.parametrize("provider", ["gemini-cli", "aider", "openai-compatible-local"])
+def test_chat_routes_new_local_providers_without_api_key(
+    chat_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    provider: str,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_provider(
+        api_key: str,
+        messages: list[dict[str, object]],
+        model: str,
+        dispatch,
+    ) -> tuple[str, list[dict[str, object]]]:
+        captured["api_key"] = api_key
+        captured["model"] = model
+        return "runtime ok", messages + [{"role": "assistant", "content": [{"type": "text", "text": "runtime ok"}]}]
+
+    monkeypatch.setitem(chat_server._CHAT_FNS, provider, fake_provider)
+
+    res = chat_client.post("/api/chat", json={"message": "hello", "provider": provider})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["response"] == "runtime ok"
+    assert body["provider"] == provider
+    assert captured["api_key"] == "local"
+    assert captured["model"] == chat_server._DEFAULT_MODELS[provider]
+
+
+def test_openai_compatible_local_posts_chat_completion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_post(payload: dict[str, object], api_key: str) -> dict[str, object]:
+        captured["payload"] = payload
+        captured["api_key"] = api_key
+        return {"choices": [{"message": {"content": "local response"}}]}
+
+    monkeypatch.setenv("HAUS_OPENAI_COMPAT_API_KEY", "local-key")
+    monkeypatch.setattr(openai_compatible, "_post_chat", fake_post)
+
+    text, updated = openai_compatible.chat(
+        "local",
+        [{"role": "user", "content": [{"type": "text", "text": "hello"}]}],
+        "local-model",
+        lambda name, args: "{}",
+        system="system",
+        tools_spec=[],
+        max_tool_steps=1,
+    )
+
+    assert text == "local response"
+    assert captured["api_key"] == "local-key"
+    assert captured["payload"]["model"] == "local-model"
+    assert updated[-1]["content"][0]["text"] == "local response"
 
 
 def test_chat_stream_returns_sse_events(

@@ -85,6 +85,20 @@ _PROVIDERS: dict[str, ProviderSpec] = {
         command_name="codex",
         command_env="HAUS_CODEX_CMD",
     ),
+    "gemini-cli": ProviderSpec(
+        id="gemini-cli",
+        label="Gemini CLI runtime",
+        env_var="",
+        default_model=os.environ.get("HAUS_GEMINI_CLI_MODEL", "default"),
+        optional_extra="",
+        install_hint="gemini auth login",
+        capabilities=("chat", "local_runtime", "text_only"),
+        models=(ModelSpec(os.environ.get("HAUS_GEMINI_CLI_MODEL", "default"), "Gemini CLI configured default", ("chat", "local_runtime", "text_only"), True),),
+        requires_api_key=False,
+        allow_custom_models=True,
+        command_name="gemini",
+        command_env="HAUS_GEMINI_CLI_CMD",
+    ),
     "claude-code": ProviderSpec(
         id="claude-code",
         label="Claude Code runtime",
@@ -114,6 +128,45 @@ _PROVIDERS: dict[str, ProviderSpec] = {
         allow_custom_models=True,
         command_name="opencode",
         command_env="HAUS_OPENCODE_CMD",
+    ),
+    "aider": ProviderSpec(
+        id="aider",
+        label="Aider runtime",
+        env_var="",
+        default_model=os.environ.get("HAUS_AIDER_MODEL", "default"),
+        optional_extra="",
+        install_hint="pipx install aider-chat, then configure aider auth/model",
+        capabilities=("chat", "local_runtime", "text_only"),
+        models=(ModelSpec(os.environ.get("HAUS_AIDER_MODEL", "default"), "Aider configured default", ("chat", "local_runtime", "text_only"), True),),
+        requires_api_key=False,
+        allow_custom_models=True,
+        command_name="aider",
+        command_env="HAUS_AIDER_CMD",
+    ),
+    "openai-compatible-local": ProviderSpec(
+        id="openai-compatible-local",
+        label="OpenAI-compatible local",
+        env_var="HAUS_OPENAI_COMPAT_API_KEY",
+        default_model=os.environ.get("HAUS_OPENAI_COMPAT_MODEL", "local-model"),
+        optional_extra="",
+        install_hint="Start LM Studio, llama.cpp server, vLLM, or LocalAI with an OpenAI-compatible /v1 endpoint.",
+        capabilities=("tools", "local", "openai_compatible"),
+        models=(ModelSpec(os.environ.get("HAUS_OPENAI_COMPAT_MODEL", "local-model"), "Configured local model", ("tools", "local", "openai_compatible"), True),),
+        requires_api_key=False,
+        base_url_env="HAUS_OPENAI_COMPAT_BASE_URL",
+        allow_custom_models=True,
+    ),
+    "webllm": ProviderSpec(
+        id="webllm",
+        label="WebLLM",
+        env_var="",
+        default_model=os.environ.get("HAUS_WEBLLM_MODEL", "Llama-3.1-8B-Instruct-q4f32_1-MLC"),
+        optional_extra="",
+        install_hint="Use a WebGPU-capable browser; the model downloads into browser cache on first use.",
+        capabilities=("chat", "browser_runtime", "webgpu", "text_only", "streaming"),
+        models=(ModelSpec(os.environ.get("HAUS_WEBLLM_MODEL", "Llama-3.1-8B-Instruct-q4f32_1-MLC"), "WebLLM configured default", ("chat", "browser_runtime", "webgpu", "text_only", "streaming"), True),),
+        requires_api_key=False,
+        allow_custom_models=True,
     ),
 }
 
@@ -166,6 +219,7 @@ def provider_status() -> dict[str, Any]:
     env_ready = set(providers_with_env_keys())
     providers: list[dict[str, Any]] = []
     for spec in _PROVIDERS.values():
+        default_base_url = "http://localhost:1234/v1" if spec.id == "openai-compatible-local" else "http://localhost:11434"
         providers.append(
             {
                 "id": spec.id,
@@ -177,7 +231,7 @@ def provider_status() -> dict[str, Any]:
                 "requires_api_key": spec.requires_api_key,
                 "has_env_key": spec.id in env_ready,
                 "base_url_env": spec.base_url_env,
-                "base_url": os.environ.get(spec.base_url_env, "http://localhost:11434") if spec.base_url_env else "",
+                "base_url": os.environ.get(spec.base_url_env, default_base_url) if spec.base_url_env else "",
                 "command_name": spec.command_name,
                 "command_env": spec.command_env,
                 "command_available": _command_available(spec),
