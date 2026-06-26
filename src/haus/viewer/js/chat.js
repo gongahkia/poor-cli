@@ -49,6 +49,7 @@ const BROWSER_PROVIDER_IDS = new Set(['webllm']);
 const FALLBACK_PROVIDERS = ['ollama', 'codex', 'gemini-cli', 'claude-code', 'opencode', 'aider', 'openai-compatible-local', 'webllm', 'anthropic', 'openai', 'gemini'];
 let webllmEngine = null;
 let webllmModel = '';
+let hausToolSpecs = null;
 let conversationId = localStorage.getItem(CONVERSATION_STORAGE) || newConversationId();
 
 export function initChat() {
@@ -351,9 +352,9 @@ function refreshProviderWarning() {
   const activeMode = hasCredential && (plannerModeSel?.value || 'auto') !== 'deterministic';
   providerWarningEl.style.display = activeMode ? '' : 'none';
   if (activeMode && spec?.requires_api_key === false) {
-    providerWarningEl.textContent = spec.capabilities?.includes('text_only')
-      ? 'Local runtime receives chat text and layout context only. Haus edit tools stay disabled for this provider.'
-      : 'Local provider receives chat text, layout details, and attached image references on this machine.';
+    providerWarningEl.textContent = spec.capabilities?.includes('browser_runtime')
+      ? 'Browser runtime receives chat text and layout context, then calls Haus tools through this local server.'
+      : 'Local provider receives chat text, layout context, and Haus tool results on this machine.';
   } else if (activeMode) {
     providerWarningEl.textContent = disableWebSearchEl?.checked
       ? 'External LLM provider may receive chat text, layout details, and attached image references. Web search is disabled for this request.'
@@ -370,7 +371,8 @@ function providerRequiresApiKey(provider) {
 function localProviderStatusText(provider) {
   const spec = providerSpec(provider);
   if (spec?.command_available === false) return `${providerLabel(provider)} command not found.`;
-  if (spec?.capabilities?.includes('text_only')) return 'No browser key needed. Text-only local runtime.';
+  if (spec?.capabilities?.includes('browser_runtime')) return 'No browser key needed. Browser runtime with Haus tools.';
+  if (spec?.capabilities?.includes('tools')) return 'No browser key needed. Local runtime with Haus tools.';
   return 'No browser key needed. Local provider.';
 }
 
@@ -1177,8 +1179,10 @@ function webllmContentText(content) {
 function webllmMessages(payload) {
   const projectContext = payload.project_context ? JSON.stringify(payload.project_context).slice(0, 8000) : '{}';
   const system = [
-    'You are running as a text-only browser local runtime for Haus chat.',
-    'Do not claim to edit the Haus scene. If the user asks for an applied edit, describe the safe Haus action or deterministic planner step instead.',
+    'You are running as a browser local runtime for Haus chat.',
+    'Use Haus tools when layout state, measurements, edits, validation, catalog lookup, or web references are needed.',
+    'If native tool calls are unavailable, respond with strict JSON: {"tool_calls":[{"name":"tool_name","arguments":{}}],"response":""}.',
+    'For a final answer, respond normally or with {"tool_calls":[],"response":"final text"}.',
     '',
     'Haus project context:',
     projectContext,
@@ -1196,6 +1200,102 @@ function webllmMessages(payload) {
   }
   out.push({ role: 'user', content: userText });
   return out;
+}
+
+async function getHausToolSpecs() {
+  if (hausToolSpecs) return hausToolSpecs;
+  const res = await fetch('/api/chat/tools');
+  if (!res.ok) throw new Error(`Tool catalog failed with HTTP ${res.status}`);
+  const data = await res.json();
+  hausToolSpecs = Array.isArray(data.tools) ? data.tools : [];
+  return hausToolSpecs;
+}
+
+function webllmTools(tools) {
+  return tools.map((tool) => ({
+    type: 'function',
+    function: {
+      name: tool.name,
+      description: tool.description || '',
+      parameters: tool.parameters || { type: 'object', properties: {} },
+    },
+  }));
+}
+
+function extractJsonObject(text) {
+  const source = String(text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+  for (let i = 0; i < source.length; i += 1) {
+    if (source[i] !== '{') continue;
+    try {
+      return JSON.parse(source.slice(i));
+    } catch {
+      // continue scanning
+    }
+  }
+  return null;
+}
+
+function parseWebllmToolCalls(message) {
+  const nativeCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+  if (nativeCalls.length > 0) {
+    return nativeCalls.map((call, index) => {
+      const fnCall = call.function || {};
+      let args = fnCall.arguments || {};
+      if (typeof args === 'string') {
+        try { args = JSON.parse(args); } catch { args = {}; }
+      }
+      return {
+        id: call.id || `webllm-call-${index}`,
+        name: fnCall.name || call.name || '',
+        arguments: args && typeof args === 'object' ? args : {},
+        native: true,
+      };
+    }).filter((call) => call.name);
+  }
+  const parsed = extractJsonObject(message?.content || '');
+  const rawCalls = parsed?.tool_calls || parsed?.tools || parsed?.calls || [];
+  if (!Array.isArray(rawCalls)) return [];
+  return rawCalls.map((call, index) => {
+    if (!call || typeof call !== 'object') return null;
+    let args = call.arguments ?? call.args ?? {};
+    if (typeof args === 'string') {
+      try { args = JSON.parse(args); } catch { args = {}; }
+    }
+    return {
+      id: `webllm-json-call-${index}`,
+      name: call.name || call.tool || call.function || '',
+      arguments: args && typeof args === 'object' ? args : {},
+      native: false,
+    };
+  }).filter((call) => call?.name);
+}
+
+function parseWebllmResponseText(message) {
+  const parsed = extractJsonObject(message?.content || '');
+  if (parsed && Array.isArray(parsed.tool_calls)) return parsed.response || parsed.final || parsed.answer || '';
+  return message?.content || '';
+}
+
+async function dispatchHausTool(call, payload) {
+  const res = await fetch('/api/chat/tools/dispatch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: call.name,
+      arguments: call.arguments || {},
+      web_search_disabled: Boolean(payload.web_search_disabled),
+    }),
+  });
+  let data = null;
+  try {
+    data = await res.json();
+  } catch {
+    data = { result: `Tool dispatch failed with HTTP ${res.status}`, actions: [] };
+  }
+  return {
+    result: data.result || data.error || `Tool dispatch failed with HTTP ${res.status}`,
+    actions: Array.isArray(data.actions) ? data.actions : [],
+  };
 }
 
 async function getWebllmEngine(model, loading) {
@@ -1216,23 +1316,55 @@ async function getWebllmEngine(model, loading) {
 async function sendWebllm(payload, loading) {
   const model = payload.model || serverStatus?.default_models?.webllm || 'Llama-3.1-8B-Instruct-q4f32_1-MLC';
   const engine = await getWebllmEngine(model, loading);
+  const tools = await getHausToolSpecs();
   const messages = webllmMessages({ ...payload, model });
-  loading.remove();
-  const assistantEl = appendMessage('assistant', '');
   let responseText = '';
-  const chunks = await engine.chat.completions.create({
-    messages,
-    temperature: 0.2,
-    stream: true,
-    stream_options: { include_usage: true },
-  });
-  for await (const chunk of chunks) {
-    const delta = chunk.choices?.[0]?.delta?.content || '';
-    if (!delta) continue;
-    responseText += delta;
-    assistantEl.textContent = responseText;
-    messagesEl.scrollTop = messagesEl.scrollHeight;
+  const actions = [];
+  for (let step = 0; step < 12; step += 1) {
+    loading.textContent = step === 0 ? 'Planning with WebLLM tools...' : `Running WebLLM tool step ${step + 1}...`;
+    const completion = await engine.chat.completions.create({
+      messages,
+      tools: webllmTools(tools),
+      temperature: 0.2,
+      stream: false,
+    });
+    const message = completion.choices?.[0]?.message || {};
+    const calls = parseWebllmToolCalls(message);
+    if (calls.length === 0) {
+      responseText = parseWebllmResponseText(message);
+      break;
+    }
+    const nativeCalls = calls.filter((call) => call.native);
+    const fallbackResults = [];
+    messages.push(nativeCalls.length > 0
+      ? {
+          role: 'assistant',
+          content: parseWebllmResponseText(message) || null,
+          tool_calls: nativeCalls.map((call) => ({
+            id: call.id,
+            type: 'function',
+            function: { name: call.name, arguments: JSON.stringify(call.arguments || {}) },
+          })),
+        }
+      : { role: 'assistant', content: message.content || '' });
+    for (const call of calls) {
+      const dispatched = await dispatchHausTool(call, payload);
+      actions.push(...dispatched.actions);
+      if (call.native) {
+        messages.push({ role: 'tool', tool_call_id: call.id, content: dispatched.result });
+      } else {
+        fallbackResults.push(`${call.name}(${JSON.stringify(call.arguments || {})}) -> ${dispatched.result}`);
+      }
+    }
+    if (fallbackResults.length > 0) {
+      messages.push({ role: 'user', content: `Haus tool results:\n${fallbackResults.join('\n')}\nReturn final JSON or request more tools.` });
+    }
   }
+  if (!responseText) {
+    responseText = 'Tool loop ended without a final response.';
+  }
+  loading.remove();
+  appendMessage('assistant', responseText);
   const updatedHistory = [
     ...(Array.isArray(payload.history) ? payload.history : []),
     { role: 'user', content: [{ type: 'text', text: payload.message || '' }] },
@@ -1245,7 +1377,7 @@ async function sendWebllm(payload, loading) {
     provider: 'webllm',
     model,
     custom_model: Boolean(payload.model),
-    actions: [],
+    actions,
     request_id: 'webllm-browser',
   };
 }

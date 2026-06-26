@@ -11,7 +11,8 @@ from typing import Any
 from ..types import ChatChunk
 
 _DEFAULT_TIMEOUT_SECONDS = 180
-_MAX_PROMPT_CHARS = 24000
+_MAX_PROMPT_CHARS = 90000
+_MAX_TOOL_SCHEMA_CHARS = 70000
 _SENTINEL_MODELS = {"", "default", "local", "runtime-default"}
 
 
@@ -63,6 +64,45 @@ def _prompt(system: str, messages: list[dict[str, Any]]) -> str:
         "Conversation:",
     ]
     for msg in messages[-16:]:
+        role = str(msg.get("role", "user")).upper()
+        text = _content_text(msg.get("content"))
+        if text:
+            parts.append(f"{role}: {text}")
+    prompt = "\n".join(parts).strip()
+    if len(prompt) > _MAX_PROMPT_CHARS:
+        prompt = prompt[-_MAX_PROMPT_CHARS:]
+    return prompt
+
+
+def _tool_prompt(system: str, messages: list[dict[str, Any]], tools_spec: list[dict[str, Any]]) -> str:
+    tools = [
+        {
+            "name": str(tool.get("name", "")),
+            "description": str(tool.get("description", "")),
+            "parameters": tool.get("parameters", {}),
+        }
+        for tool in tools_spec
+    ]
+    tools_json = json.dumps(tools, separators=(",", ":"))
+    if len(tools_json) > _MAX_TOOL_SCHEMA_CHARS:
+        tools_json = tools_json[:_MAX_TOOL_SCHEMA_CHARS] + "...[truncated]"
+    parts = [
+        "You are running as a local runtime for Haus chat.",
+        "Do not edit files, run shell commands, or use runtime-native tools.",
+        "You may call Haus tools by returning strict JSON only.",
+        'For tool calls, return {"tool_calls":[{"name":"tool_name","arguments":{}}],"response":""}.',
+        'For a final answer, return {"tool_calls":[],"response":"final text"}.',
+        "Return no markdown fences or prose outside the JSON object.",
+        "",
+        "Haus system context:",
+        system,
+        "",
+        "Available Haus tools:",
+        tools_json,
+        "",
+        "Conversation:",
+    ]
+    for msg in messages[-18:]:
         role = str(msg.get("role", "user")).upper()
         text = _content_text(msg.get("content"))
         if text:
@@ -190,6 +230,49 @@ def _extract_json_text(raw: str) -> str:
     return walk(parsed) or raw
 
 
+def _extract_json_object(raw: str) -> dict[str, Any] | None:
+    text = raw.strip()
+    if text.startswith("```"):
+        lines = [line for line in text.splitlines() if not line.strip().startswith("```")]
+        text = "\n".join(lines).strip()
+    decoder = json.JSONDecoder()
+    for idx, char in enumerate(text):
+        if char != "{":
+            continue
+        try:
+            parsed, _ = decoder.raw_decode(text[idx:])
+        except json.JSONDecodeError:
+            continue
+        if isinstance(parsed, dict):
+            return parsed
+    return None
+
+
+def _parse_tool_call_response(raw: str) -> tuple[str, list[dict[str, Any]]]:
+    parsed = _extract_json_object(raw)
+    if parsed is None:
+        return raw.strip(), []
+    response = str(parsed.get("response") or parsed.get("final") or parsed.get("answer") or "")
+    raw_calls = parsed.get("tool_calls") or parsed.get("tools") or parsed.get("calls") or []
+    if isinstance(raw_calls, dict):
+        raw_calls = [raw_calls]
+    calls: list[dict[str, Any]] = []
+    if isinstance(raw_calls, list):
+        for call in raw_calls:
+            if not isinstance(call, dict):
+                continue
+            name = str(call.get("name") or call.get("tool") or call.get("function") or "")
+            args = call.get("arguments", call.get("args", {}))
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except json.JSONDecodeError:
+                    args = {}
+            if name and isinstance(args, dict):
+                calls.append({"name": name, "arguments": args})
+    return response, calls
+
+
 def _run(cmd: list[str], prompt: str, *, prompt_as_arg: bool = False) -> str:
     run_cmd = [*cmd, prompt] if prompt_as_arg else cmd
     try:
@@ -234,6 +317,39 @@ def _chat_with_cmd(
     return text, updated
 
 
+def _chat_with_tool_protocol(
+    run_once: Callable[[str], str],
+    messages: list[dict[str, Any]],
+    *,
+    dispatch: Callable[[str, dict[str, Any]], str],
+    system: str,
+    tools_spec: list[dict[str, Any]],
+    max_tool_steps: int,
+) -> tuple[str, list[dict[str, Any]]]:
+    for step in range(max_tool_steps):
+        raw = run_once(_tool_prompt(system, messages, tools_spec))
+        text, calls = _parse_tool_call_response(raw)
+        if not calls:
+            final_text = text or raw.strip()
+            messages.append({"role": "assistant", "content": [{"type": "text", "text": final_text}]})
+            return final_text, messages
+
+        assistant_content: list[dict[str, Any]] = []
+        if text:
+            assistant_content.append({"type": "text", "text": text})
+        tool_results: list[dict[str, Any]] = []
+        for index, call in enumerate(calls):
+            name = str(call["name"])
+            args = dict(call.get("arguments", {}))
+            call_id = f"local-runtime-call-{step}-{index}"
+            result = dispatch(name, args)
+            assistant_content.append({"type": "tool_use", "id": call_id, "name": name, "input": args})
+            tool_results.append({"type": "tool_result", "tool_use_id": call_id, "content": result})
+        messages.append({"role": "assistant", "content": assistant_content})
+        messages.append({"role": "user", "content": tool_results})
+    raise RuntimeError("Too many tool iterations")
+
+
 def chat_codex(
     api_key: str,
     messages: list[dict[str, Any]],
@@ -244,8 +360,9 @@ def chat_codex(
     tools_spec: list[dict[str, Any]],
     max_tool_steps: int,
 ) -> tuple[str, list[dict[str, Any]]]:
-    del api_key, dispatch, tools_spec, max_tool_steps
-    return _chat_with_cmd(_codex_cmd(model), messages, model, system=system)
+    del api_key
+    cmd = _codex_cmd(model)
+    return _chat_with_tool_protocol(lambda prompt: _run(cmd, prompt), messages, dispatch=dispatch, system=system, tools_spec=tools_spec, max_tool_steps=max_tool_steps)
 
 
 def chat_gemini_cli(
@@ -258,10 +375,9 @@ def chat_gemini_cli(
     tools_spec: list[dict[str, Any]],
     max_tool_steps: int,
 ) -> tuple[str, list[dict[str, Any]]]:
-    del api_key, dispatch, tools_spec, max_tool_steps
-    text = _run_gemini(_gemini_cmd(model), _prompt(system, messages))
-    updated = messages + [{"role": "assistant", "content": [{"type": "text", "text": text}]}]
-    return text, updated
+    del api_key
+    cmd = _gemini_cmd(model)
+    return _chat_with_tool_protocol(lambda prompt: _run_gemini(cmd, prompt), messages, dispatch=dispatch, system=system, tools_spec=tools_spec, max_tool_steps=max_tool_steps)
 
 
 def chat_claude_code(
@@ -274,8 +390,9 @@ def chat_claude_code(
     tools_spec: list[dict[str, Any]],
     max_tool_steps: int,
 ) -> tuple[str, list[dict[str, Any]]]:
-    del api_key, dispatch, tools_spec, max_tool_steps
-    return _chat_with_cmd(_claude_cmd(model), messages, model, system=system, prompt_as_arg=True)
+    del api_key
+    cmd = _claude_cmd(model)
+    return _chat_with_tool_protocol(lambda prompt: _run(cmd, prompt, prompt_as_arg=True), messages, dispatch=dispatch, system=system, tools_spec=tools_spec, max_tool_steps=max_tool_steps)
 
 
 def chat_opencode(
@@ -288,8 +405,9 @@ def chat_opencode(
     tools_spec: list[dict[str, Any]],
     max_tool_steps: int,
 ) -> tuple[str, list[dict[str, Any]]]:
-    del api_key, dispatch, tools_spec, max_tool_steps
-    return _chat_with_cmd(_opencode_cmd(model), messages, model, system=system, prompt_as_arg=True)
+    del api_key
+    cmd = _opencode_cmd(model)
+    return _chat_with_tool_protocol(lambda prompt: _run(cmd, prompt, prompt_as_arg=True), messages, dispatch=dispatch, system=system, tools_spec=tools_spec, max_tool_steps=max_tool_steps)
 
 
 def chat_aider(
@@ -302,10 +420,9 @@ def chat_aider(
     tools_spec: list[dict[str, Any]],
     max_tool_steps: int,
 ) -> tuple[str, list[dict[str, Any]]]:
-    del api_key, dispatch, tools_spec, max_tool_steps
-    text = _run_aider(_aider_cmd(model), _prompt(system, messages))
-    updated = messages + [{"role": "assistant", "content": [{"type": "text", "text": text}]}]
-    return text, updated
+    del api_key
+    cmd = _aider_cmd(model)
+    return _chat_with_tool_protocol(lambda prompt: _run_aider(cmd, prompt), messages, dispatch=dispatch, system=system, tools_spec=tools_spec, max_tool_steps=max_tool_steps)
 
 
 def stream_from_chat(

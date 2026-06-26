@@ -172,7 +172,7 @@ The planner supports these LLM providers through the first-class chat registry. 
 | OpenAI-compatible local | `HAUS_OPENAI_COMPAT_BASE_URL`, `HAUS_OPENAI_COMPAT_MODEL`, `HAUS_OPENAI_COMPAT_API_KEY` | `local-model` | Start LM Studio, llama.cpp server, vLLM, or LocalAI with `/v1/chat/completions` |
 | WebLLM | `HAUS_WEBLLM_MODEL` | `Llama-3.1-8B-Instruct-q4f32_1-MLC` | Use a WebGPU-capable browser; first run downloads model assets into browser cache |
 
-Codex, Gemini CLI, Claude Code, opencode, Aider, and WebLLM are text-only chat adapters in Haus: they can reason over the supplied chat/layout context, but Haus does not expose edit tools to those runtimes. OpenAI-compatible local servers use the OpenAI-style chat-completions path and may use Haus tools when their server/model supports function calling.
+Every configured provider can use the Haus tool surface. Hosted APIs, Ollama, and OpenAI-compatible local servers use their native/OpenAI-style tool path when available. Coding-agent CLIs use a guarded JSON tool-call protocol: Haus passes chat/layout context and tool results, while the CLI is instructed not to edit files, run shell commands, or use runtime-native tools. WebLLM runs in the browser and dispatches Haus tool calls back through the local Haus server.
 
 The editor reads `/api/chat/models` for provider metadata, known model IDs, and capability flags. `/api/chat/stream` emits normalized SSE events for streaming-capable chat clients.
 

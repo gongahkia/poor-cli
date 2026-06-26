@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 
 import haus.chat_server as chat_server
 import haus.mcp_server as mcp_server
+from haus.llm.providers import local_cli
 from haus.llm.providers import openai_compatible
 
 
@@ -104,9 +105,36 @@ def test_chat_models_reports_provider_metadata(chat_client: TestClient) -> None:
     assert providers["aider"]["command_name"] == "aider"
     assert providers["openai-compatible-local"]["base_url"] == "http://localhost:1234/v1"
     assert "browser_runtime" in providers["webllm"]["capabilities"]
-    assert "text_only" in providers["claude-code"]["capabilities"]
+    assert "tools" in providers["claude-code"]["capabilities"]
+    assert "tools" in providers["webllm"]["capabilities"]
     assert "streaming" in providers["openai"]["capabilities"]
     assert providers["openai"]["models"]
+
+
+def test_chat_tools_route_returns_full_tool_catalog(chat_client: TestClient) -> None:
+    res = chat_client.get("/api/chat/tools")
+    assert res.status_code == 200
+    body = res.json()
+    names = {tool["name"] for tool in body["tools"]}
+    assert "list_objects" in names
+    assert "add_furniture" in names
+    assert "web_search" in names
+
+
+def test_browser_tool_dispatch_route_calls_haus_tool(chat_client: TestClient) -> None:
+    res = chat_client.post("/api/chat/tools/dispatch", json={"name": "list_objects", "arguments": {}})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["actions"][0]["tool"] == "list_objects"
+
+
+def test_browser_tool_dispatch_validates_args(chat_client: TestClient) -> None:
+    res = chat_client.post("/api/chat/tools/dispatch", json={"name": "move_object", "arguments": {"index": 0}})
+    assert res.status_code == 400
+    body = res.json()
+    assert body["ok"] is False
+    assert "invalid arguments" in body["result"]
 
 
 def test_room_capture_route_returns_layout(chat_client: TestClient) -> None:
@@ -456,6 +484,39 @@ def test_openai_compatible_local_posts_chat_completion(
     assert captured["api_key"] == "local-key"
     assert captured["payload"]["model"] == "local-model"
     assert updated[-1]["content"][0]["text"] == "local response"
+
+
+def test_local_cli_runtime_json_tool_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = [
+        json.dumps({"tool_calls": [{"name": "list_objects", "arguments": {}}], "response": ""}),
+        json.dumps({"tool_calls": [], "response": "done"}),
+    ]
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    def fake_run(cmd: list[str], prompt: str, *, prompt_as_arg: bool = False) -> str:
+        assert "Available Haus tools" in prompt
+        return responses.pop(0)
+
+    def dispatch(name: str, args: dict[str, object]) -> str:
+        calls.append((name, args))
+        return "[]"
+
+    monkeypatch.setattr(local_cli, "_run", fake_run)
+    text, updated = local_cli.chat_codex(
+        "local",
+        [{"role": "user", "content": [{"type": "text", "text": "what is here?"}]}],
+        "default",
+        dispatch,
+        system="system",
+        tools_spec=[{"name": "list_objects", "description": "List objects", "parameters": {"type": "object", "properties": {}}}],
+        max_tool_steps=3,
+    )
+
+    assert text == "done"
+    assert calls == [("list_objects", {})]
+    assert updated[-1]["content"][0]["text"] == "done"
 
 
 def test_chat_stream_returns_sse_events(

@@ -2833,6 +2833,42 @@ async def _chat_models(request: Request) -> JSONResponse:
     return JSONResponse(provider_status())
 
 
+async def _chat_tools(request: Request) -> JSONResponse:
+    del request
+    return JSONResponse({"tools": _TOOLS_SPEC})
+
+
+async def _chat_tool_dispatch(request: Request) -> JSONResponse:
+    request_id = new_request_id("browser-tool")
+    try:
+        body = await request.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON body.", "request_id": request_id}, 400)
+    if not isinstance(body, dict):
+        return JSONResponse({"ok": False, "error": "JSON body must be an object.", "request_id": request_id}, 400)
+
+    name = str(body.get("name") or body.get("tool") or "").strip()
+    raw_args = body.get("arguments", body.get("args", {}))
+    args = raw_args if isinstance(raw_args, dict) else {}
+    raw_web_search_disabled = body.get("web_search_disabled", body.get("disable_web_search", False))
+    web_search_disabled = raw_web_search_disabled is True or str(raw_web_search_disabled).lower() in {"1", "true", "yes", "on"}
+    if not name:
+        return JSONResponse({"ok": False, "error": "Tool name must not be empty.", "request_id": request_id}, 400)
+
+    tool_log: list[dict[str, Any]] = []
+    result = _dispatch(name, args, request_id=request_id, tool_log=tool_log, web_search_disabled=web_search_disabled)
+    ok = not result.startswith("Error:")
+    return JSONResponse(
+        {
+            "ok": ok,
+            "result": result,
+            "actions": tool_log,
+            "request_id": request_id,
+        },
+        200 if ok else 400,
+    )
+
+
 def _design_chat_payload(
     *,
     user_msg: str,
@@ -3546,6 +3582,8 @@ def create_app(root_dir: str) -> Starlette:
         routes=[
             Route("/api/chat/status", _chat_status, methods=["GET"]),
             Route("/api/chat/models", _chat_models, methods=["GET"]),
+            Route("/api/chat/tools", _chat_tools, methods=["GET"]),
+            Route("/api/chat/tools/dispatch", _chat_tool_dispatch, methods=["POST"]),
             Route("/api/chat/stream", _chat_stream, methods=["POST"]),
             Route("/api/chat", _chat, methods=["POST"]),
             Route("/api/design-plans/{plan_id}/apply", _design_plan_apply, methods=["POST"]),
