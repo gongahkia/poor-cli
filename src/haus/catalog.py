@@ -16,6 +16,7 @@ _TINYFISH_FETCH_URL = "https://api.fetch.tinyfish.ai"
 _CATALOG_VERSION = 1
 _DEFAULT_REGION = "sg"
 _DEFAULT_TIMEOUT_SECONDS = 8
+_DOTENV_LOADED = False
 
 _SOURCE_CONFIGS: dict[str, dict[str, Any]] = {
     "ikea": {
@@ -336,15 +337,36 @@ def _catalog_root() -> Path:
     return Path.home() / ".haus" / "catalog"
 
 
+def _load_tinyfish_env() -> None:
+    global _DOTENV_LOADED
+    if _DOTENV_LOADED:
+        return
+    _DOTENV_LOADED = True
+    env_path = Path.cwd() / ".env"
+    if not env_path.exists():
+        return
+    for raw in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key not in {"TINYFISH_API_KEY", "TINYFISH_SEARCH_URL", "TINYFISH_FETCH_URL"} or os.environ.get(key):
+            continue
+        os.environ[key] = value.strip().strip('"').strip("'")
+
+
 def catalog_sources() -> list[dict[str, Any]]:
     return [{"id": source, "label": str(config["label"])} for source, config in _SOURCE_CONFIGS.items()]
 
 
 def _tinyfish_search_url() -> str:
+    _load_tinyfish_env()
     return os.environ.get("TINYFISH_SEARCH_URL", _TINYFISH_SEARCH_URL)
 
 
 def _tinyfish_fetch_url() -> str:
+    _load_tinyfish_env()
     return os.environ.get("TINYFISH_FETCH_URL", _TINYFISH_FETCH_URL)
 
 
