@@ -165,10 +165,14 @@ The planner supports these LLM providers through the first-class chat registry. 
 | Google Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash` | `uv pip install -e ".[gemini]"` |
 | Ollama/local | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | `llama3.1` | `brew install ollama` |
 | Codex runtime | `HAUS_CODEX_MODEL`, `HAUS_CODEX_OSS=1`, `HAUS_CODEX_LOCAL_PROVIDER=ollama`, `HAUS_CODEX_CMD` | `default` | `codex login`, or local OSS provider config |
+| Gemini CLI runtime | `HAUS_GEMINI_CLI_MODEL`, `HAUS_GEMINI_CLI_CMD` | `default` | `gemini auth login` |
 | Claude Code runtime | `HAUS_CLAUDE_CODE_MODEL`, `HAUS_CLAUDE_CODE_CMD` | `default` | `claude auth login` |
 | opencode runtime | `HAUS_OPENCODE_MODEL`, `HAUS_OPENCODE_CMD` | `default` | `opencode providers auth` or local provider config |
+| Aider runtime | `HAUS_AIDER_MODEL`, `HAUS_AIDER_CMD` | `default` | `pipx install aider-chat`, plus provider auth/model config |
+| OpenAI-compatible local | `HAUS_OPENAI_COMPAT_BASE_URL`, `HAUS_OPENAI_COMPAT_MODEL`, `HAUS_OPENAI_COMPAT_API_KEY` | `local-model` | Start LM Studio, llama.cpp server, vLLM, or LocalAI with `/v1/chat/completions` |
+| WebLLM | `HAUS_WEBLLM_MODEL` | `Llama-3.1-8B-Instruct-q4f32_1-MLC` | Use a WebGPU-capable browser; first run downloads model assets into browser cache |
 
-Codex, Claude Code, and opencode are text-only chat adapters in Haus: they can reason over the supplied chat/layout context, but Haus does not expose edit tools to those CLIs.
+Codex, Gemini CLI, Claude Code, opencode, Aider, and WebLLM are text-only chat adapters in Haus: they can reason over the supplied chat/layout context, but Haus does not expose edit tools to those runtimes. OpenAI-compatible local servers use the OpenAI-style chat-completions path and may use Haus tools when their server/model supports function calling.
 
 The editor reads `/api/chat/models` for provider metadata, known model IDs, and capability flags. `/api/chat/stream` emits normalized SSE events for streaming-capable chat clients.
 
