@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from haus.catalog import catalog_item_to_layout_item, catalog_search_meta, get_catalog_item, search_ikea_catalog
+from haus.catalog import catalog_item_to_layout_item, catalog_search_meta, get_catalog_item, search_furniture_catalog, search_ikea_catalog
 
 
 def test_ikea_catalog_search_uses_seed_without_tinyfish(tmp_path, monkeypatch) -> None:
@@ -17,6 +17,44 @@ def test_ikea_catalog_search_uses_seed_without_tinyfish(tmp_path, monkeypatch) -
     assert items[0]["provenance"]["provider"] == "seed"
     assert "verified" in items[0]["stale_warning"].lower()
     assert get_catalog_item(items[0]["id"]) is not None
+
+
+def test_furniture_catalog_search_uses_non_ikea_seed_without_tinyfish(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HAUS_CATALOG_ROOT", str(tmp_path))
+    monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
+
+    items = search_furniture_catalog("sofa", max_results=5, sources="wayfair")
+
+    assert items
+    assert items[0]["source"] == "wayfair"
+    assert items[0]["source_provider"] == "seed"
+
+
+def test_furniture_catalog_refresh_uses_tinyfish_for_selected_source(tmp_path, monkeypatch) -> None:
+    def fake_tinyfish_json(url: str, *, method: str = "GET", payload=None):
+        assert "site%3Awayfair.com" in url
+        return {
+            "results": [
+                {
+                    "title": "Test Sofa - Wayfair",
+                    "url": "https://www.wayfair.com/furniture/pdp/test-sofa.html",
+                    "snippet": "Width 200 cm Depth 90 cm Height 80 cm $499",
+                }
+            ]
+        }
+
+    monkeypatch.setenv("HAUS_CATALOG_ROOT", str(tmp_path))
+    monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
+    monkeypatch.setattr("haus.catalog._tinyfish_json", fake_tinyfish_json)
+
+    items = search_furniture_catalog("sofa", max_results=5, sources="wayfair", refresh=True)
+    live = next(item for item in items if item["source_provider"] == "tinyfish")
+
+    assert live["source"] == "wayfair"
+    assert live["currency"] == "USD"
+    assert live["price"] == 499
+    assert live["dimensions_m"] == {"width": 2.0, "height": 0.8, "depth": 0.9}
+    assert get_catalog_item(live["id"]) is not None
 
 
 def test_catalog_item_becomes_layout_furniture() -> None:

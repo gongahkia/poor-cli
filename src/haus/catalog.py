@@ -8,7 +8,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 _TINYFISH_SEARCH_URL = "https://api.search.tinyfish.ai"
@@ -16,6 +16,22 @@ _TINYFISH_FETCH_URL = "https://api.fetch.tinyfish.ai"
 _CATALOG_VERSION = 1
 _DEFAULT_REGION = "sg"
 _DEFAULT_TIMEOUT_SECONDS = 8
+
+_SOURCE_CONFIGS: dict[str, dict[str, Any]] = {
+    "ikea": {
+        "label": "IKEA",
+        "domains": {"sg": "ikea.com/sg/en", "us": "ikea.com/us/en", "default": "ikea.com"},
+        "currency": {"sg": "SGD", "us": "USD", "default": "SGD"},
+    },
+    "wayfair": {"label": "Wayfair", "domains": {"default": "wayfair.com"}, "currency": {"default": "USD"}},
+    "westelm": {"label": "West Elm", "domains": {"default": "westelm.com"}, "currency": {"default": "USD"}},
+    "cb2": {"label": "CB2", "domains": {"default": "cb2.com"}, "currency": {"default": "USD"}},
+    "article": {"label": "Article", "domains": {"default": "article.com"}, "currency": {"default": "USD"}},
+    "castlery": {"label": "Castlery", "domains": {"default": "castlery.com"}, "currency": {"sg": "SGD", "default": "USD"}},
+    "hipvan": {"label": "HipVan", "domains": {"default": "hipvan.com"}, "currency": {"default": "SGD"}},
+    "fortytwo": {"label": "FortyTwo", "domains": {"default": "fortytwo.sg"}, "currency": {"default": "SGD"}},
+}
+_DEFAULT_SOURCES = tuple(_SOURCE_CONFIGS)
 
 _CATEGORY_DEFAULTS = {
     "bed": {"w": 1.5, "h": 0.55, "d": 2.0, "color": 0x77AADD},
@@ -161,6 +177,111 @@ _SEED_ITEMS = [
         "raw": {},
     },
     {
+        "id": "wayfair-seed-compact-sofa",
+        "source": "wayfair",
+        "region": "global",
+        "name": "Compact sofa placeholder",
+        "category": "sofa",
+        "dimensions_m": {"width": 1.85, "height": 0.82, "depth": 0.88},
+        "price": None,
+        "currency": "USD",
+        "image_url": "",
+        "product_url": "https://www.wayfair.com/keyword.php?keyword=compact+sofa",
+        "availability": "unknown",
+        "source_provider": "seed",
+        "raw": {},
+    },
+    {
+        "id": "westelm-seed-home-office-desk",
+        "source": "westelm",
+        "region": "global",
+        "name": "Home office desk placeholder",
+        "category": "desk",
+        "dimensions_m": {"width": 1.22, "height": 0.76, "depth": 0.61},
+        "price": None,
+        "currency": "USD",
+        "image_url": "",
+        "product_url": "https://www.westelm.com/search/results.html?words=desk",
+        "availability": "unknown",
+        "source_provider": "seed",
+        "raw": {},
+    },
+    {
+        "id": "cb2-seed-dining-table",
+        "source": "cb2",
+        "region": "global",
+        "name": "Dining table placeholder",
+        "category": "table",
+        "dimensions_m": {"width": 1.83, "height": 0.76, "depth": 0.91},
+        "price": None,
+        "currency": "USD",
+        "image_url": "",
+        "product_url": "https://www.cb2.com/search?query=dining%20table",
+        "availability": "unknown",
+        "source_provider": "seed",
+        "raw": {},
+    },
+    {
+        "id": "article-seed-lounge-chair",
+        "source": "article",
+        "region": "global",
+        "name": "Lounge chair placeholder",
+        "category": "chair",
+        "dimensions_m": {"width": 0.76, "height": 0.82, "depth": 0.84},
+        "price": None,
+        "currency": "USD",
+        "image_url": "",
+        "product_url": "https://www.article.com/search?query=lounge%20chair",
+        "availability": "unknown",
+        "source_provider": "seed",
+        "raw": {},
+    },
+    {
+        "id": "castlery-seed-queen-bed",
+        "source": "castlery",
+        "region": "global",
+        "name": "Queen bed placeholder",
+        "category": "bed",
+        "dimensions_m": {"width": 1.62, "height": 0.95, "depth": 2.08},
+        "price": None,
+        "currency": "USD",
+        "image_url": "",
+        "product_url": "https://www.castlery.com/search?query=queen%20bed",
+        "availability": "unknown",
+        "source_provider": "seed",
+        "raw": {},
+    },
+    {
+        "id": "hipvan-seed-storage-cabinet",
+        "source": "hipvan",
+        "region": "sg",
+        "name": "Storage cabinet placeholder",
+        "category": "storage",
+        "dimensions_m": {"width": 0.9, "height": 1.2, "depth": 0.4},
+        "price": None,
+        "currency": "SGD",
+        "image_url": "",
+        "product_url": "https://www.hipvan.com/search?query=storage%20cabinet",
+        "availability": "unknown",
+        "source_provider": "seed",
+        "raw": {},
+    },
+    {
+        "id": "fortytwo-seed-shoe-cabinet",
+        "source": "fortytwo",
+        "region": "sg",
+        "name": "Shoe cabinet placeholder",
+        "category": "storage",
+        "dimensions_m": {"width": 0.8, "height": 1.0, "depth": 0.35},
+        "price": None,
+        "currency": "SGD",
+        "image_url": "",
+        "product_url": "https://www.fortytwo.sg/catalogsearch/result/?q=shoe%20cabinet",
+        "availability": "unknown",
+        "source_provider": "seed",
+        "raw": {},
+    },
+    {
         "id": "haus-seed-shower-chair-placeholder",
         "source": "haus",
         "region": "global",
@@ -215,14 +336,56 @@ def _catalog_root() -> Path:
     return Path.home() / ".haus" / "catalog"
 
 
-def _ikea_dir() -> Path:
-    path = _catalog_root() / "ikea"
+def catalog_sources() -> list[dict[str, Any]]:
+    return [{"id": source, "label": str(config["label"])} for source, config in _SOURCE_CONFIGS.items()]
+
+
+def _tinyfish_search_url() -> str:
+    return os.environ.get("TINYFISH_SEARCH_URL", _TINYFISH_SEARCH_URL)
+
+
+def _tinyfish_fetch_url() -> str:
+    return os.environ.get("TINYFISH_FETCH_URL", _TINYFISH_FETCH_URL)
+
+
+def _source_dir(source: str) -> Path:
+    clean = _normalize_source(source)
+    path = _catalog_root() / clean
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def _item_path(item_id: str) -> Path:
-    return _ikea_dir() / "items" / f"{item_id}.json"
+def _ikea_dir() -> Path:
+    return _source_dir("ikea")
+
+
+def _normalize_source(source: str) -> str:
+    clean = _slug(source)
+    if clean in _SOURCE_CONFIGS or clean == "haus":
+        return clean
+    return "ikea"
+
+
+def _normalize_sources(sources: str | list[str] | tuple[str, ...] | None) -> tuple[str, ...]:
+    if sources is None:
+        return ("ikea",)
+    raw = sources if isinstance(sources, (list, tuple)) else str(sources).split(",")
+    normalized = [_normalize_source(str(source)) for source in raw if str(source).strip()]
+    if not normalized or "all" in {str(source).strip().lower() for source in raw}:
+        return _DEFAULT_SOURCES
+    return tuple(dict.fromkeys(normalized))
+
+
+def _source_from_item_id(item_id: str) -> str | None:
+    prefix = _slug(item_id).split("-", 1)[0]
+    if prefix in _SOURCE_CONFIGS or prefix == "haus":
+        return prefix
+    return None
+
+
+def _item_path(item_id: str, source: str | None = None) -> Path:
+    clean = _slug(item_id)
+    return _source_dir(source or _source_from_item_id(clean) or "ikea") / "items" / f"{clean}.json"
 
 
 def _slug(text: str) -> str:
@@ -230,9 +393,25 @@ def _slug(text: str) -> str:
     return slug[:80] or "item"
 
 
-def _item_id(name: str, url: str) -> str:
+def _item_id(name: str, url: str, source: str = "ikea") -> str:
     digest = hashlib.sha1(f"{name}|{url}".encode("utf-8")).hexdigest()[:10]  # noqa: S324
-    return f"ikea-{_slug(name)}-{digest}"
+    return f"{_normalize_source(source)}-{_slug(name)}-{digest}"
+
+
+def _source_label(source: str) -> str:
+    return str(_SOURCE_CONFIGS.get(_normalize_source(source), {}).get("label") or source)
+
+
+def _source_domain(source: str, region: str) -> str:
+    config = _SOURCE_CONFIGS.get(_normalize_source(source), {})
+    domains = config.get("domains", {})
+    return str(domains.get(region) or domains.get("default") or "ikea.com")
+
+
+def _source_currency(source: str, region: str) -> str:
+    config = _SOURCE_CONFIGS.get(_normalize_source(source), {})
+    currencies = config.get("currency", {})
+    return str(currencies.get(region) or currencies.get("default") or ("SGD" if region == "sg" else "USD"))
 
 
 def _collapse(text: Any) -> str:
@@ -276,14 +455,16 @@ def _color(category: str) -> int:
     return int(_CATEGORY_DEFAULTS.get(category, _CATEGORY_DEFAULTS["furniture"])["color"])
 
 
-def _parse_price(text: str) -> tuple[float | None, str]:
-    match = re.search(r"(?:S\$|SGD\s*|\$)\s*([0-9][0-9,.]*)", text, re.IGNORECASE)
+def _parse_price(text: str, default_currency: str = "SGD") -> tuple[float | None, str]:
+    match = re.search(r"(S\$|SGD\s*|US\$|USD\s*|\$)\s*([0-9][0-9,.]*)", text, re.IGNORECASE)
     if not match:
-        return None, "SGD"
+        return None, default_currency
+    prefix = match.group(1).upper().replace(" ", "")
+    currency = "SGD" if prefix in {"S$", "SGD"} else "USD" if prefix in {"US$", "USD"} else default_currency
     try:
-        return float(match.group(1).replace(",", "")), "SGD"
+        return float(match.group(2).replace(",", "")), currency
     except ValueError:
-        return None, "SGD"
+        return None, default_currency
 
 
 def _parse_dimensions(text: str, category: str) -> dict[str, float]:
@@ -291,9 +472,9 @@ def _parse_dimensions(text: str, category: str) -> dict[str, float]:
     dims = _default_dimensions(category)
 
     labeled = {
-        "width": r"(?:width|w)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*(mm|cm|m)",
-        "depth": r"(?:depth|d)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*(mm|cm|m)",
-        "height": r"(?:height|h)\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*(mm|cm|m)",
+        "width": r"\b(?:width|w)\b\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*(mm|cm|m)",
+        "depth": r"\b(?:depth|d)\b\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*(mm|cm|m)",
+        "height": r"\b(?:height|h)\b\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)\s*(mm|cm|m)",
     }
     for key, pattern in labeled.items():
         match = re.search(pattern, lower)
@@ -348,10 +529,18 @@ def _result_list(data: Any) -> list[Any]:
     return []
 
 
-def _search_tinyfish(query: str, max_results: int, region: str) -> list[dict[str, Any]]:
-    site = "ikea.com/sg/en" if region == "sg" else "ikea.com"
-    search_query = f"site:{site} {query} IKEA product dimensions price"
-    data = _tinyfish_json(f"{_TINYFISH_SEARCH_URL}?{urlencode({'query': search_query, 'limit': max_results})}")
+def _url_matches_domain(url: str, domain: str) -> bool:
+    host = urlparse(url).netloc.lower()
+    clean_domain = domain.split("/", 1)[0].lower()
+    return host == clean_domain or host.endswith(f".{clean_domain}")
+
+
+def _search_tinyfish_for_source(query: str, max_results: int, region: str, source: str) -> list[dict[str, Any]]:
+    clean_source = _normalize_source(source)
+    domain = _source_domain(clean_source, region)
+    label = _source_label(clean_source)
+    search_query = f"site:{domain} {query} {label} product dimensions price"
+    data = _tinyfish_json(f"{_tinyfish_search_url()}?{urlencode({'query': search_query, 'limit': max_results})}")
     items: list[dict[str, Any]] = []
     for result in _result_list(data)[:max_results]:
         if not isinstance(result, dict):
@@ -359,10 +548,14 @@ def _search_tinyfish(query: str, max_results: int, region: str) -> list[dict[str
         title = _collapse(result.get("title") or result.get("name"))
         url = _collapse(result.get("url") or result.get("link"))
         snippet = _collapse(result.get("snippet") or result.get("description") or result.get("text"))
-        if not title or not url or "ikea." not in url.lower():
+        if not title or not url or not _url_matches_domain(url, domain):
             continue
-        items.append(_normalize_item(title=title, url=url, snippet=snippet, region=region, provider="tinyfish", raw=result))
+        items.append(_normalize_item(title=title, url=url, snippet=snippet, region=region, source=clean_source, provider="tinyfish", raw=result))
     return items
+
+
+def _search_tinyfish(query: str, max_results: int, region: str) -> list[dict[str, Any]]:
+    return _search_tinyfish_for_source(query, max_results, region, "ikea")
 
 
 def _normalize_item(
@@ -371,18 +564,21 @@ def _normalize_item(
     url: str,
     snippet: str,
     region: str,
+    source: str,
     provider: str,
     raw: dict[str, Any],
 ) -> dict[str, Any]:
-    name = re.sub(r"\s*-\s*IKEA.*$", "", title, flags=re.IGNORECASE).strip() or title
+    clean_source = _normalize_source(source)
+    label = re.escape(_source_label(clean_source))
+    name = re.sub(rf"\s*-\s*{label}.*$", "", title, flags=re.IGNORECASE).strip() or title
     text = f"{name} {snippet}"
     category = _category(text)
-    price, currency = _parse_price(text)
+    price, currency = _parse_price(text, _source_currency(clean_source, region))
     image_url = _collapse(raw.get("image") or raw.get("image_url") or raw.get("thumbnail"))
     item = {
         "schema_version": _CATALOG_VERSION,
-        "id": _item_id(name, url),
-        "source": "ikea",
+        "id": _item_id(name, url, clean_source),
+        "source": clean_source,
         "region": region,
         "name": name,
         "category": category,
@@ -450,30 +646,75 @@ def enrich_catalog_item(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def _save_item(item: dict[str, Any]) -> None:
-    path = _item_path(str(item["id"]))
+    path = _item_path(str(item["id"]), str(item.get("source") or "ikea"))
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(item, indent=2, sort_keys=True), encoding="utf-8")
 
 
-def _load_cached_items() -> list[dict[str, Any]]:
-    items_dir = _ikea_dir() / "items"
-    if not items_dir.exists():
-        return []
+def _load_cached_items(sources: tuple[str, ...] | None = None) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
-    for path in sorted(items_dir.glob("*.json")):
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+    for source in sources or _DEFAULT_SOURCES:
+        items_dir = _source_dir(source) / "items"
+        if not items_dir.exists():
             continue
-        if isinstance(payload, dict):
-            items.append(payload)
+        for path in sorted(items_dir.glob("*.json")):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                items.append(payload)
     return items
 
 
 def _matches(item: dict[str, Any], query: str) -> bool:
-    text = f"{item.get('name', '')} {item.get('category', '')}".lower()
+    text = f"{item.get('name', '')} {item.get('category', '')} {item.get('source', '')}".lower()
     tokens = [token for token in re.split(r"\W+", query.lower()) if token]
     return not tokens or all(token in text for token in tokens)
+
+
+def search_furniture_catalog(
+    query: str,
+    *,
+    max_results: int = 12,
+    region: str = _DEFAULT_REGION,
+    refresh: bool = False,
+    sources: str | list[str] | tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    clean_query = _collapse(query)
+    if not clean_query:
+        raise ValueError("query must not be empty.")
+    limit = max(1, min(int(max_results or 12), 24))
+    clean_region = (region or _DEFAULT_REGION).lower()
+    source_ids = _normalize_sources(sources)
+
+    live_items: list[dict[str, Any]] = []
+    if refresh or os.environ.get("TINYFISH_API_KEY"):
+        per_source_limit = max(3, min(limit, (limit + len(source_ids) - 1) // len(source_ids) if source_ids else limit))
+        for source in source_ids:
+            try:
+                found = _search_tinyfish_for_source(clean_query, per_source_limit, clean_region, source)
+            except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
+                found = []
+            for item in found:
+                _save_item(item)
+            live_items.extend(found)
+
+    seeds = [dict(item) for item in _SEED_ITEMS if str(item.get("source")) in set(source_ids) or str(item.get("source")) == "haus"]
+    candidates = live_items + _load_cached_items(source_ids) + seeds
+    deduped: dict[str, dict[str, Any]] = {}
+    for item in candidates:
+        if _matches(item, clean_query):
+            deduped[str(item["id"])] = enrich_catalog_item(item)
+    results = list(deduped.values())[:limit]
+
+    query_path = _catalog_root() / "queries" / f"{_slug('-'.join(source_ids))}-{_slug(clean_query)}.json"
+    query_path.parent.mkdir(parents=True, exist_ok=True)
+    query_path.write_text(
+        json.dumps({"query": clean_query, "region": clean_region, "sources": source_ids, "items": results}, indent=2),
+        encoding="utf-8",
+    )
+    return results
 
 
 def search_ikea_catalog(
@@ -498,7 +739,7 @@ def search_ikea_catalog(
         for item in live_items:
             _save_item(item)
 
-    candidates = live_items + _load_cached_items() + [dict(item) for item in _SEED_ITEMS]
+    candidates = live_items + _load_cached_items(("ikea",)) + [dict(item) for item in _SEED_ITEMS if item.get("source") in {"ikea", "haus"}]
     deduped: dict[str, dict[str, Any]] = {}
     for item in candidates:
         if _matches(item, clean_query):
@@ -536,6 +777,15 @@ def get_catalog_item(item_id: str) -> dict[str, Any] | None:
             payload = None
         if isinstance(payload, dict):
             return enrich_catalog_item(payload)
+    for source in _DEFAULT_SOURCES:
+        path = _item_path(clean, source)
+        if path.exists():
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict):
+                return enrich_catalog_item(payload)
     for item in _SEED_ITEMS:
         if item["id"] == item_id:
             return enrich_catalog_item(dict(item))
@@ -550,13 +800,21 @@ def refresh_catalog_item(item_id: str) -> dict[str, Any] | None:
     if not url or not os.environ.get("TINYFISH_API_KEY"):
         return item
     try:
-        data = _tinyfish_json(_TINYFISH_FETCH_URL, method="POST", payload={"url": url})
+        data = _tinyfish_json(_tinyfish_fetch_url(), method="POST", payload={"url": url})
     except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
         return item
     if isinstance(data, dict):
         text = _collapse(data.get("text") or data.get("markdown") or data.get("content") or data.get("body"))
         title = _collapse(data.get("title") or item.get("name"))
-        updated = _normalize_item(title=title, url=url, snippet=text[:4000], region=str(item.get("region") or _DEFAULT_REGION), provider="tinyfish", raw=data)
+        updated = _normalize_item(
+            title=title,
+            url=url,
+            snippet=text[:4000],
+            region=str(item.get("region") or _DEFAULT_REGION),
+            source=str(item.get("source") or _source_from_item_id(str(item.get("id") or "")) or "ikea"),
+            provider="tinyfish",
+            raw=data,
+        )
         updated["id"] = item["id"]
         _save_item(updated)
         return updated
@@ -576,9 +834,10 @@ def catalog_item_to_layout_item(
     height = float(dims.get("height") or 0.75)
     depth = float(dims.get("depth") or 0.6)
     category = str(item.get("category") or "furniture")
+    source = str(item.get("source") or _source_from_item_id(str(item.get("id") or "")) or "catalog")
     return {
         "type": "furniture",
-        "furnitureType": f"ikea:{item['id']}",
+        "furnitureType": f"{source}:{item['id']}",
         "name": str(item.get("name") or item["id"]),
         "pos": [float(x), height / 2.0, float(z)],
         "rot": float(rotation_deg) * 3.141592653589793 / 180.0,
@@ -586,7 +845,7 @@ def catalog_item_to_layout_item(
         "geo": [width, height, depth],
         "color": _color(category),
         "catalog": {
-            "source": "ikea",
+            "source": source,
             "item_id": item["id"],
             "product_url": item.get("product_url"),
             "price": item.get("price"),
@@ -606,14 +865,14 @@ def catalog_item_to_layout_item(
 
 def format_catalog_items(items: list[dict[str, Any]]) -> str:
     if not items:
-        return "No IKEA catalog items found."
-    lines = ["IKEA catalog results:"]
+        return "No catalog items found."
+    lines = ["Furniture catalog results:"]
     for item in items:
         dims = item.get("dimensions_m", {})
         dim_text = f"{dims.get('width')}m x {dims.get('depth')}m x {dims.get('height')}m"
         price = item.get("price")
         price_text = f" {item.get('currency', 'SGD')} {price}" if price is not None else ""
-        lines.append(f"- {item['id']}: {item.get('name')} ({item.get('category')}, {dim_text}){price_text}")
+        lines.append(f"- {item['id']}: {item.get('name')} ({item.get('source')}, {item.get('category')}, {dim_text}){price_text}")
         if item.get("product_url"):
             lines.append(f"  {item['product_url']}")
     return "\n".join(lines)

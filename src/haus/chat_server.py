@@ -37,7 +37,7 @@ import uvicorn
 from . import mcp_server as _mcp_server
 from . import geometry
 from .agent_loop import RoomPlan, plan_flat, plan_room
-from .catalog import catalog_item_to_layout_item, catalog_search_meta, get_catalog_item, search_ikea_catalog
+from .catalog import catalog_item_to_layout_item, catalog_search_meta, catalog_sources, get_catalog_item, search_furniture_catalog, search_ikea_catalog
 from .llm import DEFAULT_MODELS, ENV_KEYS, provider_specs, provider_status, providers_with_env_keys, resolve_model, supported_provider_ids
 from .llm.providers import anthropic as anthropic_provider
 from .llm.providers import gemini as gemini_provider
@@ -92,9 +92,13 @@ from .mcp_server import (
     tag_room,
     get_semantic_layout_json,
     bim_readiness_report,
+    list_furniture_catalog_sources,
+    search_furniture_catalog as search_furniture_catalog_tool,
     search_ikea_catalog as search_ikea_catalog_tool,
+    get_furniture_catalog_item,
     get_ikea_catalog_item,
     add_catalog_furniture,
+    refresh_furniture_catalog,
     refresh_ikea_catalog,
 )
 from .room_capture import build_room_capture_layout
@@ -226,6 +230,26 @@ _TOOLS_SPEC = [
         "parameters": {"type": "object", "properties": {}},
     },
     {
+        "name": "list_furniture_catalog_sources",
+        "description": "List supported live furniture catalog sources.",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "search_furniture_catalog",
+        "description": "Actively search supported furniture catalogs through TinyFish when configured, with local cache fallback.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer", "default": 8},
+                "region": {"type": "string", "default": "sg"},
+                "sources": {"type": "string", "default": "all"},
+                "refresh": {"type": "boolean", "default": False},
+            },
+            "required": ["query"],
+        },
+    },
+    {
         "name": "search_ikea_catalog",
         "description": "Search IKEA products through TinyFish when configured, with local cache fallback.",
         "parameters": {
@@ -252,8 +276,20 @@ _TOOLS_SPEC = [
         },
     },
     {
+        "name": "get_furniture_catalog_item",
+        "description": "Return one cached furniture catalog item as JSON.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "item_id": {"type": "string"},
+                "refresh": {"type": "boolean", "default": False},
+            },
+            "required": ["item_id"],
+        },
+    },
+    {
         "name": "add_catalog_furniture",
-        "description": "Place a cached IKEA catalog item as editable furniture.",
+        "description": "Place a cached catalog item as editable furniture.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -274,6 +310,20 @@ _TOOLS_SPEC = [
                 "query": {"type": "string"},
                 "max_results": {"type": "integer", "default": 12},
                 "region": {"type": "string", "default": "sg"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "refresh_furniture_catalog",
+        "description": "Force a TinyFish-backed furniture catalog search across selected sources and refresh local cache.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string"},
+                "max_results": {"type": "integer", "default": 12},
+                "region": {"type": "string", "default": "sg"},
+                "sources": {"type": "string", "default": "all"},
             },
             "required": ["query"],
         },
@@ -1989,9 +2039,13 @@ _DISPATCH_RAW: dict[str, Callable[[dict[str, Any]], str]] = {
     "design_room": lambda a: design_room(**a),
     "design_flat": lambda a: design_flat(**a),
     "list_furniture_catalog": lambda a: list_furniture_catalog(),
+    "list_furniture_catalog_sources": lambda a: list_furniture_catalog_sources(),
+    "search_furniture_catalog": lambda a: search_furniture_catalog_tool(**a),
     "search_ikea_catalog": lambda a: search_ikea_catalog_tool(**a),
+    "get_furniture_catalog_item": lambda a: get_furniture_catalog_item(**a),
     "get_ikea_catalog_item": lambda a: get_ikea_catalog_item(**a),
     "add_catalog_furniture": lambda a: add_catalog_furniture(**a),
+    "refresh_furniture_catalog": lambda a: refresh_furniture_catalog(**a),
     "refresh_ikea_catalog": lambda a: refresh_ikea_catalog(**a),
     "web_search": lambda a: _web_search(**a),
     "fetch_web_page": lambda a: _fetch_web_page(**a),
@@ -2812,7 +2866,9 @@ async def _chat_status(request: Request) -> JSONResponse:
                 "image_references": True,
                 "room_capture": True,
                 "ikea_catalog": True,
+                "furniture_catalog": True,
                 "catalog_cache": True,
+                "catalog_sources": catalog_sources(),
                 "design_plans": True,
                 "planner_requires_api_key": False,
                 "planner_modes": ["auto", "deterministic", "llm_reviewed", "llm_structured"],
@@ -2848,6 +2904,7 @@ async def _health(request: Request) -> JSONResponse:
                 "webllm": True,
                 "floorplan_vectorize": True,
                 "catalog": True,
+                "furniture_catalog": True,
                 "mcp_scratch_layout": True,
             },
         }
@@ -3549,18 +3606,47 @@ async def _floorplan_vectorize(request: Request) -> JSONResponse:
     )
 
 
-async def _catalog_ikea_search(request: Request) -> JSONResponse:
-    request_id = new_request_id("catalog-search")
+async def _catalog_sources_route(request: Request) -> JSONResponse:
+    del request
+    return JSONResponse({"ok": True, "sources": catalog_sources(), "default": "all"})
+
+
+def _catalog_search_params(request: Request) -> tuple[str, int, bool, str]:
     params = request.query_params
     query = _collapse_ws(str(params.get("q") or params.get("query") or ""))
-    if not query:
-        return JSONResponse({"ok": False, "error": "query must not be empty.", "request_id": request_id}, 400)
     try:
         max_results = int(params.get("max_results") or params.get("limit") or 12)
     except ValueError:
         max_results = 12
     refresh = str(params.get("refresh") or "").lower() in {"1", "true", "yes", "on"}
     region = str(params.get("region") or "sg")
+    return query, max_results, refresh, region
+
+
+async def _catalog_search(request: Request) -> JSONResponse:
+    request_id = new_request_id("catalog-search")
+    params = request.query_params
+    query, max_results, refresh, region = _catalog_search_params(request)
+    if not query:
+        return JSONResponse({"ok": False, "error": "query must not be empty.", "request_id": request_id}, 400)
+    sources = str(params.get("sources") or params.get("source") or "all")
+    try:
+        items = search_furniture_catalog(query, max_results=max_results, region=region, sources=sources, refresh=refresh)
+    except ValueError as exc:
+        return JSONResponse({"ok": False, "error": str(exc), "request_id": request_id}, 400)
+    return JSONResponse({
+        "ok": True,
+        "items": items,
+        "catalog": catalog_search_meta(items, refresh=refresh),
+        "request_id": request_id,
+    })
+
+
+async def _catalog_ikea_search(request: Request) -> JSONResponse:
+    request_id = new_request_id("catalog-search")
+    query, max_results, refresh, region = _catalog_search_params(request)
+    if not query:
+        return JSONResponse({"ok": False, "error": "query must not be empty.", "request_id": request_id}, 400)
     try:
         items = search_ikea_catalog(query, max_results=max_results, region=region, refresh=refresh)
     except ValueError as exc:
@@ -3573,6 +3659,15 @@ async def _catalog_ikea_search(request: Request) -> JSONResponse:
     })
 
 
+async def _catalog_item(request: Request) -> JSONResponse:
+    request_id = new_request_id("catalog-item")
+    item_id = str(request.path_params.get("item_id") or "").strip()
+    item = get_catalog_item(item_id)
+    if item is None:
+        return JSONResponse({"ok": False, "error": f"Catalog item '{item_id}' was not found.", "request_id": request_id}, 404)
+    return JSONResponse({"ok": True, "item": item, "request_id": request_id})
+
+
 async def _catalog_ikea_item(request: Request) -> JSONResponse:
     request_id = new_request_id("catalog-item")
     item_id = str(request.path_params.get("item_id") or "").strip()
@@ -3580,6 +3675,27 @@ async def _catalog_ikea_item(request: Request) -> JSONResponse:
     if item is None:
         return JSONResponse({"ok": False, "error": f"IKEA catalog item '{item_id}' was not found.", "request_id": request_id}, 404)
     return JSONResponse({"ok": True, "item": item, "request_id": request_id})
+
+
+async def _catalog_layout_item(request: Request) -> JSONResponse:
+    request_id = new_request_id("catalog-layout-item")
+    item_id = str(request.path_params.get("item_id") or "").strip()
+    item = get_catalog_item(item_id)
+    if item is None:
+        return JSONResponse({"ok": False, "error": f"Catalog item '{item_id}' was not found.", "request_id": request_id}, 404)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
+    layout_item = catalog_item_to_layout_item(
+        item,
+        x=_coerce_float(body.get("x", 0.0), 0.0),
+        z=_coerce_float(body.get("z", 0.0), 0.0),
+        rotation_deg=_coerce_float(body.get("rotation_deg", body.get("rotationDeg", 0.0)), 0.0),
+    )
+    return JSONResponse({"ok": True, "item": item, "layout_item": layout_item, "request_id": request_id})
 
 
 async def _catalog_ikea_layout_item(request: Request) -> JSONResponse:
@@ -3628,6 +3744,10 @@ def create_app(root_dir: str) -> Starlette:
             Route("/api/mcp/clear-layout", _mcp_clear_layout, methods=["POST"]),
             Route("/api/room-capture/layout", _room_capture_layout, methods=["POST"]),
             Route("/api/floorplans/vectorize", _floorplan_vectorize, methods=["POST"]),
+            Route("/api/catalog/sources", _catalog_sources_route, methods=["GET"]),
+            Route("/api/catalog/search", _catalog_search, methods=["GET"]),
+            Route("/api/catalog/items/{item_id}", _catalog_item, methods=["GET"]),
+            Route("/api/catalog/items/{item_id}/layout-item", _catalog_layout_item, methods=["POST"]),
             Route("/api/catalog/ikea/search", _catalog_ikea_search, methods=["GET"]),
             Route("/api/catalog/ikea/items/{item_id}", _catalog_ikea_item, methods=["GET"]),
             Route("/api/catalog/ikea/items/{item_id}/layout-item", _catalog_ikea_layout_item, methods=["POST"]),

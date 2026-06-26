@@ -187,7 +187,7 @@ def test_ikea_catalog_tool_search_and_place(
     results = mcp_server.search_ikea_catalog("BILLY")
     assert "BILLY" in results
     added = mcp_server.add_catalog_furniture("ikea-seed-billy-bookcase", x=1.0, z=2.0)
-    assert "Added IKEA catalog item" in added
+    assert "Added catalog item" in added
 
     layout = json.loads(isolated_layout.read_text(encoding="utf-8"))
     assert layout["items"][0]["furnitureType"] == "ikea:ikea-seed-billy-bookcase"

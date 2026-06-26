@@ -220,7 +220,15 @@ def test_chat_syncs_browser_layout_before_backend_tools(browser_page, web_base_u
 def test_catalog_search_places_item(browser_page, web_base_url: str) -> None:
     _mock_api(browser_page)
     browser_page.route(
-        "**/api/catalog/ikea/search?*",
+        "**/api/catalog/sources",
+        lambda route: route.fulfill(
+            status=200,
+            content_type="application/json",
+            body=json.dumps({"ok": True, "sources": [{"id": "ikea", "label": "IKEA"}, {"id": "wayfair", "label": "Wayfair"}]}),
+        ),
+    )
+    browser_page.route(
+        "**/api/catalog/search?*",
         lambda route: route.fulfill(
             status=200,
             content_type="application/json",
@@ -228,7 +236,7 @@ def test_catalog_search_places_item(browser_page, web_base_url: str) -> None:
         ),
     )
     browser_page.route(
-        "**/api/catalog/ikea/items/ikea-sofa/layout-item",
+        "**/api/catalog/items/ikea-sofa/layout-item",
         lambda route: route.fulfill(
             status=200,
             content_type="application/json",
@@ -244,7 +252,7 @@ def test_catalog_search_places_item(browser_page, web_base_url: str) -> None:
     browser_page.goto(f"{web_base_url}/")
     browser_page.click("#tools-toggle")
     browser_page.fill("input[placeholder='sofa, desk, BILLY...']", "sofa")
-    browser_page.click("section:has-text('IKEA Catalog') button")
+    browser_page.click("section:has-text('Furniture Catalog') button")
     browser_page.wait_for_selector("text=Test IKEA sofa")
     browser_page.click("article:has-text('Test IKEA sofa') button")
     browser_page.wait_for_selector("text=1 items")

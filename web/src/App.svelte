@@ -30,6 +30,7 @@
     confirmTool,
     dispatchTool,
     downloadPlanReport,
+    getCatalogSources,
     getChatStatus,
     getToolCatalog,
     searchCatalog,
@@ -52,6 +53,7 @@
   } from './lib/storage';
   import type {
     CatalogItem,
+    CatalogSource,
     ChatAction,
     ChatHistoryMessage,
     ChatStatus,
@@ -111,6 +113,8 @@
   let attachments: Array<{ name: string; mime_type: string; data_url: string }> = [];
   let apiKeys: StoredKeys = JSON.parse(localStorage.getItem('haus.api_keys') || '{}');
   let catalogQuery = '';
+  let catalogSource = 'all';
+  let catalogSources: CatalogSource[] = [];
   let catalogRefresh = false;
   let catalogItems: CatalogItem[] = [];
   let catalogNote = '';
@@ -156,6 +160,7 @@
     project = await loadActiveProject();
     projects = await listProjects();
     await refreshStatus();
+    await refreshCatalogSources();
     if (!settings.provider) {
       settings = { ...settings, provider: preferredProvider() };
       persistSettings();
@@ -230,6 +235,14 @@
       errorLine = '';
     } catch (error) {
       errorLine = `API unavailable: ${(error as Error).message}`;
+    }
+  }
+
+  async function refreshCatalogSources() {
+    try {
+      catalogSources = await getCatalogSources();
+    } catch {
+      catalogSources = [];
     }
   }
 
@@ -362,7 +375,7 @@
     if (!catalogQuery.trim()) return;
     catalogNote = 'Searching...';
     try {
-      const response = await searchCatalog(catalogQuery, catalogRefresh);
+      const response = await searchCatalog(catalogQuery, catalogRefresh, catalogSource);
       catalogItems = response.items || [];
       catalogNote = response.catalog?.fallback_used ? 'Live catalog unavailable; showing cached/seed items.' : `${catalogItems.length} catalog results`;
     } catch (error) {
@@ -913,7 +926,13 @@
     </section>
 
     <section>
-      <h3>IKEA Catalog</h3>
+      <h3>Furniture Catalog</h3>
+      <select bind:value={catalogSource} aria-label="Catalog source">
+        <option value="all">All furniture sites</option>
+        {#each catalogSources as source}
+          <option value={source.id}>{source.label}</option>
+        {/each}
+      </select>
       <div class="search-row">
         <input bind:value={catalogQuery} placeholder="sofa, desk, BILLY..." on:keydown={(event) => { if (event.key === 'Enter') void runCatalogSearch(); }} />
         <button type="button" on:click={runCatalogSearch}><Search size={16} /></button>

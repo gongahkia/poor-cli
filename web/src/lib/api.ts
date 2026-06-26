@@ -1,4 +1,4 @@
-import type { CatalogItem, ChatResponse, ChatStatus, LayoutData, ToolSpec } from './types';
+import type { CatalogItem, CatalogSource, ChatResponse, ChatStatus, LayoutData, ToolSpec } from './types';
 
 export const API_BASE = (import.meta.env.VITE_HAUS_API_BASE_URL || '').replace(/\/$/, '');
 
@@ -89,13 +89,18 @@ export async function vectorizeFloorPlan(file: File, scalePx: string, scaleM: st
   return readJson(await fetch(apiUrl('/api/floorplans/vectorize'), { method: 'POST', body: form }));
 }
 
-export async function searchCatalog(query: string, refresh = false): Promise<{ items: CatalogItem[]; catalog?: Record<string, unknown> }> {
-  const params = new URLSearchParams({ q: query, refresh: refresh ? '1' : '0' });
-  return readJson(await fetch(apiUrl(`/api/catalog/ikea/search?${params}`)));
+export async function getCatalogSources(): Promise<CatalogSource[]> {
+  const body = await readJson<{ sources: CatalogSource[] }>(await fetch(apiUrl('/api/catalog/sources')));
+  return Array.isArray(body.sources) ? body.sources : [];
+}
+
+export async function searchCatalog(query: string, refresh = false, sources = 'all'): Promise<{ items: CatalogItem[]; catalog?: Record<string, unknown> }> {
+  const params = new URLSearchParams({ q: query, refresh: refresh ? '1' : '0', sources });
+  return readJson(await fetch(apiUrl(`/api/catalog/search?${params}`)));
 }
 
 export async function catalogLayoutItem(itemId: string, x = 0, z = 0, rotationDeg = 0): Promise<{ layout_item: Record<string, unknown>; item: CatalogItem }> {
-  return readJson(await fetch(apiUrl(`/api/catalog/ikea/items/${encodeURIComponent(itemId)}/layout-item`), {
+  return readJson(await fetch(apiUrl(`/api/catalog/items/${encodeURIComponent(itemId)}/layout-item`), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ x, z, rotation_deg: rotationDeg }),

@@ -281,6 +281,29 @@ def test_catalog_routes_return_seed_and_layout_item(
     assert body["layout_item"]["catalog"]["source"] == "ikea"
 
 
+def test_generic_catalog_routes_return_sources_and_non_ikea_item(
+    chat_client: TestClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HAUS_CATALOG_ROOT", str(tmp_path))
+    monkeypatch.delenv("TINYFISH_API_KEY", raising=False)
+
+    res = chat_client.get("/api/catalog/sources")
+    assert res.status_code == 200
+    assert any(source["id"] == "wayfair" for source in res.json()["sources"])
+
+    res = chat_client.get("/api/catalog/search?q=sofa&sources=wayfair")
+    assert res.status_code == 200
+    item = res.json()["items"][0]
+    assert item["source"] == "wayfair"
+
+    res = chat_client.post(f"/api/catalog/items/{item['id']}/layout-item", json={})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["layout_item"]["catalog"]["source"] == "wayfair"
+
+
 def test_chat_status_reports_search_provider_configuration(
     chat_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,

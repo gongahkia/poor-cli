@@ -110,6 +110,11 @@ export type CatalogItem = {
   [key: string]: unknown;
 };
 
+export type CatalogSource = {
+  id: string;
+  label: string;
+};
+
 export type ToolSpec = {
   name: string;
   description?: string;

@@ -19,9 +19,11 @@ from mcp.server import FastMCP
 from .agent_loop import RoomPlan, RoomZone, plan_flat, plan_room
 from .catalog import (
     catalog_item_to_layout_item,
+    catalog_sources,
     format_catalog_items,
     get_catalog_item,
     refresh_catalog_item,
+    search_furniture_catalog as _search_furniture_catalog,
     search_ikea_catalog as _search_ikea_catalog,
 )
 from . import geometry
@@ -1534,6 +1536,22 @@ def run_agent_eval_suite(suite_id: str = "agent_layout_reasoning.v1") -> str:
 
 
 @mcp.tool()
+def list_furniture_catalog_sources() -> str:
+    """List supported live furniture catalog sources."""
+    return _json_result({"sources": catalog_sources(), "default": "all"})
+
+
+@mcp.tool()
+def search_furniture_catalog(query: str, max_results: int = 8, region: str = "sg", sources: str = "all", refresh: bool = False) -> str:
+    """Search furniture product catalogs through TinyFish when configured, with local cache fallback."""
+    try:
+        items = _search_furniture_catalog(query, max_results=max_results, region=region, sources=sources, refresh=refresh)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    return format_catalog_items(items)
+
+
+@mcp.tool()
 def search_ikea_catalog(query: str, max_results: int = 8, region: str = "sg", refresh: bool = False) -> str:
     """Search IKEA catalog products through TinyFish when configured, with local cache fallback."""
     try:
@@ -1553,11 +1571,20 @@ def get_ikea_catalog_item(item_id: str, refresh: bool = False) -> str:
 
 
 @mcp.tool()
+def get_furniture_catalog_item(item_id: str, refresh: bool = False) -> str:
+    """Return one cached furniture catalog item as JSON."""
+    item = refresh_catalog_item(item_id) if refresh else get_catalog_item(item_id)
+    if item is None:
+        return f"Error: catalog item '{item_id}' was not found. Use search_furniture_catalog()."
+    return json.dumps(item, indent=2)
+
+
+@mcp.tool()
 def add_catalog_furniture(item_id: str, x: float = 0.0, z: float = 0.0, rotation_deg: float = 0.0) -> str:
-    """Place a cached IKEA catalog item as editable Haus furniture."""
+    """Place a cached catalog item as editable Haus furniture."""
     item = get_catalog_item(item_id)
     if item is None:
-        return f"Error: IKEA catalog item '{item_id}' was not found. Use search_ikea_catalog()."
+        return f"Error: catalog item '{item_id}' was not found. Use search_furniture_catalog()."
     data = _load_layout()
     layout_item = catalog_item_to_layout_item(item, x=x, z=z, rotation_deg=rotation_deg)
     data["items"].append(layout_item)
@@ -1565,7 +1592,7 @@ def add_catalog_furniture(item_id: str, x: float = 0.0, z: float = 0.0, rotation
     if err:
         return f"Error saving layout: {err}"
     idx = len(data["items"]) - 1
-    return f"Added IKEA catalog item {item_id} as item [{idx}] at ({x}, {z})."
+    return f"Added catalog item {item_id} as item [{idx}] at ({x}, {z})."
 
 
 @mcp.tool()
@@ -1573,6 +1600,16 @@ def refresh_ikea_catalog(query: str, max_results: int = 12, region: str = "sg") 
     """Force a TinyFish-backed IKEA catalog search and refresh the local cache."""
     try:
         items = _search_ikea_catalog(query, max_results=max_results, region=region, refresh=True)
+    except ValueError as exc:
+        return f"Error: {exc}"
+    return format_catalog_items(items)
+
+
+@mcp.tool()
+def refresh_furniture_catalog(query: str, max_results: int = 12, region: str = "sg", sources: str = "all") -> str:
+    """Force a TinyFish-backed furniture catalog search and refresh the local cache."""
+    try:
+        items = _search_furniture_catalog(query, max_results=max_results, region=region, sources=sources, refresh=True)
     except ValueError as exc:
         return f"Error: {exc}"
     return format_catalog_items(items)
