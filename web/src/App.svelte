@@ -14,7 +14,6 @@
     Maximize,
     Moon,
     MousePointer2,
-    PanelLeft,
     PanelRight,
     Ruler,
     Save,
@@ -638,7 +637,10 @@
     </footer>
   </aside>
 
-  <button id="actions-toggle" type="button" on:click={() => actionsOpen = !actionsOpen}><PanelLeft size={18} />Actions</button>
+  <button id="actions-toggle" type="button" on:click={() => actionsOpen = !actionsOpen}>
+    {#if actionsOpen}<ChevronLeft size={18} />{:else}<ChevronRight size={18} />{/if}
+    <span>Actions</span>
+  </button>
   <nav id="toolbar" class:open={actionsOpen}>
     <button type="button" on:click={() => floorplanInput.click()}><Upload size={18} />Upload Plan</button>
     <button type="button" on:click={() => glbInput.click()}><Box size={18} />Load GLB</button>

@@ -1,5 +1,6 @@
 :root {
   --planner-w: 440px;
+  --actions-w: 300px;
   --tools-w: 300px;
   --bg: #070808;
   --panel: rgba(5, 25, 27, 0.96);
@@ -119,12 +120,17 @@ input:focus, select:focus, textarea:focus { border-color: var(--border-strong); 
 #actions-toggle { left: calc(var(--planner-w) + 16px); }
 #tools-toggle { right: 16px; }
 #toolbar {
-  position: fixed; top: 0; left: calc(var(--planner-w) - 300px); z-index: 40;
-  width: 300px; height: 100%; padding: 74px 16px 16px; background: var(--panel);
+  position: fixed; top: 0; left: var(--planner-w); z-index: 40;
+  width: var(--actions-w); height: 100%; padding: 74px 16px 16px; background: var(--panel);
   border-right: 1px solid var(--border); box-shadow: 18px 0 48px var(--shadow);
-  display: flex; flex-direction: column; gap: 10px; overflow-y: auto; transition: left 0.18s ease;
+  display: flex; flex-direction: column; gap: 10px; overflow-y: auto; opacity: 0; pointer-events: none;
+  transform: translateX(-100%); visibility: hidden;
+  transition: transform 0.18s ease, opacity 0.18s ease, visibility 0s linear 0.18s;
 }
-#toolbar.open { left: var(--planner-w); }
+#toolbar.open {
+  opacity: 1; pointer-events: auto; transform: translateX(0); visibility: visible;
+  transition-delay: 0s;
+}
 #toolbar button, #toolbar select { justify-content: flex-start; width: 100%; }
 #toolbar button.active { background: var(--fg); color: var(--bg); }
 
@@ -157,12 +163,11 @@ input:focus, select:focus, textarea:focus { border-color: var(--border-strong); 
 .catalog-list span { color: var(--muted); font-size: 12px; }
 
 @media (max-width: 900px) {
-  :root { --planner-w: 100vw; --tools-w: 86vw; }
+  :root { --planner-w: 100vw; --actions-w: 86vw; --tools-w: 86vw; }
   #chat-panel { height: 48vh; top: auto; width: 100vw; border-top: 1px solid var(--border); border-right: 0; }
   #workspace { inset: 0 0 48vh 0; }
   #actions-toggle { left: 8px; top: 8px; }
-  #toolbar { left: -300px; padding-top: 64px; }
-  #toolbar.open { left: 0; }
+  #toolbar { left: 0; padding-top: 64px; }
   #tools-toggle { right: 8px; top: 8px; }
   .hud { left: 8px; right: 8px; bottom: calc(48vh + 8px); }
   .provider-grid { grid-template-columns: 1fr; }
