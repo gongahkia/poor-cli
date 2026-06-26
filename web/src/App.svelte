@@ -597,10 +597,10 @@
       </select>
     </div>
 
-    <div class="key-row">
-      <input id="provider-key" type="password" placeholder={localProvider ? 'No key required' : 'provider key'} disabled={localProvider} />
-      <button type="button" on:click={saveKey}>Save</button>
-    </div>
+    <form class="key-row" on:submit|preventDefault={saveKey}>
+      <input id="provider-key" type="password" autocomplete="off" placeholder={localProvider ? 'No key required' : 'provider key'} disabled={localProvider} />
+      <button type="submit">Save</button>
+    </form>
     <label class="check-row"><input type="checkbox" bind:checked={settings.disableWebSearch} on:change={persistSettings} />Disable web search</label>
     <p class="status-text">{localStatusText()}</p>
 
