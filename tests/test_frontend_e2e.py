@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-import os
+import importlib.util
 import json
+import os
 import socket
 import subprocess
 import sys
 import threading
 import time
-import importlib.util
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import URLError
@@ -362,8 +362,8 @@ def test_chat_sends_local_provider_without_api_key(browser_page, viewer_base_url
                 "label": "Codex runtime",
                 "requires_api_key": False,
                 "command_available": True,
-                "capabilities": ["chat", "local_runtime", "text_only"],
-                "models": [{"id": "default", "label": "Codex configured default", "default": True, "capabilities": ["chat"]}],
+                "capabilities": ["chat", "tools", "local_runtime"],
+                "models": [{"id": "default", "label": "Codex configured default", "default": True, "capabilities": ["chat", "tools"]}],
             },
             {
                 "id": "openai",

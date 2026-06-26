@@ -56,8 +56,12 @@
       <select id="chat-provider">
         <option value="ollama">Ollama</option>
         <option value="codex">Codex runtime</option>
+        <option value="gemini-cli">Gemini CLI runtime</option>
         <option value="claude-code">Claude Code runtime</option>
         <option value="opencode">opencode runtime</option>
+        <option value="aider">Aider runtime</option>
+        <option value="openai-compatible-local">OpenAI-compatible local</option>
+        <option value="webllm">WebLLM</option>
         <option value="anthropic">Anthropic</option>
         <option value="openai">OpenAI</option>
         <option value="gemini">Gemini</option>
@@ -543,7 +547,8 @@
 {
   "imports": {
     "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/",
+    "@mlc-ai/web-llm": "https://esm.run/@mlc-ai/web-llm"
   }
 }
 </script>

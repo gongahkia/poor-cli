@@ -1226,10 +1226,31 @@ function extractJsonObject(text) {
   const source = String(text || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
   for (let i = 0; i < source.length; i += 1) {
     if (source[i] !== '{') continue;
-    try {
-      return JSON.parse(source.slice(i));
-    } catch {
-      // continue scanning
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let j = i; j < source.length; j += 1) {
+      const char = source[j];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (char === '\\') escaped = true;
+        else if (char === '"') inString = false;
+        continue;
+      }
+      if (char === '"') {
+        inString = true;
+      } else if (char === '{') {
+        depth += 1;
+      } else if (char === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          try {
+            return JSON.parse(source.slice(i, j + 1));
+          } catch {
+            break;
+          }
+        }
+      }
     }
   }
   return null;
