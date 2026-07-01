@@ -55,41 +55,33 @@
       <label>Provider</label>
       <select id="chat-provider">
         <option value="ollama">Ollama</option>
-        <option value="codex">Codex runtime</option>
-        <option value="gemini-cli">Gemini CLI runtime</option>
-        <option value="claude-code">Claude Code runtime</option>
-        <option value="opencode">opencode runtime</option>
-        <option value="aider">Aider runtime</option>
         <option value="openai-compatible-local">OpenAI-compatible local</option>
         <option value="webllm">WebLLM</option>
-        <option value="anthropic">Anthropic</option>
-        <option value="openai">OpenAI</option>
-        <option value="gemini">Gemini</option>
       </select>
     </div>
-    <div class="chat-key-row">
-      <label>API Key</label>
-      <input type="password" id="chat-key-input" placeholder="sk-..." autocomplete="off">
+    <div class="chat-key-row" hidden>
+      <label>Local token</label>
+      <input type="password" id="chat-key-input" placeholder="local runtime token" autocomplete="off">
     </div>
-    <div class="chat-key-row">
+    <div class="chat-key-row" hidden>
       <label>Storage</label>
       <span><input type="checkbox" id="chat-key-persist"> Remember in browser</span>
     </div>
     <div class="chat-key-row privacy-row">
-      <span id="privacy-local-copy">Floor plans stay on this machine unless you use an external provider, web search, or paste/share an export.</span>
+      <span id="privacy-local-copy">Floor plans stay on this machine unless web search, a local runtime, or an export is used.</span>
     </div>
     <div class="chat-key-row">
       <label>Privacy</label>
       <span><input type="checkbox" id="chat-disable-web-search"> Disable web search</span>
     </div>
-    <div class="chat-key-row">
+    <div class="chat-key-row" hidden>
       <label>Keys</label>
       <span><input type="checkbox" id="chat-disable-key-storage"> Do not save keys in browser storage</span>
     </div>
-    <div class="chat-key-row provider-warning" id="provider-data-warning">
-      External providers may receive chat text, layout details, and attached image references for the current request.
+    <div class="chat-key-row provider-warning" id="provider-data-warning" style="display:none;">
+      Local runtimes may receive chat text, layout details, and attached image references for the current request.
     </div>
-    <div class="chat-key-row">
+    <div class="chat-key-row" hidden>
       <button id="chat-key-save">Save</button>
       <button id="chat-key-forget">Forget</button>
       <span id="chat-key-status"></span>

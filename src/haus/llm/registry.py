@@ -31,49 +31,6 @@ if _WEBLLM_DEFAULT_MODEL not in {model.id for model in _WEBLLM_MODELS}:
 
 
 _PROVIDERS: dict[str, ProviderSpec] = {
-    "anthropic": ProviderSpec(
-        id="anthropic",
-        label="Anthropic",
-        env_var="ANTHROPIC_API_KEY",
-        default_model="claude-sonnet-4-20250514",
-        optional_extra="anthropic",
-        install_hint='uv pip install -e ".[anthropic]"',
-        capabilities=("tools", "vision", "streaming", "structured_output"),
-        models=(
-            ModelSpec("claude-sonnet-4-20250514", "Claude Sonnet 4", ("tools", "vision", "streaming"), True),
-            ModelSpec("claude-opus-4-1-20250805", "Claude Opus 4.1", ("tools", "vision", "streaming")),
-            ModelSpec("claude-3-5-haiku-20241022", "Claude Haiku 3.5", ("tools", "vision", "streaming")),
-        ),
-    ),
-    "openai": ProviderSpec(
-        id="openai",
-        label="OpenAI",
-        env_var="OPENAI_API_KEY",
-        default_model="gpt-5.5",
-        optional_extra="openai",
-        install_hint='uv pip install -e ".[openai]"',
-        capabilities=("tools", "vision", "streaming", "structured_output", "responses_api"),
-        models=(
-            ModelSpec("gpt-5.5", "GPT-5.5", ("tools", "vision", "streaming", "structured_output"), True),
-            ModelSpec("gpt-5.5-mini", "GPT-5.5 mini", ("tools", "vision", "streaming", "structured_output")),
-            ModelSpec("gpt-4o", "GPT-4o", ("tools", "vision", "streaming")),
-            ModelSpec("gpt-4o-mini", "GPT-4o mini", ("tools", "vision", "streaming")),
-        ),
-    ),
-    "gemini": ProviderSpec(
-        id="gemini",
-        label="Gemini",
-        env_var="GEMINI_API_KEY",
-        default_model="gemini-2.5-flash",
-        optional_extra="gemini",
-        install_hint='uv pip install -e ".[gemini]"',
-        capabilities=("tools", "vision", "streaming", "structured_output"),
-        models=(
-            ModelSpec("gemini-2.5-flash", "Gemini 2.5 Flash", ("tools", "vision", "streaming"), True),
-            ModelSpec("gemini-2.5-pro", "Gemini 2.5 Pro", ("tools", "vision", "streaming")),
-            ModelSpec("gemini-2.0-flash", "Gemini 2.0 Flash", ("tools", "vision", "streaming")),
-        ),
-    ),
     "ollama": ProviderSpec(
         id="ollama",
         label="Ollama",
@@ -165,7 +122,7 @@ _PROVIDERS: dict[str, ProviderSpec] = {
     "openai-compatible-local": ProviderSpec(
         id="openai-compatible-local",
         label="OpenAI-compatible local",
-        env_var="HAUS_OPENAI_COMPAT_API_KEY",
+        env_var="",
         default_model=os.environ.get("HAUS_OPENAI_COMPAT_MODEL", "local-model"),
         optional_extra="",
         install_hint="Start LM Studio, llama.cpp server, vLLM, or LocalAI with an OpenAI-compatible /v1 endpoint.",
@@ -188,6 +145,17 @@ _PROVIDERS: dict[str, ProviderSpec] = {
         allow_custom_models=True,
     ),
 }
+
+_AGENT_RUNTIME_PROVIDER_IDS = ("codex", "gemini-cli", "claude-code", "opencode", "aider")
+
+
+def _agent_runtimes_enabled() -> bool:
+    return os.environ.get("HAUS_ENABLE_AGENT_RUNTIMES", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+if not _agent_runtimes_enabled():
+    for provider_id in _AGENT_RUNTIME_PROVIDER_IDS:
+        _PROVIDERS.pop(provider_id, None)
 
 DEFAULT_MODELS = {provider: spec.default_model for provider, spec in _PROVIDERS.items()}
 ENV_KEYS = {provider: spec.env_var for provider, spec in _PROVIDERS.items()}

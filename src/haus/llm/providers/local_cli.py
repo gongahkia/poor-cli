@@ -14,6 +14,7 @@ _DEFAULT_TIMEOUT_SECONDS = 180
 _MAX_PROMPT_CHARS = 90000
 _MAX_TOOL_SCHEMA_CHARS = 70000
 _SENTINEL_MODELS = {"", "default", "local", "runtime-default"}
+_INVALID_PROTOCOL_RESPONSE = "The selected local model did not return a valid Haus tool response. No changes were applied."
 
 
 def _timeout_seconds() -> int:
@@ -48,14 +49,15 @@ def _content_text(content: Any) -> str:
         elif block_type == "tool_result":
             lines.append(f"Tool result: {block.get('content', '')}")
         elif block_type == "image":
-            lines.append("[image attachment omitted by text-only local runtime]")
+            lines.append("[image attachment omitted by text-only Haus bridge]")
     return "\n".join(line for line in lines if line)
 
 
 def _prompt(system: str, messages: list[dict[str, Any]]) -> str:
     parts = [
-        "You are running as a text-only local runtime for Haus chat.",
-        "Do not edit files, run shell commands, or call tools. Use only the supplied conversation and layout context.",
+        "You are Haus Planner's chat assistant.",
+        "Do not mention CLI, runtime, provider, or process details.",
+        "Do not edit files, run shell commands, or call external tools. Use only the supplied conversation and layout context.",
         "If the user asks for an applied edit, describe the safe Haus action or deterministic planner step instead of claiming it was applied.",
         "",
         "Haus system context:",
@@ -87,7 +89,8 @@ def _tool_prompt(system: str, messages: list[dict[str, Any]], tools_spec: list[d
     if len(tools_json) > _MAX_TOOL_SCHEMA_CHARS:
         tools_json = tools_json[:_MAX_TOOL_SCHEMA_CHARS] + "...[truncated]"
     parts = [
-        "You are running as a local runtime for Haus chat.",
+        "You are Haus Planner's chat assistant.",
+        "Do not mention CLI, runtime, provider, or process details.",
         "Do not edit files, run shell commands, or use runtime-native tools.",
         "You may call Haus tools by returning strict JSON only.",
         'For tool calls, return {"tool_calls":[{"name":"tool_name","arguments":{}}],"response":""}.',
@@ -326,11 +329,30 @@ def _chat_with_tool_protocol(
     tools_spec: list[dict[str, Any]],
     max_tool_steps: int,
 ) -> tuple[str, list[dict[str, Any]]]:
+    invalid_json_seen = False
     for step in range(max_tool_steps):
         raw = run_once(_tool_prompt(system, messages, tools_spec))
+        parsed = _extract_json_object(raw)
         text, calls = _parse_tool_call_response(raw)
         if not calls:
-            final_text = text or raw.strip()
+            if parsed is None:
+                if not invalid_json_seen:
+                    invalid_json_seen = True
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": 'Previous output was invalid. Return only strict JSON: {"tool_calls":[],"response":"final text"}.',
+                                }
+                            ],
+                        }
+                    )
+                    continue
+                final_text = _INVALID_PROTOCOL_RESPONSE
+            else:
+                final_text = text.strip() or _INVALID_PROTOCOL_RESPONSE
             messages.append({"role": "assistant", "content": [{"type": "text", "text": final_text}]})
             return final_text, messages
 

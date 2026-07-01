@@ -14,10 +14,8 @@ def _base_url() -> str:
 
 
 def _api_key(api_key: str) -> str:
-    env_key = os.environ.get("HAUS_OPENAI_COMPAT_API_KEY", "").strip()
-    if env_key:
-        return env_key
-    return "" if api_key in {"", "local"} else api_key
+    del api_key
+    return ""
 
 
 def _tools(tools_spec: list[dict[str, Any]]) -> list[dict[str, Any]]:

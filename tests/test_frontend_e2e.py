@@ -111,16 +111,16 @@ def _status_payload() -> dict[str, object]:
     return {
         "available": True,
         "providers_with_env_keys": [],
-        "supported_providers": ["openai", "webllm", "codex"],
-        "default_models": {"openai": "gpt-4o", "webllm": "Llama-3.1-8B-Instruct-q4f32_1-MLC", "codex": "default"},
+        "supported_providers": ["ollama", "openai-compatible-local", "webllm"],
+        "default_models": {"ollama": "llama3.1", "openai-compatible-local": "local-model", "webllm": "Llama-3.1-8B-Instruct-q4f32_1-MLC"},
         "providers": [
             {
-                "id": "openai",
-                "label": "OpenAI",
-                "requires_api_key": True,
+                "id": "ollama",
+                "label": "Ollama",
+                "requires_api_key": False,
                 "command_available": None,
-                "capabilities": ["tools", "streaming"],
-                "models": [{"id": "gpt-4o", "label": "GPT-4o", "default": True, "capabilities": ["tools"]}],
+                "capabilities": ["tools", "streaming", "local"],
+                "models": [{"id": "llama3.1", "label": "Ollama default", "default": True, "capabilities": ["tools"]}],
             },
             {
                 "id": "webllm",
@@ -131,12 +131,12 @@ def _status_payload() -> dict[str, object]:
                 "models": [{"id": "Llama-3.1-8B-Instruct-q4f32_1-MLC", "label": "WebLLM default", "default": True}],
             },
             {
-                "id": "codex",
-                "label": "Codex runtime",
+                "id": "openai-compatible-local",
+                "label": "OpenAI-compatible local",
                 "requires_api_key": False,
-                "command_available": False,
-                "capabilities": ["chat", "tools", "local_runtime"],
-                "models": [{"id": "default", "label": "Codex default", "default": True}],
+                "command_available": None,
+                "capabilities": ["tools", "local", "openai_compatible"],
+                "models": [{"id": "local-model", "label": "Configured local model", "default": True}],
             },
         ],
         "capabilities": {
@@ -172,7 +172,7 @@ def _mock_api(page) -> dict[str, object]:
                     "response": "Applied safely.",
                     "history": [{"role": "assistant", "content": [{"type": "text", "text": "Applied safely."}]}],
                     "provider": payload.get("provider"),
-                    "model": "gpt-4o",
+                    "model": "llama3.1",
                     "actions": [],
                     "request_id": "chat-e2e-1",
                 }
@@ -200,8 +200,7 @@ def test_chat_syncs_browser_layout_before_backend_tools(browser_page, web_base_u
     calls = _mock_api(browser_page)
     browser_page.add_init_script(
         """
-        localStorage.setItem("haus.api_keys", JSON.stringify({ openai: "test-key" }));
-        localStorage.setItem("haus.settings", JSON.stringify({ provider: "openai" }));
+        localStorage.setItem("haus.settings", JSON.stringify({ provider: "ollama" }));
         """
     )
     browser_page.goto(f"{web_base_url}/")
@@ -213,7 +212,7 @@ def test_chat_syncs_browser_layout_before_backend_tools(browser_page, web_base_u
     assert int(calls["sync"]) >= 1
     payload = calls["chat_payload"]
     assert isinstance(payload, dict)
-    assert payload["provider"] == "openai"
+    assert payload["provider"] == "ollama"
     assert payload["project_context"]["layout"]["items"] == []
 
 

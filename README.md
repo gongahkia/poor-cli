@@ -111,7 +111,7 @@ Accessibility output is planning guidance only, not ADA certification, medical a
 
 Bundled sample layouts are examples only. The product does not depend on a comprehensive BTO/HDB corpus.
 
-Extraction accuracy depends on image quality, scale confirmation, and visible plan symbols. Product dimensions and prices can become stale and should be checked against retailer pages or physical measurements before purchase. Web search and external LLM providers are optional; the local deterministic planner remains available when those are disabled.
+Extraction accuracy depends on image quality, scale confirmation, and visible plan symbols. Product dimensions and prices can become stale and should be checked against retailer pages or physical measurements before purchase. Web search and local LLM runtimes are optional; the deterministic planner remains available when those are disabled.
 
 ## MCP Tool Surface
 
@@ -169,27 +169,19 @@ The web app is a static Vite build and the API is a Python service.
 * Configure backend with `HAUS_CORS_ORIGINS=https://your-web-host,http://localhost:5173`.
 * Do not rely on server disk for user projects. Browser projects persist in IndexedDB and can be exported/imported as `.haus.json` or compressed `.haus.json.gz`.
 
-Hosted deployments support remote LLM providers and browser WebLLM. Local coding-agent CLIs are reported as unavailable unless the deployed container actually has those commands installed and authenticated.
+Hosted deployments support browser WebLLM and any local model endpoint bundled with the deployment.
 
 ## Providers
 
-The planner supports these LLM providers through the first-class chat registry. Hosted providers need a key in the editor settings or env; local runtimes use the user's installed/authenticated CLI or local model server.
+The planner supports local and browser LLM providers through the first-class chat registry. Default providers do not require paid API keys.
 
 | Provider | Env/config | Default model | Install extra |
 |---|---|---|---|
-| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-20250514` | `uv pip install -e ".[anthropic]"` |
-| OpenAI | `OPENAI_API_KEY` | `gpt-5.5` | `uv pip install -e ".[openai]"` |
-| Google Gemini | `GEMINI_API_KEY` | `gemini-2.5-flash` | `uv pip install -e ".[gemini]"` |
 | Ollama/local | `OLLAMA_BASE_URL`, `OLLAMA_MODEL` | `llama3.1` | `brew install ollama` |
-| Codex runtime | `HAUS_CODEX_MODEL`, `HAUS_CODEX_OSS=1`, `HAUS_CODEX_LOCAL_PROVIDER=ollama`, `HAUS_CODEX_CMD` | `default` | `codex login`, or local OSS provider config |
-| Gemini CLI runtime | `HAUS_GEMINI_CLI_MODEL`, `HAUS_GEMINI_CLI_CMD` | `default` | `gemini auth login` |
-| Claude Code runtime | `HAUS_CLAUDE_CODE_MODEL`, `HAUS_CLAUDE_CODE_CMD` | `default` | `claude auth login` |
-| opencode runtime | `HAUS_OPENCODE_MODEL`, `HAUS_OPENCODE_CMD` | `default` | `opencode providers auth` or local provider config |
-| Aider runtime | `HAUS_AIDER_MODEL`, `HAUS_AIDER_CMD` | `default` | `pipx install aider-chat`, plus provider auth/model config |
-| OpenAI-compatible local | `HAUS_OPENAI_COMPAT_BASE_URL`, `HAUS_OPENAI_COMPAT_MODEL`, `HAUS_OPENAI_COMPAT_API_KEY` | `local-model` | Start LM Studio, llama.cpp server, vLLM, or LocalAI with `/v1/chat/completions` |
+| OpenAI-compatible local | `HAUS_OPENAI_COMPAT_BASE_URL`, `HAUS_OPENAI_COMPAT_MODEL` | `local-model` | Start LM Studio, llama.cpp server, vLLM, or LocalAI with `/v1/chat/completions` |
 | WebLLM | `HAUS_WEBLLM_MODEL` | `Llama-3.1-8B-Instruct-q4f32_1-MLC` | Use a WebGPU-capable browser; first run downloads model assets into browser cache |
 
-Every configured provider can use the Haus tool surface. Hosted APIs, Ollama, and OpenAI-compatible local servers use their native/OpenAI-style tool path when available. Coding-agent CLIs use a guarded JSON tool-call protocol: Haus passes chat/layout context and tool results, while the CLI is instructed not to edit files, run shell commands, or use runtime-native tools. WebLLM runs in the browser and dispatches Haus tool calls back through the local Haus server.
+Every configured provider can use the Haus tool surface. Ollama and OpenAI-compatible local servers use native/OpenAI-style tool calls. WebLLM runs in the browser and dispatches Haus tool calls back through the local Haus server. Coding-agent CLIs are hidden by default; set `HAUS_ENABLE_AGENT_RUNTIMES=1` before starting the API to expose the guarded JSON bridge for local developer experiments.
 
 The editor reads `/api/chat/models` for provider metadata, known model IDs, and capability flags. `/api/chat/stream` emits normalized SSE events for streaming-capable chat clients.
 

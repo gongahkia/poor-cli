@@ -44,9 +44,9 @@ const DISABLE_WEB_SEARCH_STORAGE = 'haus_chat_disable_web_search';
 const DISABLE_KEY_STORAGE = 'haus_chat_disable_key_storage';
 const DEFAULT_MAX_ATTACHMENTS = 3;
 const DEFAULT_MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
-const LOCAL_PROVIDER_IDS = new Set(['ollama', 'codex', 'gemini-cli', 'claude-code', 'opencode', 'aider', 'openai-compatible-local', 'webllm']);
+const LOCAL_PROVIDER_IDS = new Set(['ollama', 'openai-compatible-local', 'webllm']);
 const BROWSER_PROVIDER_IDS = new Set(['webllm']);
-const FALLBACK_PROVIDERS = ['ollama', 'codex', 'gemini-cli', 'claude-code', 'opencode', 'aider', 'openai-compatible-local', 'webllm', 'anthropic', 'openai', 'gemini'];
+const FALLBACK_PROVIDERS = ['ollama', 'openai-compatible-local', 'webllm'];
 let webllmEngine = null;
 let webllmModel = '';
 let hausToolSpecs = null;
@@ -200,7 +200,7 @@ function loadKeyField() {
   const requiresKey = providerRequiresApiKey(provider);
   keyInput.value = keys[provider] || '';
   keyInput.disabled = !requiresKey;
-  keyInput.placeholder = requiresKey ? 'sk-...' : 'No API key required';
+  keyInput.placeholder = requiresKey ? 'local runtime token' : 'Local runtime';
   keyPersistEl.checked = Boolean(storedKeys[provider]) && !keyStorageDisabled();
   keyPersistEl.disabled = keyStorageDisabled() || !requiresKey;
   if (!requiresKey) keyStatusEl.textContent = localProviderStatusText(provider);
@@ -317,11 +317,6 @@ function providerLabel(provider) {
     openai: 'OpenAI',
     gemini: 'Gemini',
     ollama: 'Ollama',
-    codex: 'Codex runtime',
-    'gemini-cli': 'Gemini CLI runtime',
-    'claude-code': 'Claude Code runtime',
-    opencode: 'opencode runtime',
-    aider: 'Aider runtime',
     'openai-compatible-local': 'OpenAI-compatible local',
     webllm: 'WebLLM',
   }[provider] || provider;
@@ -337,9 +332,9 @@ function refreshProviderStatus(keys = getKeys(), envProviders = new Set(Array.is
   const spec = providerSpec(provider);
   if (!provider) setStatus('');
   else if (spec?.requires_api_key === false && spec.command_available === false) setStatus(`${providerLabel(provider)} command not found. ${spec.install_hint || 'Install or configure the runtime command.'}`, true);
-  else if (spec?.requires_api_key === false) setStatus(`${providerLabel(provider)} selected. No API key required.`, false);
+  else if (spec?.requires_api_key === false) setStatus(`${providerLabel(provider)} selected. Local/browser runtime.`, false);
   else if (keys[provider] || envProviders.has(provider)) setStatus('');
-  else setStatus('Deterministic planner available. Add a provider key for LLM-reviewed plans.', false);
+  else setStatus('Deterministic planner available. Select a local/browser runtime for LLM-reviewed plans.', false);
   refreshProviderWarning();
 }
 
@@ -357,8 +352,8 @@ function refreshProviderWarning() {
       : 'Local provider receives chat text, layout context, and Haus tool results on this machine.';
   } else if (activeMode) {
     providerWarningEl.textContent = disableWebSearchEl?.checked
-      ? 'External LLM provider may receive chat text, layout details, and attached image references. Web search is disabled for this request.'
-      : 'External LLM provider may receive chat text, layout details, attached image references, and live reference context for this request.';
+      ? 'Local runtime may receive chat text, layout details, and attached image references. Web search is disabled for this request.'
+      : 'Local runtime may receive chat text, layout details, attached image references, and live reference context for this request.';
   }
 }
 
@@ -371,9 +366,9 @@ function providerRequiresApiKey(provider) {
 function localProviderStatusText(provider) {
   const spec = providerSpec(provider);
   if (spec?.command_available === false) return `${providerLabel(provider)} command not found.`;
-  if (spec?.capabilities?.includes('browser_runtime')) return 'No browser key needed. Browser runtime with Haus tools.';
-  if (spec?.capabilities?.includes('tools')) return 'No browser key needed. Local runtime with Haus tools.';
-  return 'No browser key needed. Local provider.';
+  if (spec?.capabilities?.includes('browser_runtime')) return 'Browser runtime with Haus tools.';
+  if (spec?.capabilities?.includes('tools')) return 'Local runtime with Haus tools.';
+  return 'Local provider.';
 }
 
 function preferredProvider(providers, keys, envProviders) {
@@ -1179,7 +1174,8 @@ function webllmContentText(content) {
 function webllmMessages(payload) {
   const projectContext = payload.project_context ? JSON.stringify(payload.project_context).slice(0, 8000) : '{}';
   const system = [
-    'You are running as a browser local runtime for Haus chat.',
+    "You are Haus Planner's browser chat assistant.",
+    'Do not mention browser runtime, provider, or process details.',
     'Use Haus tools when layout state, measurements, edits, validation, catalog lookup, or web references are needed.',
     'If native tool calls are unavailable, respond with strict JSON: {"tool_calls":[{"name":"tool_name","arguments":{}}],"response":""}.',
     'For a final answer, respond normally or with {"tool_calls":[],"response":"final text"}.',

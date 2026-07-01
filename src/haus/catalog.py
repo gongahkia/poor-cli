@@ -7,16 +7,9 @@ import re
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
-from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode, urlparse
-from urllib.request import Request, urlopen
 
-_TINYFISH_SEARCH_URL = "https://api.search.tinyfish.ai"
-_TINYFISH_FETCH_URL = "https://api.fetch.tinyfish.ai"
 _CATALOG_VERSION = 1
 _DEFAULT_REGION = "sg"
-_DEFAULT_TIMEOUT_SECONDS = 8
-_DOTENV_LOADED = False
 
 _SOURCE_CONFIGS: dict[str, dict[str, Any]] = {
     "ikea": {
@@ -337,39 +330,8 @@ def _catalog_root() -> Path:
     return Path.home() / ".haus" / "catalog"
 
 
-def _load_tinyfish_env() -> None:
-    global _DOTENV_LOADED
-    if os.environ.get("HAUS_DISABLE_DOTENV"):
-        return
-    if _DOTENV_LOADED:
-        return
-    _DOTENV_LOADED = True
-    env_path = Path.cwd() / ".env"
-    if not env_path.exists():
-        return
-    for raw in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        key = key.strip()
-        if key not in {"TINYFISH_API_KEY", "TINYFISH_SEARCH_URL", "TINYFISH_FETCH_URL"} or os.environ.get(key):
-            continue
-        os.environ[key] = value.strip().strip('"').strip("'")
-
-
 def catalog_sources() -> list[dict[str, Any]]:
     return [{"id": source, "label": str(config["label"])} for source, config in _SOURCE_CONFIGS.items()]
-
-
-def _tinyfish_search_url() -> str:
-    _load_tinyfish_env()
-    return os.environ.get("TINYFISH_SEARCH_URL", _TINYFISH_SEARCH_URL)
-
-
-def _tinyfish_fetch_url() -> str:
-    _load_tinyfish_env()
-    return os.environ.get("TINYFISH_FETCH_URL", _TINYFISH_FETCH_URL)
 
 
 def _source_dir(source: str) -> Path:
@@ -527,62 +489,6 @@ def _to_m(value: float, unit: str) -> float:
     return value
 
 
-def _tinyfish_json(url: str, *, method: str = "GET", payload: dict[str, Any] | None = None) -> Any:
-    _load_tinyfish_env()
-    api_key = os.environ.get("TINYFISH_API_KEY")
-    if not api_key:
-        raise ValueError("TINYFISH_API_KEY is not set.")
-    body = None
-    headers = {"X-API-Key": api_key}
-    if payload is not None:
-        body = json.dumps(payload).encode("utf-8")
-        headers["Content-Type"] = "application/json"
-    req = Request(url, data=body, method=method, headers=headers)
-    with urlopen(req, timeout=_DEFAULT_TIMEOUT_SECONDS) as res:  # noqa: S310 - public API endpoint.
-        return json.loads(res.read().decode("utf-8"))
-
-
-def _result_list(data: Any) -> list[Any]:
-    if isinstance(data, list):
-        return data
-    if not isinstance(data, dict):
-        return []
-    for key in ("results", "data", "items", "organic"):
-        value = data.get(key)
-        if isinstance(value, list):
-            return value
-    return []
-
-
-def _url_matches_domain(url: str, domain: str) -> bool:
-    host = urlparse(url).netloc.lower()
-    clean_domain = domain.split("/", 1)[0].lower()
-    return host == clean_domain or host.endswith(f".{clean_domain}")
-
-
-def _search_tinyfish_for_source(query: str, max_results: int, region: str, source: str) -> list[dict[str, Any]]:
-    clean_source = _normalize_source(source)
-    domain = _source_domain(clean_source, region)
-    label = _source_label(clean_source)
-    search_query = f"site:{domain} {query} {label} product dimensions price"
-    data = _tinyfish_json(f"{_tinyfish_search_url()}?{urlencode({'query': search_query, 'limit': max_results})}")
-    items: list[dict[str, Any]] = []
-    for result in _result_list(data)[:max_results]:
-        if not isinstance(result, dict):
-            continue
-        title = _collapse(result.get("title") or result.get("name"))
-        url = _collapse(result.get("url") or result.get("link"))
-        snippet = _collapse(result.get("snippet") or result.get("description") or result.get("text"))
-        if not title or not url or not _url_matches_domain(url, domain):
-            continue
-        items.append(_normalize_item(title=title, url=url, snippet=snippet, region=region, source=clean_source, provider="tinyfish", raw=result))
-    return items
-
-
-def _search_tinyfish(query: str, max_results: int, region: str) -> list[dict[str, Any]]:
-    return _search_tinyfish_for_source(query, max_results, region, "ikea")
-
-
 def _normalize_item(
     *,
     title: str,
@@ -713,21 +619,8 @@ def search_furniture_catalog(
     clean_region = (region or _DEFAULT_REGION).lower()
     source_ids = _normalize_sources(sources)
 
-    live_items: list[dict[str, Any]] = []
-    _load_tinyfish_env()
-    if refresh or os.environ.get("TINYFISH_API_KEY"):
-        per_source_limit = max(3, min(limit, (limit + len(source_ids) - 1) // len(source_ids) if source_ids else limit))
-        for source in source_ids:
-            try:
-                found = _search_tinyfish_for_source(clean_query, per_source_limit, clean_region, source)
-            except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
-                found = []
-            for item in found:
-                _save_item(item)
-            live_items.extend(found)
-
     seeds = [dict(item) for item in _SEED_ITEMS if str(item.get("source")) in set(source_ids) or str(item.get("source")) == "haus"]
-    candidates = live_items + _load_cached_items(source_ids) + seeds
+    candidates = _load_cached_items(source_ids) + seeds
     deduped: dict[str, dict[str, Any]] = {}
     for item in candidates:
         if _matches(item, clean_query):
@@ -755,18 +648,7 @@ def search_ikea_catalog(
         raise ValueError("query must not be empty.")
     limit = max(1, min(int(max_results or 12), 24))
     clean_region = (region or _DEFAULT_REGION).lower()
-
-    live_items: list[dict[str, Any]] = []
-    _load_tinyfish_env()
-    if refresh or os.environ.get("TINYFISH_API_KEY"):
-        try:
-            live_items = _search_tinyfish(clean_query, limit, clean_region)
-        except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
-            live_items = []
-        for item in live_items:
-            _save_item(item)
-
-    candidates = live_items + _load_cached_items(("ikea",)) + [dict(item) for item in _SEED_ITEMS if item.get("source") in {"ikea", "haus"}]
+    candidates = _load_cached_items(("ikea",)) + [dict(item) for item in _SEED_ITEMS if item.get("source") in {"ikea", "haus"}]
     deduped: dict[str, dict[str, Any]] = {}
     for item in candidates:
         if _matches(item, clean_query):
@@ -785,12 +667,11 @@ def catalog_search_meta(
     refresh: bool = False,
 ) -> dict[str, Any]:
     providers = sorted({str(item.get("source_provider") or "unknown") for item in items})
-    live_count = sum(1 for item in items if item.get("source_provider") == "tinyfish")
     return {
         "source_providers": providers,
         "live_refresh_requested": bool(refresh),
-        "live_result_count": live_count,
-        "fallback_used": bool(refresh) and live_count == 0,
+        "live_result_count": 0,
+        "fallback_used": bool(refresh),
     }
 
 
@@ -821,31 +702,6 @@ def get_catalog_item(item_id: str) -> dict[str, Any] | None:
 
 def refresh_catalog_item(item_id: str) -> dict[str, Any] | None:
     item = get_catalog_item(item_id)
-    if item is None:
-        return None
-    url = str(item.get("product_url") or "")
-    _load_tinyfish_env()
-    if not url or not os.environ.get("TINYFISH_API_KEY"):
-        return item
-    try:
-        data = _tinyfish_json(_tinyfish_fetch_url(), method="POST", payload={"url": url})
-    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError, OSError):
-        return item
-    if isinstance(data, dict):
-        text = _collapse(data.get("text") or data.get("markdown") or data.get("content") or data.get("body"))
-        title = _collapse(data.get("title") or item.get("name"))
-        updated = _normalize_item(
-            title=title,
-            url=url,
-            snippet=text[:4000],
-            region=str(item.get("region") or _DEFAULT_REGION),
-            source=str(item.get("source") or _source_from_item_id(str(item.get("id") or "")) or "ikea"),
-            provider="tinyfish",
-            raw=data,
-        )
-        updated["id"] = item["id"]
-        _save_item(updated)
-        return updated
     return item
 
 

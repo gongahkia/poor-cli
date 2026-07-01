@@ -77,8 +77,8 @@ and support for users who believe their plans are private.
 
 Current evidence:
 
-- The editor states that floor plans stay on the user's machine unless an
-  external provider, web search, or export is used.
+- The editor states that floor plans stay on the user's machine unless a local
+  runtime, web search, or export is used.
 - `viewer/js/project.js` stores local project state, exports standalone project
   JSON, and imports Haus project files without requiring a hosted account.
 - `src/haus/workbench.py` exports project bundles containing layout JSON,

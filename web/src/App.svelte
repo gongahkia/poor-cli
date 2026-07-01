@@ -2,24 +2,26 @@
   import {
     Bot,
     Box,
+    CalendarClock,
     ChevronLeft,
     ChevronRight,
     Download,
     Eraser,
-    Eye,
-    Grid3X3,
+    FolderOpen,
     Image,
     Loader2,
-    Lock,
     Maximize,
     Moon,
-    MousePointer2,
+    PanelLeft,
+    Plus,
     Ruler,
     Save,
     Search,
     Send,
+    Settings2,
     Sun,
     Trash2,
+    Truck,
     Upload,
     Wand2,
   } from '@lucide/svelte';
@@ -60,7 +62,6 @@
     LayoutData,
     LayoutItem,
     ProjectRecord,
-    StoredKeys,
     ToolSpec,
   } from './lib/types';
   import { emptyLayout, withIds } from './lib/types';
@@ -80,7 +81,7 @@
     gridSize: 0.25,
     shadows: true,
     wireframe: false,
-    light: false,
+    light: true,
   };
 
   let project: ProjectRecord = {
@@ -111,7 +112,6 @@
   let projectInput: HTMLInputElement;
   let sceneCanvas: any;
   let attachments: Array<{ name: string; mime_type: string; data_url: string }> = [];
-  let apiKeys: StoredKeys = JSON.parse(localStorage.getItem('haus.api_keys') || '{}');
   let catalogQuery = '';
   let catalogSource = 'all';
   let catalogSources: CatalogSource[] = [];
@@ -137,12 +137,11 @@
 
   $: layout = project.layout;
   $: selectedItem = layout.items.find((item) => item.id === selectedId);
-  $: providerSpecs = status?.providers || [];
+  $: providerSpecs = (status?.providers || []).filter((provider) => provider.requires_api_key === false);
   $: selectedProvider = settings.provider || preferredProvider();
   $: providerSpec = providerSpecs.find((provider) => provider.id === selectedProvider);
   $: modelPlaceholder = status?.default_models?.[selectedProvider] || 'provider default';
-  $: localProvider = providerSpec?.requires_api_key === false;
-  $: canUseProvider = Boolean(selectedProvider && (localProvider || apiKeys[selectedProvider] || status?.providers_with_env_keys?.includes(selectedProvider)));
+  $: canUseProvider = Boolean(selectedProvider && providerSpec?.command_available !== false);
   $: modelOptions = providerSpec?.models || [];
   $: selectedModelSpec = modelOptions.find((model) => model.id === settings.model);
   $: modelSelectValue = customModelEntry || Boolean(settings.model && modelOptions.length && !selectedModelSpec) ? '__custom__' : settings.model || '';
@@ -157,12 +156,16 @@
   }
 
   onMount(async () => {
+    localStorage.removeItem('haus.api_keys');
     project = await loadActiveProject();
     projects = await listProjects();
     await refreshStatus();
     await refreshCatalogSources();
-    if (!settings.provider) {
-      settings = { ...settings, provider: preferredProvider() };
+    const availableProviders = (status?.providers || []).filter((provider) => provider.requires_api_key === false);
+    const hasSavedProvider = availableProviders.some((provider) => provider.id === settings.provider);
+    if (!settings.provider || !hasSavedProvider) {
+      const readyLocal = availableProviders.find((provider) => provider.command_available !== false);
+      settings = { ...settings, provider: readyLocal?.id || availableProviders[0]?.id || '' };
       persistSettings();
     }
   });
@@ -223,10 +226,9 @@
   }
 
   function preferredProvider() {
-    const readyLocal = providerSpecs.find((provider) => provider.requires_api_key === false && provider.command_available !== false);
+    const readyLocal = providerSpecs.find((provider) => provider.command_available !== false);
     if (readyLocal) return readyLocal.id;
-    const envProvider = providerSpecs.find((provider) => status?.providers_with_env_keys?.includes(provider.id));
-    return envProvider?.id || status?.supported_providers?.[0] || '';
+    return providerSpecs[0]?.id || '';
   }
 
   async function refreshStatus() {
@@ -383,21 +385,6 @@
     }
   }
 
-  function saveKey() {
-    if (!selectedProvider) return;
-    const input = document.getElementById('provider-key') as HTMLInputElement | null;
-    if (!input) return;
-    const value = input.value.trim();
-    if (value) apiKeys = { ...apiKeys, [selectedProvider]: value };
-    else {
-      const next = { ...apiKeys };
-      delete next[selectedProvider];
-      apiKeys = next;
-    }
-    localStorage.setItem('haus.api_keys', JSON.stringify(apiKeys));
-    input.value = '';
-  }
-
   function transcript(role: 'user' | 'assistant' | 'tool' | 'error', text: string) {
     project = appendTranscript(project, { role, text });
     void saveCurrent(project);
@@ -409,7 +396,6 @@
       history: chatHistory,
       provider: selectedProvider,
       model: settings.model,
-      api_key: apiKeys[selectedProvider] || '',
       planner_mode: settings.plannerMode,
       standards_profile: settings.standardsProfile,
       web_search_disabled: settings.disableWebSearch,
@@ -582,7 +568,8 @@
       {
         role: 'system',
         content: [
-          'You are running in-browser for Haus Planner.',
+          "You are Haus Planner's browser chat assistant.",
+          'Do not mention browser runtime, provider, or process details.',
           'Use Haus tools for layout edits, validation, catalog, web references, and measurements.',
           'If native tools fail, return strict JSON {"tool_calls":[{"name":"tool","arguments":{}}],"response":""}.',
           `Project context: ${JSON.stringify(payload.project_context).slice(0, 9000)}`,
@@ -708,95 +695,165 @@
     if (!selectedProvider) return 'Deterministic planner available.';
     if (providerSpec?.requires_api_key === false && providerSpec.command_available === false) return `${providerSpec.label} command not found.`;
     if (providerSpec?.requires_api_key === false) return `${providerSpec.label} available locally.`;
-    if (apiKeys[selectedProvider] || status?.providers_with_env_keys?.includes(selectedProvider)) return `${providerSpec?.label || selectedProvider} configured.`;
-    return 'Add a key or use deterministic planner prompts.';
+    return 'Local-only planner available.';
   }
 </script>
 
 <div class:light={settings.light} class="app-shell">
   <aside id="chat-panel">
-    <header class="chat-header">
+    <div class="rail-top">
+      <div class="rail-mark">H</div>
+      <button type="button" class="icon-btn" title="Sidebar"><PanelLeft size={18} /></button>
+    </div>
+    <button type="button" class="rail-new" on:click={newProject}><Plus size={20} />New</button>
+    <div class="rail-nav">
+      <button type="button" on:click={() => floorplanInput.click()}><Upload size={18} />Upload Plan</button>
+      <button type="button" on:click={() => toolsOpen = true}><Settings2 size={18} />Customise</button>
+      <button type="button" on:click={exportProject}><FolderOpen size={18} />Artefacts</button>
+    </div>
+    <div class="rail-group">
+      <span>Projects</span>
+      {#each projects.slice(0, 6) as item}
+        <button type="button" class:active={item.id === project.id} on:click={() => openProject(item.id)}>{item.title}</button>
+      {/each}
+    </div>
+    <div class="rail-group rail-history">
+      <span>History</span>
+      {#each project.transcript.slice(-8) as msg}
+        <button type="button" on:click={() => chatText = msg.text}>{msg.text}</button>
+      {/each}
+    </div>
+    <div class="rail-user">
+      <div class="avatar">H</div>
       <div>
         <strong>Haus Planner</strong>
-        <span>{project.title}</span>
+        <span>{localStatusText()}</span>
+      </div>
+    </div>
+  </aside>
+
+  <main id="workspace">
+    <header class="topbar">
+      <nav class="top-tabs" aria-label="Workspace tabs">
+        <button type="button" on:click={() => chatText = 'Draft renovation options for this floor plan'}>Discover</button>
+        <button type="button" on:click={() => chatText = 'Check furniture fit and delivery path'}>Furniture</button>
+        <button type="button" on:click={() => chatText = 'Run accessibility checks'}>Access</button>
+        <button type="button" on:click={() => chatText = 'Export a client-ready layout report'}>Exports</button>
+      </nav>
+      <div class="top-actions">
+        <button type="button" class="status-pill"><CalendarClock size={18} />Autosaved</button>
+        <button type="button" class="icon-btn" on:click={() => floorplanInput.click()} title="Upload plan"><Truck size={18} /></button>
       </div>
     </header>
 
-    <div class="provider-grid">
-      <select value={settings.provider} on:change={(event) => selectProvider((event.currentTarget as HTMLSelectElement).value)} id="chat-provider">
-        {#each providerSpecs as provider}
-          <option value={provider.id}>{provider.label}</option>
-        {/each}
-      </select>
-      <select value={modelSelectValue} on:change={(event) => selectModel((event.currentTarget as HTMLSelectElement).value)} id="chat-model-select">
-        <option value="">Auto ({modelPlaceholder})</option>
-        {#each modelOptions as model}
-          <option value={model.id} title={model.notes || model.id}>{model.label}</option>
-        {/each}
-        {#if allowCustomModel}
-          <option value="__custom__">Custom model...</option>
-        {/if}
-      </select>
+    <section class="ask-home">
+      <h1>haus <span>pro</span></h1>
+      <div class="ask-card">
+        <textarea bind:value={chatText} id="chat-input" rows="2" placeholder="Ask anything..." on:keydown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }}></textarea>
+        <div class="ask-controls">
+          <button type="button" class="icon-btn" on:click={() => floorplanInput.click()} title="Upload plan"><Plus size={20} /></button>
+          <button type="button" class="control-pill" on:click={() => attachmentInput.click()} title="Attach image"><Image size={18} />Image</button>
+          <label class="control-pill"><input type="checkbox" bind:checked={settings.disableWebSearch} on:change={persistSettings} />No web</label>
+          <select value={settings.provider} on:change={(event) => selectProvider((event.currentTarget as HTMLSelectElement).value)} id="chat-provider" class="runtime-select">
+            {#each providerSpecs as provider}
+              <option value={provider.id}>{provider.label}</option>
+            {/each}
+          </select>
+          <select value={modelSelectValue} on:change={(event) => selectModel((event.currentTarget as HTMLSelectElement).value)} id="chat-model-select" class="model-select">
+            <option value="">Auto ({modelPlaceholder})</option>
+            {#each modelOptions as model}
+              <option value={model.id} title={model.notes || model.id}>{model.label}</option>
+            {/each}
+            {#if allowCustomModel}
+              <option value="__custom__">Custom model...</option>
+            {/if}
+          </select>
+          <button type="button" id="chat-send" class="send-button" on:click={sendMessage} disabled={sending || (!canUseProvider && selectedProvider !== '')}>
+            {#if sending}<Loader2 size={18} />{:else}<Send size={18} />{/if}
+          </button>
+        </div>
+      </div>
       {#if showCustomModelInput}
-        <input value={settings.model} on:change={(event) => setCustomModel((event.currentTarget as HTMLInputElement).value)} id="chat-model" class="custom-model-input" placeholder="custom model id" />
+        <input value={settings.model} on:change={(event) => setCustomModel((event.currentTarget as HTMLInputElement).value)} id="chat-model" class="custom-model-input" placeholder="custom local model id" />
       {/if}
-      <select bind:value={settings.plannerMode} on:change={persistSettings} id="chat-planner-mode">
-        {#each plannerModes as plannerMode}
-          <option value={plannerMode}>{plannerMode.replace('_', ' ')}</option>
-        {/each}
-      </select>
-      <select bind:value={settings.standardsProfile} on:change={persistSettings} id="chat-standards-profile">
-        {#each standardsProfiles as profile}
-          <option value={profile}>{profile.replace(/_/g, ' ')}</option>
-        {/each}
-      </select>
-    </div>
+      <div class="advanced-strip">
+        <select bind:value={settings.plannerMode} on:change={persistSettings} id="chat-planner-mode">
+          {#each plannerModes as plannerMode}
+            <option value={plannerMode}>{plannerMode.replace('_', ' ')}</option>
+          {/each}
+        </select>
+        <select bind:value={settings.standardsProfile} on:change={persistSettings} id="chat-standards-profile">
+          {#each standardsProfiles as profile}
+            <option value={profile}>{profile.replace(/_/g, ' ')}</option>
+          {/each}
+        </select>
+      </div>
+      {#if attachments.length}
+        <div class="attachments">
+          {#each attachments as attachment}
+            <span>{attachment.name}</span>
+          {/each}
+        </div>
+      {/if}
+      <div class="quick-prompts">
+        <button type="button" on:click={() => chatText = 'Start with manual room dimensions'}>Manual room</button>
+        <button type="button" on:click={() => chatText = 'Tell me what measurements are missing'}>Missing measurements</button>
+        <button type="button" on:click={() => chatText = 'Draft a concept plan for this layout'}>Concept plan</button>
+      </div>
+    </section>
 
-    <form class="key-row" on:submit|preventDefault={saveKey}>
-      <input id="provider-key" type="password" autocomplete="off" placeholder={localProvider ? 'No key required' : 'provider key'} disabled={localProvider} />
-      <button type="submit">Save</button>
-    </form>
-    <label class="check-row"><input type="checkbox" bind:checked={settings.disableWebSearch} on:change={persistSettings} />Disable web search</label>
-    <p class="status-text">{localStatusText()}</p>
+    <section class="stage-shell">
+      <div class="stage-head">
+        <div>
+          <strong>{project.title}</strong>
+          <span>{layout.items.length} items{#if mode !== 'select'} / {mode.replace('_', ' ')}{/if}{#if measureText} / {measureText}{/if}</span>
+        </div>
+        <div class="stage-actions">
+          <button id="actions-toggle" type="button" on:click={() => actionsOpen = !actionsOpen}>
+            {#if actionsOpen}<ChevronLeft size={18} />{:else}<ChevronRight size={18} />{/if}
+            <span>Actions</span>
+          </button>
+          <button id="tools-toggle" type="button" on:click={() => toolsOpen = !toolsOpen}>
+            {#if toolsOpen}<ChevronRight size={18} />{:else}<ChevronLeft size={18} />{/if}
+            <span>Tools</span>
+          </button>
+        </div>
+      </div>
+      <div class="stage-canvas">
+        <SceneCanvas
+          bind:this={sceneCanvas}
+          {layout}
+          {selectedId}
+          {mode}
+          showGrid={settings.showGrid}
+          wireframe={settings.wireframe}
+          shadows={settings.shadows}
+          gridSize={settings.snap ? settings.gridSize : 0.01}
+          lightMode={settings.light}
+          on:select={(event) => selectedId = event.detail}
+          on:move={(event) => moveSelected(event.detail.id, event.detail.x, event.detail.z)}
+          on:wall={(event) => addWall(event.detail.a, event.detail.b)}
+          on:measure={(event) => measureText = `${event.detail.distance.toFixed(2)}m`}
+          on:glb={(event) => updateItems([...layout.items, ...event.detail])}
+        />
+      </div>
+      <div class="hud">
+        {#if statusLine}<span>{statusLine}</span>{/if}
+        {#if errorLine}<span class="err">{errorLine}</span>{/if}
+        {#if sending}<span><Loader2 size={14} />{chatLoadingText}</span>{/if}
+      </div>
+    </section>
 
-    <div id="chat-messages">
+    <section id="chat-messages" aria-label="Conversation">
       {#if project.transcript.length === 0}
         <div class="chat-msg chat-assistant">Upload a floor plan, create a manual room, or ask for a plan.</div>
       {/if}
       {#each project.transcript as msg}
         <div class={`chat-msg chat-${msg.role}`}>{msg.text}</div>
       {/each}
-      {#if sending}
-        <div class="chat-msg chat-loading"><Loader2 size={14} />{chatLoadingText}</div>
-      {/if}
-    </div>
+    </section>
+  </main>
 
-    {#if attachments.length}
-      <div class="attachments">
-        {#each attachments as attachment}
-          <span>{attachment.name}</span>
-        {/each}
-      </div>
-    {/if}
-
-    <div class="quick-prompts">
-      <button type="button" on:click={() => chatText = 'Start with manual room dimensions'}>Start with manual room dimensions</button>
-      <button type="button" on:click={() => chatText = 'Tell me what measurements are missing'}>Tell me what measurements are missing</button>
-      <button type="button" on:click={() => chatText = 'Draft a concept plan for this layout'}>Draft a concept plan</button>
-    </div>
-
-    <footer class="chat-input-row">
-      <input bind:this={attachmentInput} type="file" id="chat-image-input" accept="image/*" multiple hidden on:change={addAttachment} />
-      <button type="button" on:click={() => attachmentInput.click()} title="Attach image"><Image size={18} /></button>
-      <textarea bind:value={chatText} id="chat-input" rows="1" placeholder="Describe changes..." on:keydown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }}></textarea>
-      <button type="button" id="chat-send" on:click={sendMessage} disabled={sending || !canUseProvider && selectedProvider !== ''}><Send size={18} />Send</button>
-    </footer>
-  </aside>
-
-  <button id="actions-toggle" type="button" on:click={() => actionsOpen = !actionsOpen}>
-    {#if actionsOpen}<ChevronLeft size={18} />{:else}<ChevronRight size={18} />{/if}
-    <span>Actions</span>
-  </button>
   <nav id="toolbar" class:open={actionsOpen}>
     <button type="button" on:click={() => floorplanInput.click()}><Upload size={18} />Upload Plan</button>
     <button type="button" on:click={() => glbInput.click()}><Box size={18} />Load GLB</button>
@@ -823,36 +880,6 @@
     </button>
   </nav>
 
-  <main id="workspace">
-    <SceneCanvas
-      bind:this={sceneCanvas}
-      {layout}
-      {selectedId}
-      {mode}
-      showGrid={settings.showGrid}
-      wireframe={settings.wireframe}
-      shadows={settings.shadows}
-      gridSize={settings.snap ? settings.gridSize : 0.01}
-      lightMode={settings.light}
-      on:select={(event) => selectedId = event.detail}
-      on:move={(event) => moveSelected(event.detail.id, event.detail.x, event.detail.z)}
-      on:wall={(event) => addWall(event.detail.a, event.detail.b)}
-      on:measure={(event) => measureText = `${event.detail.distance.toFixed(2)}m`}
-      on:glb={(event) => updateItems([...layout.items, ...event.detail])}
-    />
-    <div class="hud">
-      <span>{layout.items.length} items</span>
-      {#if mode !== 'select'}<span>{mode.replace('_', ' ')}</span>{/if}
-      {#if measureText}<span>{measureText}</span>{/if}
-      {#if statusLine}<span>{statusLine}</span>{/if}
-      {#if errorLine}<span class="err">{errorLine}</span>{/if}
-    </div>
-  </main>
-
-  <button id="tools-toggle" type="button" on:click={() => toolsOpen = !toolsOpen}>
-    {#if toolsOpen}<ChevronRight size={18} />{:else}<ChevronLeft size={18} />{/if}
-    <span>Tools</span>
-  </button>
   <aside id="sidebar" class:open={toolsOpen}>
     <section>
       <h3>Grid & Snap</h3>
@@ -964,6 +991,7 @@
     </section>
   </aside>
 
+  <input bind:this={attachmentInput} type="file" id="chat-image-input" accept="image/*" multiple hidden on:change={addAttachment} />
   <input bind:this={floorplanInput} type="file" accept="image/png,image/jpeg,image/webp" hidden on:change={runVectorize} />
   <input bind:this={jsonInput} type="file" accept="application/json,.json" hidden on:change={importJsonFile} />
   <input bind:this={glbInput} type="file" accept=".glb,model/gltf-binary" hidden on:change={importGlbFile} />

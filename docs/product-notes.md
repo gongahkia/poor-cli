@@ -65,4 +65,4 @@ HomeByMe pairs 2D floor plans, 3D furnishing, branded product catalogs, 4K image
 
 Source: https://planner5d.com/
 
-Planner 5D presents AI floor-plan recognition, automated furniture arrangement, shopping-list cost insight, real measurements, and fast 2D/3D planning. Haus should provide deterministic fallbacks, visible measurement assumptions, and AI/LLM badges only when an external provider actually reviews a plan.
+Planner 5D presents AI floor-plan recognition, automated furniture arrangement, shopping-list cost insight, real measurements, and fast 2D/3D planning. Haus should provide deterministic fallbacks, visible measurement assumptions, and AI/LLM badges only when a local or browser runtime actually reviews a plan.

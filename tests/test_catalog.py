@@ -30,31 +30,17 @@ def test_furniture_catalog_search_uses_non_ikea_seed_without_tinyfish(tmp_path, 
     assert items[0]["source_provider"] == "seed"
 
 
-def test_furniture_catalog_refresh_uses_tinyfish_for_selected_source(tmp_path, monkeypatch) -> None:
-    def fake_tinyfish_json(url: str, *, method: str = "GET", payload=None):
-        assert "site%3Awayfair.com" in url
-        return {
-            "results": [
-                {
-                    "title": "Test Sofa - Wayfair",
-                    "url": "https://www.wayfair.com/furniture/pdp/test-sofa.html",
-                    "snippet": "Width 200 cm Depth 90 cm Height 80 cm $499",
-                }
-            ]
-        }
-
+def test_furniture_catalog_refresh_uses_cache_and_seed_for_selected_source(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HAUS_CATALOG_ROOT", str(tmp_path))
-    monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
-    monkeypatch.setattr("haus.catalog._tinyfish_json", fake_tinyfish_json)
 
     items = search_furniture_catalog("sofa", max_results=5, sources="wayfair", refresh=True)
-    live = next(item for item in items if item["source_provider"] == "tinyfish")
+    meta = catalog_search_meta(items, refresh=True)
 
-    assert live["source"] == "wayfair"
-    assert live["currency"] == "USD"
-    assert live["price"] == 499
-    assert live["dimensions_m"] == {"width": 2.0, "height": 0.8, "depth": 0.9}
-    assert get_catalog_item(live["id"]) is not None
+    assert items
+    assert items[0]["source"] == "wayfair"
+    assert items[0]["source_provider"] == "seed"
+    assert meta["fallback_used"] is True
+    assert meta["live_result_count"] == 0
 
 
 def test_catalog_item_becomes_layout_furniture() -> None:
@@ -90,13 +76,8 @@ def test_catalog_supports_accessibility_and_renovation_placeholder_categories(tm
     assert partition["delivery_constraints"]["requires_manual_measurement"] is True
 
 
-def test_ikea_catalog_refresh_falls_back_when_tinyfish_fails(tmp_path, monkeypatch) -> None:
-    def fail_search(query: str, max_results: int, region: str):
-        raise TimeoutError()
-
+def test_ikea_catalog_refresh_uses_seed_fallback(tmp_path, monkeypatch) -> None:
     monkeypatch.setenv("HAUS_CATALOG_ROOT", str(tmp_path))
-    monkeypatch.setenv("TINYFISH_API_KEY", "test-key")
-    monkeypatch.setattr("haus.catalog._search_tinyfish", fail_search)
 
     items = search_ikea_catalog("BILLY", max_results=5, refresh=True)
     meta = catalog_search_meta(items, refresh=True)

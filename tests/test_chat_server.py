@@ -46,20 +46,20 @@ def test_chat_routes_provider_and_default_model(
         captured["messages"] = messages
         return "ok", messages + [{"role": "assistant", "content": [{"type": "text", "text": "ok"}]}]
 
-    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+    monkeypatch.setitem(chat_server._CHAT_FNS, "ollama", fake_provider)
 
     res = chat_client.post(
         "/api/chat",
-        json={"message": "hello", "provider": "openai", "api_key": "test-key"},
+        json={"message": "hello", "provider": "ollama"},
     )
     assert res.status_code == 200
     body = res.json()
 
     assert body["response"] == "ok"
-    assert body["provider"] == "openai"
-    assert body["model"] == chat_server._DEFAULT_MODELS["openai"]
-    assert captured["api_key"] == "test-key"
-    assert captured["model"] == chat_server._DEFAULT_MODELS["openai"]
+    assert body["provider"] == "ollama"
+    assert body["model"] == chat_server._DEFAULT_MODELS["ollama"]
+    assert captured["api_key"] == "local"
+    assert captured["model"] == chat_server._DEFAULT_MODELS["ollama"]
 
 
 def test_chat_status_reports_reference_capabilities(chat_client: TestClient) -> None:
@@ -111,26 +111,23 @@ def test_chat_models_reports_provider_metadata(chat_client: TestClient) -> None:
     body = res.json()
 
     assert "ollama" in body["supported_providers"]
-    assert "codex" in body["supported_providers"]
-    assert "gemini-cli" in body["supported_providers"]
-    assert "claude-code" in body["supported_providers"]
-    assert "opencode" in body["supported_providers"]
-    assert "aider" in body["supported_providers"]
     assert "openai-compatible-local" in body["supported_providers"]
     assert "webllm" in body["supported_providers"]
-    assert body["default_models"]["openai"] == chat_server._DEFAULT_MODELS["openai"]
     providers = {item["id"]: item for item in body["providers"]}
+    assert "openai" not in providers
+    assert "anthropic" not in providers
+    assert "gemini" not in providers
+    assert "codex" not in providers
+    assert "gemini-cli" not in providers
+    assert "claude-code" not in providers
+    assert "opencode" not in providers
+    assert "aider" not in providers
     assert providers["ollama"]["requires_api_key"] is False
-    assert providers["codex"]["requires_api_key"] is False
-    assert providers["codex"]["command_name"] == "codex"
-    assert providers["gemini-cli"]["command_name"] == "gemini"
-    assert providers["aider"]["command_name"] == "aider"
     assert providers["openai-compatible-local"]["base_url"] == "http://localhost:1234/v1"
     assert "browser_runtime" in providers["webllm"]["capabilities"]
-    assert "tools" in providers["claude-code"]["capabilities"]
     assert "tools" in providers["webllm"]["capabilities"]
-    assert "streaming" in providers["openai"]["capabilities"]
-    assert providers["openai"]["models"]
+    assert "streaming" in providers["ollama"]["capabilities"]
+    assert providers["ollama"]["models"]
 
 
 def test_chat_tools_route_returns_full_tool_catalog(chat_client: TestClient) -> None:
@@ -310,16 +307,13 @@ def test_chat_status_reports_search_provider_configuration(
 ) -> None:
     monkeypatch.setenv("HAUS_ENABLE_WEB_SEARCH", "1")
     monkeypatch.setenv("HAUS_SEARCH_PROVIDERS", "serper,exa,tinyfish,duckduckgo")
-    monkeypatch.setenv("SERPER_API_KEY", "serper-key")
-    monkeypatch.delenv("EXA_API_KEY", raising=False)
-    monkeypatch.setenv("TINYFISH_API_KEY", "tinyfish-key")
 
     res = chat_client.get("/api/chat/status")
     assert res.status_code == 200
     body = res.json()
 
-    assert body["search_providers_configured"] == ["serper", "exa", "tinyfish", "duckduckgo"]
-    assert body["search_providers_available"] == ["serper", "tinyfish", "duckduckgo"]
+    assert body["search_providers_configured"] == ["duckduckgo"]
+    assert body["search_providers_available"] == ["duckduckgo"]
     assert body["search_fallback_provider"] == "duckduckgo"
 
 
@@ -343,11 +337,9 @@ def test_search_references_normalizes_and_dedupes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("HAUS_ENABLE_WEB_SEARCH", "1")
-    monkeypatch.setenv("HAUS_SEARCH_PROVIDERS", "serper,exa,duckduckgo")
-    monkeypatch.setenv("SERPER_API_KEY", "serper-key")
-    monkeypatch.setenv("EXA_API_KEY", "exa-key")
+    monkeypatch.setenv("HAUS_SEARCH_PROVIDERS", "duckduckgo")
 
-    def fake_serper(query: str, max_results: int) -> list[dict[str, object]]:
+    def fake_duckduckgo(query: str, max_results: int) -> list[dict[str, object]]:
         return [
             {
                 "title": "HDB Storage",
@@ -356,11 +348,7 @@ def test_search_references_normalizes_and_dedupes(
                 "source_provider": "serper",
                 "published_date": None,
                 "retrieved_at": "2026-06-03T00:00:00Z",
-            }
-        ]
-
-    def fake_exa(query: str, max_results: int) -> list[dict[str, object]]:
-        return [
+            },
             {
                 "title": "Duplicate HDB Storage",
                 "url": "https://example.com/storage",
@@ -379,9 +367,7 @@ def test_search_references_normalizes_and_dedupes(
             },
         ]
 
-    monkeypatch.setitem(chat_server._SEARCH_FNS, "serper", fake_serper)
-    monkeypatch.setitem(chat_server._SEARCH_FNS, "exa", fake_exa)
-    monkeypatch.setitem(chat_server._SEARCH_FNS, "duckduckgo", lambda query, max_results: [])
+    monkeypatch.setitem(chat_server._SEARCH_FNS, "duckduckgo", fake_duckduckgo)
 
     results = chat_server.search_references("hdb storage", max_results=5)
 
@@ -408,15 +394,14 @@ def test_chat_routes_provider_with_model_override(
         captured["model"] = model
         return "ok", messages
 
-    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+    monkeypatch.setitem(chat_server._CHAT_FNS, "openai-compatible-local", fake_provider)
 
     res = chat_client.post(
         "/api/chat",
         json={
             "message": "hello",
-            "provider": "openai",
+            "provider": "openai-compatible-local",
             "model": "gpt-test-model",
-            "api_key": "test-key",
         },
     )
     assert res.status_code == 200
@@ -446,34 +431,15 @@ def test_chat_routes_local_ollama_without_api_key(
     assert body["provider"] == "ollama"
 
 
-def test_chat_routes_local_runtime_without_api_key(
-    chat_client: TestClient,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_provider(
-        api_key: str,
-        messages: list[dict[str, object]],
-        model: str,
-        dispatch,
-    ) -> tuple[str, list[dict[str, object]]]:
-        captured["api_key"] = api_key
-        captured["model"] = model
-        return "runtime ok", messages + [{"role": "assistant", "content": [{"type": "text", "text": "runtime ok"}]}]
-
-    monkeypatch.setitem(chat_server._CHAT_FNS, "codex", fake_provider)
-
-    res = chat_client.post("/api/chat", json={"message": "hello", "provider": "codex"})
-    assert res.status_code == 200
+def test_chat_rejects_agent_cli_provider_by_default(chat_client: TestClient) -> None:
+    res = chat_client.post("/api/chat", json={"message": "hello", "provider": "opencode"})
+    assert res.status_code == 400
     body = res.json()
-    assert body["response"] == "runtime ok"
-    assert body["provider"] == "codex"
-    assert captured["api_key"] == "local"
-    assert captured["model"] == chat_server._DEFAULT_MODELS["codex"]
+    assert "not supported" in body["error"]
+    assert "opencode" not in body["supported"]
 
 
-@pytest.mark.parametrize("provider", ["gemini-cli", "aider", "openai-compatible-local"])
+@pytest.mark.parametrize("provider", ["openai-compatible-local"])
 def test_chat_routes_new_local_providers_without_api_key(
     chat_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -512,7 +478,6 @@ def test_openai_compatible_local_posts_chat_completion(
         captured["api_key"] = api_key
         return {"choices": [{"message": {"content": "local response"}}]}
 
-    monkeypatch.setenv("HAUS_OPENAI_COMPAT_API_KEY", "local-key")
     monkeypatch.setattr(openai_compatible, "_post_chat", fake_post)
 
     text, updated = openai_compatible.chat(
@@ -526,7 +491,7 @@ def test_openai_compatible_local_posts_chat_completion(
     )
 
     assert text == "local response"
-    assert captured["api_key"] == "local-key"
+    assert captured["api_key"] == ""
     assert captured["payload"]["model"] == "local-model"
     assert updated[-1]["content"][0]["text"] == "local response"
 
@@ -564,6 +529,32 @@ def test_local_cli_runtime_json_tool_loop(
     assert updated[-1]["content"][0]["text"] == "done"
 
 
+def test_local_cli_runtime_does_not_surface_invalid_agent_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    responses = [
+        "I'm running as opencode, not inside Haus.",
+        "Still not JSON.",
+    ]
+
+    def fake_run(cmd: list[str], prompt: str, *, prompt_as_arg: bool = False) -> str:
+        return responses.pop(0)
+
+    monkeypatch.setattr(local_cli, "_run", fake_run)
+    text, updated = local_cli.chat_opencode(
+        "local",
+        [{"role": "user", "content": [{"type": "text", "text": "where are they?"}]}],
+        "default",
+        lambda name, args: "{}",
+        system="system",
+        tools_spec=[],
+        max_tool_steps=2,
+    )
+
+    assert text == "The selected local model did not return a valid Haus tool response. No changes were applied."
+    assert "opencode" not in updated[-1]["content"][0]["text"]
+
+
 def test_chat_stream_returns_sse_events(
     chat_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
@@ -578,12 +569,12 @@ def test_chat_stream_returns_sse_events(
             },
         )
 
-    monkeypatch.setitem(chat_server._STREAM_FNS, "openai", fake_stream)
+    monkeypatch.setitem(chat_server._STREAM_FNS, "ollama", fake_stream)
 
     with chat_client.stream(
         "POST",
         "/api/chat/stream",
-        json={"message": "hello", "provider": "openai", "api_key": "test-key"},
+        json={"message": "hello", "provider": "ollama"},
     ) as res:
         body = res.read().decode("utf-8")
 
@@ -591,7 +582,7 @@ def test_chat_stream_returns_sse_events(
     assert "event: meta" in body
     assert 'data: {"delta":"hel"}' in body
     assert "event: done" in body
-    assert '"provider":"openai"' in body
+    assert '"provider":"ollama"' in body
 
 
 def test_chat_rejects_invalid_json_body(chat_client: TestClient) -> None:
@@ -607,7 +598,7 @@ def test_chat_rejects_invalid_json_body(chat_client: TestClient) -> None:
 def test_chat_rejects_empty_message(chat_client: TestClient) -> None:
     res = chat_client.post(
         "/api/chat",
-        json={"message": "   ", "provider": "openai", "api_key": "test-key"},
+        json={"message": "   ", "provider": "openai"},
     )
     assert res.status_code == 400
     assert "must not be empty" in res.json()["error"]
@@ -616,7 +607,7 @@ def test_chat_rejects_empty_message(chat_client: TestClient) -> None:
 def test_chat_rejects_unsupported_provider(chat_client: TestClient) -> None:
     res = chat_client.post(
         "/api/chat",
-        json={"message": "hello", "provider": "unknown-provider", "api_key": "test-key"},
+        json={"message": "hello", "provider": "unknown-provider"},
     )
     assert res.status_code == 400
     body = res.json()
@@ -624,7 +615,7 @@ def test_chat_rejects_unsupported_provider(chat_client: TestClient) -> None:
     assert "supported" in body
 
 
-def test_chat_requires_api_key_for_provider(
+def test_chat_rejects_removed_hosted_provider(
     chat_client: TestClient,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -634,7 +625,7 @@ def test_chat_requires_api_key_for_provider(
         json={"message": "hello", "provider": "openai"},
     )
     assert res.status_code == 400
-    assert "No API key" in res.json()["error"]
+    assert "not supported" in res.json()["error"]
 
 
 def test_chat_returns_action_log_payload_shape(
@@ -650,11 +641,11 @@ def test_chat_returns_action_log_payload_shape(
         dispatch("list_objects", {})
         return "done", messages + [{"role": "assistant", "content": [{"type": "text", "text": "done"}]}]
 
-    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+    monkeypatch.setitem(chat_server._CHAT_FNS, "ollama", fake_provider)
 
     res = chat_client.post(
         "/api/chat",
-        json={"message": "summarize", "provider": "openai", "api_key": "test-key"},
+        json={"message": "summarize", "provider": "ollama"},
     )
     assert res.status_code == 200
     body = res.json()
@@ -686,14 +677,13 @@ def test_chat_passes_image_references_and_redacts_returned_history(
         captured["messages"] = messages
         return "replicated", messages + [{"role": "assistant", "content": [{"type": "text", "text": "replicated"}]}]
 
-    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+    monkeypatch.setitem(chat_server._CHAT_FNS, "ollama", fake_provider)
 
     res = chat_client.post(
         "/api/chat",
         json={
             "message": "make it look like this",
-            "provider": "openai",
-            "api_key": "test-key",
+            "provider": "ollama",
             "attachments": [
                 {
                     "name": "living-room.png",
@@ -725,8 +715,7 @@ def test_chat_rejects_invalid_image_reference(chat_client: TestClient) -> None:
         "/api/chat",
         json={
             "message": "use this",
-            "provider": "openai",
-            "api_key": "test-key",
+            "provider": "ollama",
             "attachments": [
                 {
                     "name": "bad.txt",
@@ -757,11 +746,11 @@ def test_chat_dispatches_web_search_tool(
         return "used sources", messages
 
     monkeypatch.setattr(chat_server, "_web_search", fake_search)
-    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+    monkeypatch.setitem(chat_server._CHAT_FNS, "ollama", fake_provider)
 
     res = chat_client.post(
         "/api/chat",
-        json={"message": "find live storage references", "provider": "openai", "api_key": "test-key"},
+        json={"message": "find live storage references", "provider": "ollama"},
     )
     assert res.status_code == 200
 
@@ -800,8 +789,7 @@ def test_concept_chat_drafts_plan_without_mutating_layout(
         "/api/chat",
         json={
             "message": "Design a whole 4-room HDB flat with Japandi storage",
-            "provider": "openai",
-            "api_key": "test-key",
+            "provider": "ollama",
         },
     )
     assert res.status_code == 200
@@ -854,13 +842,12 @@ def test_chat_request_can_disable_web_search_for_plans_and_tools(
         result = dispatch("web_search", {"query": "current furniture prices", "max_results": 1})
         return result, messages + [{"role": "assistant", "content": [{"type": "text", "text": result}]}]
 
-    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+    monkeypatch.setitem(chat_server._CHAT_FNS, "ollama", fake_provider)
     routed = chat_client.post(
         "/api/chat",
         json={
             "message": "What should I buy?",
-            "provider": "openai",
-            "api_key": "test-key",
+            "provider": "ollama",
             "web_search_disabled": True,
         },
     )
@@ -880,8 +867,6 @@ def test_apply_design_plan_mutates_layout_and_tags_rooms(
         "/api/chat",
         json={
             "message": "Design a living room layout with clear TV sightline",
-            "provider": "openai",
-            "api_key": "test-key",
         },
     )
     assert draft.status_code == 200
@@ -924,7 +909,7 @@ def test_revise_design_plan_preserves_id_and_updates_report(
 
     draft = chat_client.post(
         "/api/chat",
-        json={"message": "Design a study room layout", "provider": "openai", "api_key": "test-key"},
+        json={"message": "Design a study room layout"},
     )
     assert draft.status_code == 200
     plan_id = draft.json()["pending_plan"]["id"]
@@ -975,11 +960,11 @@ def test_destructive_tool_requires_backend_confirmation(
         dispatch("remove_object", {"index": 0})
         return "confirm first", messages
 
-    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+    monkeypatch.setitem(chat_server._CHAT_FNS, "ollama", fake_provider)
 
     res = chat_client.post(
         "/api/chat",
-        json={"message": "remove the chair", "provider": "openai", "api_key": "test-key"},
+        json={"message": "remove the chair", "provider": "ollama"},
     )
     assert res.status_code == 200
     action = res.json()["actions"][0]
@@ -1015,11 +1000,11 @@ def test_tool_args_reject_unknown_fields_without_executing(
         dispatch("add_furniture", {"furniture_type": "chair", "x": 0, "z": 0, "surprise": True})
         return "done", messages
 
-    monkeypatch.setitem(chat_server._CHAT_FNS, "openai", fake_provider)
+    monkeypatch.setitem(chat_server._CHAT_FNS, "ollama", fake_provider)
 
     res = chat_client.post(
         "/api/chat",
-        json={"message": "add a chair", "provider": "openai", "api_key": "test-key"},
+        json={"message": "add a chair", "provider": "ollama"},
     )
     assert res.status_code == 200
     action = res.json()["actions"][0]

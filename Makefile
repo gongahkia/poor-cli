@@ -27,12 +27,10 @@ help:
 	@echo "typical workflow:"
 	@echo "  make setup && make build && make view"
 	@echo ""
-	@echo "AI chat (set one or more):"
-	@echo "  ANTHROPIC_API_KEY=... make view"
-	@echo "  OPENAI_API_KEY=...    make view"
-	@echo "  GEMINI_API_KEY=...    make view"
+	@echo "AI chat (local/browser runtimes):"
 	@echo "  OLLAMA_BASE_URL=...   make view"
 	@echo "  HAUS_CODEX_OSS=1 HAUS_CODEX_LOCAL_PROVIDER=ollama make view"
+	@echo "  WebLLM runs in a WebGPU-capable browser"
 
 setup:
 	uv venv --python 3.11

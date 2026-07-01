@@ -121,14 +121,10 @@ _FLOORPLAN_EXTENSIONS = {
 }
 _WEB_TIMEOUT_SECONDS = 8
 _MAX_WEB_RESPONSE_BYTES = 1_000_000
-_SEARCH_PROVIDER_DEFAULTS = ("serper", "exa", "tinyfish", "duckduckgo")
+_SEARCH_PROVIDER_DEFAULTS = ("duckduckgo",)
 _PLANNER_MODES = {"auto", "deterministic", "llm_reviewed", "llm_structured"}
 _DEFAULT_STANDARDS_PROFILE = "apartment_compact"
-_SEARCH_PROVIDER_KEY_ENV = {
-    "serper": "SERPER_API_KEY",
-    "exa": "EXA_API_KEY",
-    "tinyfish": "TINYFISH_API_KEY",
-}
+_SEARCH_PROVIDER_KEY_ENV: dict[str, str] = {}
 _TRACKING_QUERY_PARAMS = {
     "fbclid",
     "gclid",
@@ -1181,105 +1177,7 @@ def _search_duckduckgo(query: str, max_results: int) -> list[dict[str, Any]]:
     return results
 
 
-def _search_serper(query: str, max_results: int) -> list[dict[str, Any]]:
-    api_key = os.environ.get("SERPER_API_KEY")
-    if not api_key:
-        return []
-
-    data = _request_json(
-        "https://google.serper.dev/search",
-        method="POST",
-        payload={"q": query, "num": max_results},
-        headers={"X-API-KEY": api_key},
-    )
-    raw_results = data.get("organic", []) if isinstance(data, dict) else []
-    results: list[dict[str, Any]] = []
-    if isinstance(raw_results, list):
-        for result in raw_results[:max_results]:
-            if not isinstance(result, dict):
-                continue
-            normalized = _normalize_reference(
-                title=result.get("title"),
-                url=result.get("link") or result.get("url"),
-                snippet=result.get("snippet") or result.get("description"),
-                source_provider="serper",
-                published_date=result.get("date"),
-            )
-            if normalized:
-                results.append(normalized)
-    return results
-
-
-def _search_exa(query: str, max_results: int) -> list[dict[str, Any]]:
-    api_key = os.environ.get("EXA_API_KEY")
-    if not api_key:
-        return []
-
-    data = _request_json(
-        "https://api.exa.ai/search",
-        method="POST",
-        payload={"query": query, "numResults": max_results, "contents": {"text": True}},
-        headers={"x-api-key": api_key},
-    )
-    raw_results = data.get("results", []) if isinstance(data, dict) else []
-    results: list[dict[str, Any]] = []
-    if isinstance(raw_results, list):
-        for result in raw_results[:max_results]:
-            if not isinstance(result, dict):
-                continue
-            normalized = _normalize_reference(
-                title=result.get("title"),
-                url=result.get("url"),
-                snippet=result.get("text") or result.get("summary") or result.get("snippet"),
-                source_provider="exa",
-                published_date=result.get("publishedDate") or result.get("published_date"),
-            )
-            if normalized:
-                results.append(normalized)
-    return results
-
-
-def _tinyfish_result_list(data: Any) -> list[Any]:
-    if isinstance(data, list):
-        return data
-    if not isinstance(data, dict):
-        return []
-    for key in ("results", "data", "items", "organic"):
-        value = data.get(key)
-        if isinstance(value, list):
-            return value
-    return []
-
-
-def _search_tinyfish(query: str, max_results: int) -> list[dict[str, Any]]:
-    api_key = os.environ.get("TINYFISH_API_KEY")
-    if not api_key:
-        return []
-
-    data = _request_json(
-        f"https://api.search.tinyfish.ai?{urlencode({'query': query, 'limit': max_results})}",
-        headers={"X-API-Key": api_key},
-    )
-    results: list[dict[str, Any]] = []
-    for result in _tinyfish_result_list(data)[:max_results]:
-        if not isinstance(result, dict):
-            continue
-        normalized = _normalize_reference(
-            title=result.get("title") or result.get("name"),
-            url=result.get("url") or result.get("link"),
-            snippet=result.get("snippet") or result.get("description") or result.get("text"),
-            source_provider="tinyfish",
-            published_date=result.get("published_date") or result.get("publishedDate") or result.get("date"),
-        )
-        if normalized:
-            results.append(normalized)
-    return results
-
-
 _SEARCH_FNS: dict[str, Callable[[str, int], list[dict[str, Any]]]] = {
-    "serper": _search_serper,
-    "exa": _search_exa,
-    "tinyfish": _search_tinyfish,
     "duckduckgo": _search_duckduckgo,
 }
 
@@ -1339,51 +1237,11 @@ def _web_search(query: str, max_results: int = 5) -> str:
     return _format_reference_results(query, results)
 
 
-def _fetch_with_tinyfish(url: str, max_chars: int) -> str | None:
-    api_key = os.environ.get("TINYFISH_API_KEY")
-    if not api_key or "tinyfish" not in _available_search_providers():
-        return None
-
-    _validate_public_reference_url(url)
-    data = _request_json(
-        "https://api.fetch.tinyfish.ai",
-        method="POST",
-        payload={"url": url},
-        headers={"X-API-Key": api_key},
-    )
-    if not isinstance(data, dict):
-        return None
-
-    title = _collapse_ws(str(data.get("title") or ""))
-    text = _collapse_ws(
-        str(
-            data.get("text")
-            or data.get("markdown")
-            or data.get("content")
-            or data.get("body")
-            or data.get("html")
-            or ""
-        )
-    )
-    if not text:
-        return None
-
-    title_line = f"Title: {title}\n" if title else ""
-    return f"Fetched {url}\nProvider: tinyfish\n{title_line}\n{text[:max_chars]}"
-
-
 def _fetch_web_page(url: str, max_chars: int = 4000) -> str:
     if not _web_search_enabled():
         return "Web fetch is disabled by HAUS_ENABLE_WEB_SEARCH=0."
 
     limit = max(500, min(int(max_chars or 4000), 12000))
-    try:
-        tinyfish_result = _fetch_with_tinyfish(url, limit)
-        if tinyfish_result:
-            return tinyfish_result
-    except (HTTPError, URLError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
-        log.warning("tinyfish fetch failed: %s", exc)
-
     try:
         html, content_type = _read_public_url(url)
     except (HTTPError, URLError, TimeoutError, ValueError) as exc:
@@ -2770,14 +2628,13 @@ def _run_openai_compatible_local(
 
 
 _DEFAULT_MODELS = DEFAULT_MODELS
+_ENV_KEYS = ENV_KEYS
+_PROVIDER_SPECS = provider_specs()
 
-_CHAT_FNS: dict[
+_ALL_CHAT_FNS: dict[
     str,
     Callable[[str, list[dict[str, Any]], str, Callable[[str, dict[str, Any]], str]], tuple[str, list[dict[str, Any]]]],
 ] = {
-    "anthropic": _run_anthropic,
-    "openai": _run_openai,
-    "gemini": _run_gemini,
     "ollama": _run_ollama,
     "codex": _run_codex,
     "gemini-cli": _run_gemini_cli,
@@ -2787,27 +2644,19 @@ _CHAT_FNS: dict[
     "openai-compatible-local": _run_openai_compatible_local,
 }
 
+_CHAT_FNS: dict[
+    str,
+    Callable[[str, list[dict[str, Any]], str, Callable[[str, dict[str, Any]], str]], tuple[str, list[dict[str, Any]]]],
+] = {provider: fn for provider, fn in _ALL_CHAT_FNS.items() if provider in _PROVIDER_SPECS}
+
 _STREAM_FNS: dict[
     str,
     Callable[[str, list[dict[str, Any]], str, Callable[[str, dict[str, Any]], str]], Iterator[ChatChunk]],
 ] = {
-    "anthropic": lambda api_key, messages, model, dispatch: anthropic_provider.stream_chat(
-        api_key, messages, model, dispatch, system=_SYSTEM, tools_spec=_TOOLS_SPEC, max_tool_steps=_MAX_TOOL_STEPS
-    ),
-    "openai": lambda api_key, messages, model, dispatch: openai_provider.stream_chat(
-        api_key, messages, model, dispatch, system=_SYSTEM, tools_spec=_TOOLS_SPEC, max_tool_steps=_MAX_TOOL_STEPS
-    ),
-    "gemini": lambda api_key, messages, model, dispatch: gemini_provider.stream_chat(
-        api_key, messages, model, dispatch, system=_SYSTEM, tools_spec=_TOOLS_SPEC, max_tool_steps=_MAX_TOOL_STEPS
-    ),
     "ollama": lambda api_key, messages, model, dispatch: ollama_provider.stream_chat(
         api_key, messages, model, dispatch, system=_SYSTEM, tools_spec=_TOOLS_SPEC, max_tool_steps=_MAX_TOOL_STEPS
     ),
 }
-
-_ENV_KEYS = ENV_KEYS
-_PROVIDER_SPECS = provider_specs()
-
 
 def _resolve_provider_token(provider: str, client_key: str) -> str:
     if provider not in _CHAT_FNS:
@@ -3147,7 +2996,7 @@ async def _chat(request: Request) -> JSONResponse:
     if not api_key:
         return JSONResponse(
             {
-                "error": f"No API key for {provider}. Add one in chat settings.",
+                "error": f"No local credential for {provider}. Select another local/browser runtime.",
                 "request_id": request_id,
                 "conversation_id": conversation_id,
             },
@@ -3281,7 +3130,7 @@ async def _chat_stream(request: Request) -> StreamingResponse:
             yield ChatChunk("error", {"error": f"Provider '{provider}' not supported.", "supported": supported_provider_ids(), "request_id": request_id, "conversation_id": conversation_id}).sse_event()
             return
         if not api_key:
-            yield ChatChunk("error", {"error": f"No API key for {provider}. Add one in chat settings.", "request_id": request_id, "conversation_id": conversation_id}).sse_event()
+            yield ChatChunk("error", {"error": f"No local credential for {provider}. Select another local/browser runtime.", "request_id": request_id, "conversation_id": conversation_id}).sse_event()
             return
 
         tool_log: list[dict[str, Any]] = []
